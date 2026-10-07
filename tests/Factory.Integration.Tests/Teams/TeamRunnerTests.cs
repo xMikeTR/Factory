@@ -55,6 +55,48 @@ public class TeamRunnerTests
         Assert.Contains("T-001: title", log.Output);
     }
 
+    /// A check that generates files (p compile, test logs) under testWrites: they are output,
+    /// not tests, and must reach neither the tests commit nor the task's commit.
+    [Fact]
+    public async Task Files_a_check_generates_are_never_committed()
+    {
+        const string generated = "tests/Pricing.Data.Tests/P/PGenerated/Gen.cs";
+        var task = Plans.Task("T-001", Plans.Auto("generates then checks",
+            $"mkdir -p tests/Pricing.Data.Tests/P/PGenerated && echo gen > {generated} && test -f {NewFile}"));
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(task), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
+        Assert.True(File.Exists(Path.Combine(integration, NewFile)));
+        var everCommitted = await h.GitIn(integration, "log", "--all", "--name-only", "--format=");
+        Assert.DoesNotContain(generated, everCommitted.Output);
+    }
+
+    [Fact]
+    public async Task Files_the_baseline_suite_generates_are_never_committed()
+    {
+        const string generated = "tests/Pricing.Data.Tests/baseline.log";
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), suiteCommand: $"echo log > {generated}");
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        var everCommitted = await h.GitIn(h.Services.Git.IntegrationPath(TeamHarness.RunId), "log", "--all", "--name-only", "--format=");
+        Assert.DoesNotContain(generated, everCommitted.Output);
+    }
+
     [Fact]
     public async Task Failing_verify_gets_one_verify_row_per_attempt_then_fails_the_team()
     {

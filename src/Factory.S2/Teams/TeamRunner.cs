@@ -31,7 +31,9 @@ public sealed class TeamRunner(FactoryServices svc, Handover handover, string ru
         if (carried.Count == team.Tasks.Length) return new TeamResult(teamId, TeamStatus.Passed);
 
         var worktree = await svc.Git.EnsureTeamAsync(runId, teamId, ct);
-        var baseline = await svc.Verify.BaselineAsync(runId, teamId, svc.Settings.IntegrationTestCommand, worktree, ct);
+        IReadOnlyList<TestResult>? baseline;
+        await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
+            baseline = await svc.Verify.BaselineAsync(runId, teamId, svc.Settings.IntegrationTestCommand, worktree, ct);
 
         foreach (var task in team.Tasks.Except(carried))
         {
@@ -138,10 +140,14 @@ internal sealed class TaskLoop(
                 case TaskState.Verifying v:
                     var attempt = v.Item1.VerifyAttempts;
                     FactoryTelemetry.RecordAttempt(span, attempt);
-                    var green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct);
-                    if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
-                        && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, svc.Settings.IntegrationTestCommand, worktree, ct) is { } regressed)
-                        green.Add(regressed); // P2P: a test that passed before fails now, so this is not green
+                    List<VerifyOutcome> green;
+                    await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
+                    {
+                        green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct);
+                        if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
+                            && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, svc.Settings.IntegrationTestCommand, worktree, ct) is { } regressed)
+                            green.Add(regressed); // P2P: a test that passed before fails now, so this is not green
+                    }
                     var stashed = green.Count > 0 && green.All(o => o.ExitCode == 0)
                         ? await RunWithImplStashedAsync(attempt, "stash_check", ct)
                         : [];
@@ -281,6 +287,8 @@ internal sealed class TaskLoop(
     /// vacuous verdict there is an implementation to take out) and the stash check after green.
     private async Task<List<VerifyOutcome>> RunWithImplStashedAsync(int attempt, string stage, CancellationToken ct)
     {
+        // Outside the stash, so the implementation it puts back counts as found.
+        await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
         await using (await svc.Git.StashImplAsync(worktree, await ImplPathsAsync(ct), StashKey, ct))
             return await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct, stage);
     }
