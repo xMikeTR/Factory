@@ -4,6 +4,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -13,18 +14,20 @@ import pobserve.commons.Parser;
 import pobserve.runtime.events.PEvent;
 
 /**
- * The factory's logging contract, read generically: a log line carrying {@code pobserve <event> [payload]}
+ * The factory's logging contract, read generically: a log line carrying {@code pobserve <event> [payload] [key=<id>]}
  * becomes that P event, looked up by name in the spec's generated {@code PEvents}. Payloads are scalars
  * (int, bool, string); an event the spec does not observe is not generated and so is skipped, as is any
  * line without the marker. A marked line that does not fit its event is an error, never a silent skip.
- * Events are keyed into one partition and ordered by their position in the log.
+ * The key names the entity whose history the spec follows (one spec instance per key, e.g. one per
+ * quote); without one, every event is in the single partition "run". Events are ordered by position.
  */
 public class EventLineParser implements Parser<PEvent<?>> {
     private static final Pattern LINE = Pattern.compile("(?:^|\\s)pobserve\\s+([A-Za-z_]\\w*)(?:\\s+(.*\\S))?\\s*$");
-    private static final String KEY = "run";
+    private static final Pattern KEYED = Pattern.compile("^(?:(.*\\S)\\s+)?key=(\\S+)$");
+    private static final String NO_KEY = "run";
 
     private String eventsClass = "FactorySpec.pobserve.PEvents";
-    private long position;
+    private final AtomicLong position = new AtomicLong();
     private transient Map<String, Constructor<?>> constructors;
 
     /** The generated PEvents class name, `<ProjectName>.pobserve.PEvents`. */
@@ -40,8 +43,14 @@ public class EventLineParser implements Parser<PEvent<?>> {
         if (!m.find()) return Stream.empty();
         Constructor<?> ctor = constructorFor(m.group(1));
         if (ctor == null) return Stream.empty();
-        PEvent<?> event = construct(ctor, m.group(1), m.group(2), line);
-        return Stream.of(new PObserveEvent<>(KEY, ++position, event, line));
+        String payload = m.group(2), key = NO_KEY;
+        Matcher k = payload == null ? null : KEYED.matcher(payload);
+        if (k != null && k.matches()) {
+            payload = k.group(1);
+            key = k.group(2);
+        }
+        PEvent<?> event = construct(ctor, m.group(1), payload, line);
+        return Stream.of(new PObserveEvent<>(key, position.incrementAndGet(), event, line));
     }
 
     private Constructor<?> constructorFor(String name) {

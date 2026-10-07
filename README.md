@@ -137,8 +137,9 @@ PObserve runs as an integration verify step: the runner image carries the PObser
 from P at a pinned commit; it is not published) and `pobserve-check <specs-dir> <Spec> <logs>`,
 which compiles the `.p` files in pobserve mode with the factory's generic parser
 (`tools/pobserve-parser`). The logging contract, stated in every brief that has an event
-vocabulary, is one line per event containing `pobserve <event> <payload>` (scalar payload or
-none; other text on the line is ignored), e.g. `INFO pobserve eCommitted 3`. Point the step at
+vocabulary, is one line per event containing `pobserve <event> <payload> key=<id>` (scalar payload or
+none; other text on the line is ignored; each key is checked as its own history), e.g.
+`INFO pobserve eCommitted 3 key=Q-42`. Point the step at
 the handover's behaviour specs, e.g.
 `FACTORY_POBSERVE_CMD="pobserve-check /path/to/handover/behaviour NoLostUpdate artifacts/test-logs"`
 (the path must be inside the sandbox's worktree mount when `FACTORY_SANDBOX=docker`). Exit 2 is

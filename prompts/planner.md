@@ -27,9 +27,11 @@ Rules the plan is checked against (a plan that breaks any of them is rejected an
 - Code that emits events from the package's `eventVocabulary` must be covered by a task, and its
   verify should run PObserve over the test logs.
   - The logging contract is fixed: each event is one log line containing
-    `pobserve <event> <payload>`, with a scalar payload (number, string or bool) or none, e.g.
-    `INFO pobserve eCommitted 3`. Other text on the line is ignored. Never tell the code to log
-    events in another shape (JSON, key=value, structured payloads): PObserve cannot read them.
+    `pobserve <event> <payload> key=<id>`, with a scalar payload (number, string or bool) or none,
+    e.g. `INFO pobserve eCommitted 3 key=Q-42`. The key names the entity whose history the spec
+    follows (the quote id, the order id): each key is checked as its own history, so tests that
+    log several entities can share one log. Other text on the line is ignored. Never tell the
+    code to log events in another shape (JSON, structured payloads): PObserve cannot read them.
   - The PObserve check produces its logs and checks them in one command, passing all three
     arguments, e.g.
     `LOGS=$(mktemp -d) && PRICING_EVENT_LOG_DIR="$LOGS" dotnet test tests/X.Tests && pobserve-check db/pmodel/PSpec NoLostUpdate "$LOGS"`.

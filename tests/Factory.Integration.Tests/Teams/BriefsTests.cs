@@ -29,7 +29,7 @@ public class BriefsTests
     {
         var prompt = Briefs.Prompt("planner");
 
-        Assert.Contains("`pobserve <event> <payload>`", prompt);
+        Assert.Contains("`pobserve <event> <payload> key=<id>`", prompt);
         Assert.Contains("pobserve-check db/pmodel/PSpec NoLostUpdate \"$LOGS\"", prompt);
     }
 
@@ -42,7 +42,7 @@ public class BriefsTests
         var brief = Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null);
 
         Assert.Contains("`eCommitted`", brief);
-        Assert.Contains("`pobserve <event> <payload>`", brief);
-        Assert.Contains("`pobserve eCommitted 3`", brief);
+        Assert.Contains("`pobserve <event> <payload> key=<id>`", brief);
+        Assert.Contains("`pobserve eCommitted 3 key=Q-42`", brief);
     }
 }

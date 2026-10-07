@@ -4,9 +4,9 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-07 — live run live3 fixes: the plan validator rejects a `pobserve-check`
-> call without exactly three arguments (`PObserveCheckArity`); the planner prompt states the
-> logging contract line format and a worked PObserve check.
+> Last updated: 2026-10-07 — live4 fixes: the logging contract gains an optional `key=<id>`
+> (EventLineParser partitions by it, so each quote is checked as its own history); glob overlap
+> compares segment by segment (no more `*.sql` vs `pmodel/**` false positive).
 
 ## System Overview
 
@@ -106,7 +106,7 @@ C4Container
 | `Factory.S2/HandoverInput.cs` | `--handover` file or Designc dir -> frozen JSON | `HandoverInput` | Program | Registry |
 | `Factory.S2/FactoryServices.cs` | Settings from env, run-dir paths, service bag, re-validating loaders | `FactorySettings`, `FactoryServices`, `RegenerationFile` | every executor, TeamRunner, TaskRerun, Program | env vars |
 | `docker/runner` | Runner image (`build.sh`) | — | DockerSandbox (by image name) | Docker |
-| `tools/pobserve-parser` | `EventLineParser` (`pobserve <event> <payload>` -> P events), `pobserve-check` | — | runner image, `FACTORY_POBSERVE_CMD` | PObserve CLI |
+| `tools/pobserve-parser` | `EventLineParser` (`pobserve <event> <payload> key=<id>` -> P events, one partition per key), `pobserve-check` | — | runner image, `FACTORY_POBSERVE_CMD` | PObserve CLI |
 | `tools/laya-sidecar` | `/decide` HTTP sidecar; `laya_adapter.py` is the one binding point | — | LayaConfigurator | Laya |
 | `policies/s2/*.yaml` | ACS policies per role (`planner`, `task-planner`, `test-author`, `implementer`) | — | AcsToolPolicy | — |
 
@@ -207,7 +207,7 @@ Used by structural-centrality-guard to determine escalation threshold.
 | TestAuthor writes only `testWrites`, Implementer only `writes`; disjoint | `PlanValidator.fs`, `ScopedWorkspace.cs` | Invariant | scope enforced by tools and after each turn |
 | A test that passed in the team baseline and fails now blocks green (P2P) | `Regression.fs`, `TaskLoop` | Business rule | missing test counts as failing |
 | Every `pobserve-check` call in a verify command passes exactly `<specs-dir> <SpecName> <logs>` | `PlanValidator.fs` `PObserveCheckArity` | Invariant | live3: a 2-arg call always exits 1 |
-| Events are logged as `pobserve <event> <payload>` lines (scalar payload or none) | `prompts/planner.md`, `Briefs.Task`, `EventLineParser.java` | Contract | live3: the planner prescribed JSONL |
+| Events are logged as `pobserve <event> <payload> key=<id>` lines (scalar payload or none; key optional, each key its own spec instance) | `prompts/planner.md`, `Briefs.Task`, `EventLineParser.java` | Contract | live3: the planner prescribed JSONL; live4: unkeyed events from 5 quotes read as lost updates |
 | A red run with any check the sandbox could not run (NU1301, exit 127) is no evidence: the task parks, source `environment` | `TaskState.fs` `RedRun.classify`, `TaskLoop.TestsDoneAsync` | Business rule | before the Implementer's first turn |
 | Checks (baseline, red, green + P2P, stash check) leave the worktree as they found it | `GitWorkspace.LeaveAsFoundAsync`, `TaskLoop`, `TaskRerun` | Invariant | generated output never reaches a commit |
 | Each verify check starts from the tree as found: files and created directories (ignored ones too) are removed before the next check; bin/, obj/, node_modules/ are kept | `VerifyRunner.RunTaskAsync`, `GitWorkspace.LeaveAsFoundAsync` | Invariant | one check cannot break another |
