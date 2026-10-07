@@ -1,0 +1,74 @@
+using Factory.Harness.Sandbox;
+using Xunit;
+
+namespace Factory.Integration.Tests.Verify;
+
+/// PObserve over test logs, as the integration verify step runs it: `pobserve-check` inside the
+/// runner image (opt-in: FACTORY_TEST_DOCKER=1, image built from docker/runner) against the
+/// fixture handover's P spec. Log lines follow the logging contract, `pobserve <event> <payload>`.
+[Trait("needs", "docker")]
+public sealed class PObserveTests : IDisposable
+{
+    private static readonly bool Enabled = Environment.GetEnvironmentVariable("FACTORY_TEST_DOCKER") == "1";
+    private readonly string _worktree = Directory.CreateTempSubdirectory("pobserve-").FullName;
+
+    public PObserveTests()
+    {
+        var behaviour = Directory.CreateDirectory(Path.Combine(_worktree, "behaviour")).FullName;
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures/handover/behaviour/quotes-writes.p"), Path.Combine(behaviour, "quotes-writes.p"));
+    }
+
+    private async Task<Factory.Harness.ProcessResult> CheckAsync(params string[] log)
+    {
+        var logs = Directory.CreateDirectory(Path.Combine(_worktree, "logs")).FullName;
+        await File.WriteAllLinesAsync(Path.Combine(logs, "test.log"), log);
+        await using var sandbox = await DockerSandbox.StartAsync("pobserve", _worktree, new DockerSandboxOptions(RestoreOnStart: false), default);
+        return await sandbox.RunAsync("pobserve-check behaviour NoLostUpdate logs", _worktree, TimeSpan.FromMinutes(5),
+            new Dictionary<string, string>(), default);
+    }
+
+    [Fact]
+    public async Task A_log_that_honours_the_spec_passes()
+    {
+        if (!Enabled) return; // opt-in
+
+        var r = await CheckAsync(
+            "12:00:01 INFO quotes: write accepted",
+            "12:00:01 INFO pobserve eCommitted 1",
+            "12:00:02 INFO pobserve eCommitted 2",
+            "12:00:03 DEBUG unrelated line",
+            "12:00:03 INFO pobserve eCommitted 3");
+
+        Assert.True(r.ExitCode == 0, r.Output);
+        Assert.Contains("3 events", r.Output);
+    }
+
+    [Fact]
+    public async Task A_lost_update_in_the_log_fails_with_the_specs_assertion()
+    {
+        if (!Enabled) return; // opt-in
+
+        var r = await CheckAsync(
+            "12:00:01 INFO pobserve eCommitted 1",
+            "12:00:02 INFO pobserve eCommitted 1");
+
+        Assert.True(r.ExitCode == 2, r.Output); // PObserve: assertion
+        Assert.Contains("lost update: 2 commits, value 1", r.Output);
+    }
+
+    [Fact]
+    public async Task A_garbled_event_line_is_a_parse_error_not_a_pass()
+    {
+        if (!Enabled) return; // opt-in
+
+        var r = await CheckAsync("12:00:01 INFO pobserve eCommitted one");
+
+        Assert.True(r.ExitCode == 4, r.Output); // PObserve: parse error
+        Assert.Contains("pobserve eCommitted one", r.Output);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_worktree, recursive: true); } catch (IOException) { }
+    }
+}
