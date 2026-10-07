@@ -11,7 +11,13 @@
     <PackageReference Include="Microsoft.Agents.AI" />
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
     <PackageReference Include="Anthropic" />
+    <PackageReference Include="Microsoft.AgentGovernance" />
     <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Per-role tool policies (AcsToolPolicy.DefaultDirectory), shipped next to every host. -->
+    <None Include="../../policies/s2/*.yaml" Link="policies/s2/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -86,9 +86,8 @@ public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPol
 
         AIAgent agent = new ChatClientAgent(chat, instructions: instructions, name: scope.Role, tools: tools);
 
-        // VERIFY (Phase 0 spike): function-invocation middleware signature in your MAF version.
-        // This is also where AGT's GovernancePolicyMiddleware goes once the ACS adapter exists:
-        //   .Use(new GovernancePolicyMiddleware(acsEvaluator))
+        // AGT governs through `policy` (AcsToolPolicy) inside this middleware, so its decisions are
+        // ledgered with ours; AGT's own MAF extension (preview) is deliberately not used.
         return agent.AsBuilder()
             .Use((a, context, next, ct) => GovernedToolCallAsync(scope, tier, context, next, ct))
             .Build();
@@ -96,7 +95,6 @@ public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPol
 
     /// Runs before every tool call of every agent. The governance seam: the policy decides, the
     /// ledger records the decision, and a denied call never reaches the tool.
-    /// Later: the ACS runtime replaces `policy` behind the same IToolPolicy shape.
     private async ValueTask<object?> GovernedToolCallAsync(
         AgentScope scope, ModelTier tier,
         FunctionInvocationContext context,

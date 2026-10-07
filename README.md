@@ -48,7 +48,8 @@ tests/Factory.Core.Tests dependency-free test runner (`dotnet run`); port to xUn
 src/Factory.Harness/     C#: shared by all agent hosts
   FactoryAgents.cs       every agent built here: gateway client + policy/ledger middleware per tool call
   ScopedWorkspace.cs     agent tools; refuses writes outside the task's `writes` itself
-  ToolPolicy.cs          IToolPolicy + role allow-list (stand-in for the AGT ACS adapter)
+  ToolPolicy.cs          IToolPolicy + role allow-list (in-code double)
+  Governance/AcsToolPolicy.cs  IToolPolicy over AGT's PolicyEngine; one policies/s2/<role>.yaml per role
   Configurator.cs        IConfigurator + heuristic default (Jev / Laya slot in behind it)
   Ledger.cs              LedgerEvent, ILedger, JSONL implementation
   ProcessRunner.cs       shell commands with timeouts and process-tree kill
@@ -145,8 +146,12 @@ something that works on its own.
    - `RequestPort` round-trips, including `DataAs<T>`;
    - the function-invocation middleware signature.
 
-   Then replace `RoleAllowListPolicy` with the ACS adapter, or put AGT's
-   `GovernancePolicyMiddleware` next to the ledger middleware in `FactoryAgents.Create`.
+   Tool governance is done: `AcsToolPolicy` (AGT `Microsoft.AgentGovernance` 5.0.0, exact pin)
+   evaluates `policies/s2/<role>.yaml` inside the ledger middleware. Each file needs a
+   `# source: hand-authored | mlang@<version>` header and `default_action: deny`; a bad file stops
+   the run. `FACTORY_TOOL_POLICY=allowlist` falls back to the in-code list; `FACTORY_POLICY_DIR`
+   points at mlang output. Note AGT 5.0.0 conditions: `in [..]` lists never match, so write one
+   `tool_name == '...'` rule per tool.
 3. **One task, one team (Phase 2 slice).** Run T-001 from the example against the real repo,
    using the dry-run PR mode. Check the ledger: task events should replay to `Passed`, and there
    should be token counts on each turn and a verify row per attempt.
