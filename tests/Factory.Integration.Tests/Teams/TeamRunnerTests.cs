@@ -146,6 +146,8 @@ public class TeamRunnerTests
         Assert.Equal(2, denied.Count);
         Assert.Contains(NewFile, denied[0]);
         Assert.Contains(TestFile, denied[1]);
+        Assert.Equal([Roles.TestAuthor, Roles.Implementer],
+            h.Rows(LedgerKinds.ToolCall).Where(e => e.Outcome == "denied").Select(e => e.Stage));
 
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "red_run" && e.Outcome == "failed");
         var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
