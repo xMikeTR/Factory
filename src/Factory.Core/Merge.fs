@@ -41,7 +41,7 @@ module Merge =
         | OneApproval -> 1
         | TwoApprovals -> 2
 
-    /// TODO(you) — RESOURCES.md §5. Spec: tests starting "merge:".
+    /// RESOURCES.md §5. Spec: tests starting "merge:".
     /// Produce (tier, reason) pairs from these rules, then take the highest tier:
     ///   - touched element with Risk = High                          -> TwoApprovals
     ///   - touched element riskier than policy.AutoMergeMaxRisk      -> OneApproval
@@ -51,5 +51,31 @@ module Merge =
     /// No rules fired -> AutoMerge with one reason saying why.
     /// Later: these thresholds are policy; compile them from mlang instead of defaultPolicy.
     let decide (policy: MergePolicy) (input: MergeInput) : MergeVerdict =
-        ignore (policy, input, rank, tierRank)
-        failwith "TODO: Merge.decide"
+        let touchedIds = input.Teams |> List.collect (fun t -> t.Elements) |> Set.ofList
+        let touched = input.Handover.Elements |> List.filter (fun e -> touchedIds.Contains e.Id)
+        let writes = input.Teams |> List.collect (fun t -> t.Writes)
+        let manual =
+            input.Teams
+            |> List.collect (fun t -> t.Tasks)
+            |> List.collect (fun t -> t.Verify |> List.choose (function Manual m -> Some(t.Id, m.Name) | Automated _ -> None))
+
+        let fired =
+            [ for e in touched do
+                  if e.Risk = High then TwoApprovals, $"element '{e.Name}' is high risk"
+                  elif rank e.Risk > rank policy.AutoMergeMaxRisk then
+                      OneApproval, $"element '{e.Name}' is {e.Risk} risk (auto-merge allows up to {policy.AutoMergeMaxRisk})"
+              for (t, name) in manual do
+                  OneApproval, $"task {t.Value} has a manual check '{name}'"
+              if input.ChangedLines > policy.AutoMergeMaxChangedLines then
+                  OneApproval, $"{input.ChangedLines} changed lines (auto-merge allows up to {policy.AutoMergeMaxChangedLines})"
+              for f in input.ChangedFiles do
+                  if not (writes |> List.exists (fun w -> PathPattern.matches w f)) then
+                      TwoApprovals, $"'{f}' changed but no team declared it in writes" ]
+
+        match fired with
+        | [] ->
+            { Tier = AutoMerge
+              Reasons = [ $"all touched elements at or below {policy.AutoMergeMaxRisk} risk, no manual checks, every changed file declared" ] }
+        | _ ->
+            { Tier = fired |> List.map fst |> List.maxBy tierRank
+              Reasons = fired |> List.map snd }

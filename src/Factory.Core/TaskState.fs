@@ -88,7 +88,7 @@ module TaskState =
 
     /// The whole task lifecycle. Budgets are enforced here, not by agents or prompts.
     ///
-    /// TODO(you) — RESOURCES.md §2. Spec: every test starting "state:".
+    /// RESOURCES.md §2. Spec: every test starting "state:".
     /// Transition table (anything not listed is illegal -> Error { State; Event }):
     ///   Passed | Failed          + anything              -> illegal (terminal)
     ///   any non-terminal         + Abandon r             -> Failed(Abandoned r, progress)
@@ -104,8 +104,56 @@ module TaskState =
     ///                                                    -> Ready p     otherwise (agent gets another turn)
     /// Use one `match state, event with` and let FS0025 (incomplete match = error) keep you honest.
     let transition (limits: Limits) (state: TaskState) (event: TaskEvent) : Result<TaskState, TransitionError> =
-        ignore (limits, state, event, name, eventName)
-        failwith "TODO: TaskState.transition"
+        let illegal () = Error { State = name state; Event = eventName event }
+        // Outer match on state, inner on event, no wildcards: adding a case to either DU is a
+        // compile error here until the table says what it means.
+        match state with
+        | Passed _
+        | Failed _ -> illegal ()
+        | Ready p ->
+            match event with
+            | Abandon r -> Ok(Failed(Abandoned r, p))
+            | TurnStarted tier ->
+                if p.Turns >= limits.MaxTurns then Ok(Failed(TurnBudgetExhausted p.Turns, p))
+                else Ok(Running({ p with Turns = p.Turns + 1 }, tier))
+            | NeedsDecisionRaised n -> Ok(Blocked(p, n))
+            | VerifyRequested ->
+                if p.VerifyAttempts >= limits.MaxVerifyAttempts then Ok(Failed(VerifyBudgetExhausted [], p))
+                else Ok(Verifying { p with VerifyAttempts = p.VerifyAttempts + 1 })
+            | TurnEnded
+            | DecisionBound _
+            | VerifyCompleted _ -> illegal ()
+        | Running(p, _) ->
+            match event with
+            | Abandon r -> Ok(Failed(Abandoned r, p))
+            | TurnEnded -> Ok(Ready p)
+            | NeedsDecisionRaised n -> Ok(Blocked(p, n))
+            | TurnStarted _
+            | DecisionBound _
+            | VerifyRequested
+            | VerifyCompleted _ -> illegal ()
+        | Blocked(p, _) ->
+            match event with
+            | Abandon r -> Ok(Failed(Abandoned r, p))
+            | DecisionBound _ -> Ok(Ready p)
+            | TurnStarted _
+            | TurnEnded
+            | NeedsDecisionRaised _
+            | VerifyRequested
+            | VerifyCompleted _ -> illegal ()
+        | Verifying p ->
+            match event with
+            | Abandon r -> Ok(Failed(Abandoned r, p))
+            | VerifyCompleted os ->
+                match PassedEvidence.Create(p.VerifyAttempts, os) with
+                | Ok ev -> Ok(Passed ev)
+                | Error _ when p.VerifyAttempts >= limits.MaxVerifyAttempts -> Ok(Failed(VerifyBudgetExhausted os, p))
+                | Error _ -> Ok(Ready p)
+            | TurnStarted _
+            | TurnEnded
+            | NeedsDecisionRaised _
+            | DecisionBound _
+            | VerifyRequested -> illegal ()
 
     /// Rebuild a task's state from its ledger events. This is how a restarted runner resumes.
     let replay (limits: Limits) (events: TaskEvent seq) : Result<TaskState, TransitionError> =
