@@ -12,6 +12,7 @@ public class TeamRunnerTests
 {
     private static readonly IReadOnlyDictionary<string, DecisionAnswer> NoAnswers = new Dictionary<string, DecisionAnswer>();
     private const string NewFile = "src/Pricing.Data/QuoteStatus.cs";
+    private const string TestFile = "tests/Pricing.Data.Tests/status.sh";
 
     private static PlannedTask T001() => Plans.Task("T-001", Plans.Auto("file exists", $"test -f {NewFile}"));
 
@@ -22,7 +23,10 @@ public class TeamRunnerTests
             // planning turn (task-planner)
             Call("list_files", new { directory = "src/Pricing.Data" }),
             Say("Approach: add QuoteStatus.cs"),
-            // acting turn (executor)
+            // test-author turn: the verify block needs no new test file
+            Call("declare_done", new { summary = "verify block already fails" }),
+            Say("done"),
+            // implementer turn
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
             Call("declare_done", new { summary = "added QuoteStatus" }),
             Say("done"));
@@ -33,11 +37,11 @@ public class TeamRunnerTests
         Assert.Equal(TeamStatus.Passed, result.Status);
         Assert.Equal(0, model.Remaining);
 
-        Assert.Equal(3, h.Rows(LedgerKinds.ToolCall).Count(e => e.Outcome == "allowed"));
+        Assert.Equal(4, h.Rows(LedgerKinds.ToolCall).Count(e => e.Outcome == "allowed"));
         Assert.Single(h.Rows(LedgerKinds.Configurator), e => e.Outcome == "Plan");
 
         var turns = h.Rows(LedgerKinds.Turn).ToList();
-        Assert.Equal(2, turns.Count);
+        Assert.Equal(3, turns.Count);
         Assert.All(turns, t => Assert.True(t.TokensIn > 0 && t.TokensOut > 0));
 
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "verify");
@@ -55,6 +59,7 @@ public class TeamRunnerTests
         var never = Plans.Task("T-001", Plans.Auto("never passes", "test -f does-not-exist"));
         var model = new ScriptedChatClient(
             Say("Approach: try"),
+            Call("declare_done", new { summary = "tests" }), Say("done"),
             Call("write_file", new { path = NewFile, content = "// 1\n" }), Call("declare_done", new { summary = "1" }), Say("done"),
             Call("write_file", new { path = NewFile, content = "// 2\n" }), Call("declare_done", new { summary = "2" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 2));
@@ -73,7 +78,7 @@ public class TeamRunnerTests
     {
         var model = new ScriptedChatClient(
             Say("Approach: try"),
-            Call("write_file", new { path = NewFile, content = "// 1\n" }), Say("still working"));
+            Call("write_file", new { path = TestFile, content = "test -f src/Pricing.Data/QuoteStatus.cs\n" }), Say("still working"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(2, 3));
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
@@ -90,6 +95,7 @@ public class TeamRunnerTests
             Say("Approach: need a status list"),
             Call("raise_needs_decision", new { question = "Which quote statuses exist?" }), Say("asked"),
             // after the answer
+            Call("declare_done", new { summary = "tests" }), Say("done"),
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft, Bound }\n" }),
             Call("declare_done", new { summary = "added" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
@@ -107,5 +113,90 @@ public class TeamRunnerTests
 
         Assert.Equal(TeamStatus.Passed, second.Status);
         Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("Draft and Bound only"));
+    }
+
+    private static IEnumerable<string> ToolResults(ScriptedChatClient model) =>
+        model.Requests.SelectMany(r => r).SelectMany(m => m.Contents)
+            .OfType<Microsoft.Extensions.AI.FunctionResultContent>()
+            .DistinctBy(f => f.CallId) // each request re-sends the turn so far
+            .Select(f => f.Result?.ToString() ?? "");
+
+    private static PlannedTask WithTest() => Plans.Task("T-001", Plans.Auto("status test", $"sh {TestFile}"));
+
+    [Fact]
+    public async Task TestAuthor_writes_only_tests_and_Implementer_writes_only_code()
+    {
+        const string realTest = "test -f src/Pricing.Data/QuoteStatus.cs\n";
+        var model = new ScriptedChatClient(
+            Say("Approach: test first"),
+            // test author: code is refused, the test is not
+            Call("write_file", new { path = NewFile, content = "// sneaky\n" }),
+            Call("write_file", new { path = TestFile, content = realTest }),
+            Call("declare_done", new { summary = "status test" }), Say("done"),
+            // implementer: the test is refused, the code is not
+            Call("write_file", new { path = TestFile, content = "exit 0\n" }),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        var denied = ToolResults(model).Where(r => r.StartsWith("DENIED")).ToList();
+        Assert.Equal(2, denied.Count);
+        Assert.Contains(NewFile, denied[0]);
+        Assert.Contains(TestFile, denied[1]);
+
+        Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "red_run" && e.Outcome == "failed");
+        var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
+        Assert.Equal(realTest, await File.ReadAllTextAsync(Path.Combine(integration, TestFile)));
+        Assert.Equal("public enum QuoteStatus { Draft }\n", await File.ReadAllTextAsync(Path.Combine(integration, NewFile)));
+    }
+
+    [Fact]
+    public async Task A_test_that_passes_against_the_stub_never_leaves_TestAuthor()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: test first"),
+            Call("write_file", new { path = TestFile, content = "exit 0\n" }),
+            Call("declare_done", new { summary = "tests" }), Say("done"),
+            Call("write_file", new { path = TestFile, content = "true\n" }),
+            Call("declare_done", new { summary = "tests again" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(3, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Failed, result.Status);
+        Assert.Contains("TurnBudgetExhausted", result.Failure);
+        Assert.Equal(0, model.Remaining);
+        Assert.Equal(2, h.Rows(LedgerKinds.Verify).Count(e => e.Stage == "red_run"));
+        Assert.DoesNotContain(h.Rows(LedgerKinds.TaskEvent), e => e.Payload!.Contains("tests_authored"));
+        Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("pass without the implementation"));
+    }
+
+    [Fact]
+    public async Task A_vacuous_test_fails_the_stash_check_and_goes_back_to_TestAuthor()
+    {
+        // The test checks an ignored build artefact, which stashing the implementation leaves behind.
+        const string artefact = "src/Pricing.Data/bin/Pricing.Data.dll";
+        var model = new ScriptedChatClient(
+            Say("Approach: test first"),
+            Call("write_file", new { path = TestFile, content = $"test -f {artefact}\n" }),
+            Call("declare_done", new { summary = "tests" }), Say("done"),
+            Call("write_file", new { path = artefact, content = "binary\n" }),
+            Call("declare_done", new { summary = "built" }), Say("done"),
+            Say("I cannot make this test meaningful"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.NotEqual(TeamStatus.Passed, result.Status);
+        Assert.Equal(0, model.Remaining);
+        Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "stash_check");
+        var events = h.Rows(LedgerKinds.TaskEvent).ToList();
+        var verified = events.FindIndex(e => e.Payload!.Contains("verify_completed"));
+        Assert.Equal("Ready", events[verified].Outcome);
+        Assert.DoesNotContain(events, e => e.Outcome == "Passed");
+        Assert.Contains(model.Requests.Last(), m => m.Text.Contains("do not exercise the change"));
     }
 }

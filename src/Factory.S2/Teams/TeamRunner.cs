@@ -63,9 +63,12 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
         if (state.IsPassed)
         {
             var changed = await svc.Git.ChangedPathsAsync(worktree, ct);
-            if (changed.All(InScope)) await CommitAsync(ct);
+            if (changed.All(p => InScope(p, task.Writes))) await CommitAsync(ct); // the tests were committed at TestsAuthored
             return null;
         }
+
+        if (!task.Verify.Any(v => v.IsAutomated))
+            return new TeamResult(_teamId, TeamStatus.Failed, Failure: $"{_taskId}: no automated verify entry, so there is no red run and nothing can pass");
 
         if (await svc.Git.RestoreStashAsync(worktree, StashKey, ct)) // crashed during a red run or stash check
             await svc.LogAsync(runId, "resume", LedgerKinds.Verify, outcome: "stash_restored", teamId: _teamId, taskId: _taskId, ct: ct);
@@ -78,7 +81,7 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
             switch (state)
             {
                 case TaskState.Passed:
-                    await EnforceScopeAsync("task_passed", ct);
+                    await EnforceScopeAsync("task_passed", task.Writes, ct);
                     await CommitAsync(ct);
                     return null;
 
@@ -119,17 +122,8 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
                     else if (state.IsReady) _lastFailures = Briefs.Failures(green);
                     break;
 
-                case TaskState.Ready { Item2.IsTestAuthor: true } r:
-                    // Transitional (slice C2): the tests are expected on the branch already; C3 gives
-                    // the TestAuthor its own turns before this red run.
-                    var red = await RedRunAsync(r.Item1, ct);
-                    if (red.IsError)
-                        return new TeamResult(_teamId, TeamStatus.Failed, Failure: $"{_taskId}: {red.ErrorValue}");
-                    state = await ApplyAsync(state, TaskEvent.NewTestsAuthored(red.ResultValue), ct);
-                    break;
-
                 case TaskState.Ready r:
-                    state = await NextTurnAsync(state, r.Item1, ct);
+                    state = await NextTurnAsync(state, r.Item1, r.Item2, ct);
                     break;
 
                 default:
@@ -138,14 +132,16 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
         }
     }
 
-    /// One turn from Ready: verify if the agent declared done, otherwise let the configurator
-    /// route the turn (plan, act, escalate) and run it.
-    private async Task<TaskState> NextTurnAsync(TaskState state, Progress progress, CancellationToken ct)
+    /// One turn from Ready. If the agent declared done: the TestAuthor's tests get their red run,
+    /// the Implementer's code gets verified. Otherwise the configurator routes the turn (plan, act,
+    /// escalate) and it runs in the phase's role.
+    private async Task<TaskState> NextTurnAsync(TaskState state, Progress progress, Phase phase, CancellationToken ct)
     {
         if (_doneDeclared)
         {
             _doneDeclared = false;
-            await EnforceScopeAsync("pre_verify", ct);
+            if (phase.IsTestAuthor) return await TestsDoneAsync(state, progress, ct);
+            await EnforceScopeAsync("pre_verify", task.Writes, ct);
             return await ApplyAsync(state, TaskEvent.VerifyRequested, ct);
         }
 
@@ -160,7 +156,7 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
             TurnKind.Escalate => await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(new NeedsDecision(
                 $"Task {_taskId} is not making progress ({decision.Reason}). How should it proceed?", task.Elements, "configurator")), ct),
             TurnKind.Plan => await PlanTurnAsync(state, decision.Tier, ct),
-            TurnKind.Act => await ActTurnAsync(state, decision.Tier, ct),
+            TurnKind.Act => await ActTurnAsync(state, decision.Tier, phase, ct),
             _ => throw new InvalidOperationException($"unknown turn kind {decision.Kind}"),
         };
     }
@@ -172,8 +168,8 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
 
         var signals = new TurnSignals();
         var agent = svc.Agents.Create(new AgentScope(runId, Roles.TaskPlanner, _teamId, _taskId), tier,
-            Briefs.Prompt("task-planner"), Workspace(signals, sandbox: null).ReadOnlyTools());
-        var response = await agent.RunAsync(Brief(), cancellationToken: ct);
+            Briefs.Prompt("task-planner"), Workspace(signals, sandbox: null, []).ReadOnlyTools());
+        var response = await agent.RunAsync(Brief(task.Writes.Concat(task.TestWrites)), cancellationToken: ct);
 
         if (signals.NeedsDecision is { } question)
         {
@@ -186,23 +182,31 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
         return await ApplyAsync(state, TaskEvent.TurnEnded, ct);
     }
 
-    private async Task<TaskState> ActTurnAsync(TaskState state, ModelTier tier, CancellationToken ct)
+    /// An acting turn in the phase's role. The TestAuthor writes only TestWrites and works with the
+    /// implementation stashed (after a vacuous-tests verdict there is some), so its tests are
+    /// written against the stub; the Implementer writes only Writes, the tests being committed.
+    private async Task<TaskState> ActTurnAsync(TaskState state, ModelTier tier, Phase phase, CancellationToken ct)
     {
         var before = await svc.Git.WorkFingerprintAsync(worktree, ct);
         state = await ApplyAsync(state, TaskEvent.NewTurnStarted(tier), ct);
         if (state.IsFailed) return state;
 
         var signals = new TurnSignals();
-        await using (var sandbox = await svc.Sandboxes.ForTeamAsync(_teamId, worktree, ct))
+        List<string> reverted;
+        if (phase.IsTestAuthor)
         {
-            var agent = svc.Agents.Create(new AgentScope(runId, Roles.Executor, _teamId, _taskId), tier,
-                Briefs.Prompt("executor"), Workspace(signals, sandbox).ExecutorTools());
-            var response = await agent.RunAsync(Brief(), cancellationToken: ct);
-            await LogTurnAsync("act", tier, response.Usage,
-                new { files = signals.FilesWritten, done = signals.DoneSummary, needs_decision = signals.NeedsDecision }, ct);
+            await using (await svc.Git.StashImplAsync(worktree, await ImplPathsAsync(ct), StashKey, ct))
+            {
+                await RunActAsync(Roles.TestAuthor, "test-author", task.TestWrites, tier, signals, ct);
+                reverted = await EnforceScopeAsync("turn_scope", task.TestWrites, ct); // before the implementation comes back
+            }
+        }
+        else
+        {
+            await RunActAsync(Roles.Implementer, "implementer", task.Writes, tier, signals, ct);
+            reverted = await EnforceScopeAsync("turn_scope", task.Writes, ct);
         }
 
-        var reverted = await EnforceScopeAsync("turn_scope", ct);
         _reverted = reverted.Count > 0 ? string.Join(", ", reverted) : null;
         _turnsWithoutChange = await svc.Git.WorkFingerprintAsync(worktree, ct) == before ? _turnsWithoutChange + 1 : 0;
 
@@ -213,36 +217,59 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
         return await ApplyAsync(state, TaskEvent.TurnEnded, ct);
     }
 
-    /// The task's verify block with the implementation (changed paths under Writes) taken out.
-    /// Used before implementation (red run) and after a green run (stash check).
+    private async Task RunActAsync(string role, string prompt, IEnumerable<PathPattern> writable, ModelTier tier, TurnSignals signals, CancellationToken ct)
+    {
+        await using var sandbox = await svc.Sandboxes.ForTeamAsync(_teamId, worktree, ct);
+        var agent = svc.Agents.Create(new AgentScope(runId, role, _teamId, _taskId), tier,
+            Briefs.Prompt(prompt), Workspace(signals, sandbox, writable).ExecutorTools());
+        var response = await agent.RunAsync(Brief(writable), cancellationToken: ct);
+        await LogTurnAsync("act", tier, response.Usage,
+            new { role, files = signals.FilesWritten, done = signals.DoneSummary, needs_decision = signals.NeedsDecision }, ct);
+    }
+
+    /// The TestAuthor declared done: run its tests without the implementation. They must fail;
+    /// if they do, commit them (so the Implementer cannot touch them unseen) and hand over.
+    private async Task<TaskState> TestsDoneAsync(TaskState state, Progress progress, CancellationToken ct)
+    {
+        var outcomes = await RunWithImplStashedAsync(progress.VerifyAttempts, "red_run", ct);
+        var red = RedEvidence.Create(Core.ToList(outcomes), Verify.VerifyRunner.ClassifyRed(outcomes));
+        if (red.IsError)
+        {
+            _lastFailures = $"Your tests pass without the implementation, so they cannot show it works ({red.ErrorValue}). "
+                + "Make them fail against the current code: " + string.Join(", ", outcomes.Select(o => o.Name));
+            return state;
+        }
+
+        var tests = (await svc.Git.ChangedPathsAsync(worktree, ct)).Where(p => task.TestWrites.Any(w => Core.Matches(w, p))).ToList();
+        await svc.Git.CommitPathsAsync(worktree, tests, $"{_taskId} (tests): {task.Title}\n\nfactory-run: {runId}\nfactory-team: {_teamId}", ct);
+        _lastFailures = null;
+        return await ApplyAsync(state, TaskEvent.NewTestsAuthored(red.ResultValue), ct);
+    }
+
+    /// The task's verify block with the implementation taken out. Used for the red run (after a
+    /// vacuous verdict there is an implementation to take out) and the stash check after green.
     private async Task<List<VerifyOutcome>> RunWithImplStashedAsync(int attempt, string stage, CancellationToken ct)
     {
-        var impl = (await svc.Git.ChangedPathsAsync(worktree, ct)).Where(p => task.Writes.Any(w => Core.Matches(w, p))).ToList();
-        await using (await svc.Git.StashImplAsync(worktree, impl, StashKey, ct))
+        await using (await svc.Git.StashImplAsync(worktree, await ImplPathsAsync(ct), StashKey, ct))
             return await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct, stage);
     }
 
-    private async Task<Microsoft.FSharp.Core.FSharpResult<RedEvidence, string>> RedRunAsync(Progress progress, CancellationToken ct)
-    {
-        var outcomes = await RunWithImplStashedAsync(progress.VerifyAttempts, "red_run", ct);
-        return RedEvidence.Create(Core.ToList(outcomes), Verify.VerifyRunner.ClassifyRed(outcomes));
-    }
+    /// The implementation: changed paths under Writes.
+    private async Task<List<string>> ImplPathsAsync(CancellationToken ct) =>
+        (await svc.Git.ChangedPathsAsync(worktree, ct)).Where(p => task.Writes.Any(w => Core.Matches(w, p))).ToList();
 
     private string StashKey => $"{runId}/{_teamId}";
 
-    private string Brief()
+    private string Brief(IEnumerable<PathPattern> writable)
     {
         var failures = _reverted is null
             ? _lastFailures
             : $"These changes were outside your writes and were reverted: {_reverted}\n\n{_lastFailures}".TrimEnd();
-        return Briefs.Task(handover, task, _approachNote, failures, _resolvedDecision);
+        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision);
     }
 
-    // One role writes both until the TestAuthor/Implementer split (slice C3).
-    private IEnumerable<PathPattern> Writable => task.Writes.Concat(task.TestWrites);
-
-    private bool InScope(string path) =>
-        !handover.ProtectedPaths.Any(pp => Core.Matches(pp, path)) && Writable.Any(w => Core.Matches(w, path));
+    private bool InScope(string path, IEnumerable<PathPattern> writable) =>
+        !handover.ProtectedPaths.Any(pp => Core.Matches(pp, path)) && writable.Any(w => Core.Matches(w, path));
 
     private async Task<List<string>> TaskPayloadsAsync(CancellationToken ct)
     {
@@ -252,12 +279,12 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
         return payloads;
     }
 
-    /// Deterministic backstop to the workspace tools: anything changed outside the task's writes
-    /// (e.g. by a build command) is reverted and logged. Returns the reverted paths.
-    private async Task<List<string>> EnforceScopeAsync(string when, CancellationToken ct)
+    /// Deterministic backstop to the workspace tools: anything changed outside the role's writable
+    /// paths (e.g. by a build command) is reverted and logged. Returns the reverted paths.
+    private async Task<List<string>> EnforceScopeAsync(string when, IEnumerable<PathPattern> writable, CancellationToken ct)
     {
         var changed = await svc.Git.ChangedPathsAsync(worktree, ct);
-        var outside = changed.Where(p => !InScope(p)).ToList();
+        var outside = changed.Where(p => !InScope(p, writable)).ToList();
         if (outside.Count == 0) return outside;
 
         await svc.Git.RevertPathsAsync(worktree, outside, ct);
@@ -269,8 +296,8 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
     private Task<bool> CommitAsync(CancellationToken ct) =>
         svc.Git.CommitAllAsync(worktree, $"{_taskId}: {task.Title}\n\nfactory-run: {runId}\nfactory-team: {_teamId}", ct);
 
-    private ScopedWorkspace Workspace(TurnSignals signals, Factory.Harness.Sandbox.ICommandSandbox? sandbox) =>
-        new(worktree, Writable.ToList(), handover.ProtectedPaths.ToList(), svc.Settings.CommandAllowList, signals, sandbox);
+    private ScopedWorkspace Workspace(TurnSignals signals, Factory.Harness.Sandbox.ICommandSandbox? sandbox, IEnumerable<PathPattern> writable) =>
+        new(worktree, writable.ToList(), handover.ProtectedPaths.ToList(), svc.Settings.CommandAllowList, signals, sandbox);
 
     private async Task<TaskState> ApplyAsync(TaskState state, TaskEvent ev, CancellationToken ct)
     {

@@ -13,7 +13,7 @@ public static class Briefs
     public static string Prompt(string name) => File.ReadAllText(Path.Combine(PromptDir, name + ".md"));
 
     public static string Task(
-        Handover handover, PlannedTask task,
+        Handover handover, PlannedTask task, IEnumerable<PathPattern> writable,
         string? approachNote, string? lastFailures, string? resolvedDecision)
     {
         var elements = handover.Elements.Where(e => task.Elements.Contains(e.Id)).ToList();
@@ -28,7 +28,7 @@ public static class Briefs
         foreach (var e in elements) sb.AppendLine($"- {e.Name} (`{e.Id.Value}`), risk {e.Risk}");
 
         sb.AppendLine().AppendLine("## You may write only these paths");
-        foreach (var w in task.Writes.Concat(task.TestWrites)) sb.AppendLine($"- `{w.Value}`");
+        foreach (var w in writable) sb.AppendLine($"- `{w.Value}`");
 
         if (decisions.Count > 0)
         {

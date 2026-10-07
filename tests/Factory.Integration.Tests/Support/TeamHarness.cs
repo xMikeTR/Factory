@@ -50,6 +50,7 @@ public sealed class TeamHarness : IDisposable
         await File.WriteAllTextAsync(Path.Combine(repo, "src", "Pricing.Data", "Quote.cs"), "// quote\n");
         Directory.CreateDirectory(Path.Combine(repo, "tests", "Pricing.Data.Tests"));
         await File.WriteAllTextAsync(Path.Combine(repo, QuoteStatusTest), "test -f src/Pricing.Data/QuoteStatus.cs\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "bin/\n");
         await Git(repo, "init", "-q", "-b", "main");
         await Git(repo, "config", "user.name", "factory-test");
         await Git(repo, "config", "user.email", "factory-test@localhost");
