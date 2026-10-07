@@ -19,12 +19,12 @@ public static class ProcessRunner
 
     public static Task<ProcessResult> ShellAsync(
         string command, string workDir, TimeSpan timeout,
-        IReadOnlyDictionary<string, string>? env = null, CancellationToken ct = default) =>
-        RunAsync(Shell, ["-c", command], workDir, timeout, env, ct);
+        IReadOnlyDictionary<string, string>? env = null, CancellationToken ct = default, bool inheritEnvironment = true) =>
+        RunAsync(Shell, ["-c", command], workDir, timeout, env, ct, inheritEnvironment);
 
     public static async Task<ProcessResult> RunAsync(
         string file, IEnumerable<string> args, string workDir, TimeSpan timeout,
-        IReadOnlyDictionary<string, string>? env = null, CancellationToken ct = default)
+        IReadOnlyDictionary<string, string>? env = null, CancellationToken ct = default, bool inheritEnvironment = true)
     {
         var psi = new ProcessStartInfo(file)
         {
@@ -34,6 +34,7 @@ public static class ProcessRunner
             UseShellExecute = false,
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
+        if (!inheritEnvironment) psi.Environment.Clear();
         if (env is not null)
             foreach (var (k, v) in env) psi.Environment[k] = v;
 
