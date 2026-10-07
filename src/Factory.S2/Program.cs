@@ -5,11 +5,13 @@ using Factory.Harness.Sandbox;
 using Factory.Harness.Telemetry;
 using Factory.S2;
 using Factory.S2.Git;
+using Factory.S2.Teams;
 using Factory.S2.Verify;
 
 // factory-s2 validate --handover h.json --plan plan.json      deterministic, no agents, no git
 // factory-s2 dispatch --handover h.json --plan plan.json      prints teams and waves
 // factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github]
+// factory-s2 rerun --handover <h.json | dir> --plan plan.json --task T-001 [--k 3] --repo . [--base main]   k fresh attempts, no merge
 
 var cmd = args.FirstOrDefault() ?? "help";
 var opts = ParseOptions(args.Skip(1).ToArray());
@@ -69,8 +71,38 @@ try
             return result?.Status switch { "merged" or "auto_merge_enabled" => 0, "parked" => 3, _ => 1 };
         }
 
+        case "rerun":
+        {
+            var settings = FactorySettings.FromEnvironment(
+                Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
+            Directory.CreateDirectory(settings.StateDir);
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+            var handover = Core.ParseHandover(await File.ReadAllTextAsync(
+                await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token), cts.Token));
+            var validation = Core.ValidatePlan(handover, await File.ReadAllTextAsync(Required(opts, "plan"), cts.Token));
+            if (!validation.IsValid) throw new FactoryRejectedException("plan rejected", validation.Errors);
+            var taskId = Required(opts, "task");
+            var task = validation.Plan.Plan.Tasks.FirstOrDefault(t => t.Id.Value == taskId)
+                ?? throw new ArgumentException($"--task {taskId} is not in the plan");
+            var k = int.Parse(opts.GetValueOrDefault("k") ?? "3", System.Globalization.CultureInfo.InvariantCulture);
+            var prefix = $"rerun-{taskId}-{DateTime.UtcNow:yyyyMMdd-HHmmss}";
+
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            using var tracing = FactoryTelemetry.CreateTracerProvider(env);
+            var services = Services(settings, prefix, env, new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", prefix)));
+
+            var report = await TaskRerun.RunAsync(services, handover, task, k, prefix, cts.Token);
+            foreach (var a in report.Attempts)
+                Console.WriteLine($"  {a.RunId}: {a.Outcome}, {a.Turns} turns, tokens {a.TokensIn}/{a.TokensOut}{(a.Failure is null ? "" : $" — {a.Failure}")}");
+            Console.WriteLine(report.Line());
+            return 0;
+        }
+
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun  (see README)");
             return 2;
     }
 }
@@ -78,6 +110,12 @@ catch (FactoryRejectedException e)
 {
     Console.Error.WriteLine(e.Message);
     return 1;
+}
+catch (ArgumentException e)
+{
+    // A missing or bad option, or an unknown setting: a usage error, not a crash.
+    Console.Error.WriteLine(e.Message);
+    return 2;
 }
 
 /// Everything a run (or a rerun) needs, wired from the environment.
