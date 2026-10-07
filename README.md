@@ -81,9 +81,17 @@ dotnet run --project src/Factory.S2 -- dispatch --handover examples/pricing-v3/h
 # 3. A real run in a target repo (PRs are written to .factory/runs/<id>/ unless --github)
 export FACTORY_GATEWAY_URL=https://<apim>/litellm/v1 FACTORY_GATEWAY_KEY=<per-user key>
 export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MODEL_SMALL=<alias>
+#   or the native Anthropic client (public API unless FACTORY_GATEWAY_URL is set; models default
+#   to claude-opus-5-5 / claude-sonnet-5-5 / claude-haiku-4-5):
+#   export FACTORY_PROVIDER=anthropic ANTHROPIC_API_KEY=<key>
 dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/pricing-v3/handover.json \
     --repo <target repo> --registry <registry repo> [--base main] [--github] [--run-id <id to resume>]
 ```
+
+The key never reaches a sandbox, a ledger row or a printed `GatewayOptions` (its `ToString`
+redacts it). Opt-in live check on real Claude models (Sonnet plans, Haiku acts; usage tokens are
+ledgered and the key is absent from the ledger and the state dir):
+`FACTORY_LIVE_ANTHROPIC=1 ANTHROPIC_API_KEY=<key> dotnet test tests/Factory.Integration.Tests --filter LiveAnthropic`.
 
 The target repo needs `.factory/` in its `.gitignore`, and build/test outputs such as
 `artifacts/` ignored as well. Otherwise the scope check will see them as changes outside the

@@ -1,4 +1,5 @@
 using System.ClientModel;
+using Anthropic;
 using System.Text.Json;
 using Factory.Core;
 using Microsoft.Agents.AI;
@@ -7,23 +8,65 @@ using OpenAI;
 
 namespace Factory.Harness;
 
-/// Agents never call a provider directly: APIM -> LiteLLM (per-user key, Langfuse) -> Vertex.
-/// Model names are LiteLLM aliases, so routing changes are gateway config, not code.
-public sealed record GatewayOptions(Uri Endpoint, string ApiKey, string FrontierModel, string StandardModel, string SmallModel)
+/// Which wire protocol the gateway speaks. FACTORY_PROVIDER = openai (default) | anthropic.
+public enum ModelProvider { Anthropic, OpenAICompatible }
+
+/// Agents never call a provider directly: APIM -> LiteLLM (per-user key, Langfuse) -> Vertex, over
+/// the OpenAI-compatible protocol; or the native Anthropic client, against the public API or a
+/// gateway that fronts it. Model names are gateway aliases (or Claude model ids for Anthropic),
+/// so routing changes are config, not code. A null Endpoint is the provider's public endpoint.
+public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, string ApiKey, string FrontierModel, string StandardModel, string SmallModel)
 {
-    public static GatewayOptions FromEnvironment() => new(
-        new Uri(Env("FACTORY_GATEWAY_URL", "http://localhost:4000/v1")),
-        Env("FACTORY_GATEWAY_KEY"),
-        Env("FACTORY_MODEL_FRONTIER", "frontier"),
-        Env("FACTORY_MODEL_STANDARD", "standard"),
-        Env("FACTORY_MODEL_SMALL", "small"));
+    /// Anthropic requires max_tokens on every request; the IChatClient default is too small for a whole file.
+    public const int AnthropicMaxOutputTokens = 16_000;
+
+    public static GatewayOptions FromEnvironment() =>
+        FromEnvironment(Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+            .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? ""));
+
+    public static GatewayOptions FromEnvironment(IReadOnlyDictionary<string, string> env)
+    {
+        string? Get(string name) => env.TryGetValue(name, out var v) && v.Length > 0 ? v : null;
+        var provider = Get("FACTORY_PROVIDER") switch
+        {
+            null or "openai" => ModelProvider.OpenAICompatible,
+            "anthropic" => ModelProvider.Anthropic,
+            var other => throw new FactoryRejectedException("FACTORY_PROVIDER is invalid", [$"'{other}' is not openai|anthropic"]),
+        };
+        var anthropic = provider == ModelProvider.Anthropic;
+        var key = Get("FACTORY_GATEWAY_KEY") ?? (anthropic ? Get("ANTHROPIC_API_KEY") : null)
+            ?? throw new FactoryRejectedException("no gateway key",
+                [anthropic ? "set FACTORY_GATEWAY_KEY or ANTHROPIC_API_KEY" : "set FACTORY_GATEWAY_KEY"]);
+        var url = Get("FACTORY_GATEWAY_URL") ?? (anthropic ? null : "http://localhost:4000/v1");
+        return new(provider, url is null ? null : new Uri(url), key,
+            Get("FACTORY_MODEL_FRONTIER") ?? (anthropic ? "claude-opus-5-5" : "frontier"),
+            Get("FACTORY_MODEL_STANDARD") ?? (anthropic ? "claude-sonnet-5-5" : "standard"),
+            Get("FACTORY_MODEL_SMALL") ?? (anthropic ? "claude-haiku-4-5" : "small"));
+    }
 
     public string ModelFor(ModelTier tier) =>
         tier.IsFrontier ? FrontierModel : tier.IsStandard ? StandardModel : SmallModel;
 
-    private static string Env(string name, string? fallback = null) =>
-        Environment.GetEnvironmentVariable(name) ?? fallback
-        ?? throw new InvalidOperationException($"environment variable {name} is required");
+    public IChatClient ChatClientFor(ModelTier tier) => Provider switch
+    {
+        ModelProvider.Anthropic => new AnthropicClient
+        {
+            ApiKey = ApiKey,
+            BaseUrl = Endpoint?.ToString() ?? "https://api.anthropic.com",
+        }.AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens),
+        ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey),
+                new OpenAIClientOptions { Endpoint = Endpoint ?? new Uri("http://localhost:4000/v1") })
+            .GetChatClient(ModelFor(tier)).AsIChatClient(),
+        _ => throw new ArgumentOutOfRangeException(nameof(Provider), Provider, null),
+    };
+
+    // A record prints every member; the key must never reach a log, ledger row or trace.
+    private bool PrintMembers(System.Text.StringBuilder b)
+    {
+        b.Append($"Provider = {Provider}, Endpoint = {Endpoint?.ToString() ?? "(default)"}, ApiKey = <redacted>, ");
+        b.Append($"FrontierModel = {FrontierModel}, StandardModel = {StandardModel}, SmallModel = {SmallModel}");
+        return true;
+    }
 }
 
 /// Identity of one agent turn, stamped on every ledger row the middleware writes.
@@ -35,13 +78,7 @@ public sealed record AgentScope(string RunId, string Role, string? TeamId = null
 public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPolicy policy, ILedger ledger)
 {
     public FactoryAgents(GatewayOptions gateway, IToolPolicy policy, ILedger ledger)
-        : this(tier => GatewayChat(gateway, tier), policy, ledger) { }
-
-    private static IChatClient GatewayChat(GatewayOptions gateway, ModelTier tier)
-    {
-        var client = new OpenAIClient(new ApiKeyCredential(gateway.ApiKey), new OpenAIClientOptions { Endpoint = gateway.Endpoint });
-        return client.GetChatClient(gateway.ModelFor(tier)).AsIChatClient();
-    }
+        : this(gateway.ChatClientFor, policy, ledger) { }
 
     public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools)
     {
