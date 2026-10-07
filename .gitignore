@@ -4,3 +4,4 @@ obj/
 *.user
 .vs/
 .claude/current-plan-scope.json
+SESSION_HANDOFF.md
