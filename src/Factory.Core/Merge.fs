@@ -46,7 +46,7 @@ type MergeAction =
 module Merge =
 
     let defaultPolicy =
-        { Enforcement = Tiered []
+        { Enforcement = Auto
           AutoMergeMaxRisk = Low
           AutoMergeMaxChangedLines = 400 }
 

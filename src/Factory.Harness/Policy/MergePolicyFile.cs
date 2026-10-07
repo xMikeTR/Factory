@@ -15,7 +15,7 @@ using Core = Factory.Core.Core;
 ///     autoMergeMaxRisk: low | medium | high
 ///     autoMergeMaxChangedLines: 400
 ///
-/// A missing file is the default (tiered, no named approvers). An unknown value is rejected.
+/// A missing file is the default (auto: merge on green). An unknown value is rejected.
 public static class MergePolicyFile
 {
     public const string RelativePath = ".factory/policy.yaml";
@@ -45,7 +45,7 @@ public static class MergePolicyFile
         var d = Core.DefaultMergePolicy;
         var errors = new List<string>();
 
-        var mode = env.GetValueOrDefault("FACTORY_MERGE_ENFORCEMENT") ?? m.Enforcement ?? "tiered";
+        var mode = env.GetValueOrDefault("FACTORY_MERGE_ENFORCEMENT") ?? m.Enforcement ?? "auto";
         var approvers = env.TryGetValue("FACTORY_MERGE_APPROVERS", out var a)
             ? a.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
             : m.Approvers ?? [];

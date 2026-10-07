@@ -95,7 +95,7 @@ checkout, never a task worktree):
 
 ```yaml
 merge:
-  enforcement: tiered          # auto = merge on green; tiered = the tier decides approvals
+  enforcement: auto            # default; auto = merge on green, tiered = the tier decides approvals
   approvers: [alice, bob]
   autoMergeMaxRisk: low
   autoMergeMaxChangedLines: 400
