@@ -45,7 +45,14 @@ try
             Directory.CreateDirectory(settings.StateDir);
 
             var ledger = new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl"));
-            var sandboxes = new LocalSandboxFactory();
+            // Agent code runs only in Docker; FACTORY_SANDBOX=local is the explicit, unisolated fallback.
+            ISandboxFactory sandboxes = (Environment.GetEnvironmentVariable("FACTORY_SANDBOX") ?? "docker") switch
+            {
+                "docker" => new DockerSandboxFactory(new DockerSandboxOptions(
+                    Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest"), ledger, runId),
+                "local" => new LocalSandboxFactory(),
+                var other => throw new ArgumentException($"FACTORY_SANDBOX: '{other}' is not docker|local"),
+            };
             var services = new FactoryServices(
                 settings,
                 ledger,

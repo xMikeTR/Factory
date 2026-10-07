@@ -90,6 +90,14 @@ The target repo needs `.factory/` in its `.gitignore`, and build/test outputs su
 task's writes and revert them. Other settings (`FACTORY_MAX_TURNS`, `FACTORY_COMMANDS`,
 `FACTORY_POBSERVE_CMD`, …) are listed in `FactorySettings.FromEnvironment`.
 
+Commands run in a per-team Docker container (`FACTORY_SANDBOX=docker`, the default) built
+from `docker/runner` with the Docker Engine CLI: `docker/runner/build.sh` (image
+`factory-s2-runner`, override with `FACTORY_RUNNER_IMAGE`). The worktree is mounted at its own
+path and the container runs as you with `--network none`, no capabilities, and memory/CPU/pid
+limits. The network is attached only while `dotnet restore` runs at start (ledgered at stage
+`restore`). `FACTORY_SANDBOX=local` runs on the host with a scrubbed environment instead.
+Docker contract tests are opt-in: `FACTORY_TEST_DOCKER=1 dotnet test --filter DockerSandbox`.
+
 The merge policy comes from the target repo's `.factory/policy.yaml` (read from the base
 checkout, never a task worktree):
 
