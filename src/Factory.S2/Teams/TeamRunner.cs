@@ -22,10 +22,18 @@ public sealed class TeamRunner(FactoryServices svc, Handover handover, string ru
     public async Task<TeamResult> RunAsync(Team team, IReadOnlyDictionary<string, DecisionAnswer> answers, CancellationToken ct)
     {
         var teamId = team.Id.Value;
+        // Regeneration: a task no changed decision touches is carried; its work is already on base.
+        var rerun = svc.LoadRerun(runId);
+        var carried = team.Tasks.Where(t => rerun is not null && !rerun.Contains(t.Id.Value)).ToList();
+        foreach (var task in carried)
+            if (!await LoggedAsync(task.Id.Value, "carried", ct))
+                await svc.LogAsync(runId, "team", LedgerKinds.Dispatch, outcome: "carried", teamId: teamId, taskId: task.Id.Value, ct: ct);
+        if (carried.Count == team.Tasks.Length) return new TeamResult(teamId, TeamStatus.Passed);
+
         var worktree = await svc.Git.EnsureTeamAsync(runId, teamId, ct);
         var baseline = await svc.Verify.BaselineAsync(runId, teamId, svc.Settings.IntegrationTestCommand, worktree, ct);
 
-        foreach (var task in team.Tasks)
+        foreach (var task in team.Tasks.Except(carried))
         {
             var stop = await new TaskLoop(svc, handover, runId, team, task, worktree, baseline).RunAsync(answers, ct);
             if (stop is not null) return stop;
@@ -34,6 +42,13 @@ public sealed class TeamRunner(FactoryServices svc, Handover handover, string ru
         await svc.Git.MergeTeamAsync(runId, teamId, ct);
         await svc.LogAsync(runId, "team", LedgerKinds.Dispatch, outcome: "merged_to_integration", teamId: teamId, ct: ct);
         return new TeamResult(teamId, TeamStatus.Passed);
+    }
+
+    private async Task<bool> LoggedAsync(string taskId, string outcome, CancellationToken ct)
+    {
+        await foreach (var e in svc.Ledger.ReadAsync(runId, ct))
+            if (e.Kind == LedgerKinds.Dispatch && e.TaskId == taskId && e.Outcome == outcome) return true;
+        return false;
     }
 }
 

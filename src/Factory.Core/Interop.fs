@@ -34,6 +34,10 @@ type Core =
 
     static member Dispatch(plan: ValidatedPlan) : DispatchPlan = Dispatcher.dispatch plan
 
+    /// Which of the plan's tasks a re-frozen handover re-runs (see Regeneration.between).
+    static member Regenerate(before: Handover, plan: ValidatedPlan) : Regeneration =
+        Regeneration.between before plan.Handover plan.Plan
+
     static member DispatchJson(d: DispatchPlan) : string = Json.writeDispatch d
 
     static member HandoverJson(h: Handover) : string = Json.writeHandover h

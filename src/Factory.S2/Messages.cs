@@ -3,8 +3,9 @@ namespace Factory.S2;
 // Messages carry ids and paths, never domain objects: they must serialise into MAF checkpoints,
 // and every executor re-reads and re-validates what it needs (see FactoryServices).
 
-/// Entry point: run System 2 on one frozen handover package.
-public sealed record StartRun(string RunId, string HandoverPath);
+/// Entry point: run System 2 on one frozen handover package. Since: a previous run of an earlier
+/// freeze of this handover; its plan is reused and only the tasks a changed decision touches re-run.
+public sealed record StartRun(string RunId, string HandoverPath, string? Since = null);
 
 /// Planner -> validator: a plan.json has been written for validation.
 public sealed record PlanDraft(string RunId, int Attempt);

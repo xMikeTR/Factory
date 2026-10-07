@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Factory.Core;
 using Factory.Harness;
 using Factory.S2.Teams;
@@ -29,7 +30,17 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
         Directory.CreateDirectory(runDir);
         var handoverCopy = svc.Settings.HandoverCopyPath(msg.RunId);
         if (!File.Exists(handoverCopy)) File.Copy(msg.HandoverPath, handoverCopy);
-        svc.LoadHandover(msg.RunId); // fail fast on a malformed package
+        var handover = svc.LoadHandover(msg.RunId); // fail fast on a malformed package
+
+        // Regeneration: start from the previous run's plan, stamped with this freeze. The validator
+        // still decides; if the plan no longer fits the handover, the planner redrafts as usual.
+        if (msg.Since is { } since && !File.Exists(svc.Settings.PlanPath(msg.RunId)))
+        {
+            var plan = JsonNode.Parse(await File.ReadAllTextAsync(svc.Settings.PlanPath(since), cancellationToken))!;
+            plan["handover"] = new JsonObject { ["id"] = handover.Id, ["digest"] = handover.Digest };
+            await File.WriteAllTextAsync(svc.Settings.SincePath(msg.RunId), since, cancellationToken);
+            await File.WriteAllTextAsync(svc.Settings.PlanPath(msg.RunId), plan.ToJsonString(), cancellationToken);
+        }
 
         // Resume: a stored plan that still validates is reused, not regenerated.
         if (File.Exists(svc.Settings.PlanPath(msg.RunId)))
@@ -142,9 +153,25 @@ internal sealed class DispatchExecutor(FactoryServices svc) : Executor("Dispatch
         var json = Core.DispatchJson(dispatch);
         await File.WriteAllTextAsync(svc.Settings.DispatchPath(msg.RunId), json, cancellationToken);
         await svc.LogAsync(msg.RunId, "dispatch", LedgerKinds.Dispatch, outcome: $"{dispatch.Waves.Length} waves", payload: json, ct: cancellationToken);
+        await RegenerationAsync(msg.RunId, cancellationToken);
 
         await svc.Git.EnsureIntegrationAsync(msg.RunId, svc.Settings.BaseBranch, cancellationToken);
         await NextAsync(msg.RunId, 0, dispatch, context, cancellationToken);
+    }
+
+    /// A run --since an earlier freeze: decide once which tasks re-run, from the decisions that changed.
+    private async Task RegenerationAsync(string runId, CancellationToken ct)
+    {
+        var s = svc.Settings;
+        if (!File.Exists(s.SincePath(runId)) || File.Exists(s.RegenerationPath(runId))) return;
+        var since = (await File.ReadAllTextAsync(s.SincePath(runId), ct)).Trim();
+        var plan = svc.LoadValidatedPlan(runId);
+        var r = Core.Regenerate(svc.LoadHandover(since), plan);
+        var json = JsonSerializer.Serialize(new RegenerationFile(since,
+            r.Changed.Select(d => d.Value).ToArray(), r.Rerun.Select(t => t.Value).ToArray()));
+        await File.WriteAllTextAsync(s.RegenerationPath(runId), json, ct);
+        await svc.LogAsync(runId, "regenerate", LedgerKinds.Plan,
+            outcome: $"{r.Rerun.Length} of {plan.Plan.Tasks.Length} tasks re-run", payload: json, ct: ct);
     }
 
     private ValueTask HandleWaveCompletedAsync(WaveCompleted msg, IWorkflowContext context, CancellationToken cancellationToken = default) =>
