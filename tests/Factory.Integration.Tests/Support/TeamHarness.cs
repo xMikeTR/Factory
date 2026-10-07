@@ -17,6 +17,15 @@ public sealed class TeamHarness : IDisposable
     public const string RunId = "run-test";
     /// A test already on main that passes once src/Pricing.Data/QuoteStatus.cs exists.
     public const string QuoteStatusTest = "tests/Pricing.Data.Tests/quote_status.sh";
+    /// A suite on main that writes JUnit XML to $FACTORY_TEST_RESULTS: one test, "Quote.exists",
+    /// which passes while src/Pricing.Data/Quote.cs exists.
+    public const string SuiteCommand = "sh scripts/suite.sh";
+    private const string Suite = """
+        mkdir -p "$(dirname "$FACTORY_TEST_RESULTS")"
+        if test -f src/Pricing.Data/Quote.cs; then r=''; else r='<failure message="Quote.cs is gone"/>'; fi
+        printf '<testsuites><testsuite name="s"><testcase classname="Quote" name="exists">%s</testcase></testsuite></testsuites>\n' "$r" > "$FACTORY_TEST_RESULTS"
+
+        """;
     private readonly string _root;
 
     public string Repo { get; }
@@ -24,14 +33,14 @@ public sealed class TeamHarness : IDisposable
     public FactoryServices Services { get; }
     public Handover Handover { get; }
 
-    private TeamHarness(string root, Handover handover, Microsoft.Extensions.AI.IChatClient model, Limits limits)
+    private TeamHarness(string root, Handover handover, Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand)
     {
         _root = root;
         Repo = Path.Combine(root, "repo");
         Handover = handover;
         var state = Path.Combine(root, "state");
         var settings = new FactorySettings(Repo, Path.Combine(root, "registry"), "main", state, 3, limits,
-            ["dotnet build", "dotnet test", "ls"], "true", null);
+            ["dotnet build", "dotnet test", "ls"], suiteCommand, null);
         var sandboxes = new LocalSandboxFactory();
         Services = new FactoryServices(settings, Ledger,
             new FactoryAgents(_ => model, new RoleAllowListPolicy(), Ledger),
@@ -42,7 +51,9 @@ public sealed class TeamHarness : IDisposable
             new DryRunPullRequests(Path.Combine(state, "runs", RunId)));
     }
 
-    public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits)
+    /// `suiteCommand` is the integration test command; "true" writes no results, so there is no
+    /// regression baseline and the P2P check is skipped.
+    public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand = "true")
     {
         var root = Directory.CreateTempSubdirectory("team-").FullName;
         var repo = Path.Combine(root, "repo");
@@ -51,6 +62,8 @@ public sealed class TeamHarness : IDisposable
         Directory.CreateDirectory(Path.Combine(repo, "tests", "Pricing.Data.Tests"));
         await File.WriteAllTextAsync(Path.Combine(repo, QuoteStatusTest), "test -f src/Pricing.Data/QuoteStatus.cs\n");
         await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "bin/\n");
+        Directory.CreateDirectory(Path.Combine(repo, "scripts"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "scripts", "suite.sh"), Suite);
         await Git(repo, "init", "-q", "-b", "main");
         await Git(repo, "config", "user.name", "factory-test");
         await Git(repo, "config", "user.email", "factory-test@localhost");
@@ -59,7 +72,7 @@ public sealed class TeamHarness : IDisposable
 
         var handover = await new DesigncHandoverReader().LoadAsync(
             Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"), S2Config.Default, CancellationToken.None);
-        var h = new TeamHarness(root, handover, model, limits);
+        var h = new TeamHarness(root, handover, model, limits, suiteCommand);
         await h.Services.Git.EnsureIntegrationAsync(RunId, "main", CancellationToken.None);
         return h;
     }

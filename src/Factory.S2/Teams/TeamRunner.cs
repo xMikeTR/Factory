@@ -22,10 +22,11 @@ public sealed class TeamRunner(FactoryServices svc, Handover handover, string ru
     {
         var teamId = team.Id.Value;
         var worktree = await svc.Git.EnsureTeamAsync(runId, teamId, ct);
+        var baseline = await svc.Verify.BaselineAsync(runId, teamId, svc.Settings.IntegrationTestCommand, worktree, ct);
 
         foreach (var task in team.Tasks)
         {
-            var stop = await new TaskLoop(svc, handover, runId, team, task, worktree).RunAsync(answers, ct);
+            var stop = await new TaskLoop(svc, handover, runId, team, task, worktree, baseline).RunAsync(answers, ct);
             if (stop is not null) return stop;
         }
 
@@ -36,7 +37,9 @@ public sealed class TeamRunner(FactoryServices svc, Handover handover, string ru
 }
 
 /// One task from its current state to Passed, Blocked or Failed.
-internal sealed class TaskLoop(FactoryServices svc, Handover handover, string runId, Team team, PlannedTask task, string worktree)
+/// `baseline` is the team's P2P baseline (null: the suite writes no results, so no P2P check).
+internal sealed class TaskLoop(
+    FactoryServices svc, Handover handover, string runId, Team team, PlannedTask task, string worktree, IReadOnlyList<TestResult>? baseline)
 {
     private readonly string _teamId = team.Id.Value;
     private readonly string _taskId = task.Id.Value;
@@ -111,6 +114,9 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
                 case TaskState.Verifying v:
                     var attempt = v.Item1.VerifyAttempts;
                     var green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct);
+                    if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
+                        && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, svc.Settings.IntegrationTestCommand, worktree, ct) is { } regressed)
+                        green.Add(regressed); // P2P: a test that passed before fails now, so this is not green
                     var stashed = green.Count > 0 && green.All(o => o.ExitCode == 0)
                         ? await RunWithImplStashedAsync(attempt, "stash_check", ct)
                         : [];

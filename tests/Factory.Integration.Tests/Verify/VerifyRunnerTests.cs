@@ -83,4 +83,18 @@ public class VerifyRunnerTests : IDisposable
         Assert.Contains("\"attempt\":1", summary.Payload);
         Assert.Contains("\"sandbox\":\"local\"", summary.Payload);
     }
+
+    [Fact]
+    public void JUnit_names_tests_by_class_and_name_and_leaves_out_skipped()
+    {
+        var results = Factory.S2.Verify.JUnit.Parse("""
+            <testsuites><testsuite name="s">
+              <testcase classname="A" name="ok"/>
+              <testcase classname="A" name="bad"><failure message="x"/></testcase>
+              <testcase name="boom"><error message="y"/></testcase>
+              <testcase classname="A" name="later"><skipped/></testcase>
+            </testsuite></testsuites>
+            """);
+        Assert.Equal([new("A.ok", true), new("A.bad", false), new("boom", false)], results);
+    }
 }

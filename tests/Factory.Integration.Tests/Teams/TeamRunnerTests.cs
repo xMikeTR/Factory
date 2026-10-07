@@ -199,4 +199,31 @@ public class TeamRunnerTests
         Assert.DoesNotContain(events, e => e.Outcome == "Passed");
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("do not exercise the change"));
     }
+
+    [Fact]
+    public async Task Breaking_a_test_that_passed_before_blocks_Passed_until_it_passes_again()
+    {
+        const string quote = "src/Pricing.Data/Quote.cs";
+        var model = new ScriptedChatClient(
+            Say("Approach: replace Quote.cs with QuoteStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            // implementer breaks Quote.exists on the way
+            Call("delete_file", new { path = quote }),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "moved" }), Say("done"),
+            // ... and puts it back after seeing the regression
+            Call("write_file", new { path = quote, content = "// quote\n" }),
+            Call("declare_done", new { summary = "restored Quote.cs" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), TeamHarness.SuiteCommand);
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Equal(0, model.Remaining);
+        Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "baseline");
+        Assert.Equal(["failed", "passed"], h.Rows(LedgerKinds.Verify).Where(e => e.Stage == "regression").Select(e => e.Outcome));
+        Assert.Equal(2, h.Rows(LedgerKinds.Verify).Count(e => e.Stage == "verify"));
+        Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("What failed last time") && m.Text.Contains("Quote.exists"));
+        Assert.Single(h.Rows(LedgerKinds.TaskEvent), e => e.Outcome == "Passed");
+    }
 }
