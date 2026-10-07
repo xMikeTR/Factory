@@ -148,14 +148,6 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes)
             .ToList();
     }
 
-    /// A red run that failed to compile proves less than one whose assertions failed; the kind is
-    /// ledgered with the evidence.
-    public static RedKind ClassifyRed(IEnumerable<VerifyOutcome> outcomes) =>
-        outcomes.Any(o => o.ExitCode != 0 && BuildError.IsMatch(o.OutputTail)) ? RedKind.BuildFailure : RedKind.AssertionFailure;
-
-    private static readonly System.Text.RegularExpressions.Regex BuildError =
-        new(@"error (CS|FS)\d+|Build FAILED|build failed", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
     private static VerifyOutcome ToOutcome(string name, ProcessResult r) =>
         new(name, r.TimedOut ? 124 : r.ExitCode, (long)r.Duration.TotalMilliseconds, r.Tail());
 }

@@ -39,6 +39,28 @@ type RedEvidence =
             Error("every test passed before implementation, so none of them proves the change: " + System.String.Join(", ", os |> List.map (fun o -> o.Name)))
         | os -> Ok { outcomes = os; kind = kind }
 
+/// Reads the TestAuthor's red run before it becomes evidence.
+[<RequireQualifiedAccess>]
+module RedRun =
+
+    let private matches (pattern: string) (text: string) =
+        System.Text.RegularExpressions.Regex.IsMatch(text, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+
+    /// The sandbox could not run the check: a package source it cannot reach (verify runs with
+    /// the network off), or a command the image does not have. No code change fixes either.
+    let private environmental (o: VerifyOutcome) =
+        o.ExitCode = 127 || matches @"error NU1301\b" o.OutputTail
+
+    /// Error: the checks the sandbox could not run. One is enough: it can never go green, so the
+    /// Implementer would spend every turn against it. Ok: the kind of red (a compile failure
+    /// proves less than a failing assertion); RedEvidence.Create still refuses a run with no red.
+    let classify (outcomes: VerifyOutcome list) : Result<RedKind, string list> =
+        let failed = outcomes |> List.filter (fun o -> o.ExitCode <> 0)
+        match failed |> List.filter environmental with
+        | [] when failed |> List.exists (fun o -> matches @"error (CS|FS)\d+|Build FAILED" o.OutputTail) -> Ok BuildFailure
+        | [] -> Ok AssertionFailure
+        | env -> Error(env |> List.map (fun o -> o.Name))
+
 /// Who holds the pen. The Implementer phase cannot exist without the red evidence that ended
 /// the TestAuthor phase.
 type Phase =

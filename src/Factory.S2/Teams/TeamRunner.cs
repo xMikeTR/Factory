@@ -269,7 +269,14 @@ internal sealed class TaskLoop(
     private async Task<TaskState> TestsDoneAsync(TaskState state, Progress progress, CancellationToken ct)
     {
         var outcomes = await RunWithImplStashedAsync(progress.VerifyAttempts, "red_run", ct);
-        var red = RedEvidence.Create(Core.ToList(outcomes), Verify.VerifyRunner.ClassifyRed(outcomes));
+        var kind = RedRun.classify(Core.ToList(outcomes));
+        if (kind.IsError)
+            return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(new NeedsDecision(
+                $"The sandbox could not run these checks, so they can never pass whatever the code does: {string.Join(", ", kind.ErrorValue)}. "
+                + "Fix the runner image or the check (no network during verify; only the image's tools), then resume.\n\n"
+                + Briefs.Failures(outcomes.Where(o => kind.ErrorValue.Contains(o.Name))),
+                task.Elements, "environment")), ct);
+        var red = RedEvidence.Create(Core.ToList(outcomes), kind.ResultValue);
         if (red.IsError)
         {
             _lastFailures = $"Your tests pass without the implementation, so they cannot show it works ({red.ErrorValue}). "

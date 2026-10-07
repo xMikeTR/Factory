@@ -172,6 +172,15 @@ let tests: (string * (unit -> unit)) list =
           check (Result.isError (RedEvidence.Create([ outcome "a" 0; outcome "b" 0 ], AssertionFailure))) "all zero"
           check (Result.isError (RedEvidence.Create([], BuildFailure))) "empty"
           check (Result.isOk (RedEvidence.Create([ outcome "a" 0; outcome "b" 1 ], AssertionFailure))) "one red is enough"
+      "red run: assertion and compile failures are red, each with its kind", fun () ->
+          let failing name tail = { outcome name 1 with OutputTail = tail }
+          equal (Ok AssertionFailure) (RedRun.classify [ failing "a" "Failed!  - Failed: 7"; outcome "b" 0 ]) "assertions"
+          equal (Ok BuildFailure) (RedRun.classify [ failing "a" "Quote.cs(3,5): error CS0246: QuoteStatus"; failing "b" "Failed: 1" ]) "compile"
+      "red run: a check the sandbox could not run is no evidence, whatever the other checks did", fun () ->
+          let failing name code tail = { outcome name code with OutputTail = tail }
+          let nuget = failing "P model check" 1 "Optimistic.csproj : error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json."
+          equal (Error [ "P model check" ]) (RedRun.classify [ failing "concurrency" 1 "Failed!  - Failed: 7"; nuget ]) "NU1301 beside a real red"
+          equal (Error [ "pobserve" ]) (RedRun.classify [ failing "pobserve" 127 "bash: pobserve: command not found" ]) "missing tool"
       "evidence: passed needs green and a stashed-impl run that fails", fun () ->
           check (Result.isError (PassedEvidence.Create(1, [], red, stashedRed))) "no empty evidence"
           check (Result.isError (PassedEvidence.Create(1, [ outcome "a" 1 ], red, stashedRed))) "not green"
