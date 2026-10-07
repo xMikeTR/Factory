@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Factory.Core;
 using Factory.Harness;
+using Microsoft.FSharp.Collections;
 using Factory.Harness.Registry;
 using Factory.Integration.Tests.Support;
 using Xunit;
@@ -9,7 +11,11 @@ namespace Factory.Integration.Tests.Registry;
 public class RegistryLedgerProjectorTests
 {
     private const string RunId = "run-1";
-    private static readonly HandoverRef Handover = new("20261007-c4d072ba");
+    private static BoundDecision Decision(string id, string check) => new(DecisionId.NewDecisionId(id), "statement",
+        ListModule.Empty<ElementId>(), ListModule.OfSeq([new DecisionCheck("p", check)]));
+
+    private static readonly HandoverRef Handover = new("20261007-c4d072ba",
+        [Decision("D-0001", "p check -tc tcOptimistic"), Decision("D-0002", "p check -tc tcDedupe")]);
     private static readonly DateTimeOffset T0 = DateTimeOffset.FromUnixTimeMilliseconds(1_791_400_000_000);
 
     private static LedgerEvent At(int second, LedgerEvent e) => e with { Ts = T0.AddSeconds(second), TraceId = null };
@@ -117,5 +123,38 @@ public class RegistryLedgerProjectorTests
         var checks = await File.ReadAllLinesAsync(Path.Combine(registry, "ledger", "checks.jsonl"));
         Assert.Equal(events.Where(e => e.Stream == "pipeline.jsonl").Select(e => e.Line), pipeline);
         Assert.Equal(events.Where(e => e.Stream == "checks.jsonl").Select(e => e.Line), checks);
+    }
+
+    private static LedgerEvent Finished(int second, string status) => At(second, new(RunId, "S2", "finalize", LedgerKinds.Run, Outcome: status));
+
+    private static LedgerEvent D2Passes(int second) => At(second, new(RunId, "S2", "integration_verify", LedgerKinds.Verify, Decision: "D-0002",
+        Outcome: "passed", Payload: """{"command":"p check -tc tcDedupe","ExitCode":0}"""));
+
+    private static string? Closed(List<LedgerEvent> run)
+    {
+        var rows = RegistryLedgerProjector.Project(run, Handover).Where(e => e.Line.Contains("\"kind\":\"handover_closed\"")).ToList();
+        Assert.All(rows, r => { Assert.Equal("designc.jsonl", r.Stream); Assert.True(DesigncSchema.KeptByGate(r.Line), r.Line); });
+        return rows.Count == 0 ? null : JsonDocument.Parse(Assert.Single(rows).Line).RootElement.GetProperty("outcome").GetString();
+    }
+
+    [Fact]
+    public void A_merged_run_whose_every_decision_check_passed_closes_the_handover_delivered()
+    {
+        Assert.Equal("delivered", Closed([.. Run(), D2Passes(13), Finished(14, "merged")]));
+    }
+
+    [Fact]
+    public void Any_decision_check_not_passing_closes_the_handover_abandoned()
+    {
+        Assert.Equal("abandoned", Closed([.. Run(), Finished(14, "merged")]));                    // D-0002 failed
+        Assert.Equal("abandoned", Closed([.. Run(), D2Passes(13), Finished(14, "failed")]));      // never merged
+    }
+
+    [Fact]
+    public void A_parked_or_unfinished_run_leaves_the_handover_open()
+    {
+        Assert.Null(Closed(Run()));
+        Assert.Null(Closed([.. Run(), Finished(14, "parked")]));
+        Assert.Null(Closed([.. Run(), Finished(14, "error")]));
     }
 }

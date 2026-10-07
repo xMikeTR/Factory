@@ -243,7 +243,7 @@ internal sealed class FinalizeExecutor(FactoryServices svc) : Executor("Finalize
         {
             var run = new List<LedgerEvent>();
             await foreach (var e in svc.Ledger.ReadAsync(msg.RunId, cancellationToken)) run.Add(e);
-            var rows = RegistryLedgerProjector.Project(run, new HandoverRef(svc.LoadHandover(msg.RunId).Id));
+            var rows = RegistryLedgerProjector.Project(run, HandoverRef.From(svc.LoadHandover(msg.RunId)));
             await RegistryLedgerWriter.AppendAsync(svc.Settings.RegistryPath, rows, cancellationToken);
         }
         await context.YieldOutputAsync(msg, cancellationToken);

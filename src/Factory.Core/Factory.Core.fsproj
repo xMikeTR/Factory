@@ -15,6 +15,7 @@
     <Compile Include="Dispatcher.fs" />
     <Compile Include="TaskState.fs" />
     <Compile Include="Regression.fs" />
+    <Compile Include="HandoverClosure.fs" />
     <Compile Include="Merge.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="Interop.fs" />
