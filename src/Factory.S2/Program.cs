@@ -45,13 +45,15 @@ try
             Directory.CreateDirectory(settings.StateDir);
 
             var ledger = new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl"));
+            var sandboxes = new LocalSandboxFactory();
             var services = new FactoryServices(
                 settings,
                 ledger,
                 new FactoryAgents(GatewayOptions.FromEnvironment(), new RoleAllowListPolicy(), ledger),
                 new HeuristicConfigurator(),
                 new GitWorkspace(settings.RepoPath, settings.StateDir),
-                new VerifyRunner(ledger, new LocalSandboxFactory()),
+                new VerifyRunner(ledger, sandboxes),
+                sandboxes,
                 opts.ContainsKey("github")
                     ? new GhCliPullRequests(settings.RepoPath)
                     : new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
