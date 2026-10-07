@@ -11,6 +11,7 @@ type TeamId =
 type Team =
     { Id: TeamId
       Tasks: PlannedTask list
+      /// The team's whole footprint: every task's Writes and TestWrites.
       Writes: PathPattern list
       Elements: ElementId list }
 
@@ -22,8 +23,11 @@ type DispatchPlan = { HandoverId: string; Waves: Wave list }
 [<RequireQualifiedAccess>]
 module Dispatcher =
 
+    /// Everything a task may write, production and test paths alike.
+    let private footprint (t: PlannedTask) = t.Writes @ t.TestWrites
+
     let private tasksOverlap (a: PlannedTask) (b: PlannedTask) =
-        a.Writes |> List.exists (fun wa -> b.Writes |> List.exists (PathPattern.mayOverlap wa))
+        footprint a |> List.exists (fun wa -> footprint b |> List.exists (PathPattern.mayOverlap wa))
 
     /// Tarjan's strongly connected components over nodes 0..n-1.
     let private scc (n: int) (succ: int -> int seq) : int list list =
@@ -159,7 +163,7 @@ module Dispatcher =
                 root,
                 { Id = TeamId("team-" + tasks.[root].Id.Value)
                   Tasks = ordered
-                  Writes = ts |> List.collect (fun t -> t.Writes) |> List.distinct
+                  Writes = ts |> List.collect footprint |> List.distinct
                   Elements = ts |> List.collect (fun t -> t.Elements) |> List.distinct })
             |> Map.ofList
 

@@ -15,6 +15,8 @@ using Core = Factory.Core.Core;
 public sealed class TeamHarness : IDisposable
 {
     public const string RunId = "run-test";
+    /// A test already on main that passes once src/Pricing.Data/QuoteStatus.cs exists.
+    public const string QuoteStatusTest = "tests/Pricing.Data.Tests/quote_status.sh";
     private readonly string _root;
 
     public string Repo { get; }
@@ -46,6 +48,8 @@ public sealed class TeamHarness : IDisposable
         var repo = Path.Combine(root, "repo");
         Directory.CreateDirectory(Path.Combine(repo, "src", "Pricing.Data"));
         await File.WriteAllTextAsync(Path.Combine(repo, "src", "Pricing.Data", "Quote.cs"), "// quote\n");
+        Directory.CreateDirectory(Path.Combine(repo, "tests", "Pricing.Data.Tests"));
+        await File.WriteAllTextAsync(Path.Combine(repo, QuoteStatusTest), "test -f src/Pricing.Data/QuoteStatus.cs\n");
         await Git(repo, "init", "-q", "-b", "main");
         await Git(repo, "config", "user.name", "factory-test");
         await Git(repo, "config", "user.email", "factory-test@localhost");

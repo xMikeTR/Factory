@@ -86,6 +86,15 @@ let tests: (string * (unit -> unit)) list =
       "validator: handover mismatch", fun () ->
           let es = errorsOf { plan with HandoverDigest = "sha256:stale" }
           check (es |> List.exists (function HandoverMismatch _ -> true | _ -> false)) $"%A{es}"
+      "validator: test writes must not overlap writes", fun () ->
+          let es = errorsOf (withTask "T-001" (fun t -> { t with Writes = p "tests/Quotes.Data.Tests/**" :: t.Writes }))
+          check (es |> List.exists (function TestWritesOverlapWrites(TaskId "T-001", _, _) -> true | _ -> false)) $"%A{es}"
+      "validator: test write outside element", fun () ->
+          let es = errorsOf (withTask "T-002" (fun t -> { t with TestWrites = p "tests/Quotes.Data.Tests/**" :: t.TestWrites }))
+          check (List.contains (TestWriteOutsideElement(TaskId "T-002", p "tests/Quotes.Data.Tests/**")) es) $"%A{es}"
+      "validator: invariant must run something under test writes or a protected path", fun () ->
+          let es = errorsOf (withTask "T-002" (fun t -> { t with TestWrites = [] }))
+          check (List.contains (InvariantNotUnderTestWrites(TaskId "T-002", "unit: retry from fresh read")) es) $"%A{es}"
       "validator: every error has a description", fun () ->
           let es = errorsOf { plan with Tasks = [] ; HandoverId = "x" }
           check (es |> List.forall (fun e -> (PlanError.describe e).Length > 10)) "descriptions"
@@ -106,7 +115,7 @@ let tests: (string * (unit -> unit)) list =
           let mk id writes deps =
               { (task "T-002") with Id = TaskId id; Writes = [ p writes ]; DependsOn = deps |> List.map TaskId; Covers = [] }
           let a1 = { mk "A1" "src/PricingApi/One.cs" [] with Covers = [] }
-          let b1 = { (mk "B1" "src/ReferralWorker/X.cs" [ "A1" ]) with Elements = [ ElementId "Pricing Platform/Referral Worker" ] }
+          let b1 = { (mk "B1" "src/ReferralWorker/X.cs" [ "A1" ]) with Elements = [ ElementId "Pricing Platform/Referral Worker" ]; TestWrites = [ p "tests/ReferralWorker.Tests/**" ]; Verify = (task "T-003").Verify }
           let a2 = mk "A2" "src/PricingApi/One.cs" [ "B1" ]
           let t1 = task "T-001"
           let pl = { plan with Tasks = [ t1; a1; b1; a2 ] }

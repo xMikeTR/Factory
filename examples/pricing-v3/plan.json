@@ -6,7 +6,8 @@
       "title": "Add rowversion concurrency token to Quote",
       "instructions": "Add a rowversion column to Quotes via a migration and map it as the EF Core concurrency token on the Quote entity. Stale writes must raise DbUpdateConcurrencyException.",
       "elements": ["Pricing Platform/Quotes DB"],
-      "writes": ["src/Quotes.Data/**", "db/migrations/**", "tests/Quotes.Data.Tests/**"],
+      "writes": ["src/Quotes.Data/**", "db/migrations/**"],
+      "testWrites": ["tests/Quotes.Data.Tests/**"],
       "dependsOn": [],
       "covers": ["D-0042"],
       "verify": [
@@ -21,7 +22,8 @@
       "title": "Pricing API retries a rejected quote write from a fresh read",
       "instructions": "On DbUpdateConcurrencyException, re-read the quote and reapply the change. Do not swallow the exception after the retry budget.",
       "elements": ["Pricing Platform/Pricing API"],
-      "writes": ["src/PricingApi/**", "tests/PricingApi.Tests/**"],
+      "writes": ["src/PricingApi/**"],
+      "testWrites": ["tests/PricingApi.Tests/**"],
       "dependsOn": ["T-001"],
       "covers": [],
       "verify": [
@@ -34,7 +36,8 @@
       "title": "Referral Worker retries a rejected quote write from a fresh read",
       "instructions": "Same retry behaviour as the Pricing API, in the referral update path.",
       "elements": ["Pricing Platform/Referral Worker"],
-      "writes": ["src/ReferralWorker/**", "tests/ReferralWorker.Tests/**"],
+      "writes": ["src/ReferralWorker/**"],
+      "testWrites": ["tests/ReferralWorker.Tests/**"],
       "dependsOn": ["T-001"],
       "covers": [],
       "verify": [
@@ -48,11 +51,12 @@
       "instructions": "Emit the eCommitted event (logging contract) with the committed value after each successful write, in the format PObserve expects.",
       "elements": ["Pricing Platform/Quotes DB"],
       "writes": ["src/Quotes.Data/Logging/**"],
+      "testWrites": [],
       "dependsOn": ["T-001"],
       "covers": [],
       "verify": [
         { "name": "PObserve: NoLostUpdate over test logs", "kind": "invariant",
-          "run": "pobserve check --spec NoLostUpdate --logs artifacts/test-logs", "timeoutSeconds": 300 },
+          "run": "./scripts/verify/pobserve.sh NoLostUpdate artifacts/test-logs", "timeoutSeconds": 300 },
         { "name": "log format reviewed by platform team", "kind": "manual",
           "instructions": "Confirm the eCommitted log line matches the event vocabulary and lands in the central log store." }
       ]

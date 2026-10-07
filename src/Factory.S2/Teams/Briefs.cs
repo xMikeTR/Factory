@@ -28,7 +28,7 @@ public static class Briefs
         foreach (var e in elements) sb.AppendLine($"- {e.Name} (`{e.Id.Value}`), risk {e.Risk}");
 
         sb.AppendLine().AppendLine("## You may write only these paths");
-        foreach (var w in task.Writes) sb.AppendLine($"- `{w.Value}`");
+        foreach (var w in task.Writes.Concat(task.TestWrites)) sb.AppendLine($"- `{w.Value}`");
 
         if (decisions.Count > 0)
         {

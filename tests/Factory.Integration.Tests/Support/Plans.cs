@@ -16,5 +16,5 @@ public static class Plans
 
     public static PlannedTask Task(string id, params VerifyEntry[] verify) =>
         new(TaskId.NewTaskId(id), "title", "instructions", Core.ToList([ElementId.NewElementId("Pricing Platform/Quotes DB")]),
-            Core.ToList([Pattern("src/Pricing.Data/**")]), Core.ToList<TaskId>([]), Core.ToList<DecisionId>([]), Core.ToList(verify));
+            Core.ToList([Pattern("src/Pricing.Data/**")]), Core.ToList([Pattern("tests/Pricing.Data.Tests/**")]), Core.ToList<TaskId>([]), Core.ToList<DecisionId>([]), Core.ToList(verify));
 }

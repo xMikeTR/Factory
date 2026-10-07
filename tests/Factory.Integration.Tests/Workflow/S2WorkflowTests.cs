@@ -36,9 +36,10 @@ public class S2WorkflowTests
                 id = "T-001", title = "Add QuoteStatus", instructions = "Add the QuoteStatus enum.",
                 elements = new[] { "Pricing Platform/Quotes DB" },
                 writes = new[] { "src/Pricing.Data/**" },
+                testWrites = new[] { "tests/Pricing.Data.Tests/**" },
                 dependsOn = Array.Empty<string>(),
                 covers = new[] { "D-0001" },
-                verify = new[] { new { name = "file exists", kind = "invariant", run = $"test -f {NewFile}", timeoutSeconds = 30 } },
+                verify = new[] { new { name = "file exists", kind = "invariant", run = $"sh {TeamHarness.QuoteStatusTest}", timeoutSeconds = 30 } },
             },
         },
     });

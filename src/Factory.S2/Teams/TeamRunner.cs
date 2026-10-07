@@ -202,8 +202,11 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
         return Briefs.Task(handover, task, _approachNote, failures, _resolvedDecision);
     }
 
+    // One role writes both until the TestAuthor/Implementer split (slice C3).
+    private IEnumerable<PathPattern> Writable => task.Writes.Concat(task.TestWrites);
+
     private bool InScope(string path) =>
-        !handover.ProtectedPaths.Any(pp => Core.Matches(pp, path)) && task.Writes.Any(w => Core.Matches(w, path));
+        !handover.ProtectedPaths.Any(pp => Core.Matches(pp, path)) && Writable.Any(w => Core.Matches(w, path));
 
     private async Task<List<string>> TaskPayloadsAsync(CancellationToken ct)
     {
@@ -231,7 +234,7 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
         svc.Git.CommitAllAsync(worktree, $"{_taskId}: {task.Title}\n\nfactory-run: {runId}\nfactory-team: {_teamId}", ct);
 
     private ScopedWorkspace Workspace(TurnSignals signals, Factory.Harness.Sandbox.ICommandSandbox? sandbox) =>
-        new(worktree, task.Writes.ToList(), handover.ProtectedPaths.ToList(), svc.Settings.CommandAllowList, signals, sandbox);
+        new(worktree, Writable.ToList(), handover.ProtectedPaths.ToList(), svc.Settings.CommandAllowList, signals, sandbox);
 
     private async Task<TaskState> ApplyAsync(TaskState state, TaskEvent ev, CancellationToken ct)
     {
