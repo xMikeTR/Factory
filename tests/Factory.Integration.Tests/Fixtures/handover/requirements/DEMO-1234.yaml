@@ -1,0 +1,5 @@
+id: DEMO-1234
+title: Referral status updates must not overwrite underwriter quote edits
+source: https://your-jira/browse/DEMO-1234
+version: 7
+elements: [Quotes DB, Referral Worker]

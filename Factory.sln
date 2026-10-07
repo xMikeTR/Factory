@@ -13,6 +13,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Factory.S2", "src\Factory.S
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Factory.Core.Tests", "tests\Factory.Core.Tests\Factory.Core.Tests.fsproj", "{E6BFC836-8803-4A89-90E0-3958C6BA4182}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Factory.Integration.Tests", "tests\Factory.Integration.Tests\Factory.Integration.Tests.csproj", "{FD0F512D-BF5E-48A0-8810-624667F23ECD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -71,6 +75,18 @@ Global
 		{E6BFC836-8803-4A89-90E0-3958C6BA4182}.Release|x64.Build.0 = Release|Any CPU
 		{E6BFC836-8803-4A89-90E0-3958C6BA4182}.Release|x86.ActiveCfg = Release|Any CPU
 		{E6BFC836-8803-4A89-90E0-3958C6BA4182}.Release|x86.Build.0 = Release|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Debug|x64.Build.0 = Debug|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Debug|x86.Build.0 = Debug|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Release|x64.ActiveCfg = Release|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Release|x64.Build.0 = Release|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Release|x86.ActiveCfg = Release|Any CPU
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -80,5 +96,6 @@ Global
 		{71FB3C09-01BD-473A-B689-E39A9D450D96} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{30FECD10-F044-4864-891D-C1B965D1BE7F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{E6BFC836-8803-4A89-90E0-3958C6BA4182} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{FD0F512D-BF5E-48A0-8810-624667F23ECD} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
