@@ -114,7 +114,8 @@ module ProjectFileChange =
 
     let private fileName (path: string) = Path.GetFileName(path.Replace('\\', '/')).ToLowerInvariant()
 
-    let private isProject (file: string) =
+    /// An MSBuild project file (.csproj, .fsproj...): what `dotnet restore` is pointed at.
+    let isProject (file: string) =
         let ext = Path.GetExtension file
         ext.Length > 5 && ext.EndsWith "proj"
 

@@ -287,13 +287,21 @@ internal sealed class TaskLoop(
     {
         var outcomes = await RunWithImplStashedAsync(progress.VerifyAttempts, "red_run", ct);
         var kind = RedRun.classify(Core.ToList(outcomes));
-        if (kind.IsError)
+        if (kind is RedReading.Refused refused)
+        {
+            // Not red evidence: the tests never ran. The TestAuthor's own project change is off the list.
+            _lastFailures = "The restore was refused, so your tests did not run. Change the project files back onto the allow-list "
+                + "(packages, project references, compile items, plain properties; no targets, imports, custom SDKs or package sources):\n"
+                + refused.reasons;
+            return state;
+        }
+        if (kind is RedReading.Unrunnable unrunnable)
             return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(new NeedsDecision(
-                $"The sandbox could not run these checks, so they can never pass whatever the code does: {string.Join(", ", kind.ErrorValue)}. "
+                $"The sandbox could not run these checks, so they can never pass whatever the code does: {string.Join(", ", unrunnable.checks)}. "
                 + "Fix the runner image or the check (no network during verify; only the image's tools), then resume.\n\n"
-                + Briefs.Failures(outcomes.Where(o => kind.ErrorValue.Contains(o.Name))),
+                + Briefs.Failures(outcomes.Where(o => unrunnable.checks.Contains(o.Name))),
                 task.Elements, "environment", NoOptions, null)), ct);
-        var red = RedEvidence.Create(Core.ToList(outcomes), kind.ResultValue);
+        var red = RedEvidence.Create(Core.ToList(outcomes), ((RedReading.Red)kind).Item);
         if (red.IsError)
         {
             _lastFailures = $"Your tests pass without the implementation, so they cannot show it works ({red.ErrorValue}). "
