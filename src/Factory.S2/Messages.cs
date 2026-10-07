@@ -1,0 +1,48 @@
+namespace Factory.S2;
+
+// Messages carry ids and paths, never domain objects: they must serialise into MAF checkpoints,
+// and every executor re-reads and re-validates what it needs (see FactoryServices).
+
+/// Entry point: run System 2 on one frozen handover package.
+public sealed record StartRun(string RunId, string HandoverPath);
+
+/// Planner -> validator: a plan.json has been written for validation.
+public sealed record PlanDraft(string RunId, int Attempt);
+
+/// Validator -> planner: fix these and try again. Errors are PlanError descriptions.
+public sealed record PlanRejected(string RunId, int Attempt, string[] Errors);
+
+/// Validator -> dispatcher.
+public sealed record PlanAccepted(string RunId);
+
+/// Dispatcher -> wave executor: run this wave.
+public sealed record WaveReady(string RunId, int WaveIndex, DecisionAnswer[] Answers);
+
+/// Wave executor -> dispatcher: all teams in the wave passed and merged into integration.
+public sealed record WaveCompleted(string RunId, int WaveIndex);
+
+/// Dispatcher -> integration verify: every wave done.
+public sealed record IntegrationReady(string RunId);
+
+/// Integration verify -> merge.
+public sealed record IntegrationVerified(string RunId);
+
+/// Terminal message for Finalize, from any stage.
+public sealed record RunFinished(string RunId, string Status, string Detail);
+
+// ---------- human-in-the-loop (RequestPort payloads) ----------
+
+public sealed record BlockedTask(string TeamId, string TaskId, string Question, string Source, string[] Elements);
+
+/// Wave executor -> "needs-decision" port. Handled by System 1 (grill-me) in production.
+public sealed record NeedsDecisionRequest(string RunId, int WaveIndex, BlockedTask[] Blocked);
+
+/// One answer per blocked task: a newly bound decision id, or null to abandon the task.
+public sealed record DecisionAnswer(string TaskId, string? DecisionId, string? Note);
+
+public sealed record NeedsDecisionResponse(string RunId, int WaveIndex, DecisionAnswer[] Answers);
+
+/// Merge executor -> "merge-approval" port, for tiers that need a human.
+public sealed record MergeApprovalRequest(string RunId, string PullRequestUrl, string Tier, string[] Reasons);
+
+public sealed record MergeApprovalResponse(string RunId, bool Merged, string? ApprovedBy);

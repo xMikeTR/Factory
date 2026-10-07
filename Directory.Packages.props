@@ -1,0 +1,17 @@
+<Project>
+  <!--
+    Central package versions. 1.15.0 is the Microsoft.Agents.AI.Workflows version current at the
+    time of writing; bump all three MAF packages together to the latest and re-run the Phase 0
+    spike. MAF's .NET surface has moved between minors (executor attributes, checkpoint APIs),
+    and src/Factory.S2/WorkflowHost.cs is the one file that depends on those details.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.Agents.AI" Version="1.15.0" />
+    <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.15.0" />
+    <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.15.0" />
+    <PackageVersion Include="FSharp.Core" Version="8.0.102" />
+  </ItemGroup>
+</Project>

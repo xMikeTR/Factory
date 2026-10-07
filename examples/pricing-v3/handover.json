@@ -1,0 +1,22 @@
+{
+  "id": "pricing-v3",
+  "digest": "sha256:3f1c9a0e",
+  "elements": [
+    { "id": "Pricing Platform/Pricing API",     "name": "Pricing API",     "codeAreas": ["src/PricingApi/**", "tests/PricingApi.Tests/**"],     "risk": "medium" },
+    { "id": "Pricing Platform/Referral Worker", "name": "Referral Worker", "codeAreas": ["src/ReferralWorker/**", "tests/ReferralWorker.Tests/**"], "risk": "medium" },
+    { "id": "Pricing Platform/Quotes DB",       "name": "Quotes DB",       "codeAreas": ["src/Quotes.Data/**", "db/migrations/**", "tests/Quotes.Data.Tests/**"], "risk": "high" }
+  ],
+  "decisions": [
+    {
+      "id": "D-0042",
+      "statement": "Quote writes use optimistic concurrency (rowversion).",
+      "binds": ["Pricing Platform/Quotes DB"],
+      "checks": [
+        { "kind": "p",    "run": "p check -tc tcOptimistic" },
+        { "kind": "lint", "run": "designc check model/workspace.json --only DC002" }
+      ]
+    }
+  ],
+  "protectedPaths": ["registry/**", ".github/**", "verify/**", "scripts/verify/**"],
+  "eventVocabulary": ["eCommitted"]
+}

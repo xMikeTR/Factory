@@ -1,0 +1,143 @@
+using System.Text.Json;
+using Factory.Core;
+using Factory.Harness;
+using Factory.S2.Teams;
+using Microsoft.Agents.AI.Workflows;
+
+namespace Factory.S2.Executors;
+
+// VERIFY (Phase 0 spike): [MessageHandler] on partial classes is the documented executor style for
+// current MAF .NET; it needs the workflows source generator, which ships with the Workflows package
+// in recent versions. If your version predates it, derive from Executor<TInput> instead.
+
+/// Turns the handover package into plan.json with the planner agent. On rejection it gets the
+/// validator's errors verbatim and tries again, up to MaxPlannerAttempts.
+internal sealed partial class PlannerExecutor(FactoryServices svc) : Executor("Planner")
+{
+    [MessageHandler]
+    private async ValueTask HandleStartAsync(StartRun msg, IWorkflowContext context, CancellationToken cancellationToken = default)
+    {
+        var runDir = svc.Settings.RunDir(msg.RunId);
+        Directory.CreateDirectory(runDir);
+        var handoverCopy = svc.Settings.HandoverCopyPath(msg.RunId);
+        if (!File.Exists(handoverCopy)) File.Copy(msg.HandoverPath, handoverCopy);
+        svc.LoadHandover(msg.RunId); // fail fast on a malformed package
+
+        // Resume: a stored plan that still validates is reused, not regenerated.
+        if (File.Exists(svc.Settings.PlanPath(msg.RunId)))
+        {
+            await context.SendMessageAsync(new PlanDraft(msg.RunId, 0), cancellationToken: cancellationToken);
+            return;
+        }
+
+        await DraftAsync(msg.RunId, 1, previous: null, errors: null, context, cancellationToken);
+    }
+
+    [MessageHandler]
+    private async ValueTask HandleRejectedAsync(PlanRejected msg, IWorkflowContext context, CancellationToken cancellationToken = default)
+    {
+        if (msg.Attempt >= svc.Settings.MaxPlannerAttempts)
+        {
+            await context.SendMessageAsync(new RunFinished(msg.RunId, "plan_rejected",
+                $"planner did not produce a valid plan in {msg.Attempt} attempts:\n- " + string.Join("\n- ", msg.Errors)),
+                cancellationToken: cancellationToken);
+            return;
+        }
+        var previous = File.Exists(svc.Settings.PlanPath(msg.RunId)) ? await File.ReadAllTextAsync(svc.Settings.PlanPath(msg.RunId), cancellationToken) : null;
+        await DraftAsync(msg.RunId, msg.Attempt + 1, previous, msg.Errors, context, cancellationToken);
+    }
+
+    private async Task DraftAsync(string runId, int attempt, string? previous, string[]? errors, IWorkflowContext context, CancellationToken ct)
+    {
+        var handoverJson = await File.ReadAllTextAsync(svc.Settings.HandoverCopyPath(runId), ct);
+        var schema = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "prompts", "plan.schema.json"), ct);
+
+        var brief = $"""
+            ## Handover package
+            ```json
+            {handoverJson}
+            ```
+
+            ## Plan schema
+            ```json
+            {schema}
+            ```
+            """;
+        if (previous is not null && errors is not null)
+            brief += $"""
+
+
+                ## Your previous plan was rejected. Fix every one of these and return the whole plan again.
+                - {string.Join("\n- ", errors)}
+
+                ```json
+                {previous}
+                ```
+                """;
+
+        var ws = new ScopedWorkspace(svc.Settings.RepoPath, [], [], [], new TurnSignals());
+        var agent = svc.Agents.Create(new AgentScope(runId, Roles.Planner), ModelTier.Frontier, Briefs.Prompt("planner"), ws.PlannerTools());
+        var response = await agent.RunAsync(brief, cancellationToken: ct);
+
+        await File.WriteAllTextAsync(svc.Settings.PlanPath(runId), ExtractJson(response.Text), ct);
+        await svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "plan", LedgerKinds.Plan, Outcome: "drafted",
+            Model: "frontier", TokensIn: response.Usage?.InputTokenCount, TokensOut: response.Usage?.OutputTokenCount,
+            Payload: JsonSerializer.Serialize(new { attempt })), ct);
+
+        await context.SendMessageAsync(new PlanDraft(runId, attempt), cancellationToken: ct);
+    }
+
+    private static string ExtractJson(string text)
+    {
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        return start >= 0 && end > start ? text[start..(end + 1)] : text;
+    }
+}
+
+/// Deterministic gate on the planner's output. The planner proposes; this decides.
+internal sealed partial class PlanValidatorExecutor(FactoryServices svc) : Executor("PlanValidator")
+{
+    [MessageHandler]
+    private async ValueTask HandleAsync(PlanDraft msg, IWorkflowContext context, CancellationToken cancellationToken = default)
+    {
+        var validation = Core.ValidatePlan(svc.LoadHandover(msg.RunId), await File.ReadAllTextAsync(svc.Settings.PlanPath(msg.RunId), cancellationToken));
+
+        await svc.LogAsync(msg.RunId, "plan_validate", LedgerKinds.Plan,
+            outcome: validation.IsValid ? "accepted" : "rejected",
+            payload: JsonSerializer.Serialize(new { msg.Attempt, validation.Errors }), ct: cancellationToken);
+
+        object next = validation.IsValid
+            ? new PlanAccepted(msg.RunId)
+            : new PlanRejected(msg.RunId, Math.Max(msg.Attempt, 1), validation.Errors);
+        await context.SendMessageAsync(next, cancellationToken: cancellationToken);
+    }
+}
+
+/// Teams and waves (pure F#), the integration branch, then one wave at a time.
+internal sealed partial class DispatchExecutor(FactoryServices svc) : Executor("Dispatcher")
+{
+    [MessageHandler]
+    private async ValueTask HandleAcceptedAsync(PlanAccepted msg, IWorkflowContext context, CancellationToken cancellationToken = default)
+    {
+        var dispatch = svc.LoadDispatch(msg.RunId);
+        var json = Core.DispatchJson(dispatch);
+        await File.WriteAllTextAsync(svc.Settings.DispatchPath(msg.RunId), json, cancellationToken);
+        await svc.LogAsync(msg.RunId, "dispatch", LedgerKinds.Dispatch, outcome: $"{dispatch.Waves.Length} waves", payload: json, ct: cancellationToken);
+
+        await svc.Git.EnsureIntegrationAsync(msg.RunId, svc.Settings.BaseBranch, cancellationToken);
+        await NextAsync(msg.RunId, 0, dispatch, context, cancellationToken);
+    }
+
+    [MessageHandler]
+    private ValueTask HandleWaveCompletedAsync(WaveCompleted msg, IWorkflowContext context, CancellationToken cancellationToken = default) =>
+        new(NextAsync(msg.RunId, msg.WaveIndex + 1, svc.LoadDispatch(msg.RunId), context, cancellationToken));
+
+    private static async Task NextAsync(string runId, int index, DispatchPlan dispatch, IWorkflowContext context, CancellationToken ct)
+    {
+        object next = index < dispatch.Waves.Length
+            ? new WaveReady(runId, index, [])
+            : new IntegrationReady(runId);
+        await context.SendMessageAsync(next, cancellationToken: ct);
+    }
+}
