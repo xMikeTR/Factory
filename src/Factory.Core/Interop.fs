@@ -36,6 +36,8 @@ type Core =
 
     static member DispatchJson(d: DispatchPlan) : string = Json.writeDispatch d
 
+    static member HandoverJson(h: Handover) : string = Json.writeHandover h
+
     static member Queued = TaskState.queued
 
     static member Transition(limits: Limits, state: TaskState, ev: TaskEvent) : TaskState =

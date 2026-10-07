@@ -181,6 +181,10 @@ let tests: (string * (unit -> unit)) list =
           match Json.parsePlan bad with
           | Ok _ -> failwith "should fail"
           | Error es -> check (es.Length >= 2) $"%A{es}"
+      "json: handover round-trips through writeHandover", fun () ->
+          match Json.parseHandover (Json.writeHandover handover) with
+          | Ok h -> equal handover h "round trip"
+          | Error es -> failwithf "%A" es
       "json: dispatch serialises", fun () ->
           let text = Json.writeDispatch (Dispatcher.dispatch validated.Value)
           check (text.Contains "team-T-001") text ]
