@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Factory.Core;
 using Factory.Harness;
 using Factory.Integration.Tests.Support;
@@ -72,6 +73,66 @@ public class S2WorkflowTests
         Assert.True(File.Exists(prBody));
         Assert.Contains("Merge tier: TwoApprovals", await File.ReadAllTextAsync(prBody));
         Assert.Single(h.Rows(LedgerKinds.Run), e => e.Outcome == "merged");
+    }
+
+    private static MergePolicy Policy(MergeEnforcement enforcement) =>
+        new(enforcement, Core.DefaultMergePolicy.AutoMergeMaxRisk, Core.DefaultMergePolicy.AutoMergeMaxChangedLines);
+
+    private static string WithManualCheck(string plan)
+    {
+        var json = JsonNode.Parse(plan)!;
+        json["tasks"]![0]!["verify"]!.AsArray().Add(new JsonObject
+        {
+            ["name"] = "eyeball the enum", ["kind"] = "manual", ["instructions"] = "Check the names read well.",
+        });
+        return json.ToJsonString();
+    }
+
+    private static Task<RunFinished?> RunT001(TeamHarness h, ScriptedChatClient model, ApprovingHuman human, Func<string, string>? plan = null)
+    {
+        model.Enqueue(
+            Say((plan ?? (p => p))(PlanFor(h.Handover))),
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Say("done"));
+        return WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), human, default);
+    }
+
+    [Fact]
+    public async Task Auto_mode_merges_on_green_whatever_the_tier()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3),
+            mergePolicy: Policy(MergeEnforcement.Auto));
+        var human = new ApprovingHuman();
+
+        var result = await RunT001(h, model, human);
+
+        Assert.Equal("auto_merge_enabled", result?.Status);
+        Assert.Empty(human.Approvals);
+        Assert.Single(h.Rows(LedgerKinds.Merge), e => e.Outcome == "TwoApprovals"); // still reported: Quotes DB is high risk
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_pending_manual_check_blocks_the_merge_in_both_modes(bool auto)
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy:
+            Policy(auto ? MergeEnforcement.Auto : MergeEnforcement.NewTiered(Microsoft.FSharp.Collections.ListModule.OfSeq(["alice"]))));
+        var human = new ApprovingHuman();
+
+        var result = await RunT001(h, model, human, WithManualCheck);
+
+        Assert.Equal("merge_blocked", result?.Status);
+        Assert.Contains("manual check pending: T-001: eyeball the enum", result?.Detail);
+        Assert.Empty(human.Approvals);
+        Assert.Single(h.Rows(LedgerKinds.Merge), e => e.Outcome == "blocked");
+        var prBody = await File.ReadAllTextAsync(Path.Combine(h.StateDir, "runs", TeamHarness.RunId, $"factory_{TeamHarness.RunId}_integration.pr.md"));
+        Assert.Contains("Merge blocked", prBody);
     }
 
     [Fact]

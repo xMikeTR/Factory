@@ -41,7 +41,7 @@ src/Factory.Core/        F#: the rules. No dependencies beyond FSharp.Core.
   PlanValidator.fs       17 rules; ValidatedPlan can only be created here
   Dispatcher.fs          overlapping writes → teams; cycles between teams → merged; team DAG → waves
   TaskState.fs           task lifecycle + budgets; Passed requires PassedEvidence; replay from ledger
-  Merge.fs               tiered merge autonomy (thresholds to move into mlang)
+  Merge.fs               merge tiers, hard blocks (scope leak, protected path, manual check), enforcement mode
   Json.fs                plan / handover / dispatch / task-event codecs (collects every error)
   Interop.fs             C#-friendly facade: Core.*
 tests/Factory.Core.Tests dependency-free test runner (`dotnet run`); port to xUnit when convenient
@@ -89,6 +89,21 @@ The target repo needs `.factory/` in its `.gitignore`, and build/test outputs su
 `artifacts/` ignored as well. Otherwise the scope check will see them as changes outside the
 task's writes and revert them. Other settings (`FACTORY_MAX_TURNS`, `FACTORY_COMMANDS`,
 `FACTORY_POBSERVE_CMD`, …) are listed in `FactorySettings.FromEnvironment`.
+
+The merge policy comes from the target repo's `.factory/policy.yaml` (read from the base
+checkout, never a task worktree):
+
+```yaml
+merge:
+  enforcement: tiered          # auto = merge on green; tiered = the tier decides approvals
+  approvers: [alice, bob]
+  autoMergeMaxRisk: low
+  autoMergeMaxChangedLines: 400
+```
+
+`FACTORY_MERGE_ENFORCEMENT` and `FACTORY_MERGE_APPROVERS` (comma-separated) override the file.
+Blocks (a scope leak, a protected path changed, a pending manual check) stop the merge in both
+modes; the run ends `merge_blocked` with the blocks in the PR body.
 
 ## Build order
 
@@ -155,7 +170,7 @@ something that works on its own.
 - **Scope is enforced three times:**
   - the workspace tools refuse writes outside the task's paths;
   - a git check after every turn reverts out-of-scope changes and logs a `scope_violation`;
-  - the merge policy sends any changed file outside the declared writes to two approvals.
+  - a changed file outside the declared writes, or under a protected path, blocks the merge in every mode.
 - **Self-seeded verify steps get `FACTORY_VERIFY_NS`,** so seeded data never collides between
   runs or attempts.
 - **The only change to the Phase 2 task-state DU is `Ready of Progress`.** The Queued state
