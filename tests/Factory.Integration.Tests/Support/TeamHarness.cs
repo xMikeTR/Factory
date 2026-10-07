@@ -70,6 +70,16 @@ public sealed class TeamHarness : IDisposable
         return r.ExitCode == 0 ? r : throw new InvalidOperationException($"git {string.Join(' ', args)}: {r.Tail()}");
     }
 
+    /// The handover frozen as the JSON a run starts from.
+    public string WriteHandoverJson()
+    {
+        var path = Path.Combine(_root, "handover.json");
+        File.WriteAllText(path, Core.HandoverJson(Handover));
+        return path;
+    }
+
+    public string StateDir => Services.Settings.StateDir;
+
     public IEnumerable<LedgerEvent> Rows(string kind) => Ledger.Events.Where(e => e.Kind == kind);
 
     public void Dispose()

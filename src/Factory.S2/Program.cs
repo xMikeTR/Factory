@@ -7,7 +7,7 @@ using Factory.S2.Verify;
 
 // factory-s2 validate --handover h.json --plan plan.json      deterministic, no agents, no git
 // factory-s2 dispatch --handover h.json --plan plan.json      prints teams and waves
-// factory-s2 run --handover h.json --repo . [--registry ../registry] [--base main] [--run-id id] [--github]
+// factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github]
 
 var cmd = args.FirstOrDefault() ?? "help";
 var opts = ParseOptions(args.Skip(1).ToArray());
@@ -64,7 +64,7 @@ try
             Console.WriteLine($"run {runId}: re-run with --run-id {runId} to resume");
             var result = await WorkflowHost.RunAsync(
                 S2Workflow.Build(services),
-                new StartRun(runId, Path.GetFullPath(Required(opts, "handover"))),
+                new StartRun(runId, Path.GetFullPath(await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token))),
                 new ConsoleHumanChannel(),
                 cts.Token);
 

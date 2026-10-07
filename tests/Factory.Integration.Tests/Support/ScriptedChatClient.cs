@@ -12,6 +12,11 @@ public sealed class ScriptedChatClient(params ChatResponse[] script) : IChatClie
     public IReadOnlyList<IReadOnlyList<ChatMessage>> Requests { get { lock (_requests) return _requests.ToList(); } }
     public int Remaining { get { lock (_script) return _script.Count; } }
 
+    public void Enqueue(params ChatResponse[] responses)
+    {
+        lock (_script) foreach (var r in responses) _script.Enqueue(r);
+    }
+
     public static ChatResponse Call(string tool, object? args = null)
     {
         var dict = args is null
