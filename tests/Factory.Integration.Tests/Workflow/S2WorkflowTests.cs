@@ -47,7 +47,7 @@ public class S2WorkflowTests
     public async Task Dry_run_on_T001_replays_to_Passed_and_writes_the_PR_body()
     {
         var model = new ScriptedChatClient();
-        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.NewTiered(Microsoft.FSharp.Collections.ListModule.Empty<string>())));
         model.Enqueue(
             Say(PlanFor(h.Handover)),                                   // planner
             Say("Approach: add QuoteStatus.cs"),                        // task-planner
@@ -242,7 +242,7 @@ public class S2WorkflowTests
         model.Enqueue(Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
 
-        Assert.Equal("merged", result?.Status);
+        Assert.Equal("auto_merge_enabled", result?.Status);
         Assert.Equal(0, model.Remaining);
         Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "drafted");       // plan reused, not redrafted
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.TaskId == "T-001" && e.Stage == "verify");          // verified once
@@ -258,7 +258,7 @@ public class S2WorkflowTests
         // a third run is a no-op on tasks: everything replays
         model.Enqueue();
         var again = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
-        Assert.Equal("merged", again?.Status);
+        Assert.Equal("auto_merge_enabled", again?.Status);
         Assert.Single(h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001"), e => e.Outcome == "Passed");
         Assert.Single((await h.GitIn(integration, "log", "--format=%s")).Output.Split('\n'), l => l.StartsWith("T-001:"));
     }

@@ -21,7 +21,7 @@ public sealed record FactorySettings(
     /// $FACTORY_TEST_RESULTS (relative to the worktree); with no results the check is off.
     string IntegrationTestCommand,
     string? PObserveCommand,
-    /// From the target repo's .factory/policy.yaml; null is the tiered default.
+    /// From the target repo's .factory/policy.yaml; null is the default (auto).
     MergePolicy? MergePolicy = null)
 {
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
