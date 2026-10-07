@@ -18,14 +18,14 @@ public sealed class PObserveTests : IDisposable
         File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures/handover/behaviour/quotes-writes.p"), Path.Combine(behaviour, "quotes-writes.p"));
     }
 
-    private Task<Factory.Harness.ProcessResult> CheckAsync(params string[] log) => CheckAsync("", log);
+    private Task<Factory.Harness.ProcessResult> CheckAsync(params string[] log) => RunCheckAsync("", log);
 
-    private async Task<Factory.Harness.ProcessResult> CheckAsync(string flags, params string[] log)
+    private async Task<Factory.Harness.ProcessResult> RunCheckAsync(string flags, string[] log)
     {
         var logs = Directory.CreateDirectory(Path.Combine(_worktree, "logs")).FullName;
         await File.WriteAllLinesAsync(Path.Combine(logs, "test.log"), log);
         await using var sandbox = await DockerSandbox.StartAsync("pobserve", _worktree, new DockerSandboxOptions(RestoreOnStart: false), default);
-        return await sandbox.RunAsync($"pobserve-check {flags} behaviour NoLostUpdate logs", _worktree, TimeSpan.FromMinutes(5),
+        return await sandbox.RunAsync(string.Join(" ", new[] { "pobserve-check", flags, "behaviour NoLostUpdate logs" }.Where(s => s != "")), _worktree, TimeSpan.FromMinutes(5),
             new Dictionary<string, string>(), default);
     }
 
@@ -120,7 +120,7 @@ public sealed class PObserveTests : IDisposable
     {
         if (!Enabled) return; // opt-in
 
-        var r = await CheckAsync("--expect-violation", log);
+        var r = await RunCheckAsync("--expect-violation", log);
 
         Assert.True(r.ExitCode == exit, r.Output);
     }
