@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://factory.local/schemas/handover.schema.json",
+  "title": "System 1 -> System 2 handover manifest",
+  "description": "Written by System 1's HandoverExecutor into registry/handovers/<id>/handover.json. The only thing System 2 reads from the design side.",
+  "type": "object",
+  "required": ["id", "digest", "elements", "decisions", "protectedPaths", "eventVocabulary"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "digest": { "type": "string", "description": "hash of the frozen package; plans must quote it" },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "codeAreas", "risk"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "description": "C4 element path, e.g. 'Pricing Platform/Quotes DB'" },
+          "name": { "type": "string" },
+          "codeAreas": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "from d.code" },
+          "risk": { "enum": ["low", "medium", "high"], "description": "from d.risk" }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "statement", "binds", "checks"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "statement": { "type": "string" },
+          "binds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "checks": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["kind", "run"],
+              "additionalProperties": false,
+              "properties": { "kind": { "type": "string" }, "run": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "protectedPaths": { "type": "array", "items": { "type": "string" } },
+    "eventVocabulary": { "type": "array", "items": { "type": "string" } }
+  }
+}

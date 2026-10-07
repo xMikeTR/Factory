@@ -1,0 +1,6 @@
+bin/
+obj/
+.factory/
+*.user
+.vs/
+.claude/current-plan-scope.json

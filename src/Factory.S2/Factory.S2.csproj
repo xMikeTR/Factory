@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Factory.S2</RootNamespace>
+    <AssemblyName>factory-s2</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Agents.AI.Workflows" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Factory.Core/Factory.Core.fsproj" />
+    <ProjectReference Include="../Factory.Harness/Factory.Harness.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../prompts/*.md" LinkBase="prompts" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../schemas/plan.schema.json" Link="prompts/plan.schema.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

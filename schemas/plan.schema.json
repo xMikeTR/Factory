@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://factory.local/schemas/plan.schema.json",
+  "title": "System 2 implementation plan",
+  "description": "Planner agent output. Shape only; the semantic rules (write containment, decision coverage, cycles) are enforced by Factory.Core.PlanValidator.",
+  "type": "object",
+  "required": ["handover", "tasks"],
+  "additionalProperties": false,
+  "properties": {
+    "handover": {
+      "type": "object",
+      "required": ["id", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "digest": { "type": "string" }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "instructions", "elements", "writes", "verify"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^T-[0-9]{3,}$" },
+          "title": { "type": "string", "minLength": 1 },
+          "instructions": { "type": "string", "minLength": 1 },
+          "elements": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "writes": {
+            "type": "array", "minItems": 1,
+            "items": { "type": "string", "description": "repo-relative glob: *, ? and ** only" }
+          },
+          "dependsOn": { "type": "array", "items": { "type": "string" }, "default": [] },
+          "covers": { "type": "array", "items": { "type": "string" }, "default": [] },
+          "verify": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": ["name", "kind", "run"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string" },
+                    "kind": { "const": "invariant" },
+                    "run": { "type": "string" },
+                    "cleanup": { "type": ["string", "null"] },
+                    "timeoutSeconds": { "type": "integer", "minimum": 1, "default": 300 }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": ["name", "kind", "run", "cleanup"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string" },
+                    "kind": { "const": "self-seeded" },
+                    "run": { "type": "string" },
+                    "cleanup": { "type": "string" },
+                    "timeoutSeconds": { "type": "integer", "minimum": 1, "default": 300 }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": ["name", "kind", "instructions"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string" },
+                    "kind": { "const": "manual" },
+                    "instructions": { "type": "string" }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
