@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Factory.Core;
+using Factory.Harness.Sandbox;
 using Microsoft.Extensions.AI;
 
 namespace Factory.Harness;
@@ -23,7 +24,8 @@ public sealed class ScopedWorkspace(
     IReadOnlyList<PathPattern> writes,
     IReadOnlyList<PathPattern> protectedPaths,
     IReadOnlyList<string> commandAllowList,
-    TurnSignals signals)
+    TurnSignals signals,
+    ICommandSandbox? sandbox = null)
 {
     private readonly string _root = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
     private const int MaxReadChars = 200_000;
@@ -106,7 +108,11 @@ public sealed class ScopedWorkspace(
         if (cmd.IndexOfAny([';', '&', '|', '`', '$', '>', '<']) >= 0)
             return "DENIED: shell operators are not allowed; run one command at a time.";
 
-        var result = await ProcessRunner.ShellAsync(cmd, _root, TimeSpan.FromMinutes(10), ct: ct);
+        // Never on the host environment: the gateway key and tokens must not reach agent commands.
+        if (sandbox is null)
+            return "DENIED: no sandbox is attached to this workspace, so commands cannot run.";
+
+        var result = await sandbox.RunAsync(cmd, _root, TimeSpan.FromMinutes(10), new Dictionary<string, string>(), ct);
         return $"exit {result.ExitCode}{(result.TimedOut ? " (timed out)" : "")}\n{result.Tail(6000)}";
     }
 
