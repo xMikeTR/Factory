@@ -84,8 +84,9 @@ module PathPattern =
     /// RESOURCES.md §1. Spec: tests "paths: overlap".
     ///   - exact vs exact: same segments
     ///   - exact vs glob: does the glob match the exact path? (precise)
-    ///   - glob vs glob: over-approximate. Compare literal prefixes (segments before the first
-    ///     wildcard); if one is a prefix of the other, say they may overlap.
+    ///   - glob vs glob: walk both segment lists together; `**` matches any number of segments,
+    ///     two single segments are compatible if a literal one matches the other's glob, and two
+    ///     wild segments are assumed compatible (the over-approximation).
     ///   Why over-approximate is the SAFE direction here: a false "yes" only merges two teams.
     ///   A false "no" lets two agents write the same file in parallel.
     ///   Helpers available above: isExact, literalPrefix, matchSegs, isPrefixOf.
@@ -95,8 +96,19 @@ module PathPattern =
         | true, false -> matchSegs b.Segs a.Segs
         | false, true -> matchSegs a.Segs b.Segs
         | false, false ->
-            let pa, pb = literalPrefix a, literalPrefix b
-            isPrefixOf pa pb || isPrefixOf pb pa
+            let segCompatible (x: string) (y: string) =
+                match isWild x, isWild y with
+                | false, _ -> matchSeg y 0 x 0
+                | true, false -> matchSeg x 0 y 0
+                | true, true -> true
+            let rec overlap xs ys =
+                match xs, ys with
+                | [], [] -> true
+                | "**" :: xt, _ -> overlap xt ys || (match ys with _ :: yt -> overlap xs yt | [] -> false)
+                | _, "**" :: yt -> overlap xs yt || (match xs with _ :: xt -> overlap xt ys | [] -> false)
+                | x :: xt, y :: yt -> segCompatible x y && overlap xt yt
+                | _ -> false
+            overlap a.Segs b.Segs
 
     /// Is every file matched by `inner` also matched by `outer`?
     ///
