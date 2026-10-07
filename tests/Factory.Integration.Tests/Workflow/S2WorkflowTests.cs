@@ -77,6 +77,36 @@ public class S2WorkflowTests
     }
 
     [Fact]
+    public async Task A_finished_run_projects_its_tasks_and_decision_checks_into_the_registry_ledger()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        Directory.CreateDirectory(h.Services.Settings.RegistryPath); // empty registry: D-0001's P check fails there
+        model.Enqueue(
+            Say(PlanFor(h.Handover)),
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Say("done"));
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
+            new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+
+        Assert.Equal("integration_failed", result?.Status);
+        var ledger = Path.Combine(h.Services.Settings.RegistryPath, "ledger");
+        var pipeline = await File.ReadAllLinesAsync(Path.Combine(ledger, "pipeline.jsonl"));
+        var checks = await File.ReadAllLinesAsync(Path.Combine(ledger, "checks.jsonl"));
+        Assert.All(pipeline.Concat(checks), l => Assert.Empty(DesigncSchema.Validate(l)));
+        Assert.Single(pipeline, l => l.Contains("\"task\":\"T-001\"") && l.Contains("\"status\":\"passed\""));
+        var check = JsonDocument.Parse(Assert.Single(checks)).RootElement;
+        Assert.Equal("D-0001", check.GetProperty("decision").GetString());
+        Assert.Equal("p check -tc tcOptimistic", check.GetProperty("check").GetString());
+        Assert.Equal("fail", check.GetProperty("outcome").GetString());
+        Assert.NotEqual(0, check.GetProperty("exit_code").GetInt32());
+    }
+
+    [Fact]
     public async Task Resume_after_a_kill_mid_turn_reaches_the_same_state_without_duplicates()
     {
         using var killed = new CancellationTokenSource();

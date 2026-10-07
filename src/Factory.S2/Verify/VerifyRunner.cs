@@ -69,14 +69,16 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes)
 
     /// Commands that are not tied to one task: decision checks from the registry, the full
     /// test suite on the integration branch, PObserve over the resulting logs.
-    public async Task<VerifyOutcome> RunCommandAsync(string runId, string name, string command, string workDir, TimeSpan timeout, CancellationToken ct)
+    /// `decision` is set for a bound decision's check, so the row projects to designc's checks.jsonl.
+    public async Task<VerifyOutcome> RunCommandAsync(string runId, string name, string command, string workDir, TimeSpan timeout, CancellationToken ct,
+        string? decision = null)
     {
         await using var sandbox = await sandboxes.ForTeamAsync("integration", workDir, ct);
         var r = await sandbox.RunAsync(command, workDir, timeout, new Dictionary<string, string> { ["FACTORY_RUN_ID"] = runId }, ct);
         var outcome = ToOutcome(name, r);
-        await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.Verify,
+        await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.Verify, Decision: decision,
             Outcome: r.Succeeded ? "passed" : "failed",
-            Payload: JsonSerializer.Serialize(new { name, command, r.ExitCode, sandbox = sandbox.Kind, tail = r.Tail(2000) })), ct);
+            Payload: JsonSerializer.Serialize(new { name, command, ExitCode = outcome.ExitCode, ms = outcome.DurationMs, sandbox = sandbox.Kind, tail = r.Tail(2000) })), ct);
         return outcome;
     }
 
