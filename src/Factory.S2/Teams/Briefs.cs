@@ -10,7 +10,9 @@ public static class Briefs
 {
     private static readonly string PromptDir = Path.Combine(AppContext.BaseDirectory, "prompts");
 
-    public static string Prompt(string name) => File.ReadAllText(Path.Combine(PromptDir, name + ".md"));
+    /// A role's prompt, followed by what the sandbox can run (sandbox.md), which every role needs.
+    public static string Prompt(string name) =>
+        File.ReadAllText(Path.Combine(PromptDir, name + ".md")).TrimEnd() + "\n" + File.ReadAllText(Path.Combine(PromptDir, "sandbox.md"));
 
     public static string Task(
         Handover handover, PlannedTask task, IEnumerable<PathPattern> writable,
