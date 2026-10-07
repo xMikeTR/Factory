@@ -5,3 +5,4 @@ obj/
 .vs/
 .claude/current-plan-scope.json
 SESSION_HANDOFF.md
+__pycache__/

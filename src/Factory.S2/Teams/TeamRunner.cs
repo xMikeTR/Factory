@@ -155,7 +155,7 @@ internal sealed class TaskLoop(
             _taskId, progress.Turns, progress.VerifyAttempts, _approachNote is not null, _lastVerifyFailed, _turnsWithoutChange), ct);
         await svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "configurator", LedgerKinds.Configurator,
             TaskId: _taskId, TeamId: _teamId, Outcome: decision.Kind.ToString(), Model: decision.Tier.ToString(),
-            Payload: JsonSerializer.Serialize(new { decider = svc.Configurator.GetType().Name, reason = decision.Reason })), ct);
+            Payload: JsonSerializer.Serialize(new { decider = decision.DecidedBy, reason = decision.Reason, confidence = decision.Confidence })), ct);
 
         return decision.Kind switch
         {
