@@ -247,6 +247,12 @@ something that works on its own.
     them.
 - **Needs-decision** payload: `BlockedTask` / `NeedsDecisionResponse` in `Messages.cs`. An
   answer binds a new decision id or abandons the task.
+  - An agent raises a question with at least two options (`id` A, B…, `summary`, `consequence`) and
+    an optional `recommended` id; `raise_needs_decision` refuses anything less.
+  - The registry `needs_decision` row carries them in `payload.options` / `payload.recommended`.
+  - designc answers with `payload.option` (the chosen id) and/or `payload.note` on
+    `needs_decision_resolved`. An id that was never offered answers nothing: the run stays parked
+    and the ledger records `resolution_rejected`.
 - **Ledger kinds** (`LedgerKinds`) and the `task` event payload (`Json.encodeTaskEvent`). System 4
   queries depend on these.
 

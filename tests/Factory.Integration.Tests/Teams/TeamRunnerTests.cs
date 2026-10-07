@@ -180,7 +180,7 @@ public class TeamRunnerTests
     {
         var model = new ScriptedChatClient(
             Say("Approach: need a status list"),
-            Call("raise_needs_decision", new { question = "Which quote statuses exist?" }), Say("asked"),
+            Call("raise_needs_decision", new { question = "Which quote statuses exist?", options = new[] { new { id = "A", summary = "Draft only", consequence = "one initial status" }, new { id = "B", summary = "Draft and Bound", consequence = "two initial statuses" } }, recommended = "A" }), Say("asked"),
             // after the answer
             Call("declare_done", new { summary = "tests" }), Say("done"),
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft, Bound }\n" }),

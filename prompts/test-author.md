@@ -16,6 +16,6 @@ How to work:
   cover, then stop. The pipeline then runs them without the implementation and expects them to
   fail.
 - If you need a design decision the brief does not contain, call raise_needs_decision with one
-  precise question, then stop. Do not guess.
+  precise question and the options you see, then stop. Do not guess.
 
 If "What failed last time" is present, deal with it first.

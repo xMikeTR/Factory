@@ -4,11 +4,54 @@ type Limits = { MaxTurns: int; MaxVerifyAttempts: int }
 
 type Progress = { Turns: int; VerifyAttempts: int }
 
+/// One answer a designer can pick, by id ("A", "B"), instead of rewording prose.
+type DecisionOption =
+    { Id: string
+      Summary: string
+      /// What follows if this option is chosen.
+      Consequence: string }
+
 type NeedsDecision =
     { Question: string
       Elements: ElementId list
       /// Why the task stopped: the agent asked, or the configurator saw a stall.
-      Source: string }
+      Source: string
+      /// What the designer chooses from. An agent's question always has at least two;
+      /// one the factory raises itself (environment, stall) may have none.
+      Options: DecisionOption list
+      Recommended: string option }
+
+[<RequireQualifiedAccess>]
+module NeedsDecision =
+    let private idOk (id: string) = id.Length = 1 && System.Char.IsAsciiLetterUpper id.[0]
+
+    /// Why these options are not a choice a designer can make, in words for the agent; empty when they are.
+    let optionErrors (options: DecisionOption list) (recommended: string option) : string list =
+        let ids = options |> List.map (fun o -> o.Id)
+        [ if options.Length < 2 then "give at least two options: a question with one answer is not a decision"
+          for o in options do
+              if not (idOk o.Id) then $"option id '{o.Id}' must be one capital letter (A, B, C...)"
+              if System.String.IsNullOrWhiteSpace o.Summary then $"option {o.Id} needs a summary"
+              if System.String.IsNullOrWhiteSpace o.Consequence then $"option {o.Id} needs a consequence"
+          for d in ids |> List.countBy id |> List.filter (fun (_, n) -> n > 1) |> List.map fst do
+              $"option id {d} is used twice"
+          let known = String.concat ", " ids
+          match recommended with
+          | Some r when not (List.contains r ids) -> $"recommended '{r}' is not one of the options ({known})"
+          | _ -> () ]
+
+    /// The answer the agent gets back: the chosen option in full, then the designer's note.
+    /// A resolution naming no option falls back to the note (designc may not record options yet).
+    let answer (nd: NeedsDecision) (option: string option) (note: string option) : Result<string, string> =
+        let withNote (text: string) = match note with Some n when n.Trim() <> "" -> $"{text}\nNote: {n}" | _ -> text
+        match option with
+        | Some id ->
+            match nd.Options |> List.tryFind (fun o -> o.Id = id) with
+            | Some o -> Ok(withNote $"Chosen option {o.Id}: {o.Summary}. Consequence: {o.Consequence}")
+            | None ->
+                let ids = nd.Options |> List.map (fun o -> o.Id) |> String.concat ", "
+                Error $"option '{id}' is not one of the options ({ids})"
+        | None -> Ok(defaultArg note "resolved in the registry; re-read the handover and decisions")
 
 type VerifyOutcome =
     { Name: string

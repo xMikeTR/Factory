@@ -4,7 +4,9 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-07 — live5: the planner submits its plan through the `submit_plan` tool
+> Last updated: 2026-10-07 — needs-decisions carry options: `raise_needs_decision` takes ≥2 options
+> (A, B…, summary, consequence) and a recommendation, projected into the registry row's payload;
+> designc answers with `payload.option`, an unknown option keeps the run parked. Before that, live5: the planner submits its plan through the `submit_plan` tool
 > (input schema = plan.schema.json, validated in-call, at most 3 per turn) instead of free-text JSON;
 > the schema is no longer in the brief. `pobserve-check` gains `--expect-violation` (negative checks),
 > fails logs with no spec events (exit 3) and names undeclared marked events; the validator rejects
@@ -192,7 +194,7 @@ Used by structural-centrality-guard to determine escalation threshold.
 
 | System | Protocol | Direction | Canonical Name | Notes |
 |--------|---------|-----------|---------------|-------|
-| System 1 registry | Files (git repo) | In/Out | Designc registry | Reads `handovers/<id>/` (hash-checked); appends the S2 projection to `ledger.jsonl`; needs-decisions raised/resolved there |
+| System 1 registry | Files (git repo) | In/Out | Designc registry | Reads `handovers/<id>/` (hash-checked); appends the S2 projection to `ledger.jsonl`; needs-decisions raised there with `payload.options`, resolved with `payload.option` and/or `payload.note` |
 | Model provider | HTTPS | Out | Anthropic API, or APIM -> LiteLLM | `FACTORY_PROVIDER=anthropic|openai`; key never reaches sandbox, ledger or traces |
 | GitHub | gh CLI | Out/In | GitHub | PR create, `/approve` and `/verified` comments from the allow-list, squash merge; dry-run writes to `.factory/runs/<id>/` |
 | git | CLI | Out | target repo | integration branch, worktrees under the state dir |
@@ -222,6 +224,7 @@ Used by structural-centrality-guard to determine escalation threshold.
 | Merge: blocks (scope leak, protected path, pending manual check) stop both modes; auto merges on green; tiered needs approvals by tier | `Merge.fs` | Business rule | thresholds in `.factory/policy.yaml` (400 lines, low risk) |
 | Handover delivered only when merged and every check of every bound decision passed | `HandoverClosure.fs` | Business rule | projected to the registry |
 | Regeneration re-runs a task only if it covers or touches the elements of a changed decision | `Regeneration.fs` | Business rule | element-only changes and dependents do not re-run |
+| An agent's needs-decision offers ≥2 options (single capital-letter ids, summary, consequence; recommended must be one of them); a resolution naming an option never offered keeps the run parked | `TaskState.fs` `NeedsDecision.optionErrors`/`answer`, `ScopedWorkspace.RaiseNeedsDecision`, `RunExecutors` | Contract | the designer picks instead of composing an answer; harness-raised NDs (configurator, environment) have no options |
 | Stall: N turns with no worktree change -> needs-decision | `Configurator.cs`, `TaskLoop` | Business rule | heuristic |
 
 ## Known Risks

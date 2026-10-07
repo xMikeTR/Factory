@@ -250,6 +250,16 @@ module Json =
             set "question" (JsonValue.Create nd.Question)
             set "source" (JsonValue.Create nd.Source)
             set "elements" (strArr (nd.Elements |> List.map (fun x -> x.Value)))
+            if not nd.Options.IsEmpty then
+                let arr = JsonArray()
+                for op in nd.Options do
+                    let x = JsonObject()
+                    x.["id"] <- JsonValue.Create op.Id
+                    x.["summary"] <- JsonValue.Create op.Summary
+                    x.["consequence"] <- JsonValue.Create op.Consequence
+                    arr.Add x
+                set "options" arr
+            nd.Recommended |> Option.iter (fun r -> set "recommended" (JsonValue.Create r))
         | DecisionBound d ->
             set "type" (JsonValue.Create "decision_bound")
             set "decision" (JsonValue.Create d.Value)
@@ -279,7 +289,19 @@ module Json =
                 NeedsDecisionRaised
                     { Question = str "$" o "question"
                       Source = str "$" o "source"
-                      Elements = strs "$" o "elements" |> List.map ElementId }
+                      Elements = strs "$" o "elements" |> List.map ElementId
+                      Options =
+                          match o.["options"] with
+                          | :? JsonArray as arr ->
+                              [ for i in 0 .. arr.Count - 1 ->
+                                    let x = arr.[i].AsObject()
+                                    let p = $"$.options[{i}]"
+                                    { Id = str p x "id"; Summary = str p x "summary"; Consequence = str p x "consequence" } ]
+                          | _ -> []
+                      Recommended =
+                          match o.["recommended"] with
+                          | null -> None
+                          | v -> Some(v.GetValue<string>()) }
             | "decision_bound" -> DecisionBound(DecisionId(str "$" o "decision"))
             | "verify_requested" -> VerifyRequested
             | "verify_completed" -> VerifyCompleted(decodeOutcomes o "outcomes", decodeOutcomes o "stashedImpl")

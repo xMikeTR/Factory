@@ -2,6 +2,8 @@ using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Telemetry;
+using Microsoft.FSharp.Collections;
+using Microsoft.FSharp.Core;
 
 namespace Factory.S2.Teams;
 
@@ -135,7 +137,8 @@ internal sealed class TaskLoop(
                 case TaskState.Blocked b:
                     var nd = b.Item3;
                     return new TeamResult(_teamId, TeamStatus.Blocked,
-                        new BlockedTask(_teamId, _taskId, nd.Question, nd.Source, nd.Elements.Select(e => e.Value).ToArray()));
+                        new BlockedTask(_teamId, _taskId, nd.Question, nd.Source, nd.Elements.Select(e => e.Value).ToArray(),
+                            nd.Options.Select(o => new OfferedOption(o.Id, o.Summary, o.Consequence)).ToArray(), nd.Recommended?.Value));
 
                 case TaskState.Verifying v:
                     var attempt = v.Item1.VerifyAttempts;
@@ -191,7 +194,7 @@ internal sealed class TaskLoop(
         return decision.Kind switch
         {
             TurnKind.Escalate => await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(new NeedsDecision(
-                $"Task {_taskId} is not making progress ({decision.Reason}). How should it proceed?", task.Elements, "configurator")), ct),
+                $"Task {_taskId} is not making progress ({decision.Reason}). How should it proceed?", task.Elements, "configurator", NoOptions, null)), ct),
             TurnKind.Plan => await PlanTurnAsync(state, decision.Tier, ct),
             TurnKind.Act => await ActTurnAsync(state, decision.Tier, phase, ct),
             _ => throw new InvalidOperationException($"unknown turn kind {decision.Kind}"),
@@ -208,10 +211,10 @@ internal sealed class TaskLoop(
             Briefs.Prompt("task-planner"), Workspace(signals, sandbox: null, []).ReadOnlyTools());
         var response = await agent.RunAsync(Brief(task.Writes.Concat(task.TestWrites)), cancellationToken: ct);
 
-        if (signals.NeedsDecision is { } question)
+        if (signals.NeedsDecision is { } raised)
         {
-            await LogTurnAsync("task_plan", tier, response.Usage, new { needs_decision = question }, ct);
-            return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(new NeedsDecision(question, task.Elements, "agent")), ct);
+            await LogTurnAsync("task_plan", tier, response.Usage, new { needs_decision = raised.Question }, ct);
+            return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(AgentDecision(raised)), ct);
         }
 
         _approachNote = response.Text;
@@ -247,8 +250,8 @@ internal sealed class TaskLoop(
         _reverted = reverted.Count > 0 ? string.Join(", ", reverted) : null;
         _turnsWithoutChange = await svc.Git.WorkFingerprintAsync(worktree, ct) == before ? _turnsWithoutChange + 1 : 0;
 
-        if (signals.NeedsDecision is { } question)
-            return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(new NeedsDecision(question, task.Elements, "agent")), ct);
+        if (signals.NeedsDecision is { } raised)
+            return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(AgentDecision(raised)), ct);
 
         if (signals.ReturnedToTestAuthor is { } problem && !phase.IsTestAuthor)
         {
@@ -262,6 +265,11 @@ internal sealed class TaskLoop(
         return await ApplyAsync(state, TaskEvent.TurnEnded, ct);
     }
 
+    private static readonly FSharpList<DecisionOption> NoOptions = FSharpList<DecisionOption>.Empty;
+
+    private NeedsDecision AgentDecision(RaisedDecision raised) =>
+        new(raised.Question, task.Elements, "agent", Core.ToList(raised.Options), raised.Recommended is { } r ? FSharpOption<string>.Some(r) : null);
+
     private async Task RunActAsync(string role, string prompt, IEnumerable<PathPattern> writable, ModelTier tier, TurnSignals signals, CancellationToken ct)
     {
         await using var sandbox = await svc.Sandboxes.ForTeamAsync(_teamId, worktree, ct);
@@ -270,7 +278,7 @@ internal sealed class TaskLoop(
             Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools() : workspace.ExecutorTools());
         var response = await agent.RunAsync(Brief(writable), cancellationToken: ct);
         await LogTurnAsync("act", tier, response.Usage,
-            new { role, files = signals.FilesWritten, done = signals.DoneSummary, needs_decision = signals.NeedsDecision, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
+            new { role, files = signals.FilesWritten, done = signals.DoneSummary, needs_decision = signals.NeedsDecision?.Question, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
     }
 
     /// The TestAuthor declared done: run its tests without the implementation. They must fail;
@@ -284,7 +292,7 @@ internal sealed class TaskLoop(
                 $"The sandbox could not run these checks, so they can never pass whatever the code does: {string.Join(", ", kind.ErrorValue)}. "
                 + "Fix the runner image or the check (no network during verify; only the image's tools), then resume.\n\n"
                 + Briefs.Failures(outcomes.Where(o => kind.ErrorValue.Contains(o.Name))),
-                task.Elements, "environment")), ct);
+                task.Elements, "environment", NoOptions, null)), ct);
         var red = RedEvidence.Create(Core.ToList(outcomes), kind.ResultValue);
         if (red.IsError)
         {

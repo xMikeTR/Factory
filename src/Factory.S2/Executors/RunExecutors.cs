@@ -3,10 +3,11 @@ using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Registry;
-using Microsoft.FSharp.Collections;
 using Factory.S2.Git;
 using Factory.S2.Teams;
 using Microsoft.Agents.AI.Workflows;
+using Microsoft.FSharp.Collections;
+using Microsoft.FSharp.Core;
 
 namespace Factory.S2.Executors;
 
@@ -51,21 +52,26 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
         {
             var ids = await NeedsDecisionIdsAsync(runId, blocked, ct);
             var resolutions = await new RegistryNeedsDecisions(svc.Settings.RegistryPath).ResolutionsAsync(ct);
-            var open = blocked.Where(b => !resolutions.ContainsKey(ids[b.TaskId])).ToList();
+            // A resolution naming an option the agent never offered answers nothing: the ND stays open.
+            var answered = blocked.Select(b => (b, Answer: resolutions.TryGetValue(ids[b.TaskId], out var r)
+                ? Core.AnswerDecision(ToNeedsDecision(b), r.Option!, r.Note!) : (FSharpResult<string, string>?)null)).ToList();
+            var open = answered.Where(a => a.Answer is not { IsOk: true }).ToList();
             if (open.Count > 0)
             {
+                foreach (var (b, answer) in open.Where(a => a.Answer is { IsError: true }))
+                    await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "resolution_rejected",
+                        payload: JsonSerializer.Serialize(new { id = ids[b.TaskId], reason = answer!.Value.ErrorValue }), teamId: b.TeamId, taskId: b.TaskId, ct: ct);
                 await context.SendMessageAsync(new RunFinished(runId, "parked",
-                    string.Join(",", open.Select(b => ids[b.TaskId]))), cancellationToken: ct);
+                    string.Join(",", open.Select(a => a.Answer is { IsError: true } bad ? $"{ids[a.b.TaskId]} ({bad.ErrorValue})" : ids[a.b.TaskId]))), cancellationToken: ct);
                 return;
             }
             var next = new List<DecisionAnswer>();
-            foreach (var b in blocked)
+            foreach (var (b, answer) in answered)
             {
                 var r = resolutions[ids[b.TaskId]];
                 await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "resolved",
-                    payload: JsonSerializer.Serialize(new { id = r.Id, b.Question, b.Elements, r.Decision, r.Note }), teamId: b.TeamId, taskId: b.TaskId, ct: ct);
-                next.Add(new DecisionAnswer(b.TaskId, r.Decision ?? r.Id,
-                    r.Note ?? (r.Decision is null ? "resolved in the registry; re-read the handover and decisions" : null)));
+                    payload: JsonSerializer.Serialize(new { id = r.Id, b.Question, b.Elements, r.Decision, r.Option, r.Note }), teamId: b.TeamId, taskId: b.TaskId, ct: ct);
+                next.Add(new DecisionAnswer(b.TaskId, r.Decision ?? r.Id, answer!.Value.ResultValue));
             }
             await RunWaveAsync(runId, index, next.ToArray(), context, ct);
         }
@@ -99,7 +105,7 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
                 existing = await registry.NextIdAsync(raised.Select(r => r.Id), ct);
                 raised.Add((b.TaskId, b.Question, existing));
                 await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "raised",
-                    payload: JsonSerializer.Serialize(new { id = existing, b.TeamId, b.TaskId, b.Question, b.Source, b.Elements }),
+                    payload: JsonSerializer.Serialize(new { id = existing, b.TeamId, b.TaskId, b.Question, b.Source, b.Elements, b.Options, b.Recommended }),
                     teamId: b.TeamId, taskId: b.TaskId, ct: ct);
             }
             ids[b.TaskId] = existing;
@@ -108,6 +114,11 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
     }
 
     private sealed record RaisedNeedsDecision(string? Id, string? Question);
+
+    private static NeedsDecision ToNeedsDecision(BlockedTask b) => new(b.Question,
+        Core.ToList(b.Elements.Select(ElementId.NewElementId)), b.Source,
+        Core.ToList(b.Options.Select(o => new DecisionOption(o.Id, o.Summary, o.Consequence))),
+        b.Recommended is { } r ? FSharpOption<string>.Some(r) : null);
     private static readonly JsonSerializerOptions CaseInsensitive = new() { PropertyNameCaseInsensitive = true };
 
     private static async Task<TeamResult> RunTeamSafelyAsync(TeamRunner runner, Team team, IReadOnlyDictionary<string, DecisionAnswer> answers, CancellationToken ct)
