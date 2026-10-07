@@ -46,47 +46,14 @@ try
             var runId = opts.GetValueOrDefault("run-id") ?? $"{DateTime.UtcNow:yyyyMMdd-HHmmss}";
             Directory.CreateDirectory(settings.StateDir);
 
-            var ledger = new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl"));
-            // Traces leave the process only when OTEL_EXPORTER_OTLP_ENDPOINT is set (Langfuse or any
-            // OTLP collector); disposing the provider at the end of the run flushes them.
             var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
                 .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            // Traces leave the process only when OTEL_EXPORTER_OTLP_ENDPOINT is set (Langfuse or any
+            // OTLP collector); disposing the provider at the end of the run flushes them.
             using var tracing = FactoryTelemetry.CreateTracerProvider(env);
-            // Agent code runs only in Docker; FACTORY_SANDBOX=local is the explicit, unisolated fallback.
-            ISandboxFactory sandboxes = (Environment.GetEnvironmentVariable("FACTORY_SANDBOX") ?? "docker") switch
-            {
-                "docker" => new DockerSandboxFactory(new DockerSandboxOptions(
-                    Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest"), ledger, runId),
-                "local" => new LocalSandboxFactory(),
-                var other => throw new ArgumentException($"FACTORY_SANDBOX: '{other}' is not docker|local"),
-            };
-            // Tool governance: the AGT policy files per role (policies/s2) by default; the in-code
-            // allow-list is the explicit fallback and the contract-test double.
-            IToolPolicy toolPolicy = (Environment.GetEnvironmentVariable("FACTORY_TOOL_POLICY") ?? "acs") switch
-            {
-                "acs" => AcsToolPolicy.Load(Environment.GetEnvironmentVariable("FACTORY_POLICY_DIR") ?? AcsToolPolicy.DefaultDirectory),
-                "allowlist" => new RoleAllowListPolicy(),
-                var other => throw new ArgumentException($"FACTORY_TOOL_POLICY: '{other}' is not acs|allowlist"),
-            };
-            // Laya routes turns when FACTORY_LAYA_URL points at tools/laya-sidecar and it is confident
-            // enough; otherwise (and always when unset) the heuristic decides. The ledger names who did.
-            IConfigurator configurator = Environment.GetEnvironmentVariable("FACTORY_LAYA_URL") is { Length: > 0 } laya
-                ? new FallbackConfigurator(
-                    new LayaConfigurator(new HttpClient { BaseAddress = new Uri(laya), Timeout = TimeSpan.FromSeconds(5) }),
-                    new HeuristicConfigurator(),
-                    double.Parse(Environment.GetEnvironmentVariable("FACTORY_LAYA_MIN_CONFIDENCE") ?? "0.7", System.Globalization.CultureInfo.InvariantCulture))
-                : new HeuristicConfigurator();
-            var services = new FactoryServices(
-                settings,
-                ledger,
-                new FactoryAgents(GatewayOptions.FromEnvironment(env), toolPolicy, ledger, FactoryTelemetry.CaptureContent(env)),
-                configurator,
-                new GitWorkspace(settings.RepoPath, settings.StateDir),
-                new VerifyRunner(ledger, sandboxes),
-                sandboxes,
-                opts.ContainsKey("github")
-                    ? new GhCliPullRequests(settings.RepoPath)
-                    : new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+            var services = Services(settings, runId, env, opts.ContainsKey("github")
+                ? new GhCliPullRequests(settings.RepoPath)
+                : new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
 
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -111,6 +78,45 @@ catch (FactoryRejectedException e)
 {
     Console.Error.WriteLine(e.Message);
     return 1;
+}
+
+/// Everything a run (or a rerun) needs, wired from the environment.
+static FactoryServices Services(FactorySettings settings, string runId, Dictionary<string, string> env, IPullRequests pullRequests)
+{
+    var ledger = new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl"));
+    // Agent code runs only in Docker; FACTORY_SANDBOX=local is the explicit, unisolated fallback.
+    ISandboxFactory sandboxes = (Environment.GetEnvironmentVariable("FACTORY_SANDBOX") ?? "docker") switch
+    {
+        "docker" => new DockerSandboxFactory(new DockerSandboxOptions(
+            Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest"), ledger, runId),
+        "local" => new LocalSandboxFactory(),
+        var other => throw new ArgumentException($"FACTORY_SANDBOX: '{other}' is not docker|local"),
+    };
+    // Tool governance: the AGT policy files per role (policies/s2) by default; the in-code
+    // allow-list is the explicit fallback and the contract-test double.
+    IToolPolicy toolPolicy = (Environment.GetEnvironmentVariable("FACTORY_TOOL_POLICY") ?? "acs") switch
+    {
+        "acs" => AcsToolPolicy.Load(Environment.GetEnvironmentVariable("FACTORY_POLICY_DIR") ?? AcsToolPolicy.DefaultDirectory),
+        "allowlist" => new RoleAllowListPolicy(),
+        var other => throw new ArgumentException($"FACTORY_TOOL_POLICY: '{other}' is not acs|allowlist"),
+    };
+    // Laya routes turns when FACTORY_LAYA_URL points at tools/laya-sidecar and it is confident
+    // enough; otherwise (and always when unset) the heuristic decides. The ledger names who did.
+    IConfigurator configurator = Environment.GetEnvironmentVariable("FACTORY_LAYA_URL") is { Length: > 0 } laya
+        ? new FallbackConfigurator(
+            new LayaConfigurator(new HttpClient { BaseAddress = new Uri(laya), Timeout = TimeSpan.FromSeconds(5) }),
+            new HeuristicConfigurator(),
+            double.Parse(Environment.GetEnvironmentVariable("FACTORY_LAYA_MIN_CONFIDENCE") ?? "0.7", System.Globalization.CultureInfo.InvariantCulture))
+        : new HeuristicConfigurator();
+    return new FactoryServices(
+        settings,
+        ledger,
+        new FactoryAgents(GatewayOptions.FromEnvironment(env), toolPolicy, ledger, FactoryTelemetry.CaptureContent(env)),
+        configurator,
+        new GitWorkspace(settings.RepoPath, settings.StateDir),
+        new VerifyRunner(ledger, sandboxes),
+        sandboxes,
+        pullRequests);
 }
 
 static PlanValidation Validate(Dictionary<string, string> opts) =>
