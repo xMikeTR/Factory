@@ -25,6 +25,9 @@ public sealed class ScriptedChatClient(params ChatResponse[] script) : IChatClie
         return WithUsage(new ChatMessage(ChatRole.Assistant, [new FunctionCallContent(Guid.NewGuid().ToString("N"), tool, dict)]));
     }
 
+    /// A step that simulates the process being killed: cancels the run and throws, mid-turn.
+    public static ChatResponse Kill(CancellationTokenSource run) => new(new ChatMessage(ChatRole.Assistant, "<kill>")) { AdditionalProperties = new() { ["kill"] = run } };
+
     public static ChatResponse Say(string text) => WithUsage(new ChatMessage(ChatRole.Assistant, text));
 
     private static ChatResponse WithUsage(ChatMessage m) =>
@@ -34,9 +37,15 @@ public sealed class ScriptedChatClient(params ChatResponse[] script) : IChatClie
     {
         lock (_requests) _requests.Add(messages.ToList());
         lock (_script)
-            return _script.TryDequeue(out var r)
-                ? Task.FromResult(r)
-                : throw new InvalidOperationException("scripted model ran out of responses");
+        {
+            if (!_script.TryDequeue(out var r)) throw new InvalidOperationException("scripted model ran out of responses");
+            if (r.AdditionalProperties?.TryGetValue("kill", out var k) == true && k is CancellationTokenSource run)
+            {
+                run.Cancel();
+                throw new OperationCanceledException(run.Token);
+            }
+            return Task.FromResult(r);
+        }
     }
 
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
