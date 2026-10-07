@@ -1,7 +1,19 @@
 # factory-s2-runner: where agent and verify commands run (DockerSandbox).
-# .NET 9 SDK, the P toolchain (decision checks) and a JDK (PObserve's Java log parser).
-# No secrets are baked in or passed at run time; the container runs as the host user with
-# --network none apart from the restore window.
+# .NET 9 SDK, the P toolchain (decision checks), a JDK and PObserve (`pobserve-check`, logs
+# against P specs). No secrets are baked in or passed at run time; the container runs as the
+# host user with --network none apart from the restore window.
+# Build with build.sh: it passes tools/pobserve-parser as the `pobserve-parser` build context.
+
+# The PObserve CLI is not published; build it from P at a pinned commit.
+FROM gradle:8.5-jdk17 AS pobserve
+ARG P_COMMIT=260da928f67569ca7a8c0039a02d0bad7cde6096
+RUN git clone --filter=blob:none --no-checkout https://github.com/p-org/P.git /src \
+ && git -C /src sparse-checkout set Src/PObserve/PObserve \
+ && git -C /src checkout --quiet ${P_COMMIT}
+WORKDIR /src/Src/PObserve/PObserve
+RUN gradle shadowJar -x check --no-daemon --quiet \
+ && cp build/libs/PObserve-*.jar /PObserve.jar
+
 FROM mcr.microsoft.com/dotnet/sdk:9.0
 
 RUN apt-get update \
@@ -17,6 +29,11 @@ ARG P_VERSION=3.1.0
 RUN dotnet tool install P --tool-path /opt/dotnet-tools ${P_VERSION:+--version $P_VERSION} \
  && chmod -R a+rX /opt/dotnet-tools \
  && p --version
+
+COPY --from=pobserve /PObserve.jar /opt/pobserve/PObserve.jar
+COPY --from=pobserve-parser src/ /opt/pobserve/parser/
+COPY --from=pobserve-parser pobserve-check /usr/local/bin/pobserve-check
+RUN chmod -R a+rX /opt/pobserve && chmod a+rx /usr/local/bin/pobserve-check
 
 WORKDIR /work
 CMD ["sleep", "infinity"]

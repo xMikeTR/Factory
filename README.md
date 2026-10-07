@@ -133,6 +133,17 @@ limits. The network is attached only while `dotnet restore` runs at start (ledge
 `restore`). `FACTORY_SANDBOX=local` runs on the host with a scrubbed environment instead.
 Docker contract tests are opt-in: `FACTORY_TEST_DOCKER=1 dotnet test --filter DockerSandbox`.
 
+PObserve runs as an integration verify step: the runner image carries the PObserve CLI (built
+from P at a pinned commit; it is not published) and `pobserve-check <specs-dir> <Spec> <logs>`,
+which compiles the `.p` files in pobserve mode with the factory's generic parser
+(`tools/pobserve-parser`). The logging contract, stated in every brief that has an event
+vocabulary, is one line per event containing `pobserve <event> <payload>` (scalar payload or
+none; other text on the line is ignored), e.g. `INFO pobserve eCommitted 3`. Point the step at
+the handover's behaviour specs, e.g.
+`FACTORY_POBSERVE_CMD="pobserve-check /path/to/handover/behaviour NoLostUpdate artifacts/test-logs"`
+(the path must be inside the sandbox's worktree mount when `FACTORY_SANDBOX=docker`). Exit 2 is
+a spec violation, 4 a malformed event line. Tests: `FACTORY_TEST_DOCKER=1 dotnet test --filter PObserve`.
+
 The merge policy comes from the target repo's `.factory/policy.yaml` (read from the base
 checkout, never a task worktree):
 

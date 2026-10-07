@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# pobserve-check <specs-dir> <SpecName> <log file|dir>
+# Checks logs against a P spec with PObserve: compiles every .p file in <specs-dir> in pobserve
+# mode, builds the spec jar with the factory's EventLineParser (logging contract:
+# `pobserve <event> [payload]`), runs the PObserve CLI. Exit 0 when the spec holds, non-zero on
+# an assertion (2), a parse error in a marked line (4) or a bad invocation (1).
+set -euo pipefail
+[ $# -eq 3 ] || { echo "usage: pobserve-check <specs-dir> <SpecName> <log file|dir>" >&2; exit 1; }
+specs=$(realpath "$1"); spec=$2; logs=$(realpath "$3")
+home=${POBSERVE_HOME:-/opt/pobserve}
+cli="$home/PObserve.jar"
+
+shopt -s nullglob
+files=("$specs"/*.p)
+[ ${#files[@]} -gt 0 ] || { echo "pobserve-check: no .p files in $specs" >&2; exit 1; }
+[ -e "$logs" ] || { echo "pobserve-check: no logs at $logs" >&2; exit 1; }
+
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/PSrc" "$work/classes" "$work/out"
+cp "${files[@]}" "$work/PSrc/"
+cat > "$work/FactorySpec.pproj" <<PPROJ
+<Project>
+<ProjectName>FactorySpec</ProjectName>
+<InputFiles><PFile>./PSrc/</PFile></InputFiles>
+<OutputDir>./PGenerated/</OutputDir>
+</Project>
+PPROJ
+
+(cd "$work" && p compile --mode pobserve > compile.log 2>&1) || { cat "$work/compile.log"; echo "pobserve-check: P compile failed" >&2; exit 1; }
+javac -nowarn -d "$work/classes" -cp "$cli" "$work"/PGenerated/PObserve/*.java "$home"/parser/factory/pobserve/*.java > "$work/javac.log" 2>&1 \
+  || { cat "$work/javac.log"; echo "pobserve-check: javac failed" >&2; exit 1; }
+jar cf "$work/spec.jar" -C "$work/classes" .
+
+# Under --network none the container's hostname does not resolve and log4j complains; resolve it locally.
+printf '127.0.0.1 localhost %s\n' "$(hostname)" > "$work/hosts"
+set +e
+java -Djdk.net.hosts.file="$work/hosts" -jar "$cli" --jars "$work/spec.jar" --spec "$spec" --parser EventLineParser \
+  -pc FactorySpec.pobserve.PEvents -l "$logs" -o "$work/out" -ik TEXT > "$work/pobserve.log" 2>&1
+status=$?
+set -e
+plain() { sed 's/\x1b\[[0-9;]*m//g' "$@"; }
+plain "$work/pobserve.log"
+for f in "$work"/out/*; do
+  case "$(basename "$f")" in PObserveMetrics.txt) ;; *) [ -s "$f" ] && { echo "--- $(basename "$f")"; plain "$f"; echo; } ;; esac
+done
+events=$(awk '/Total Events Read/ { getline; getline; print $1; exit }' "$work/out/PObserveMetrics.txt" 2>/dev/null || true)
+echo "pobserve-check: $spec over ${events:-?} events in $logs: $([ $status -eq 0 ] && echo holds || echo "FAILED (exit $status)")"
+exit $status
