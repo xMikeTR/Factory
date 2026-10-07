@@ -51,36 +51,15 @@ public sealed class DryRunPullRequests(string runDirRoot) : IPullRequests
     public Task EnableAutoMergeAsync(string url, CancellationToken ct) => Task.CompletedTask;
 }
 
-/// Where RequestPort questions go. Console for the Phase 2 slice. In production, needs-decision
-/// becomes a minted item in the registry that System 1's grill-me picks up (the run waits,
-/// checkpointed, until the decision is bound), and merge approval resolves from a GitHub webhook.
+/// Where merge-approval requests go. Console for the Phase 2 slice; a GitHub webhook in production.
+/// Needs-decisions do not come here: they park the run in the registry (see WaveExecutor).
 public interface IHumanChannel
 {
-    Task<NeedsDecisionResponse> AskAsync(NeedsDecisionRequest request, CancellationToken ct);
     Task<MergeApprovalResponse> ApproveAsync(MergeApprovalRequest request, CancellationToken ct);
 }
 
 public sealed class ConsoleHumanChannel : IHumanChannel
 {
-    public Task<NeedsDecisionResponse> AskAsync(NeedsDecisionRequest request, CancellationToken ct)
-    {
-        var answers = new List<DecisionAnswer>();
-        foreach (var b in request.Blocked)
-        {
-            Console.WriteLine($"\n[needs-decision] {b.TaskId} ({b.TeamId}, raised by {b.Source})\n  {b.Question}");
-            Console.Write("  Bind a decision id and note, e.g. 'D-0043 retry at most 3 times', or 'abandon <reason>': ");
-            var line = (Console.ReadLine() ?? "").Trim();
-            if (line.StartsWith("abandon", StringComparison.OrdinalIgnoreCase) || line.Length == 0)
-                answers.Add(new DecisionAnswer(b.TaskId, null, line.Length > 7 ? line[7..].Trim() : "no answer"));
-            else
-            {
-                var parts = line.Split(' ', 2);
-                answers.Add(new DecisionAnswer(b.TaskId, parts[0], parts.Length > 1 ? parts[1] : null));
-            }
-        }
-        return Task.FromResult(new NeedsDecisionResponse(request.RunId, request.WaveIndex, answers.ToArray()));
-    }
-
     public Task<MergeApprovalResponse> ApproveAsync(MergeApprovalRequest request, CancellationToken ct)
     {
         Console.WriteLine($"\n[merge-approval] {request.Tier}: {request.PullRequestUrl}");

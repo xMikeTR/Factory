@@ -27,20 +27,21 @@ public sealed record IntegrationReady(string RunId);
 /// Integration verify -> merge.
 public sealed record IntegrationVerified(string RunId);
 
-/// Terminal message for Finalize, from any stage.
+/// Terminal message for Finalize, from any stage. Status "parked": Detail is the open ND ids.
 public sealed record RunFinished(string RunId, string Status, string Detail);
 
-// ---------- human-in-the-loop (RequestPort payloads) ----------
+/// What the CLI prints when a run ends.
+public static class RunReport
+{
+    public static string Line(RunFinished r) => r.Status == "parked" ? $"parked: {r.Detail}" : $"{r.Status}\n{r.Detail}";
+}
+
+// ---------- needs-decision (registry) and merge approval (RequestPort) ----------
 
 public sealed record BlockedTask(string TeamId, string TaskId, string Question, string Source, string[] Elements);
 
-/// Wave executor -> "needs-decision" port. Handled by System 1 (grill-me) in production.
-public sealed record NeedsDecisionRequest(string RunId, int WaveIndex, BlockedTask[] Blocked);
-
 /// One answer per blocked task: a newly bound decision id, or null to abandon the task.
 public sealed record DecisionAnswer(string TaskId, string? DecisionId, string? Note);
-
-public sealed record NeedsDecisionResponse(string RunId, int WaveIndex, DecisionAnswer[] Answers);
 
 /// Merge executor -> "merge-approval" port, for tiers that need a human.
 public sealed record MergeApprovalRequest(string RunId, string PullRequestUrl, string Tier, string[] Reasons);

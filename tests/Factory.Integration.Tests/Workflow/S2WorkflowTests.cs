@@ -17,8 +17,6 @@ public class S2WorkflowTests
     private sealed class ApprovingHuman : IHumanChannel
     {
         public List<MergeApprovalRequest> Approvals { get; } = [];
-        public Task<NeedsDecisionResponse> AskAsync(NeedsDecisionRequest request, CancellationToken ct) =>
-            throw new InvalidOperationException("no decision expected");
         public Task<MergeApprovalResponse> ApproveAsync(MergeApprovalRequest request, CancellationToken ct)
         {
             Approvals.Add(request);
@@ -97,13 +95,62 @@ public class S2WorkflowTests
         var ledger = Path.Combine(h.Services.Settings.RegistryPath, "ledger");
         var pipeline = await File.ReadAllLinesAsync(Path.Combine(ledger, "pipeline.jsonl"));
         var checks = await File.ReadAllLinesAsync(Path.Combine(ledger, "checks.jsonl"));
-        Assert.All(pipeline.Concat(checks), l => Assert.Empty(DesigncSchema.Validate(l)));
+        Assert.All(pipeline.Concat(checks), l => Assert.True(DesigncSchema.KeptByGate(l), l));
         Assert.Single(pipeline, l => l.Contains("\"task\":\"T-001\"") && l.Contains("\"status\":\"passed\""));
         var check = JsonDocument.Parse(Assert.Single(checks)).RootElement;
         Assert.Equal("D-0001", check.GetProperty("decision").GetString());
         Assert.Equal("p check -tc tcOptimistic", check.GetProperty("check").GetString());
         Assert.Equal("fail", check.GetProperty("outcome").GetString());
         Assert.NotEqual(0, check.GetProperty("exit_code").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_needs_decision_parks_the_run_until_designc_resolves_it_then_resumes_to_Passed()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        var registry = h.Services.Settings.RegistryPath;
+        Directory.CreateDirectory(registry);
+        model.Enqueue(
+            Say(PlanFor(h.Handover)),
+            Say("Approach: add QuoteStatus.cs"),
+            Call("raise_needs_decision", new { question = "Is Draft the only initial status?" }), Say("blocked"));
+        var handover = h.WriteHandoverJson();
+
+        var parked = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
+
+        Assert.Equal("parked", parked?.Status);
+        Assert.Equal("ND-0001", parked?.Detail);
+        Assert.Equal("parked: ND-0001", RunReport.Line(parked!));
+        var nd = JsonDocument.Parse(Assert.Single(await File.ReadAllLinesAsync(Path.Combine(registry, "ledger", "pipeline.jsonl")),
+            l => l.Contains("\"kind\":\"needs_decision\""))).RootElement;
+        Assert.Equal("ND-0001", nd.GetProperty("id").GetString());
+        Assert.Equal("open", nd.GetProperty("status").GetString()); // designc's gate raises "open needs-decision ND-0001"
+        Assert.True(DesigncSchema.KeptByGate(nd.GetRawText()));
+        Assert.Equal("T-001", nd.GetProperty("task").GetString());
+
+        // Still unresolved: a re-run parks again on the same id without asking the model anything.
+        var again = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
+        Assert.Equal("parked: ND-0001", RunReport.Line(again!));
+        Assert.Equal(0, model.Remaining);
+
+        await File.WriteAllTextAsync(Path.Combine(registry, "ledger", "designc.jsonl"),
+            """{"kind":"needs_decision_resolved","id":"ND-0001","by":"designer","schema_version":1,"event_id":"e-1","ts":1791500000000}""" + "\n");
+        model.Enqueue( // the approach note is replayed, so no task-planner turn
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Say("done"));
+
+        await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
+
+        Assert.Equal(0, model.Remaining);
+        var payloads = h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001").Select(e => e.Payload!);
+        Assert.True(Core.Replay(new Limits(8, 3), payloads).IsPassed);
+        Assert.Contains(model.Requests.Last(), m => m.Text.Contains("ND-0001"));
+        var pipeline = await File.ReadAllLinesAsync(Path.Combine(registry, "ledger", "pipeline.jsonl"));
+        Assert.Single(pipeline, l => l.Contains("\"kind\":\"needs_decision\"") && l.Contains("\"status\":\"resolved\""));
+        Assert.Single(pipeline, l => l.Contains("\"task\":\"T-001\"") && l.Contains("\"status\":\"passed\""));
     }
 
     [Fact]
