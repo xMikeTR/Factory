@@ -190,23 +190,41 @@ let tests: (string * (unit -> unit)) list =
               equal (Ok e) (Json.decodeTaskEvent (Json.encodeTaskEvent e)) "round trip"
 
       // ---------- merge ----------
-      "merge: high-risk element and manual check need approvals", fun () ->
+      "merge: high-risk element needs two approvals and a manual check is a pending block", fun () ->
           let d = Dispatcher.dispatch validated.Value
           let v =
               Merge.decide Merge.defaultPolicy
                   { Teams = d.Waves |> List.collect (fun w -> w.Teams); Handover = handover; ChangedLines = 120
                     ChangedFiles = [ "src/Quotes.Data/Quote.cs" ] }
           equal TwoApprovals v.Tier "tier"
-          check (v.Reasons |> List.exists (fun r -> r.Contains "manual")) "manual reason"
-      "merge: file outside declared writes escalates", fun () ->
+          check (v.Blocks |> List.exists (function ManualVerifyPending _ -> true | _ -> false)) $"%A{v.Blocks}"
+      "merge: a file outside every team's writes is a scope leak block", fun () ->
           let team = { Id = TeamId "t"; Tasks = [ task "T-002" ]; Writes = [ p "src/PricingApi/**" ]; Elements = [] }
           let v = Merge.decide Merge.defaultPolicy { Teams = [ team ]; Handover = handover; ChangedLines = 5; ChangedFiles = [ "Directory.Build.props" ] }
-          equal TwoApprovals v.Tier "tier"
+          equal [ ScopeLeak "Directory.Build.props" ] v.Blocks "blocks"
+      "merge: a change under a protected path is its own block", fun () ->
+          let team = { Id = TeamId "t"; Tasks = [ task "T-002" ]; Writes = [ p "src/PricingApi/**" ]; Elements = [] }
+          let h = { handover with ProtectedPaths = [ p ".github/**" ] }
+          let v = Merge.decide Merge.defaultPolicy { Teams = [ team ]; Handover = h; ChangedLines = 5; ChangedFiles = [ ".github/workflows/ci.yml" ] }
+          equal [ ProtectedPathChanged ".github/workflows/ci.yml" ] v.Blocks "blocks"
       "merge: small low-risk change auto-merges", fun () ->
           let h = { handover with Elements = handover.Elements |> List.map (fun e -> { e with Risk = Low }) }
           let team = { Id = TeamId "t"; Tasks = [ task "T-002" ]; Writes = [ p "src/PricingApi/**" ]; Elements = [ ElementId "Pricing Platform/Pricing API" ] }
           let v = Merge.decide Merge.defaultPolicy { Teams = [ team ]; Handover = h; ChangedLines = 40; ChangedFiles = [ "src/PricingApi/Q.cs" ] }
           equal AutoMerge v.Tier "tier"
+          equal [] v.Blocks "no blocks"
+      "merge: every block stops the merge in both modes", fun () ->
+          for block in [ ScopeLeak "x"; ProtectedPathChanged ".github/x"; ManualVerifyPending "T-001: eyeball" ] do
+              for mode in [ Auto; Tiered [ "alice" ] ] do
+                  let v = { Tier = AutoMerge; Reasons = []; Blocks = [ block ] }
+                  equal (MergeAction.Blocked [ block ]) (Merge.action { Merge.defaultPolicy with Enforcement = mode } v) $"{block} {mode}"
+      "merge: auto mode merges on green whatever the tier", fun () ->
+          let v = { Tier = TwoApprovals; Reasons = [ "high risk" ]; Blocks = [] }
+          equal MergeAction.MergeNow (Merge.action { Merge.defaultPolicy with Enforcement = Auto } v) "auto"
+      "merge: tiered mode merges at AutoMerge and waits for approvers above it", fun () ->
+          let tiered = { Merge.defaultPolicy with Enforcement = Tiered [ "alice" ] }
+          equal MergeAction.MergeNow (Merge.action tiered { Tier = AutoMerge; Reasons = []; Blocks = [] }) "auto tier"
+          equal (MergeAction.AwaitApproval(OneApproval, [ "alice" ])) (Merge.action tiered { Tier = OneApproval; Reasons = []; Blocks = [] }) "one"
 
       // ---------- regression ----------
       "regression: a test that passed before and fails now is a regression", fun () ->

@@ -62,6 +62,8 @@ type Core =
     static member DecideMerge(policy: MergePolicy, input: MergeInput) : MergeVerdict = Merge.decide policy input
 
     static member DefaultMergePolicy = Merge.defaultPolicy
+    static member MergeActionFor(policy: MergePolicy, verdict: MergeVerdict) : MergeAction = Merge.action policy verdict
+    static member DescribeBlock(block: MergeBlock) : string = Merge.describe block
 
     static member Matches(pattern: PathPattern, path: string) = PathPattern.matches pattern path
 

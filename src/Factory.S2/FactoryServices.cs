@@ -1,5 +1,6 @@
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Policy;
 using Factory.Harness.Sandbox;
 using Factory.S2.Git;
 using Factory.S2.Verify;
@@ -19,7 +20,9 @@ public sealed record FactorySettings(
     /// Full suite. Also the P2P baseline/regression check when it writes JUnit XML to
     /// $FACTORY_TEST_RESULTS (relative to the worktree); with no results the check is off.
     string IntegrationTestCommand,
-    string? PObserveCommand)
+    string? PObserveCommand,
+    /// From the target repo's .factory/policy.yaml; null is the tiered default.
+    MergePolicy? MergePolicy = null)
 {
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
         RepoPath: Path.GetFullPath(repo),
@@ -33,7 +36,8 @@ public sealed record FactorySettings(
         CommandAllowList: Env("FACTORY_COMMANDS", "dotnet build;dotnet test;dotnet format")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
         IntegrationTestCommand: Env("FACTORY_INTEGRATION_TEST_CMD", "dotnet test"),
-        PObserveCommand: Environment.GetEnvironmentVariable("FACTORY_POBSERVE_CMD"));
+        PObserveCommand: Environment.GetEnvironmentVariable("FACTORY_POBSERVE_CMD"),
+        MergePolicy: MergePolicyFile.FromEnvironment(Path.GetFullPath(repo)));
 
     public string RunDir(string runId) => Path.Combine(StateDir, "runs", runId);
     public string PlanPath(string runId) => Path.Combine(RunDir(runId), "plan.json");

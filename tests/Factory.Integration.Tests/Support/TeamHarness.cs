@@ -33,14 +33,14 @@ public sealed class TeamHarness : IDisposable
     public FactoryServices Services { get; }
     public Handover Handover { get; }
 
-    private TeamHarness(string root, Handover handover, Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand)
+    private TeamHarness(string root, Handover handover, Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand, MergePolicy? mergePolicy)
     {
         _root = root;
         Repo = Path.Combine(root, "repo");
         Handover = handover;
         var state = Path.Combine(root, "state");
         var settings = new FactorySettings(Repo, Path.Combine(root, "registry"), "main", state, 3, limits,
-            ["dotnet build", "dotnet test", "ls"], suiteCommand, null);
+            ["dotnet build", "dotnet test", "ls"], suiteCommand, null, mergePolicy);
         var sandboxes = new LocalSandboxFactory();
         Services = new FactoryServices(settings, Ledger,
             new FactoryAgents(_ => model, new RoleAllowListPolicy(), Ledger),
@@ -53,7 +53,8 @@ public sealed class TeamHarness : IDisposable
 
     /// `suiteCommand` is the integration test command; "true" writes no results, so there is no
     /// regression baseline and the P2P check is skipped.
-    public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand = "true")
+    public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand = "true",
+        MergePolicy? mergePolicy = null)
     {
         var root = Directory.CreateTempSubdirectory("team-").FullName;
         var repo = Path.Combine(root, "repo");
@@ -72,7 +73,7 @@ public sealed class TeamHarness : IDisposable
 
         var handover = await new DesigncHandoverReader().LoadAsync(
             Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"), S2Config.Default, CancellationToken.None);
-        var h = new TeamHarness(root, handover, model, limits, suiteCommand);
+        var h = new TeamHarness(root, handover, model, limits, suiteCommand, mergePolicy);
         await h.Services.Git.EnsureIntegrationAsync(RunId, "main", CancellationToken.None);
         return h;
     }
