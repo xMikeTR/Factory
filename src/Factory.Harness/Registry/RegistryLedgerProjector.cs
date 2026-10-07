@@ -111,8 +111,12 @@ public static class RegistryLedgerProjector
                 fields(w);
                 w.WriteString("by", By);
                 w.WriteString("system", source.System);
+                // designc's gate loader drops gate kinds carrying any envelope field beyond
+                // system/session/task/element/payload, so the run and trace ids go under payload.
+                w.WriteStartObject("payload");
                 w.WriteString("run_id", source.RunId);
                 if (source.TraceId is not null) w.WriteString("trace_id", source.TraceId);
+                w.WriteEndObject();
                 w.WriteNumber("schema_version", 1);
                 w.WriteNumber("ts", source.Ts.ToUnixTimeMilliseconds());
                 if (eventId is not null) w.WriteString("event_id", eventId);
