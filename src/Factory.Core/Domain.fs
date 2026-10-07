@@ -83,7 +83,10 @@ type PlannedTask =
       Title: string
       Instructions: string
       Elements: ElementId list
+      /// Production paths: only the Implementer writes here.
       Writes: PathPattern list
+      /// Test paths: only the TestAuthor writes here. Disjoint from Writes.
+      TestWrites: PathPattern list
       DependsOn: TaskId list
       Covers: DecisionId list
       Verify: VerifyEntry list }

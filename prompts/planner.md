@@ -8,6 +8,10 @@ Rules the plan is checked against (a plan that breaks any of them is rejected an
 - Each task links one or more `elements` by their exact id from the package.
 - `writes` are repo-relative globs (`*`, `?`, `**` only). Every write must sit inside the
   `codeAreas` of the task's own elements, and never under a protected path.
+- `testWrites` are the task's test paths, under the same rules. They must not overlap `writes`:
+  a TestAuthor writes the tests first, and a separate Implementer then writes only `writes`.
+- Every `invariant` command must run something under the task's `testWrites` or a protected path
+  (e.g. `dotnet test tests/X.Tests --filter ...`), so the Implementer cannot weaken the check.
 - Keep `writes` as narrow as the task allows. Tasks whose writes overlap are run one after
   another by the same team; narrow writes are what let work run in parallel.
 - `dependsOn` only when a task needs another's code to exist. No cycles.

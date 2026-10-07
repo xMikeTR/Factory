@@ -21,6 +21,10 @@ type PlanError =
     | SelfSeededWithoutCleanup of TaskId * verify: string
     | EmptyVerify of TaskId * verify: string
     | InvalidTimeout of TaskId * verify: string
+    | TestWritesOverlapWrites of TaskId * PathPattern * PathPattern
+    | TestWriteOutsideElement of TaskId * PathPattern
+    /// An invariant must run something the Implementer cannot edit: a path under TestWrites or a protected path.
+    | InvariantNotUnderTestWrites of TaskId * verifyName: string
 
 [<RequireQualifiedAccess>]
 module PlanError =
@@ -44,6 +48,9 @@ module PlanError =
         | SelfSeededWithoutCleanup(t, v) -> $"Task {t.Value}, verify '{v}': self-seeded checks must declare a cleanup."
         | EmptyVerify(t, v) -> $"Task {t.Value}, verify '{v}' has no command or instructions."
         | InvalidTimeout(t, v) -> $"Task {t.Value}, verify '{v}' needs a positive timeoutSeconds."
+        | TestWritesOverlapWrites(t, w, tw) -> $"Task {t.Value}: `writes` '{w.Value}' overlaps `testWrites` '{tw.Value}'. Production and test paths must be disjoint: the TestAuthor and the Implementer never edit the same files."
+        | TestWriteOutsideElement(t, p) -> $"Task {t.Value} has testWrites '{p.Value}', which is outside the code areas of its elements."
+        | InvariantNotUnderTestWrites(t, v) -> $"Task {t.Value}, invariant '{v}' runs nothing under the task's testWrites or a protected path, so the Implementer could weaken it. Point its command at the tests it checks."
 
 /// A plan that has passed every rule against a specific handover. The only way to get one is
 /// PlanValidator.validate, so anything that takes a ValidatedPlan (the dispatcher, the runner)
@@ -57,6 +64,13 @@ type ValidatedPlan internal (plan: Plan, handover: Handover) =
 module PlanValidator =
 
     let private isBlank (s: string) = String.IsNullOrWhiteSpace s
+
+    /// Does the command mention a path under one of `areas`? Tokens are split on shell
+    /// punctuation; a token counts when it, or something inside it, matches an area.
+    let private mentionsPathUnder (areas: PathPattern list) (run: string) =
+        run.Split([| ' '; '\t'; ';'; '&'; '|'; '('; ')'; '"'; '\''; '<'; '>' |], StringSplitOptions.RemoveEmptyEntries)
+        |> Array.choose (fun tok -> match PathPattern.create tok with Ok p -> Some p.Value | Error _ -> None)
+        |> Array.exists (fun tok -> areas |> List.exists (fun a -> PathPattern.matches a tok || PathPattern.matches a (tok + "/_")))
 
     /// First dependency cycle found, as the list of task ids around it (first id repeated at the end).
     ///
@@ -88,8 +102,10 @@ module PlanValidator =
     ///   per task:    NoWrites, NoElements, NoAutomatedVerify, UnknownElement,
     ///                ProtectedWrite (mayOverlap with any protected path) else
     ///                WriteOutsideElement (not isWithin any code area of the task's elements),
+    ///                the same for TestWrites (TestWriteOutsideElement), TestWritesOverlapWrites,
     ///                UnknownDependency, UnknownDecision, CoverWithoutBinding,
-    ///                verify entries: EmptyVerify, SelfSeededWithoutCleanup, InvalidTimeout
+    ///                verify entries: EmptyVerify, SelfSeededWithoutCleanup, InvalidTimeout,
+    ///                InvariantNotUnderTestWrites
     ///   whole plan:  UncoveredDecision (every handover decision covered by some task), DependencyCycle
     /// Return Ok(ValidatedPlan(plan, handover)) only when the list is empty. The constructor is
     /// `internal`: this function is the only door into ValidatedPlan.
@@ -111,6 +127,8 @@ module PlanValidator =
                   if isBlank a.Run then EmptyVerify(t.Id, a.Name)
                   if a.Kind = SelfSeeded && (a.Cleanup |> Option.forall isBlank) then SelfSeededWithoutCleanup(t.Id, a.Name)
                   if a.TimeoutSeconds <= 0 then InvalidTimeout(t.Id, a.Name)
+                  if a.Kind = Invariant && not (isBlank a.Run) && not (mentionsPathUnder (t.TestWrites @ handover.ProtectedPaths) a.Run) then
+                      InvariantNotUnderTestWrites(t.Id, a.Name)
               | Manual m -> if isBlank m.Instructions then EmptyVerify(t.Id, m.Name) ]
 
         let taskLevel (t: PlannedTask) =
@@ -124,6 +142,11 @@ module PlanValidator =
               for w in t.Writes do
                   if handover.ProtectedPaths |> List.exists (PathPattern.mayOverlap w) then ProtectedWrite(t.Id, w)
                   elif not (codeAreas |> List.exists (PathPattern.isWithin w)) then WriteOutsideElement(t.Id, w)
+              for tw in t.TestWrites do
+                  if handover.ProtectedPaths |> List.exists (PathPattern.mayOverlap tw) then ProtectedWrite(t.Id, tw)
+                  elif not (codeAreas |> List.exists (PathPattern.isWithin tw)) then TestWriteOutsideElement(t.Id, tw)
+                  for w in t.Writes do
+                      if PathPattern.mayOverlap w tw then TestWritesOverlapWrites(t.Id, w, tw)
               for d in t.DependsOn do
                   if not (taskIds.Contains d) then UnknownDependency(t.Id, d)
               for c in t.Covers do

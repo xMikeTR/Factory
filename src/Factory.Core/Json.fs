@@ -128,6 +128,7 @@ module Json =
           Instructions = str path o "instructions"
           Elements = strs path o "elements" |> List.map ElementId
           Writes = strs path o "writes" |> List.map (pattern $"{path}.writes")
+          TestWrites = strs path o "testWrites" |> List.map (pattern $"{path}.testWrites")
           DependsOn = strs path o "dependsOn" |> List.map TaskId
           Covers = strs path o "covers" |> List.map DecisionId
           Verify = collect (arr path o "verify") decodeVerify }
