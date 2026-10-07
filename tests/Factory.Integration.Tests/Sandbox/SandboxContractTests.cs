@@ -128,4 +128,26 @@ public sealed class DockerSandboxContract : SandboxContract
             new Dictionary<string, string>(), default);
         Assert.DoesNotContain("CONNECTED", r.Output);
     }
+
+    /// Decision checks are P models: `p compile` emits a net8.0 project, which must build with
+    /// the network off (live1 failed here with NU1301 fetching the .NET 8 packs).
+    [Fact]
+    public async Task A_P_model_compiles_and_checks_with_the_network_off()
+    {
+        var (s, on) = await SandboxAsync(); if (!on) return;
+        await using var _ = s;
+        var p = Path.Combine(Worktree, "P");
+        Directory.CreateDirectory(Path.Combine(p, "PSrc"));
+        Directory.CreateDirectory(Path.Combine(p, "PTst"));
+        await File.WriteAllTextAsync(Path.Combine(p, "Probe.pproj"), """
+            <Project><ProjectName>Probe</ProjectName><InputFiles><PFile>./PSrc/</PFile><PFile>./PTst/</PFile></InputFiles><OutputDir>./PGenerated/</OutputDir></Project>
+            """);
+        await File.WriteAllTextAsync(Path.Combine(p, "PSrc", "Probe.p"), "machine Probe { start state Init { entry { assert true; } } }\n");
+        await File.WriteAllTextAsync(Path.Combine(p, "PTst", "Test.p"), "test tcProbe [main=Probe]: { Probe };\n");
+
+        var r = await s.RunAsync("p compile && p check -tc tcProbe -s 5", p, TimeSpan.FromMinutes(5), new Dictionary<string, string>(), default);
+
+        Assert.True(r.Succeeded, r.Output);
+        Assert.DoesNotContain("NU1301", r.Output);
+    }
 }
