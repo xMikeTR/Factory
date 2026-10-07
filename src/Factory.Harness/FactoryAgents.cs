@@ -69,16 +69,27 @@ public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPol
         var name = context.Function.Name;
         var args = context.Arguments.ToDictionary(kv => kv.Key, kv => kv.Value);
         var decision = policy.Evaluate(scope.Role, name, args);
+        if (!decision.Allowed)
+        {
+            await LogToolCallAsync(scope, tier, name, args, "denied", decision.Reason, ct);
+            return $"DENIED by policy: {decision.Reason}. This tool is not available to you; do not retry it.";
+        }
 
-        await ledger.AppendAsync(new LedgerEvent(scope.RunId, "S2", scope.Role, LedgerKinds.ToolCall,
-            TaskId: scope.TaskId, TeamId: scope.TeamId,
-            Outcome: decision.Allowed ? "allowed" : "denied", Model: tier.ToString(),
-            Payload: JsonSerializer.Serialize(new { tool = name, args = Summarise(args), reason = decision.Reason })), ct);
-
-        return decision.Allowed
-            ? await next(context, ct)
-            : $"DENIED by policy: {decision.Reason}. This tool is not available to you; do not retry it.";
+        // The tool itself can still refuse (a path outside the role's writes, a protected path, a
+        // command off the allow-list); that is a denial too and is ledgered as one.
+        var result = await next(context, ct);
+        var text = result switch { string str => str, JsonElement { ValueKind: JsonValueKind.String } j => j.GetString(), _ => null };
+        if (text is not null && text.StartsWith("DENIED", StringComparison.Ordinal))
+            await LogToolCallAsync(scope, tier, name, args, "denied", text, ct);
+        else
+            await LogToolCallAsync(scope, tier, name, args, "allowed", decision.Reason, ct);
+        return result;
     }
+
+    private ValueTask LogToolCallAsync(AgentScope scope, ModelTier tier, string tool, Dictionary<string, object?> args, string outcome, string? reason, CancellationToken ct) =>
+        ledger.AppendAsync(new LedgerEvent(scope.RunId, "S2", scope.Role, LedgerKinds.ToolCall,
+            TaskId: scope.TaskId, TeamId: scope.TeamId, Outcome: outcome, Model: tier.ToString(),
+            Payload: JsonSerializer.Serialize(new { tool, args = Summarise(args), reason })), ct);
 
     // Tool arguments can be whole files; the ledger keeps the shape, not the content.
     private static Dictionary<string, string> Summarise(Dictionary<string, object?> args) =>
