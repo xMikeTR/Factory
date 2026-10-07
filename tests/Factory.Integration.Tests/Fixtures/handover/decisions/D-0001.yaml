@@ -1,0 +1,17 @@
+id: D-0001
+status: bound           # minted | checked | bound | superseded
+effect: fix             # fix (the model changes) | accept (keep the risk)
+requirement: HRE-1234
+binds: [Quotes DB]
+resolves: [DC002]
+statement: >-
+  Quote writes use optimistic concurrency (rowversion) from both
+  Pricing API and Referral Worker.
+checks:
+  - p check -tc tcOptimistic
+rationale: >-
+  Two writers, no owner. Ownership would force referrals through the API;
+  optimistic locking keeps them independent.
+promoted_by: mike
+promoted_at: 2026-10-07
+promoted_against: [{"element": "quotes", "name": "Quotes DB", "hash": "b144266ff141d90b"}]
