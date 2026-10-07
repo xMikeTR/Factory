@@ -4,7 +4,11 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-07 — live run live1 fixes: checks leave the worktree as found (generated files
+> Last updated: 2026-10-07 — live run live2 fixes: each verify check starts from the tree as found
+> (VerifyRunner -> GitWorkspace; created directories removed, build caches kept); the Implementer
+> hands broken tests back to the TestAuthor (`ReturnedToTestAuthor`, `return_to_test_author`);
+> every role's prompt carries the sandbox facts (`prompts/sandbox.md`).
+> Previously: 2026-10-07 — live run live1 fixes: checks leave the worktree as found (generated files
 > never committed), .NET 8 packs in the runner image (P checks build offline), red runs the sandbox
 > could not run park as `environment` (Core `RedRun.classify`).
 > Previously: 2026-10-07 — System 2 plan (PLAN.md A–I) complete: Designc handover reader, registry
@@ -104,8 +108,8 @@ C4Container
 | `Factory.S2/Teams/TeamRunner.cs` | Per-team loop; TaskLoop drives one task (red, green, stash check, P2P, scope); carries regeneration-unaffected tasks | `TeamRunner`, `TaskLoop`, `TeamResult` | WaveExecutor, TaskRerun | — |
 | `Factory.S2/Teams/TaskRerun.cs` | k independent attempts at one task: pass rate, turns, tokens | `TaskRerun`, `RerunReport` | Program (`rerun`) | — |
 | `Factory.S2/Teams/Briefs.cs` | Per-turn briefs (incl. the PObserve logging contract); prompts from `prompts/*.md` | `Briefs` | TaskLoop, Planner | — |
-| `Factory.S2/Verify/*` | Verify entries in the sandbox, cleanup always, JUnit parsing, baseline/regression | `VerifyRunner`, `VerifyOutcome`, `JUnit` | TaskLoop, IntegrationVerify | Sandbox |
-| `Factory.S2/Git/GitWorkspace.cs` | Integration branch, worktree per team, stash, idempotent merges | `GitWorkspace` | TeamRunner, TaskRerun, executors | git |
+| `Factory.S2/Verify/*` | Verify entries in the sandbox, each from the tree as found, cleanup always, JUnit parsing, baseline/regression | `VerifyRunner`, `VerifyOutcome`, `JUnit` | TaskLoop, IntegrationVerify | Sandbox, GitWorkspace |
+| `Factory.S2/Git/GitWorkspace.cs` | Integration branch, worktree per team, stash, leave-as-found, idempotent merges | `GitWorkspace` | TeamRunner, TaskRerun, VerifyRunner, executors | git |
 | `Factory.S2/Integrations.cs` | PRs (gh / dry-run), approval comments, human channel | `IPullRequests`, `IApprovalComments`, `GhCliPullRequests`, `IHumanChannel` | MergeExecutor, WorkflowHost, Program | GitHub (gh CLI) |
 | `Factory.S2/HandoverInput.cs` | `--handover` file or Designc dir -> frozen JSON | `HandoverInput` | Program | Registry |
 | `Factory.S2/FactoryServices.cs` | Settings from env, run-dir paths, service bag, re-validating loaders | `FactorySettings`, `FactoryServices`, `RegenerationFile` | every executor, TeamRunner, TaskRerun, Program | env vars |
@@ -156,6 +160,7 @@ graph TD
     TeamRunner --> VerifyRunner
     TeamRunner --> GitWorkspace
     VerifyRunner --> Sandbox
+    VerifyRunner --> GitWorkspace
     Executors --> Integrations
     Executors --> Registry
     Executors --> FactoryServices
@@ -211,6 +216,8 @@ Used by structural-centrality-guard to determine escalation threshold.
 | A test that passed in the team baseline and fails now blocks green (P2P) | `Regression.fs`, `TaskLoop` | Business rule | missing test counts as failing |
 | A red run with any check the sandbox could not run (NU1301, exit 127) is no evidence: the task parks, source `environment` | `TaskState.fs` `RedRun.classify`, `TaskLoop.TestsDoneAsync` | Business rule | before the Implementer's first turn |
 | Checks (baseline, red, green + P2P, stash check) leave the worktree as they found it | `GitWorkspace.LeaveAsFoundAsync`, `TaskLoop`, `TaskRerun` | Invariant | generated output never reaches a commit |
+| Each verify check starts from the tree as found: files and created directories (ignored ones too) are removed before the next check; bin/, obj/, node_modules/ are kept | `VerifyRunner.RunTaskAsync`, `GitWorkspace.LeaveAsFoundAsync` | Invariant | one check cannot break another |
+| The Implementer may hand broken tests back to the TestAuthor (`Ready(Implementer) -> Ready(TestAuthor)`); shares the turn budget and needs a new red run | `TaskState.fs` `ReturnedToTestAuthor`, `TaskLoop` | Business rule | instead of parking on a needs-decision |
 | `ValidatedPlan` only constructible by `PlanValidator.validate` | `PlanValidator.fs` | Invariant | internal ctor |
 | Every task needs ≥1 automated verify under its testWrites or a protected path; every bound decision covered | `PlanValidator.fs` | Business rule | "nothing done without a check" |
 | Merge: blocks (scope leak, protected path, pending manual check) stop both modes; auto merges on green; tiered needs approvals by tier | `Merge.fs` | Business rule | thresholds in `.factory/policy.yaml` (400 lines, low risk) |
