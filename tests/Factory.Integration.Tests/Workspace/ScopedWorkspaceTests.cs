@@ -55,5 +55,29 @@ public class ScopedWorkspaceTests : IDisposable
         Assert.Contains("bad", signals.SubmittedPlan); // the last plan the validator saw stands
     }
 
+    [Fact]
+    public async Task Raise_needs_decision_refuses_a_question_without_a_real_choice()
+    {
+        var signals = new TurnSignals();
+        var ws = new ScopedWorkspace(_root, [], [], [], signals);
+        var raise = ws.ReadOnlyTools().OfType<Microsoft.Extensions.AI.AIFunction>().Single(t => t.Name == "raise_needs_decision");
+        var a = new { id = "A", summary = "3 attempts", consequence = "a 4th conflict fails the write" };
+        var b = new { id = "B", summary = "no limit", consequence = "writes may spin" };
+
+        var one = await raise.InvokeAsync(new() { ["question"] = "Retry limit?", ["options"] = new[] { a } });
+        Assert.Contains("at least two options", one?.ToString());
+        Assert.Null(signals.NeedsDecision);
+
+        var unknown = await raise.InvokeAsync(new() { ["question"] = "Retry limit?", ["options"] = new[] { a, b }, ["recommended"] = "C" });
+        Assert.Contains("recommended 'C'", unknown?.ToString());
+        Assert.Null(signals.NeedsDecision);
+
+        var ok = await raise.InvokeAsync(new() { ["question"] = "Retry limit?", ["options"] = new[] { a, b }, ["recommended"] = "A" });
+        Assert.StartsWith("Recorded", ok?.ToString());
+        Assert.Equal("Retry limit?", signals.NeedsDecision?.Question);
+        Assert.Equal(["A", "B"], signals.NeedsDecision!.Options.Select(o => o.Id));
+        Assert.Equal("A", signals.NeedsDecision.Recommended);
+    }
+
     public void Dispose() => Directory.Delete(_root, recursive: true);
 }

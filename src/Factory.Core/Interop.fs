@@ -74,3 +74,11 @@ type Core =
     static member Matches(pattern: PathPattern, path: string) = PathPattern.matches pattern path
 
     static member ToList(xs: 'a seq) : 'a list = List.ofSeq xs
+
+    /// Errors in the options of a raised decision; empty when they make a real choice. Null recommended = none.
+    static member DecisionOptionErrors(options: DecisionOption seq, recommended: string) : string list =
+        NeedsDecision.optionErrors (List.ofSeq options) (Option.ofObj recommended)
+
+    /// The answer for the agent, from the designer's chosen option and note (either may be null).
+    static member AnswerDecision(nd: NeedsDecision, option: string, note: string) : Result<string, string> =
+        NeedsDecision.answer nd (Option.ofObj option) (Option.ofObj note)

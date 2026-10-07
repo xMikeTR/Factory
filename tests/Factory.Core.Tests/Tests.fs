@@ -32,6 +32,9 @@ let withTask id (f: PlannedTask -> PlannedTask) = { plan with Tasks = plan.Tasks
 let errorsOf pl = match PlanValidator.validate handover pl with Ok _ -> [] | Error es -> es
 let validated = lazy (match PlanValidator.validate handover plan with Ok v -> v | Error es -> failwithf "%A" es)
 let limits = { MaxTurns = 3; MaxVerifyAttempts = 2 }
+let abOptions : DecisionOption list =
+    [ { Id = "A"; Summary = "one history for the run"; Consequence = "tests must not share a quote id" }
+      { Id = "B"; Summary = "key each event by quote id"; Consequence = "the parser partitions by key" } ]
 let outcome name code = { Name = name; ExitCode = code; DurationMs = 10L; OutputTail = "" }
 let red = match RedEvidence.Create([ outcome "a" 1 ], AssertionFailure) with Ok r -> r | Error e -> failwith e
 let authored = TestsAuthored red
@@ -179,7 +182,7 @@ let tests: (string * (unit -> unit)) list =
           let s = TaskState.replay limits (List.concat [ turn; turn; turn; [ TurnStarted Small ] ])
           check (match s with Ok(Failed(TurnBudgetExhausted 3, _)) -> true | _ -> false) $"%A{s}"
       "state: escalation blocks and resumes in the same phase", fun () ->
-          let nd = { Question = "Retry limit for stale writes?"; Elements = []; Source = "agent" }
+          let nd = { Question = "Retry limit for stale writes?"; Elements = []; Source = "agent"; Options = []; Recommended = None }
           let s = TaskState.replay limits [ TurnStarted Standard; NeedsDecisionRaised nd ]
           check (match s with Ok(Blocked(_, TestAuthor, _)) -> true | _ -> false) $"blocked %A{s}"
           let s2 = TaskState.replay limits [ authored; TurnStarted Standard; NeedsDecisionRaised nd; DecisionBound(DecisionId "D-0043"); TurnStarted Standard ]
@@ -223,10 +226,32 @@ let tests: (string * (unit -> unit)) list =
       "state: illegal transitions rejected", fun () ->
           check (Result.isError (TaskState.transition limits TaskState.queued (VerifyCompleted([ outcome "a" 0 ], stashedRed)))) "no pass without verify"
           check (Result.isError (TaskState.transition limits TaskState.queued TurnEnded)) "no turn end before start"
+      "needs-decision: a ledger row from before options decodes with none", fun () ->
+          match Json.decodeTaskEvent """{"type":"needs_decision","question":"q","source":"agent","elements":[]}""" with
+          | Ok(NeedsDecisionRaised nd) -> check (nd.Options = [] && nd.Recommended = None) $"%A{nd}"
+          | other -> check false $"%A{other}"
+      "needs-decision: options are checked before the question is accepted", fun () ->
+          let errs os r = NeedsDecision.optionErrors os r
+          equal [] (errs abOptions (Some "B")) "two options, known recommendation"
+          equal [] (errs abOptions None) "no recommendation"
+          check (not (List.isEmpty (errs [ abOptions.Head ] None))) "one option is not a choice"
+          check (not (List.isEmpty (errs [ abOptions.Head; abOptions.Head ] None))) "duplicate ids"
+          check (not (List.isEmpty (errs abOptions (Some "C")))) "recommendation not an option"
+          check (not (List.isEmpty (errs [ { abOptions.Head with Id = "option one" }; abOptions.[1] ] None))) "id a designer can type"
+          check (not (List.isEmpty (errs [ { abOptions.Head with Summary = " " }; abOptions.[1] ] None))) "empty summary"
+      "needs-decision: a resolution names one of the options, or falls back to its note", fun () ->
+          let nd = { Question = "q"; Elements = []; Source = "agent"; Options = abOptions; Recommended = Some "A" }
+          match NeedsDecision.answer nd (Some "B") (Some "go") with
+          | Ok text -> check (text.Contains "B: key each event" && text.Contains "go") text
+          | Error e -> check false e
+          check (Result.isError (NeedsDecision.answer nd (Some "Z") None)) "unknown option"
+          equal (Ok "free text") (NeedsDecision.answer nd None (Some "free text")) "note only"
+          check (Result.isOk (NeedsDecision.answer { nd with Options = [] } None None)) "nothing to choose from"
       "state: events round-trip through the ledger codec", fun () ->
           let evs =
               [ TurnStarted Frontier; TurnEnded
-                NeedsDecisionRaised { Question = "q"; Elements = [ ElementId "e" ]; Source = "configurator" }
+                NeedsDecisionRaised { Question = "q"; Elements = [ ElementId "e" ]; Source = "configurator"; Options = []; Recommended = None }
+                NeedsDecisionRaised { Question = "q"; Elements = []; Source = "agent"; Options = abOptions; Recommended = Some "A" }
                 DecisionBound(DecisionId "D-1"); authored; ReturnedToTestAuthor "tests broken"; VerifyRequested; VerifyCompleted([ outcome "x" 0 ], stashedRed); Abandon "stop" ]
           for e in evs do
               equal (Ok e) (Json.decodeTaskEvent (Json.encodeTaskEvent e)) "round trip"

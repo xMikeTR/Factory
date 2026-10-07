@@ -4,8 +4,9 @@ using System.Text.RegularExpressions;
 namespace Factory.Harness.Registry;
 
 /// A designc `needs_decision_resolved` row. Decision is the envelope's optional `decision`
-/// (the decision the designer bound, if they named one); Note is payload.note.
-public sealed record NeedsDecisionResolution(string Id, string? Decision, string? Note);
+/// (the decision the designer bound, if they named one); Option is payload.option (the id of the
+/// option chosen, of those the agent offered); Note is payload.note.
+public sealed record NeedsDecisionResolution(string Id, string? Decision, string? Option, string? Note);
 
 /// The needs-decision side of designc's registry ledger: which ND ids are taken, and which are resolved.
 public sealed partial class RegistryNeedsDecisions(string registryPath)
@@ -24,8 +25,10 @@ public sealed partial class RegistryNeedsDecisions(string registryPath)
         var resolved = new Dictionary<string, NeedsDecisionResolution>();
         await foreach (var row in RowsAsync(ct))
             if (Str(row, "kind") == "needs_decision_resolved" && Str(row, "id") is { } id)
-                resolved[id] = new(id, Str(row, "decision"),
-                    row.TryGetProperty("payload", out var p) && p.ValueKind == JsonValueKind.Object ? Str(p, "note") : null);
+            {
+                var p = row.TryGetProperty("payload", out var v) && v.ValueKind == JsonValueKind.Object ? v : (JsonElement?)null;
+                resolved[id] = new(id, Str(row, "decision"), p is { } o ? Str(o, "option") : null, p is { } n ? Str(n, "note") : null);
+            }
         return resolved;
     }
 

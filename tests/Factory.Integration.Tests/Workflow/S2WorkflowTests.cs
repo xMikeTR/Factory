@@ -263,7 +263,7 @@ public class S2WorkflowTests
         model.Enqueue(
             SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
             Say("Approach: add QuoteStatus.cs"),
-            Call("raise_needs_decision", new { question = "Is Draft the only initial status?" }), Say("blocked"));
+            Call("raise_needs_decision", new { question = "Is Draft the only initial status?", options = new[] { new { id = "A", summary = "Draft only", consequence = "one initial status" }, new { id = "B", summary = "Draft and Bound", consequence = "two initial statuses" } }, recommended = "A" }), Say("blocked"));
         var handover = h.WriteHandoverJson();
 
         var parked = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
@@ -277,14 +277,27 @@ public class S2WorkflowTests
         Assert.Equal("open", nd.GetProperty("status").GetString()); // designc's gate raises "open needs-decision ND-0001"
         Assert.True(DesigncSchema.KeptByGate(nd.GetRawText()));
         Assert.Equal("T-001", nd.GetProperty("task").GetString());
+        var options = nd.GetProperty("payload").GetProperty("options");
+        Assert.Equal(["A", "B"], options.EnumerateArray().Select(o => o.GetProperty("id").GetString()));
+        Assert.Equal("Draft and Bound", options[1].GetProperty("summary").GetString());
+        Assert.Equal("A", nd.GetProperty("payload").GetProperty("recommended").GetString());
 
         // Still unresolved: a re-run parks again on the same id without asking the model anything.
         var again = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
         Assert.Equal("parked: ND-0001", RunReport.Line(again!));
         Assert.Equal(0, model.Remaining);
 
-        await File.WriteAllTextAsync(Path.Combine(registry, "ledger", "designc.jsonl"),
-            """{"kind":"needs_decision_resolved","id":"ND-0001","by":"designer","schema_version":1,"event_id":"e-1","ts":1791500000000}""" + "\n");
+        // A resolution naming an option that was never offered keeps the run parked, and says why.
+        var designc = Path.Combine(registry, "ledger", "designc.jsonl");
+        await File.WriteAllTextAsync(designc,
+            """{"kind":"needs_decision_resolved","id":"ND-0001","by":"designer","schema_version":1,"event_id":"e-1","ts":1791500000000,"payload":{"option":"Z"}}""" + "\n");
+        var wrong = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
+        Assert.Equal("parked", wrong?.Status);
+        Assert.Contains("ND-0001", wrong?.Detail);
+        Assert.Contains("'Z' is not one of the options (A, B)", wrong?.Detail);
+
+        await File.WriteAllTextAsync(designc,
+            """{"kind":"needs_decision_resolved","id":"ND-0001","by":"designer","schema_version":1,"event_id":"e-2","ts":1791500000001,"payload":{"option":"B","note":"Bound comes from imports"}}""" + "\n");
         model.Enqueue( // the approach note is replayed, so no task-planner turn
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
@@ -297,6 +310,7 @@ public class S2WorkflowTests
         var payloads = h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001").Select(e => e.Payload!);
         Assert.True(Core.Replay(new Limits(8, 3), payloads).IsPassed);
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("ND-0001"));
+        Assert.Contains(model.Requests.Last(), m => m.Text.Contains("Chosen option B: Draft and Bound") && m.Text.Contains("Bound comes from imports"));
         var pipeline = await File.ReadAllLinesAsync(Path.Combine(registry, "ledger", "pipeline.jsonl"));
         Assert.Single(pipeline, l => l.Contains("\"kind\":\"needs_decision\"") && l.Contains("\"status\":\"resolved\""));
         Assert.Single(pipeline, l => l.Contains("\"task\":\"T-001\"") && l.Contains("\"status\":\"passed\""));

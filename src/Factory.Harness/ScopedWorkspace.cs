@@ -14,12 +14,21 @@ using Core = Factory.Core.Core; // "Core" alone binds to the namespace Factory.C
 public sealed class TurnSignals
 {
     public string? DoneSummary { get; set; }
-    public string? NeedsDecision { get; set; }
+    public RaisedDecision? NeedsDecision { get; set; }
     public string? ReturnedToTestAuthor { get; set; }
     /// The last plan the planner passed to submit_plan, as JSON, whatever the validator said about it.
     public string? SubmittedPlan { get; set; }
     public List<string> FilesWritten { get; } = [];
 }
+
+/// A question raised through raise_needs_decision, with the options the designer chooses between.
+public sealed record RaisedDecision(string Question, IReadOnlyList<DecisionOption> Options, string? Recommended);
+
+/// One option of raise_needs_decision, as the agent sends it.
+public sealed record OptionArg(
+    [property: Description("a single capital letter: A, B, C...")] string Id,
+    [property: Description("the option in one line")] string Summary,
+    [property: Description("what choosing it means for the code, the tests or the design")] string Consequence);
 
 /// The file system as one task sees it. Writes are checked against the task's `writes` globs and
 /// the handover's protected paths *here*, independent of the policy engine: defence in depth, and
@@ -135,10 +144,19 @@ public sealed class ScopedWorkspace(
         return "Recorded. Stop now; verification runs next.";
     }
 
-    [Description("Call instead of guessing when the task needs a design decision the handover does not contain (a limit, an owner, a behaviour). Ends your turn.")]
-    public string RaiseNeedsDecision([Description("one precise question a designer can answer")] string question)
+    [Description("Call instead of guessing when the task needs a design decision the handover does not contain (a limit, an owner, a behaviour). "
+        + "Offer the options you see, each with its consequence; the designer picks one. Ends your turn.")]
+    public string RaiseNeedsDecision(
+        [Description("one precise question a designer can answer")] string question,
+        [Description("at least two options, ids A, B, C...")] OptionArg[] options,
+        [Description("the id of the option you would choose, if any")] string? recommended = null)
     {
-        signals.NeedsDecision = question;
+        var opts = (options ?? []).Select(o => new DecisionOption(o.Id ?? "", o.Summary ?? "", o.Consequence ?? "")).ToList();
+        var rec = string.IsNullOrWhiteSpace(recommended) ? null : recommended;
+        var errors = Core.DecisionOptionErrors(opts, rec!).ToList();
+        if (errors.Count > 0)
+            return "Not recorded. Fix every one and call again:\n- " + string.Join("\n- ", errors);
+        signals.NeedsDecision = new RaisedDecision(question, opts, rec);
         return "Recorded. Stop now; the question goes to System 1.";
     }
 

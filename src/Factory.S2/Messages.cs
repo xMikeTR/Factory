@@ -39,7 +39,11 @@ public static class RunReport
 
 // ---------- needs-decision (registry) and merge approval (RequestPort) ----------
 
-public sealed record BlockedTask(string TeamId, string TaskId, string Question, string Source, string[] Elements);
+public sealed record BlockedTask(string TeamId, string TaskId, string Question, string Source, string[] Elements,
+    OfferedOption[] Options, string? Recommended);
+
+/// One option of a blocked task's question, as the agent offered it.
+public sealed record OfferedOption(string Id, string Summary, string Consequence);
 
 /// One answer per blocked task: a newly bound decision id, or null to abandon the task.
 public sealed record DecisionAnswer(string TaskId, string? DecisionId, string? Note);

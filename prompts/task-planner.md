@@ -7,4 +7,4 @@ list_files, then reply with a short approach note (under 300 words):
 
 Do not write code. If the task cannot be done without a design decision that the brief does not
 contain (a limit, an owner, a behaviour on failure), call raise_needs_decision with one precise
-question instead of choosing an answer yourself.
+question and the options you see, instead of choosing an answer yourself.

@@ -112,6 +112,20 @@ public static class RegistryLedgerProjector
             w.WriteString("status", e.Outcome == "resolved" ? "resolved" : "open");
             if (e.TaskId is not null) w.WriteString("task", e.TaskId);
             if (element is not null) w.WriteString("element", element);
+        }, w =>
+        {
+            // The options the agent offered; designc's resolution names one in payload.option.
+            if (Prop(p, "options") is not { ValueKind: JsonValueKind.Array } options || options.GetArrayLength() == 0) return;
+            w.WriteStartArray("options");
+            foreach (var o in options.EnumerateArray())
+            {
+                w.WriteStartObject();
+                foreach (var field in new[] { "id", "summary", "consequence" })
+                    w.WriteString(field, Prop(o, field)?.GetString());
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+            if (Prop(p, "recommended")?.GetString() is { } recommended) w.WriteString("recommended", recommended);
         });
     }
 
@@ -132,7 +146,7 @@ public static class RegistryLedgerProjector
     }
 
     /// Envelope + kind fields in a fixed order, then event_id = hash of everything before it.
-    private static RegistryEvent Row(string stream, string kind, LedgerEvent source, Action<Utf8JsonWriter> fields)
+    private static RegistryEvent Row(string stream, string kind, LedgerEvent source, Action<Utf8JsonWriter> fields, Action<Utf8JsonWriter>? payload = null)
     {
         string Body(string? eventId)
         {
@@ -149,6 +163,7 @@ public static class RegistryLedgerProjector
                 w.WriteStartObject("payload");
                 w.WriteString("run_id", source.RunId);
                 if (source.TraceId is not null) w.WriteString("trace_id", source.TraceId);
+                payload?.Invoke(w);
                 w.WriteEndObject();
                 w.WriteNumber("schema_version", 1);
                 w.WriteNumber("ts", source.Ts.ToUnixTimeMilliseconds());
