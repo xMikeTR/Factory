@@ -171,6 +171,32 @@ module Json =
             )
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
+    let private node (pairs: (string * JsonNode) list) : JsonNode =
+        JsonObject(pairs |> List.map (fun (k, v) -> Collections.Generic.KeyValuePair<string, JsonNode>(k, v))) :> JsonNode
+
+    let private riskName = function Low -> "low" | Medium -> "medium" | High -> "high"
+
+    /// Inverse of parseHandover: how a handover read from Designc is frozen into a run directory.
+    let writeHandover (h: Handover) : string =
+        let element (e: ElementSpec) =
+            node [ "id", JsonValue.Create e.Id.Value
+                   "name", JsonValue.Create e.Name
+                   "codeAreas", strArr (e.CodeAreas |> List.map (fun p -> p.Value))
+                   "risk", JsonValue.Create(riskName e.Risk) ]
+        let decision (d: BoundDecision) =
+            node [ "id", JsonValue.Create d.Id.Value
+                   "statement", JsonValue.Create d.Statement
+                   "binds", strArr (d.Binds |> List.map (fun b -> b.Value))
+                   "checks", JsonArray(d.Checks |> List.map (fun c -> node [ "kind", JsonValue.Create c.Kind; "run", JsonValue.Create c.Run ]) |> Array.ofList) ]
+        let root =
+            node [ "id", JsonValue.Create h.Id
+                   "digest", JsonValue.Create h.Digest
+                   "elements", JsonArray(h.Elements |> List.map element |> Array.ofList)
+                   "decisions", JsonArray(h.Decisions |> List.map decision |> Array.ofList)
+                   "protectedPaths", strArr (h.ProtectedPaths |> List.map (fun p -> p.Value))
+                   "eventVocabulary", strArr h.EventVocabulary ]
+        root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
+
     // ---------- task events (the ledger payload a runner replays on resume) ----------
 
     let private tierName = function Frontier -> "frontier" | Standard -> "standard" | Small -> "small"
