@@ -223,7 +223,6 @@ Used by structural-centrality-guard to determine escalation threshold.
 | Regeneration scope | Dependents of a re-run task are not re-run; only integration verify catches a broken dependent | Medium |
 | Rerun fidelity | `rerun` does not replay dependency tasks; `--base` must carry their work | Medium |
 | Verify cost | VerifyRunner starts a container per call under Docker: slow | Medium |
-| Live paths | Anthropic live test not run on this machine (no key) | Medium |
 
 ## Security Risks
 
