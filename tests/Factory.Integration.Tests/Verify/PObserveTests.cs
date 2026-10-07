@@ -56,6 +56,36 @@ public sealed class PObserveTests : IDisposable
         Assert.Contains("lost update: 2 commits, value 1", r.Output);
     }
 
+    /// live4: five tests each committed their own quote at version 1; one stream read that as lost updates.
+    [Fact]
+    public async Task Each_key_is_checked_as_its_own_history()
+    {
+        if (!Enabled) return; // opt-in
+
+        var r = await CheckAsync(
+            "12:00:01 INFO pobserve eCommitted 1 key=Q-1",
+            "12:00:01 INFO pobserve eCommitted 1 key=Q-2",
+            "12:00:02 INFO pobserve eCommitted 2 key=Q-1",
+            "12:00:02 INFO pobserve eCommitted 2 key=Q-2");
+
+        Assert.True(r.ExitCode == 0, r.Output);
+        Assert.Contains("4 events", r.Output);
+    }
+
+    [Fact]
+    public async Task A_lost_update_within_one_key_still_fails()
+    {
+        if (!Enabled) return; // opt-in
+
+        var r = await CheckAsync(
+            "12:00:01 INFO pobserve eCommitted 1 key=Q-1",
+            "12:00:01 INFO pobserve eCommitted 1 key=Q-2",
+            "12:00:02 INFO pobserve eCommitted 1 key=Q-1");
+
+        Assert.True(r.ExitCode == 2, r.Output);
+        Assert.Contains("lost update: 2 commits, value 1", r.Output);
+    }
+
     [Fact]
     public async Task A_garbled_event_line_is_a_parse_error_not_a_pass()
     {

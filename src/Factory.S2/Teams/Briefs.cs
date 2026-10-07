@@ -44,7 +44,8 @@ public static class Briefs
             sb.AppendLine().AppendLine("## Logging contract");
             sb.AppendLine("Where the code emits these events, use exactly these names; PObserve checks production logs against them:");
             sb.AppendLine(string.Join(", ", handover.EventVocabulary.Select(v => $"`{v}`")));
-            sb.AppendLine($"Log each event as one line containing `pobserve <event> <payload>` (a scalar payload, or none), e.g. `pobserve {handover.EventVocabulary.Head} 3`.");
+            sb.AppendLine($"Log each event as one line containing `pobserve <event> <payload> key=<id>` (a scalar payload, or none), e.g. `pobserve {handover.EventVocabulary.Head} 3 key=Q-42`.");
+            sb.AppendLine("The key names the entity whose history the spec follows (e.g. the quote id): each key is checked on its own, so logs from many entities can share a file. Without a key, every event is one history.");
         }
 
         sb.AppendLine().AppendLine("## How this task is verified (fixed; you cannot change these)");
