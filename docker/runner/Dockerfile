@@ -30,6 +30,12 @@ RUN dotnet tool install P --tool-path /opt/dotnet-tools ${P_VERSION:+--version $
  && chmod -R a+rX /opt/dotnet-tools \
  && p --version
 
+# `p compile` emits net8.0 projects. Without the .NET 8 packs the build fetches them from
+# nuget.org, which verify commands cannot reach (--network none). Bake them in.
+COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.NETCore.App.Ref/ /usr/share/dotnet/packs/Microsoft.NETCore.App.Ref/
+COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.NETCore.App.Host.linux-x64/ /usr/share/dotnet/packs/Microsoft.NETCore.App.Host.linux-x64/
+COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.AspNetCore.App.Ref/ /usr/share/dotnet/packs/Microsoft.AspNetCore.App.Ref/
+
 COPY --from=pobserve /PObserve.jar /opt/pobserve/PObserve.jar
 COPY --from=pobserve-parser src/ /opt/pobserve/parser/
 COPY --from=pobserve-parser pobserve-check /usr/local/bin/pobserve-check
