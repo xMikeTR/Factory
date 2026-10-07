@@ -55,6 +55,12 @@ let tests: (string * (unit -> unit)) list =
           check (not (PathPattern.mayOverlap (p "src/PricingApi/**") (p "src/ReferralWorker/**"))) "sibling dirs"
           check (PathPattern.mayOverlap (p "src/a.cs") (p "src/*.cs")) "exact vs glob"
           check (not (PathPattern.mayOverlap (p "src/a.cs") (p "src/b.cs"))) "distinct files"
+          // live3/live4: `*` stays inside one segment, so these cannot match the same file.
+          check (not (PathPattern.mayOverlap (p "db/migrations/*.sql") (p "db/migrations/pmodel/**"))) "* vs sibling dir"
+          check (not (PathPattern.mayOverlap (p "src/*.cs") (p "src/*/x.cs"))) "different depth"
+          check (PathPattern.mayOverlap (p "src/**/*.cs") (p "src/a/**")) "** on both sides"
+          check (PathPattern.mayOverlap (p "src/*.cs") (p "src/a*")) "two wild segments"
+          check (PathPattern.mayOverlap (p "db/**") (p "db/migrations/*.sql")) "** covers a deeper glob"
       "paths: containment", fun () ->
           check (PathPattern.isWithin (p "src/Quotes.Data/Logging/**") (p "src/Quotes.Data/**")) "nested"
           check (not (PathPattern.isWithin (p "src/Quotes*/**") (p "src/Quotes.Data/**"))) "prefix glob escapes"
