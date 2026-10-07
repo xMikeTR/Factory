@@ -97,6 +97,28 @@ public class TeamRunnerTests
         Assert.DoesNotContain(generated, everCommitted.Output);
     }
 
+    /// live1: the red run's P check failed on NU1301 (no network), was taken as red, and the
+    /// Implementer then had no way to make it pass. It is an infrastructure fault: park.
+    [Fact]
+    public async Task A_red_run_the_sandbox_could_not_run_parks_instead_of_reaching_the_Implementer()
+    {
+        var task = Plans.Task("T-001",
+            Plans.Auto("file exists", $"test -f {NewFile}"),
+            Plans.Auto("P model check", "echo 'P.csproj : error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json.'; exit 1"));
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(task), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Blocked, result.Status);
+        Assert.Equal(0, model.Remaining); // no Implementer turn
+        Assert.Equal("environment", result.Blocked!.Source);
+        Assert.Contains("P model check", result.Blocked.Question);
+        Assert.DoesNotContain(h.Rows(LedgerKinds.TaskEvent), e => e.Payload?.Contains("tests_authored") == true);
+    }
+
     [Fact]
     public async Task Failing_verify_gets_one_verify_row_per_attempt_then_fails_the_team()
     {
