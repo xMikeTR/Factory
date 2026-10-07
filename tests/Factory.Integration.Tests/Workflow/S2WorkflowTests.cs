@@ -73,4 +73,48 @@ public class S2WorkflowTests
         Assert.Contains("Merge tier: TwoApprovals", await File.ReadAllTextAsync(prBody));
         Assert.Single(h.Rows(LedgerKinds.Run), e => e.Outcome == "merged");
     }
+
+    [Fact]
+    public async Task Resume_after_a_kill_mid_turn_reaches_the_same_state_without_duplicates()
+    {
+        using var killed = new CancellationTokenSource();
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        model.Enqueue(
+            Say(PlanFor(h.Handover)),
+            Say("Approach: add QuoteStatus.cs"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Kill(killed));
+        var handover = h.WriteHandoverJson();
+
+        try { await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), killed.Token); }
+        catch (OperationCanceledException) { }
+        Assert.Equal(0, model.Remaining);
+        Assert.Empty(h.Rows(LedgerKinds.Run));
+        Assert.Equal("Running", h.Rows(LedgerKinds.TaskEvent).Last(e => e.TaskId == "T-001").Outcome); // died mid-turn
+
+        // restart: same run id, fresh workflow; the model only sees what is left to do
+        model.Enqueue(Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
+
+        Assert.Equal("merged", result?.Status);
+        Assert.Equal(0, model.Remaining);
+        Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "drafted");       // plan reused, not redrafted
+        Assert.Single(h.Rows(LedgerKinds.Verify), e => e.TaskId == "T-001");          // verified once
+        var events = h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001").ToList();
+        Assert.True(Core.Replay(new Limits(8, 3), events.Select(e => e.Payload!)).IsPassed);
+        Assert.Single(events, e => e.Outcome == "Passed");
+
+        var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
+        var log = await h.GitIn(integration, "log", "--format=%s");
+        Assert.Single(log.Output.Split('\n'), l => l.StartsWith("T-001:"));
+        Assert.Equal("public enum QuoteStatus { Draft }\n", await File.ReadAllTextAsync(Path.Combine(integration, NewFile)));
+
+        // a third run is a no-op on tasks: everything replays
+        model.Enqueue();
+        var again = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
+        Assert.Equal("merged", again?.Status);
+        Assert.Single(h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001"), e => e.Outcome == "Passed");
+        Assert.Single((await h.GitIn(integration, "log", "--format=%s")).Output.Split('\n'), l => l.StartsWith("T-001:"));
+    }
 }
