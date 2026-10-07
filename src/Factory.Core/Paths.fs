@@ -81,7 +81,7 @@ module PathPattern =
 
     /// Could any file match both patterns?
     ///
-    /// TODO(you) — RESOURCES.md §1. Spec: tests "paths: overlap".
+    /// RESOURCES.md §1. Spec: tests "paths: overlap".
     ///   - exact vs exact: same segments
     ///   - exact vs glob: does the glob match the exact path? (precise)
     ///   - glob vs glob: over-approximate. Compare literal prefixes (segments before the first
@@ -90,17 +90,26 @@ module PathPattern =
     ///   A false "no" lets two agents write the same file in parallel.
     ///   Helpers available above: isExact, literalPrefix, matchSegs, isPrefixOf.
     let mayOverlap (a: PathPattern) (b: PathPattern) : bool =
-        ignore (a, b, isPrefixOf, matchSegs)
-        failwith "TODO: PathPattern.mayOverlap"
+        match isExact a, isExact b with
+        | true, true -> a.Segs = b.Segs
+        | true, false -> matchSegs b.Segs a.Segs
+        | false, true -> matchSegs a.Segs b.Segs
+        | false, false ->
+            let pa, pb = literalPrefix a, literalPrefix b
+            isPrefixOf pa pb || isPrefixOf pb pa
 
     /// Is every file matched by `inner` also matched by `outer`?
     ///
-    /// TODO(you) — RESOURCES.md §1. Spec: tests "paths: containment".
+    /// RESOURCES.md §1. Spec: tests "paths: containment".
     ///   Here the safe direction is the opposite: under-approximate. A false "no" rejects a valid
     ///   plan (the planner retries); a false "yes" lets a task write outside its element.
     ///   - exact inner: does outer match it?
     ///   - outer of the form literal/.../** : is outer's base a prefix of inner's literal prefix?
     ///   - anything else: only if the patterns are identical.
     let isWithin (inner: PathPattern) (outer: PathPattern) : bool =
-        ignore (inner, outer)
-        failwith "TODO: PathPattern.isWithin"
+        if isExact inner then matchSegs outer.Segs inner.Segs
+        else
+            match List.rev outer.Segs with
+            | "**" :: revBase when revBase |> List.forall (isWild >> not) ->
+                isPrefixOf (List.rev revBase) (literalPrefix inner)
+            | _ -> inner.Segs = outer.Segs
