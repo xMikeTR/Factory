@@ -59,6 +59,17 @@ type VerifyOutcome =
       DurationMs: int64
       OutputTail: string }
 
+/// What a check run reports when the restore gate (ProjectFileChange) refused the run's changes to
+/// the files `dotnet restore` reads: no check ran, so it is neither red nor a failing stash check.
+[<RequireQualifiedAccess>]
+module RestoreRefusal =
+    let name = "restore refused"
+
+    let outcome (reasons: string list) : VerifyOutcome =
+        { Name = name; ExitCode = 1; DurationMs = 0L; OutputTail = String.concat "\n" reasons }
+
+    let isRefusal (o: VerifyOutcome) = o.Name = name
+
 /// Why the tests failed before any implementation existed.
 type RedKind =
     | BuildFailure
@@ -82,6 +93,12 @@ type RedEvidence =
             Error("every test passed before implementation, so none of them proves the change: " + System.String.Join(", ", os |> List.map (fun o -> o.Name)))
         | os -> Ok { outcomes = os; kind = kind }
 
+/// What a red run shows, read before it becomes evidence.
+type RedReading =
+    | Red of RedKind
+    | Unrunnable of checks: string list
+    | Refused of reasons: string
+
 /// Reads the TestAuthor's red run before it becomes evidence.
 [<RequireQualifiedAccess>]
 module RedRun =
@@ -94,15 +111,18 @@ module RedRun =
     let private environmental (o: VerifyOutcome) =
         o.ExitCode = 127 || matches @"error NU1301\b" o.OutputTail
 
-    /// Error: the checks the sandbox could not run. One is enough: it can never go green, so the
-    /// Implementer would spend every turn against it. Ok: the kind of red (a compile failure
-    /// proves less than a failing assertion); RedEvidence.Create still refuses a run with no red.
-    let classify (outcomes: VerifyOutcome list) : Result<RedKind, string list> =
+    /// Refused: the restore gate refused the author's project-file changes, so nothing ran; the
+    /// author fixes them. Unrunnable: the checks the sandbox could not run. One is enough: it can
+    /// never go green, so the Implementer would spend every turn against it. Red: the kind of red
+    /// (a compile failure proves less than a failing assertion); RedEvidence.Create still refuses
+    /// a run with no red.
+    let classify (outcomes: VerifyOutcome list) : RedReading =
         let failed = outcomes |> List.filter (fun o -> o.ExitCode <> 0)
-        match failed |> List.filter environmental with
-        | [] when failed |> List.exists (fun o -> matches @"error (CS|FS)\d+|Build FAILED" o.OutputTail) -> Ok BuildFailure
-        | [] -> Ok AssertionFailure
-        | env -> Error(env |> List.map (fun o -> o.Name))
+        match outcomes |> List.tryFind RestoreRefusal.isRefusal, failed |> List.filter environmental with
+        | Some refused, _ -> Refused refused.OutputTail
+        | None, [] when failed |> List.exists (fun o -> matches @"error (CS|FS)\d+|Build FAILED" o.OutputTail) -> Red BuildFailure
+        | None, [] -> Red AssertionFailure
+        | None, env -> Unrunnable(env |> List.map (fun o -> o.Name))
 
 /// Who holds the pen. The Implementer phase cannot exist without the red evidence that ended
 /// the TestAuthor phase.
@@ -126,7 +146,7 @@ type PassedEvidence private (attempt: int, green: VerifyOutcome list, red: RedEv
         | os when os |> List.exists (fun o -> o.ExitCode <> 0) ->
             let failed = os |> List.filter (fun o -> o.ExitCode <> 0) |> List.map (fun o -> o.Name)
             Error("failed: " + System.String.Join(", ", failed))
-        | _ when stashedImpl |> List.forall (fun o -> o.ExitCode = 0) ->
+        | _ when stashedImpl |> List.forall (fun o -> o.ExitCode = 0 || RestoreRefusal.isRefusal o) ->
             Error "stashed-impl check: with the implementation stashed every test still passes, so the tests do not exercise it"
         | _ -> Ok(PassedEvidence(attempt, green, red, stashedImpl))
 

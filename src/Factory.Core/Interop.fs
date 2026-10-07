@@ -75,6 +75,12 @@ type Core =
 
     static member ToList(xs: 'a seq) : 'a list = List.ofSeq xs
 
+    /// Why a changed restore input stops the restore window; empty when it may restore. Null before = new file.
+    static member ReviewRestoreInput(path: string, before: string, after: string) : string list =
+        match ProjectFileChange.review path (Option.ofObj before) (Some after) with
+        | Ok() -> []
+        | Error errors -> errors
+
     /// Errors in the options of a raised decision; empty when they make a real choice. Null recommended = none.
     static member DecisionOptionErrors(options: DecisionOption seq, recommended: string) : string list =
         NeedsDecision.optionErrors (List.ofSeq options) (Option.ofObj recommended)
