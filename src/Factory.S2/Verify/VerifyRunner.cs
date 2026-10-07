@@ -17,6 +17,7 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
     /// break another. Cleanup always runs, pass or fail, and a failing cleanup counts as a failed
     /// outcome: leftover seeded state would make the next run lie.
     /// Manual entries are logged as pending; they gate the merge tier, not the task.
+    /// A refused restore (RestoreGate) runs nothing: the single outcome carries the gate's reasons.
     /// `stage` labels the ledger row: "verify" (green run), "red_run" or "stash_check".
     public async Task<List<VerifyOutcome>> RunTaskAsync(
         string runId, string teamId, PlannedTask task, int attempt, string worktree, CancellationToken ct, string stage = "verify")
@@ -30,8 +31,9 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
         };
         await using var sandbox = await sandboxes.ForTeamAsync(teamId, worktree, ct);
         var outcomes = new List<VerifyOutcome>();
+        if (sandbox.RestoreRefusal is { } refusal) outcomes.Add(RestoreRefusal.outcome(Core.ToList(refusal)));
 
-        foreach (var entry in task.Verify)
+        foreach (var entry in sandbox.RestoreRefusal is null ? task.Verify : Enumerable.Empty<VerifyEntry>())
         {
             switch (entry)
             {

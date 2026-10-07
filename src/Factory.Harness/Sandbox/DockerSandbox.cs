@@ -16,7 +16,8 @@ public sealed record DockerSandboxOptions(
 
 /// One container per team: the worktree bind-mounted at its own host path (so paths in
 /// commands and output mean the same thing inside and out), the host uid/gid, resource limits,
-/// and --network none. The network is attached only for the restore window at start.
+/// and --network none. The network is attached only for the restore window at start, and only
+/// when RestoreGate passes the worktree's restore inputs.
 /// Nothing from the host environment crosses: docker exec gets the given env and a fixed few.
 public sealed class DockerSandbox : ICommandSandbox
 {
@@ -41,6 +42,12 @@ public sealed class DockerSandbox : ICommandSandbox
     /// The restore window's result; null when there was nothing to restore.
     public ProcessResult? Restore { get; private set; }
 
+    /// The gate's reasons when it refused the window; the network was never attached.
+    public IReadOnlyList<string>? RestoreRefusal { get; private set; }
+
+    /// The projects the window restored.
+    public IReadOnlyList<string> Restored { get; private set; } = [];
+
     public static async Task<DockerSandbox> StartAsync(string teamId, string worktree, DockerSandboxOptions o, CancellationToken ct)
     {
         worktree = Path.GetFullPath(worktree);
@@ -57,7 +64,16 @@ public sealed class DockerSandbox : ICommandSandbox
         var sandbox = new DockerSandbox(name, worktree, "/nuget");
         try
         {
-            if (o.RestoreOnStart && HasProject(worktree)) sandbox.Restore = await sandbox.RestoreWindowAsync(ct);
+            if (o.RestoreOnStart)
+            {
+                var plan = await RestoreGate.PlanAsync(worktree, ct);
+                if (plan.Refusals.Count > 0) sandbox.RestoreRefusal = plan.Refusals;
+                else if (plan.Projects.Count > 0)
+                {
+                    sandbox.Restored = plan.Projects;
+                    sandbox.Restore = await sandbox.RestoreWindowAsync(RestoreGate.Command(plan.Projects), ct);
+                }
+            }
             return sandbox;
         }
         catch
@@ -86,14 +102,14 @@ public sealed class DockerSandbox : ICommandSandbox
         return timedOut ? r with { ExitCode = 124, TimedOut = true } : r;
     }
 
-    private async Task<ProcessResult> RestoreWindowAsync(CancellationToken ct)
+    private async Task<ProcessResult> RestoreWindowAsync(string command, CancellationToken ct)
     {
         // "none" is exclusive: swap it for the bridge for the restore, then swap back.
         await DockerAsync(ct, "network", "disconnect", "none", _container);
         try
         {
             await DockerAsync(ct, "network", "connect", RestoreNetwork, _container);
-            return await RunAsync("dotnet restore", _worktree, RestoreTimeout, new Dictionary<string, string>(), ct);
+            return await RunAsync(command, _worktree, RestoreTimeout, new Dictionary<string, string>(), ct);
         }
         finally
         {
@@ -112,9 +128,6 @@ public sealed class DockerSandbox : ICommandSandbox
     {
         try { await DockerAsync(CancellationToken.None, "rm", "-f", _container); } catch (InvalidOperationException) { }
     }
-
-    private static bool HasProject(string dir) =>
-        Directory.EnumerateFiles(dir, "*.sln").Any() || Directory.EnumerateFiles(dir, "*.*proj").Any();
 
     private static string Sanitize(string s) => new(s.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray());
 
@@ -140,18 +153,21 @@ public sealed class DockerSandbox : ICommandSandbox
 }
 
 /// With a ledger, each restore window is ledgered as a verify row at stage "restore": the one
-/// time a team container had network.
+/// time a team container had network. A refused window is ledgered too, with the gate's reasons.
 public sealed class DockerSandboxFactory(DockerSandboxOptions options, ILedger? ledger = null, string? runId = null) : ISandboxFactory
 {
     public async Task<ICommandSandbox> ForTeamAsync(string teamId, string worktree, CancellationToken ct)
     {
         var sandbox = await DockerSandbox.StartAsync(teamId, worktree, options, ct);
-        if (ledger is not null && runId is not null && sandbox.Restore is { } r)
+        if (ledger is not null && runId is not null && sandbox.RestoreRefusal is { } refusal)
+            await ledger.AppendAsync(new LedgerEvent(runId, "S2", "restore", LedgerKinds.Verify, TeamId: teamId, Outcome: "refused",
+                Payload: System.Text.Json.JsonSerializer.Serialize(new { command = "dotnet restore", sandbox = sandbox.Kind, network = "none", reasons = refusal })), ct);
+        else if (ledger is not null && runId is not null && sandbox.Restore is { } r)
             await ledger.AppendAsync(new LedgerEvent(runId, "S2", "restore", LedgerKinds.Verify, TeamId: teamId,
                 Outcome: r.Succeeded ? "passed" : "failed",
                 Payload: System.Text.Json.JsonSerializer.Serialize(new
                 {
-                    command = "dotnet restore", ExitCode = r.ExitCode, ms = (long)r.Duration.TotalMilliseconds, sandbox = sandbox.Kind,
+                    command = "dotnet restore", projects = sandbox.Restored, ExitCode = r.ExitCode, ms = (long)r.Duration.TotalMilliseconds, sandbox = sandbox.Kind,
                     network = "bridge", tail = r.Tail(2000),
                 })), ct);
         return sandbox;

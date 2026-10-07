@@ -4,7 +4,11 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-07 — needs-decisions carry options: `raise_needs_decision` takes ≥2 options
+> Last updated: 2026-10-07 — gated restore window: `RestoreGate` restores every project on disk (live5:
+> a test project outside the sln was never restored), reviews changed restore inputs against HEAD with
+> `ProjectFileChange`'s allow-list before the network opens, and pins sources to nuget.org
+> (`/etc/factory/nuget.config` in the image). A refusal runs no checks and goes back to the TestAuthor
+> (`RedReading.Refused`); `ICommandSandbox` gained a default `RestoreRefusal`. Before that, needs-decisions carry options: `raise_needs_decision` takes ≥2 options
 > (A, B…, summary, consequence) and a recommendation, projected into the registry row's payload;
 > designc answers with `payload.option`, an unknown option keeps the run parked. Before that, live5: the planner submits its plan through the `submit_plan` tool
 > (input schema = plan.schema.json, validated in-call, at most 3 per turn) instead of free-text JSON;
@@ -54,7 +58,7 @@ C4Container
   Container(cli, "factory-s2 CLI", "C# / MAF", "validate | dispatch | run [--since] | rerun; hosts the S2 workflow")
   Container(harness, "Factory.Harness", "C# library", "Agents, tool policy (ACS), configurator, ledger, sandbox, registry I/O, telemetry")
   Container(core, "Factory.Core", "F# library", "Paths, plan validation, dispatch, task state, evidence, regression, merge, closure, regeneration, codecs")
-  Container(sandbox, "factory-s2-runner", "Docker container per team", "Agent and verify commands; network none apart from restore; pobserve-check")
+  Container(sandbox, "factory-s2-runner", "Docker container per team", "Agent and verify commands; network none apart from the gated restore; pobserve-check")
   Container(laya, "Laya sidecar", "Python HTTP", "Turn routing (optional; heuristic fallback)")
   ContainerDb(ledger, "Run ledger", "JSONL (Postgres DDL drafted)", "Append-only run events, replayed on resume")
   ContainerDb(registry, "Registry", "git repo (Designc)", "Handovers, ledger.jsonl projection, needs-decisions")
@@ -79,6 +83,7 @@ C4Container
 | Module | Responsibility | Key Types | Dependents | Integrations |
 |--------|---------------|-----------|------------|-------------|
 | `Factory.Core/Paths.fs` | Safe globs: create, match, overlap (over-approx), containment (under-approx) | `PathPattern` | Domain, PlanValidator, Dispatcher, Merge, Json, Interop, ScopedWorkspace, DesigncHandoverReader, Briefs, TeamRunner | — |
+| `Factory.Core/ProjectFileChange.fs` | Allow-list for changes to files `dotnet restore` reads (project files, Directory.Packages.props; nuget.config/global.json/.props/.targets refused) | `ProjectFileChange.review` | Interop, RestoreGate | — |
 | `Factory.Core/Domain.fs` | Handover, plan and verify types | `Handover`, `ElementSpec`, `BoundDecision`, `PlannedTask`, `VerifyEntry` | every Core module after it, Harness, S2, tests | — |
 | `Factory.Core/PlanValidator.fs` | Plan rules (collects all errors); sole constructor of `ValidatedPlan` | `PlanError`, `ValidatedPlan` | Dispatcher, Interop, S2 | — |
 | `Factory.Core/Dispatcher.fs` | Overlapping writes -> teams; team DAG -> waves | `Team`, `Wave`, `DispatchPlan` | Merge, Json, Interop, S2 | — |
@@ -94,7 +99,7 @@ C4Container
 | `Factory.Harness/Governance/AcsToolPolicy.cs` | AGT/ACS policy per role from `policies/s2/*.yaml` | `AcsToolPolicy` | Program | Microsoft.AgentGovernance |
 | `Factory.Harness/Configurator.cs` | plan/act/escalate + tier: heuristic, Laya, fallback | `IConfigurator`, `HeuristicConfigurator`, `LayaConfigurator`, `FallbackConfigurator` | TaskLoop, Program | Laya sidecar (HTTP) |
 | `Factory.Harness/ScopedWorkspace.cs` | Agent tools; refuses writes outside the phase's paths; runs commands in the sandbox | `ScopedWorkspace`, `TurnSignals` | TaskLoop, Planner | File system, sandbox |
-| `Factory.Harness/Sandbox/*` | Command sandbox: Docker container per team (default) or scrubbed local | `ISandboxFactory`, `ICommandSandbox`, `DockerSandbox`, `LocalSandbox` | ScopedWorkspace, VerifyRunner, TeamRunner, Program | Docker Engine CLI |
+| `Factory.Harness/Sandbox/*` | Command sandbox: Docker container per team (default) or scrubbed local | `ISandboxFactory`, `ICommandSandbox`, `DockerSandbox`, `LocalSandbox`, `RestoreGate` | ScopedWorkspace, VerifyRunner, TeamRunner, Program | Docker Engine CLI |
 | `Factory.Harness/Registry/*` | Designc handover reader (hash-checked) and DSL model; ledger projection; needs-decision ids/resolutions | `DesigncHandoverReader`, `DslModel`, `RegistryLedgerProjector`, `RegistryNeedsDecisions` | HandoverInput, executors | Registry repo files |
 | `Factory.Harness/Policy/MergePolicyFile.cs` | `.factory/policy.yaml` + env override | `MergePolicyFile` | FactorySettings | Target repo file |
 | `Factory.Harness/Telemetry/FactoryTelemetry.cs` | OTel attribute contract, run/task spans, task_passed score, tracer provider | `FactoryTelemetry` | FactoryAgents, Workflow, TaskLoop, Program | OTLP (Langfuse) |
@@ -198,7 +203,7 @@ Used by structural-centrality-guard to determine escalation threshold.
 | Model provider | HTTPS | Out | Anthropic API, or APIM -> LiteLLM | `FACTORY_PROVIDER=anthropic|openai`; key never reaches sandbox, ledger or traces |
 | GitHub | gh CLI | Out/In | GitHub | PR create, `/approve` and `/verified` comments from the allow-list, squash merge; dry-run writes to `.factory/runs/<id>/` |
 | git | CLI | Out | target repo | integration branch, worktrees under the state dir |
-| Docker Engine | CLI | Out | factory-s2-runner | container per team, `--network none` apart from the restore window |
+| Docker Engine | CLI | Out | factory-s2-runner | container per team, `--network none` apart from the restore window, opened only when RestoreGate passes; sources pinned to nuget.org |
 | Laya | HTTP `/decide` | Out | Laya sidecar | optional (`FACTORY_LAYA_URL`); heuristic fallback, decider ledgered |
 | Langfuse / OTLP | OTLP | Out | Langfuse | only when `OTEL_EXPORTER_OTLP_ENDPOINT` set; content off unless `FACTORY_OTEL_CAPTURE_CONTENT=1` |
 | PObserve | CLI in the runner image | Out | PObserve | `pobserve-check <specs> <Spec> <logs>` via `FACTORY_POBSERVE_CMD`; exit 2 spec violation, 4 parse error |
@@ -225,12 +230,14 @@ Used by structural-centrality-guard to determine escalation threshold.
 | Handover delivered only when merged and every check of every bound decision passed | `HandoverClosure.fs` | Business rule | projected to the registry |
 | Regeneration re-runs a task only if it covers or touches the elements of a changed decision | `Regeneration.fs` | Business rule | element-only changes and dependents do not re-run |
 | An agent's needs-decision offers ≥2 options (single capital-letter ids, summary, consequence; recommended must be one of them); a resolution naming an option never offered keeps the run parked | `TaskState.fs` `NeedsDecision.optionErrors`/`answer`, `ScopedWorkspace.RaiseNeedsDecision`, `RunExecutors` | Contract | the designer picks instead of composing an answer; harness-raised NDs (configurator, environment) have no options |
+| The restore window opens only if every restore input changed since HEAD is on the allow-list (packages, project references, compile items, plain properties; no targets, imports, custom SDKs, property functions or package sources); a refusal is not red evidence and runs no checks | `ProjectFileChange.fs`, `RestoreGate.cs`, `TaskState.fs` `RedRun.classify`, `VerifyRunner` | Security rule | HEAD is trusted: factory commits follow a gated restore; .pproj (P models) is not restored |
 | Stall: N turns with no worktree change -> needs-decision | `Configurator.cs`, `TaskLoop` | Business rule | heuristic |
 
 ## Known Risks
 
 | Area | Risk | Confidence |
 |------|------|-----------|
+| Restore exfiltration | During the gated restore an agent-chosen package name/version reaches nuget.org, so data could leak in package ids; accepted: containers hold no secrets | Medium |
 | MAF version | Pinned at 1.15.0 (NuGet newer); `[MessageHandler]` generator unused (needs .NET 10 Roslyn) | Medium |
 | AGT quirk | AGT 5.0.0 `in [..]` conditions never match; policies use one rule per tool | High (verified) |
 | PObserve paths | Under Docker the specs dir in `FACTORY_POBSERVE_CMD` must be inside the worktree mount | High (documented) |

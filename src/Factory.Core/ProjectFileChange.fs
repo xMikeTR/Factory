@@ -115,9 +115,11 @@ module ProjectFileChange =
     let private fileName (path: string) = Path.GetFileName(path.Replace('\\', '/')).ToLowerInvariant()
 
     /// An MSBuild project file (.csproj, .fsproj...): what `dotnet restore` is pointed at.
+    /// Not every *proj: a P model's .pproj is compiled by `p compile` and would fail a restore.
     let isProject (file: string) =
-        let ext = Path.GetExtension file
-        ext.Length > 5 && ext.EndsWith "proj"
+        match Path.GetExtension(file).ToLowerInvariant() with
+        | ".csproj" | ".fsproj" | ".vbproj" -> true
+        | _ -> false
 
     /// Whether a repo path is read by `dotnet restore`.
     let affectsRestore (path: string) : bool =

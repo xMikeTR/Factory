@@ -130,7 +130,10 @@ from `docker/runner` with the Docker Engine CLI: `docker/runner/build.sh` (image
 `factory-s2-runner`, override with `FACTORY_RUNNER_IMAGE`). The worktree is mounted at its own
 path and the container runs as you with `--network none`, no capabilities, and memory/CPU/pid
 limits. The network is attached only while `dotnet restore` runs at start (ledgered at stage
-`restore`). `FACTORY_SANDBOX=local` runs on the host with a scrubbed environment instead.
+`restore`), once per project file on disk, from nuget.org only. Before it opens, every restore input
+changed since HEAD is checked against an allow-list (packages, project references, compile items,
+plain properties); anything else (targets, imports, custom SDKs, nuget.config, .props/.targets)
+refuses the restore, which is ledgered as `refused` and goes back to the agent with the reasons. `FACTORY_SANDBOX=local` runs on the host with a scrubbed environment instead.
 Docker contract tests are opt-in: `FACTORY_TEST_DOCKER=1 dotnet test --filter DockerSandbox`.
 
 PObserve runs as an integration verify step: the runner image carries the PObserve CLI (built

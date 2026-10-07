@@ -36,6 +36,14 @@ COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.N
 COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.NETCore.App.Host.linux-x64/ /usr/share/dotnet/packs/Microsoft.NETCore.App.Host.linux-x64/
 COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.AspNetCore.App.Ref/ /usr/share/dotnet/packs/Microsoft.AspNetCore.App.Ref/
 
+# The restore window's only package source (RestoreGate passes --configfile and pins
+# RestoreSources too): a repo's nuget.config, or one an agent writes, never chooses where
+# packages come from while the container has network.
+RUN mkdir -p /etc/factory && printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<configuration>' '  <packageSources>' \
+      '    <clear />' '    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />' \
+      '  </packageSources>' '</configuration>' > /etc/factory/nuget.config \
+ && chmod a+r /etc/factory/nuget.config
+
 COPY --from=pobserve /PObserve.jar /opt/pobserve/PObserve.jar
 COPY --from=pobserve-parser src/ /opt/pobserve/parser/
 COPY --from=pobserve-parser pobserve-check /usr/local/bin/pobserve-check
