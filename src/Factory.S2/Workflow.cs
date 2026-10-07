@@ -5,7 +5,7 @@ namespace Factory.S2;
 
 /// The System 2 outer workflow:
 ///
-///   Planner ⇄ PlanValidator → Dispatcher ⇄ Waves ⇄ [needs-decision]
+///   Planner ⇄ PlanValidator → Dispatcher ⇄ Waves
 ///                                 ↓
 ///                        IntegrationVerify → Merge ⇄ [merge-approval]
 ///   (Planner | Waves | IntegrationVerify | Merge) → Finalize
@@ -23,7 +23,6 @@ public static class S2Workflow
         var merge = new MergeExecutor(svc);
         var finalize = new FinalizeExecutor(svc);
 
-        var needsDecision = RequestPort.Create<NeedsDecisionRequest, NeedsDecisionResponse>("needs-decision");
         var mergeApproval = RequestPort.Create<MergeApprovalRequest, MergeApprovalResponse>("merge-approval");
 
         // One typed edge per message: an executor's SendsMessage list and these edges must agree,
@@ -36,9 +35,7 @@ public static class S2Workflow
             .ForwardMessage<WaveReady>(dispatcher, waves)
             .ForwardMessage<IntegrationReady>(dispatcher, integration)
             .ForwardMessage<WaveCompleted>(waves, dispatcher)
-            .ForwardMessage<NeedsDecisionRequest>(waves, needsDecision)
             .ForwardMessage<RunFinished>(waves, finalize)
-            .ForwardMessage<NeedsDecisionResponse>(needsDecision, waves)
             .ForwardMessage<IntegrationVerified>(integration, merge)
             .ForwardMessage<RunFinished>(integration, finalize)
             .ForwardMessage<MergeApprovalRequest>(merge, mergeApproval)
@@ -69,9 +66,7 @@ public static class WorkflowHost
             switch (evt)
             {
                 case RequestInfoEvent request:
-                    if (request.Request.TryGetDataAs<NeedsDecisionRequest>(out var nd))
-                        await run.SendResponseAsync(request.Request.CreateResponse(await human.AskAsync(nd, ct)));
-                    else if (request.Request.TryGetDataAs<MergeApprovalRequest>(out var ma))
+                    if (request.Request.TryGetDataAs<MergeApprovalRequest>(out var ma))
                         await run.SendResponseAsync(request.Request.CreateResponse(await human.ApproveAsync(ma, ct)));
                     break;
 

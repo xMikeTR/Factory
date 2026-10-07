@@ -68,8 +68,8 @@ try
                 new ConsoleHumanChannel(),
                 cts.Token);
 
-            Console.WriteLine(result is null ? "run ended without a result" : $"{result.Status}\n{result.Detail}");
-            return result?.Status is "merged" or "auto_merge_enabled" ? 0 : 1;
+            Console.WriteLine(result is null ? "run ended without a result" : RunReport.Line(result));
+            return result?.Status switch { "merged" or "auto_merge_enabled" => 0, "parked" => 3, _ => 1 };
         }
 
         default:

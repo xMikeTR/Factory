@@ -11,22 +11,19 @@ namespace Factory.S2.Executors;
 
 using Core = Factory.Core.Core; // "Core" alone binds to the namespace Factory.Core from inside Factory.*
 
-/// Runs every team in a wave in parallel. Blocked teams go out through the needs-decision port as
-/// one request; the response re-runs the wave, where finished teams replay to Passed instantly.
+/// Runs every team in a wave in parallel. A blocked task gets a registry needs-decision id
+/// (ND-xxxx, reused on resume). If designc has resolved every one, the wave re-runs with the
+/// answers, where finished teams replay to Passed instantly; otherwise the run parks and exits,
+/// and a later run with the same id picks up from the ledger.
 internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
 {
     protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocol) => protocol
         .ConfigureRoutes(routes => routes
-            .AddHandler<WaveReady>(HandleReadyAsync)
-            .AddHandler<NeedsDecisionResponse>(HandleAnswersAsync))
+            .AddHandler<WaveReady>(HandleReadyAsync))
         .SendsMessage<WaveCompleted>()
-        .SendsMessage<NeedsDecisionRequest>()
         .SendsMessage<RunFinished>();
 
     private ValueTask HandleReadyAsync(WaveReady msg, IWorkflowContext context, CancellationToken cancellationToken = default) =>
-        new(RunWaveAsync(msg.RunId, msg.WaveIndex, msg.Answers, context, cancellationToken));
-
-    private ValueTask HandleAnswersAsync(NeedsDecisionResponse msg, IWorkflowContext context, CancellationToken cancellationToken = default) =>
         new(RunWaveAsync(msg.RunId, msg.WaveIndex, msg.Answers, context, cancellationToken));
 
     private async Task RunWaveAsync(string runId, int index, DecisionAnswer[] answers, IWorkflowContext context, CancellationToken ct)
@@ -51,16 +48,66 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
         }
         else if (blocked.Length > 0)
         {
+            var ids = await NeedsDecisionIdsAsync(runId, blocked, ct);
+            var resolutions = await new RegistryNeedsDecisions(svc.Settings.RegistryPath).ResolutionsAsync(ct);
+            var open = blocked.Where(b => !resolutions.ContainsKey(ids[b.TaskId])).ToList();
+            if (open.Count > 0)
+            {
+                await context.SendMessageAsync(new RunFinished(runId, "parked",
+                    string.Join(",", open.Select(b => ids[b.TaskId]))), cancellationToken: ct);
+                return;
+            }
+            var next = new List<DecisionAnswer>();
             foreach (var b in blocked)
-                await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "raised",
-                    payload: JsonSerializer.Serialize(b), teamId: b.TeamId, taskId: b.TaskId, ct: ct);
-            await context.SendMessageAsync(new NeedsDecisionRequest(runId, index, blocked), cancellationToken: ct);
+            {
+                var r = resolutions[ids[b.TaskId]];
+                await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "resolved",
+                    payload: JsonSerializer.Serialize(new { id = r.Id, b.Question, b.Elements, r.Decision, r.Note }), teamId: b.TeamId, taskId: b.TaskId, ct: ct);
+                next.Add(new DecisionAnswer(b.TaskId, r.Decision ?? r.Id,
+                    r.Note ?? (r.Decision is null ? "resolved in the registry; re-read the handover and decisions" : null)));
+            }
+            await RunWaveAsync(runId, index, next.ToArray(), context, ct);
         }
         else
         {
             await context.SendMessageAsync(new WaveCompleted(runId, index), cancellationToken: ct);
         }
     }
+
+    /// The ND id for each blocked task: the one already raised for the same question, or the next free one.
+    private async Task<Dictionary<string, string>> NeedsDecisionIdsAsync(string runId, BlockedTask[] blocked, CancellationToken ct)
+    {
+        var raised = new List<(string TaskId, string Question, string Id)>();
+        var resolved = new HashSet<string>();
+        await foreach (var e in svc.Ledger.ReadAsync(runId, ct))
+        {
+            if (e.Kind != LedgerKinds.NeedsDecision || e.Payload is null) continue;
+            var p = JsonSerializer.Deserialize<RaisedNeedsDecision>(e.Payload, CaseInsensitive);
+            if (p?.Id is null) continue;
+            if (e.Outcome == "resolved") resolved.Add(p.Id);
+            else raised.Add((e.TaskId ?? "", p.Question ?? "", p.Id));
+        }
+
+        var registry = new RegistryNeedsDecisions(svc.Settings.RegistryPath);
+        var ids = new Dictionary<string, string>();
+        foreach (var b in blocked)
+        {
+            var existing = raised.LastOrDefault(r => r.TaskId == b.TaskId && r.Question == b.Question && !resolved.Contains(r.Id)).Id;
+            if (existing is null)
+            {
+                existing = await registry.NextIdAsync(raised.Select(r => r.Id), ct);
+                raised.Add((b.TaskId, b.Question, existing));
+                await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "raised",
+                    payload: JsonSerializer.Serialize(new { id = existing, b.TeamId, b.TaskId, b.Question, b.Source, b.Elements }),
+                    teamId: b.TeamId, taskId: b.TaskId, ct: ct);
+            }
+            ids[b.TaskId] = existing;
+        }
+        return ids;
+    }
+
+    private sealed record RaisedNeedsDecision(string? Id, string? Question);
+    private static readonly JsonSerializerOptions CaseInsensitive = new() { PropertyNameCaseInsensitive = true };
 
     private static async Task<TeamResult> RunTeamSafelyAsync(TeamRunner runner, Team team, IReadOnlyDictionary<string, DecisionAnswer> answers, CancellationToken ct)
     {
