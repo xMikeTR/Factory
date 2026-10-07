@@ -83,7 +83,7 @@ public class TelemetryContractTests
         var model = new ScriptedChatClient();
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
         model.Enqueue(
-            Say(Workflow.S2WorkflowTests.PlanFor(h.Handover)),
+            SubmitPlan(Workflow.S2WorkflowTests.PlanFor(h.Handover)), Say("submitted"),
             Say("Approach: add QuoteStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),

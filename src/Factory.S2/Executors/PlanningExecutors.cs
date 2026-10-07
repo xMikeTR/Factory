@@ -68,36 +68,37 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
     private async Task DraftAsync(string runId, int attempt, string? previous, string[]? errors, IWorkflowContext context, CancellationToken ct)
     {
         var handoverJson = await File.ReadAllTextAsync(svc.Settings.HandoverCopyPath(runId), ct);
-        var schema = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "prompts", "plan.schema.json"), ct);
+        using var schema = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "prompts", "plan.schema.json"), ct));
+        var handover = svc.LoadHandover(runId);
 
         var brief = $"""
             ## Handover package
             ```json
             {handoverJson}
             ```
-
-            ## Plan schema
-            ```json
-            {schema}
-            ```
             """;
-        if (previous is not null && errors is not null)
+        if (errors is not null)
             brief += $"""
 
 
-                ## Your previous plan was rejected. Fix every one of these and return the whole plan again.
+                ## Your previous turn ended without an accepted plan. Fix every one of these and submit the whole plan again.
                 - {string.Join("\n- ", errors)}
+                """ + (previous is null ? "" : $"""
+
 
                 ```json
                 {previous}
                 ```
-                """;
+                """);
 
-        var ws = new ScopedWorkspace(svc.Settings.RepoPath, [], [], [], new TurnSignals());
-        var agent = svc.Agents.Create(new AgentScope(runId, Roles.Planner), ModelTier.Frontier, Briefs.Prompt("planner"), ws.PlannerTools());
+        var signals = new TurnSignals();
+        var ws = new ScopedWorkspace(svc.Settings.RepoPath, [], [], [], signals);
+        var agent = svc.Agents.Create(new AgentScope(runId, Roles.Planner), ModelTier.Frontier, Briefs.Prompt("planner"),
+            ws.PlannerTools(schema.RootElement, plan => Core.ValidatePlan(handover, plan).Errors));
         var response = await agent.RunAsync(brief, cancellationToken: ct);
 
-        await File.WriteAllTextAsync(svc.Settings.PlanPath(runId), ExtractJson(response.Text), ct);
+        if (signals.SubmittedPlan is { } plan) await File.WriteAllTextAsync(svc.Settings.PlanPath(runId), plan, ct);
+        else File.Delete(svc.Settings.PlanPath(runId));
         await svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "plan", LedgerKinds.Plan, Outcome: "drafted",
             Model: "frontier", TokensIn: response.Usage?.InputTokenCount, TokensOut: response.Usage?.OutputTokenCount,
             Payload: JsonSerializer.Serialize(new { attempt })), ct);
@@ -105,12 +106,6 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
         await context.SendMessageAsync(new PlanDraft(runId, attempt), cancellationToken: ct);
     }
 
-    private static string ExtractJson(string text)
-    {
-        var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        return start >= 0 && end > start ? text[start..(end + 1)] : text;
-    }
 }
 
 /// Deterministic gate on the planner's output. The planner proposes; this decides.
@@ -124,7 +119,10 @@ internal sealed class PlanValidatorExecutor(FactoryServices svc) : Executor("Pla
 
     private async ValueTask HandleAsync(PlanDraft msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
-        var validation = Core.ValidatePlan(svc.LoadHandover(msg.RunId), await File.ReadAllTextAsync(svc.Settings.PlanPath(msg.RunId), cancellationToken));
+        var path = svc.Settings.PlanPath(msg.RunId);
+        var validation = File.Exists(path)
+            ? Core.ValidatePlan(svc.LoadHandover(msg.RunId), await File.ReadAllTextAsync(path, cancellationToken))
+            : new PlanValidation(null!, ["No plan was submitted: call submit_plan with the whole plan."]);
 
         await svc.LogAsync(msg.RunId, "plan_validate", LedgerKinds.Plan,
             outcome: validation.IsValid ? "accepted" : "rejected",

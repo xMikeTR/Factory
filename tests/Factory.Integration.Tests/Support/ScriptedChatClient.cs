@@ -25,6 +25,14 @@ public sealed class ScriptedChatClient(params ChatResponse[] script) : IChatClie
         return WithUsage(new ChatMessage(ChatRole.Assistant, [new FunctionCallContent(Guid.NewGuid().ToString("N"), tool, dict)]));
     }
 
+    /// The planner's submit_plan call: the plan JSON's top-level fields become the tool arguments.
+    public static ChatResponse SubmitPlan(string planJson)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(planJson);
+        var dict = doc.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.Clone());
+        return WithUsage(new ChatMessage(ChatRole.Assistant, [new FunctionCallContent(Guid.NewGuid().ToString("N"), "submit_plan", dict)]));
+    }
+
     /// A step that simulates the process being killed: cancels the run and throws, mid-turn.
     public static ChatResponse Kill(CancellationTokenSource run) => new(new ChatMessage(ChatRole.Assistant, "<kill>")) { AdditionalProperties = new() { ["kill"] = run } };
 

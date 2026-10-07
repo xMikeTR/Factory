@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Factory.Core;
 using Factory.Harness.Sandbox;
 using Microsoft.Extensions.AI;
@@ -14,6 +16,8 @@ public sealed class TurnSignals
     public string? DoneSummary { get; set; }
     public string? NeedsDecision { get; set; }
     public string? ReturnedToTestAuthor { get; set; }
+    /// The last plan the planner passed to submit_plan, as JSON, whatever the validator said about it.
+    public string? SubmittedPlan { get; set; }
     public List<string> FilesWritten { get; } = [];
 }
 
@@ -31,10 +35,13 @@ public sealed class ScopedWorkspace(
     private readonly string _root = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
     private const int MaxReadChars = 200_000;
 
-    public IList<AITool> PlannerTools() =>
+    /// The planner's tools: read the repo, and submit_plan, whose input schema is the plan schema and
+    /// which answers with the validator's errors so the planner can fix them inside one turn.
+    public IList<AITool> PlannerTools(JsonElement planSchema, Func<string, IReadOnlyList<string>> validate) =>
     [
         AIFunctionFactory.Create(ReadFile, "read_file"),
         AIFunctionFactory.Create(ListFiles, "list_files"),
+        new SubmitPlanFunction(planSchema, validate, signals),
     ];
 
     public IList<AITool> ReadOnlyTools() =>
@@ -166,5 +173,40 @@ public sealed class ScopedWorkspace(
     {
         var p = path.Trim().Replace('\\', '/');
         return p.StartsWith("./") ? p[2..] : p.TrimStart('/');
+    }
+}
+
+/// submit_plan: the plan is the tool call's arguments, shaped by the plan schema, so the model never
+/// writes JSON as free text (live5: a raw newline inside a string cost a whole planner turn).
+internal sealed class SubmitPlanFunction(JsonElement planSchema, Func<string, IReadOnlyList<string>> validate, TurnSignals signals) : AIFunction
+{
+    public const int MaxSubmissions = 3;
+    private int _submissions;
+
+    public override string Name => "submit_plan";
+    public override string Description =>
+        "Submit the whole implementation plan. It is validated at once: you get back either Accepted (end your turn) " +
+        $"or the rules it breaks (fix every one and submit the whole plan again). At most {MaxSubmissions} submissions.";
+
+    public override JsonElement JsonSchema { get; } = WithoutMeta(planSchema);
+
+    protected override ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
+    {
+        if (++_submissions > MaxSubmissions)
+            return new($"DENIED: {MaxSubmissions} submissions is the limit for one turn. End your turn.");
+        var plan = JsonSerializer.Serialize(arguments.ToDictionary(a => a.Key, a => a.Value));
+        signals.SubmittedPlan = plan;
+        var errors = validate(plan);
+        return new(errors.Count == 0
+            ? "Accepted: the plan passed validation. End your turn."
+            : "Rejected. Fix every one of these and call submit_plan again with the whole plan:\n- " + string.Join("\n- ", errors));
+    }
+
+    private static JsonElement WithoutMeta(JsonElement schema)
+    {
+        var node = JsonNode.Parse(schema.GetRawText())!.AsObject();
+        node.Remove("$schema");
+        node.Remove("$id");
+        return JsonSerializer.SerializeToElement(node);
     }
 }
