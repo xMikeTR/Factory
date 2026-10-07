@@ -5,7 +5,7 @@
 apiVersion: governance.toolkit/v1
 version: "1"
 name: s2-planner
-description: "Plan-level planner: reads the repo, writes nothing."
+description: "Plan-level planner: reads the repo and submits the plan, writes nothing."
 scope: agent
 default_action: deny
 rules:
@@ -15,5 +15,9 @@ rules:
     priority: 10
   - name: allow-list-files
     condition: "tool_name == 'list_files'"
+    action: allow
+    priority: 10
+  - name: allow-submit-plan
+    condition: "tool_name == 'submit_plan'"
     action: allow
     priority: 10

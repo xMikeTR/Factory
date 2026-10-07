@@ -263,7 +263,9 @@ something that works on its own.
 - **Each turn gets a fresh brief, never a chat history.** The approach note, the previous verify
   failures and any newly bound decision are carried between turns through the ledger.
 - **Signals come through tools, not free text.** `declare_done` and `raise_needs_decision` are
-  tool calls, so they are governed and logged like any other call.
+  tool calls, so they are governed and logged like any other call. The planner's plan is too:
+  `submit_plan` takes the plan schema as its input schema and answers with the validator's errors,
+  so the planner fixes a rejected plan within the same turn.
 - **Scope is enforced three times:**
   - the workspace tools refuse writes outside the task's paths;
   - a git check after every turn reverts out-of-scope changes and logs a `scope_violation`;

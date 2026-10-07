@@ -4,9 +4,10 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-07 — live4 fixes: the logging contract gains an optional `key=<id>`
-> (EventLineParser partitions by it, so each quote is checked as its own history); glob overlap
-> compares segment by segment (no more `*.sql` vs `pmodel/**` false positive).
+> Last updated: 2026-10-07 — live5: the planner submits its plan through the `submit_plan` tool
+> (input schema = plan.schema.json, validated in-call, at most 3 per turn) instead of free-text JSON;
+> the schema is no longer in the brief. Before that, live4 fixes: keyed logging contract; segment-wise
+> glob overlap.
 
 ## System Overview
 
@@ -207,6 +208,7 @@ Used by structural-centrality-guard to determine escalation threshold.
 | TestAuthor writes only `testWrites`, Implementer only `writes`; disjoint | `PlanValidator.fs`, `ScopedWorkspace.cs` | Invariant | scope enforced by tools and after each turn |
 | A test that passed in the team baseline and fails now blocks green (P2P) | `Regression.fs`, `TaskLoop` | Business rule | missing test counts as failing |
 | Every `pobserve-check` call in a verify command passes exactly `<specs-dir> <SpecName> <logs>` | `PlanValidator.fs` `PObserveCheckArity` | Invariant | live3: a 2-arg call always exits 1 |
+| The planner submits its plan only through `submit_plan`; the tool runs PlanValidator and returns its errors, at most 3 submissions per turn; PlanValidatorExecutor stays the gate (no submission is a rejection) | `ScopedWorkspace.PlannerTools`, `PlanningExecutors.cs` | Contract | live5: free-text plan JSON broke on a raw newline; each rejection cost a fresh turn |
 | Events are logged as `pobserve <event> <payload> key=<id>` lines (scalar payload or none; key optional, each key its own spec instance) | `prompts/planner.md`, `Briefs.Task`, `EventLineParser.java` | Contract | live3: the planner prescribed JSONL; live4: unkeyed events from 5 quotes read as lost updates |
 | A red run with any check the sandbox could not run (NU1301, exit 127) is no evidence: the task parks, source `environment` | `TaskState.fs` `RedRun.classify`, `TaskLoop.TestsDoneAsync` | Business rule | before the Implementer's first turn |
 | Checks (baseline, red, green + P2P, stash check) leave the worktree as they found it | `GitWorkspace.LeaveAsFoundAsync`, `TaskLoop`, `TaskRerun` | Invariant | generated output never reaches a commit |

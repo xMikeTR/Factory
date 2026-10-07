@@ -49,7 +49,7 @@ public class S2WorkflowTests
         var model = new ScriptedChatClient();
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.NewTiered(Microsoft.FSharp.Collections.ListModule.Empty<string>())));
         model.Enqueue(
-            Say(PlanFor(h.Handover)),                                   // planner
+            SubmitPlan(PlanFor(h.Handover)), Say("submitted"),          // planner
             Say("Approach: add QuoteStatus.cs"),                        // task-planner
             Call("declare_done", new { summary = "test already on main" }), Say("done"), // test author
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
@@ -75,6 +75,47 @@ public class S2WorkflowTests
         Assert.Single(h.Rows(LedgerKinds.Run), e => e.Outcome == "merged");
     }
 
+    /// live2-live5: free-text plans broke on raw newlines and every rejection cost a fresh turn.
+    [Fact]
+    public async Task The_planner_fixes_a_rejected_plan_inside_one_turn_through_submit_plan()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.Auto));
+        var outside = PlanFor(h.Handover).Replace("\"src/Pricing.Data/**\"", "\"src/Elsewhere/**\"");
+        model.Enqueue(
+            SubmitPlan(outside), SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Say("done"));
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
+            new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+
+        Assert.Equal("auto_merge_enabled", result?.Status);
+        Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "drafted");
+        Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "accepted");
+        var feedback = model.Requests[1].SelectMany(m => m.Contents).OfType<Microsoft.Extensions.AI.FunctionResultContent>().Single();
+        Assert.Contains("src/Elsewhere/**", feedback.Result?.ToString());
+        Assert.DoesNotContain(model.Requests[0], m => m.Text.Contains("## Plan schema"));
+    }
+
+    [Fact]
+    public async Task A_planner_that_never_calls_submit_plan_is_told_to()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.Auto));
+        model.Enqueue(Say(PlanFor(h.Handover)), SubmitPlan(PlanFor(h.Handover)), Say("submitted"));
+
+        try { await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default); }
+        catch (InvalidOperationException) { } // the script ends after planning; only the plan rows matter here
+
+        var rejected = Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "rejected");
+        Assert.Contains("submit_plan", rejected.Payload);
+        Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "accepted");
+    }
+
     private static MergePolicy Policy(MergeEnforcement enforcement) =>
         new(enforcement, Core.DefaultMergePolicy.AutoMergeMaxRisk, Core.DefaultMergePolicy.AutoMergeMaxChangedLines);
 
@@ -91,7 +132,7 @@ public class S2WorkflowTests
     private static Task<RunFinished?> RunT001(TeamHarness h, ScriptedChatClient model, ApprovingHuman human, Func<string, string>? plan = null)
     {
         model.Enqueue(
-            Say((plan ?? (p => p))(PlanFor(h.Handover))),
+            SubmitPlan((plan ?? (p => p))(PlanFor(h.Handover))), Say("submitted"),
             Say("Approach: add QuoteStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
@@ -185,7 +226,7 @@ public class S2WorkflowTests
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
         Directory.CreateDirectory(h.Services.Settings.RegistryPath); // empty registry: D-0001's P check fails there
         model.Enqueue(
-            Say(PlanFor(h.Handover)),
+            SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
             Say("Approach: add QuoteStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
@@ -220,7 +261,7 @@ public class S2WorkflowTests
         var registry = h.Services.Settings.RegistryPath;
         Directory.CreateDirectory(registry);
         model.Enqueue(
-            Say(PlanFor(h.Handover)),
+            SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
             Say("Approach: add QuoteStatus.cs"),
             Call("raise_needs_decision", new { question = "Is Draft the only initial status?" }), Say("blocked"));
         var handover = h.WriteHandoverJson();
@@ -268,7 +309,7 @@ public class S2WorkflowTests
         var model = new ScriptedChatClient();
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
         model.Enqueue(
-            Say(PlanFor(h.Handover)),
+            SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
             Say("Approach: add QuoteStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
