@@ -144,6 +144,20 @@ the handover's behaviour specs, e.g.
 (the path must be inside the sandbox's worktree mount when `FACTORY_SANDBOX=docker`). Exit 2 is
 a spec violation, 4 a malformed event line. Tests: `FACTORY_TEST_DOCKER=1 dotnet test --filter PObserve`.
 
+How reliably do the agents get a task to Passed? `rerun` makes k fresh attempts at one task,
+each its own run (`rerun-<task>-<time>-k<n>`: an integration branch from `--base` and a fresh
+worktree), through the same task loop as `run`. Nothing is merged and no PR is opened:
+
+```bash
+dotnet run --project src/Factory.S2 -- rerun --handover <handover> --plan plan.json --task T-001 --k 3 --repo <target repo>
+#   rerun-T-001-…-k1: passed, 3 turns, tokens 600/120
+#   …
+# T-001 k=3: passed 2/3 (67%), turns mean 3.0, tokens in/out mean 500/100
+```
+
+Outcomes are `passed`, `failed` or `blocked` (a needs-decision; reruns never answer one).
+The tasks it depends on are not replayed, so point `--base` at a branch that has their work.
+
 The merge policy comes from the target repo's `.factory/policy.yaml` (read from the base
 checkout, never a task worktree):
 
