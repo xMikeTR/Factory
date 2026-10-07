@@ -1,0 +1,169 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+namespace Factory.Harness.Registry;
+
+/// The handover a run's registry rows belong to.
+public sealed record HandoverRef(string Id);
+
+/// One designc ledger row. Line is the canonical compact JSON written to {registry}/ledger/{Stream}.
+public sealed record RegistryEvent(string Stream, string EventId, string Line);
+
+/// Projects System 2's own ledger onto designc's registry streams. Pure: the same run gives the
+/// same bytes, ts is the source row's ts, and event_id is a hash of the row's content, so a row
+/// written twice is the same row (designc dedupes on event_id and flags V5 on a mismatch).
+public static class RegistryLedgerProjector
+{
+    public const string By = "factory-s2";
+    private const string Pipeline = "pipeline.jsonl";
+    private const string Checks = "checks.jsonl";
+
+    public static IReadOnlyList<RegistryEvent> Project(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    {
+        var rows = new List<(DateTimeOffset Ts, RegistryEvent Row)>();
+        rows.AddRange(Tasks(run, handover));
+        foreach (var e in run)
+        {
+            if (e.Kind == LedgerKinds.NeedsDecision && NeedsDecision(e) is { } nd) rows.Add((e.Ts, nd));
+            else if (e.Kind == LedgerKinds.Verify && e.Decision is not null && Check(e) is { } check) rows.Add((e.Ts, check));
+        }
+        // Stable: ties keep source order.
+        return rows.OrderBy(r => r.Ts).Select(r => r.Row).ToList();
+    }
+
+    /// One row per task: its latest state, turn count and tokens so far.
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> Tasks(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    {
+        foreach (var task in run.Where(e => e.TaskId is not null).GroupBy(e => e.TaskId!))
+        {
+            var last = task.LastOrDefault(e => e.Kind == LedgerKinds.TaskEvent);
+            if (last?.Outcome is null) continue;
+            var turns = task.Where(e => e.Kind == LedgerKinds.Turn).ToList();
+            yield return (last.Ts, Row(Pipeline, "task", last, w =>
+            {
+                w.WriteString("task", task.Key);
+                w.WriteString("status", Status(last.Outcome));
+                w.WriteNumber("turns", turns.Count);
+                w.WriteNumber("tokens_in", turns.Sum(t => t.TokensIn ?? 0));
+                w.WriteNumber("tokens_out", turns.Sum(t => t.TokensOut ?? 0));
+                if (turns.LastOrDefault(t => t.Model is not null)?.Model is { } tier) w.WriteString("tier", tier);
+                w.WriteString("handover", handover.Id);
+            }));
+        }
+    }
+
+    /// TaskState case name -> designc task status.
+    private static string Status(string state) => state switch
+    {
+        "Passed" => "passed",
+        "Failed" => "failed",
+        "Blocked" => "blocked",
+        "Ready" or "Running" or "Verifying" => "running",
+        _ => throw new ArgumentOutOfRangeException(nameof(state), state, "not a TaskState case"),
+    };
+
+    /// Only needs-decisions that carry a registry id (ND-xxxx) are projected.
+    private static RegistryEvent? NeedsDecision(LedgerEvent e)
+    {
+        if (e.Payload is null) return null;
+        using var doc = JsonDocument.Parse(e.Payload);
+        var p = doc.RootElement;
+        if (Prop(p, "id")?.GetString() is not { } id || Prop(p, "question")?.GetString() is not { } question) return null;
+        var element = Prop(p, "elements") is { ValueKind: JsonValueKind.Array } els && els.GetArrayLength() > 0 ? els[0].GetString() : e.Element;
+        return Row(Pipeline, "needs_decision", e, w =>
+        {
+            w.WriteString("id", id);
+            w.WriteString("question", question);
+            w.WriteString("status", e.Outcome == "resolved" ? "resolved" : "open");
+            if (e.TaskId is not null) w.WriteString("task", e.TaskId);
+            if (element is not null) w.WriteString("element", element);
+        });
+    }
+
+    private static RegistryEvent? Check(LedgerEvent e)
+    {
+        if (e.Payload is null) return null;
+        using var doc = JsonDocument.Parse(e.Payload);
+        var p = doc.RootElement;
+        if (Prop(p, "command")?.GetString() is not { } command) return null;
+        return Row(Checks, "check", e, w =>
+        {
+            w.WriteString("decision", e.Decision);
+            w.WriteString("check", command);
+            w.WriteString("outcome", e.Outcome == "passed" ? "pass" : "fail");
+            w.WriteString("source", "pipeline");
+            if (Prop(p, "ms") is { ValueKind: JsonValueKind.Number } ms) w.WriteNumber("ms", ms.GetInt64());
+            if (Prop(p, "exitCode") is { ValueKind: JsonValueKind.Number } code) w.WriteNumber("exit_code", code.GetInt32());
+        });
+    }
+
+    /// Envelope + kind fields in a fixed order, then event_id = hash of everything before it.
+    private static RegistryEvent Row(string stream, string kind, LedgerEvent source, Action<Utf8JsonWriter> fields)
+    {
+        string Body(string? eventId)
+        {
+            using var buffer = new MemoryStream();
+            using (var w = new Utf8JsonWriter(buffer))
+            {
+                w.WriteStartObject();
+                w.WriteString("kind", kind);
+                fields(w);
+                w.WriteString("by", By);
+                w.WriteString("system", source.System);
+                w.WriteString("run_id", source.RunId);
+                if (source.TraceId is not null) w.WriteString("trace_id", source.TraceId);
+                w.WriteNumber("schema_version", 1);
+                w.WriteNumber("ts", source.Ts.ToUnixTimeMilliseconds());
+                if (eventId is not null) w.WriteString("event_id", eventId);
+                w.WriteEndObject();
+            }
+            return Encoding.UTF8.GetString(buffer.ToArray());
+        }
+
+        var id = "s2-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Body(null))))[..32];
+        return new RegistryEvent(stream, id, Body(id));
+    }
+
+    private static JsonElement? Prop(JsonElement obj, string name)
+    {
+        foreach (var p in obj.EnumerateObject())
+            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p.Value;
+        return null;
+    }
+}
+
+/// Appends projected rows to {registry}/ledger/{stream}, skipping event_ids the stream already has.
+public static class RegistryLedgerWriter
+{
+    public static async Task AppendAsync(string registryPath, IEnumerable<RegistryEvent> events, CancellationToken ct)
+    {
+        foreach (var stream in events.GroupBy(e => e.Stream))
+        {
+            var path = Path.Combine(registryPath, "ledger", stream.Key);
+            var seen = await EventIdsAsync(path, ct);
+            var lines = stream.Where(e => seen.Add(e.EventId)).Select(e => e.Line + "\n").ToList();
+            if (lines.Count == 0) continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var prefix = File.Exists(path) && new FileInfo(path).Length > 0 && !(await File.ReadAllTextAsync(path, ct)).EndsWith('\n') ? "\n" : "";
+            await File.AppendAllTextAsync(path, prefix + string.Concat(lines), ct);
+        }
+    }
+
+    private static async Task<HashSet<string>> EventIdsAsync(string path, CancellationToken ct)
+    {
+        var ids = new HashSet<string>();
+        if (!File.Exists(path)) return ids;
+        foreach (var line in await File.ReadAllLinesAsync(path, ct))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                if (doc.RootElement.TryGetProperty("event_id", out var id) && id.GetString() is { } s) ids.Add(s);
+            }
+            catch (JsonException) { } // designc owns the stream's validity; an unreadable row is not ours to judge
+        }
+        return ids;
+    }
+}

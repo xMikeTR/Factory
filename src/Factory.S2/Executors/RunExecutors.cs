@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Registry;
 using Factory.S2.Git;
 using Factory.S2.Teams;
 using Microsoft.Agents.AI.Workflows;
@@ -97,7 +98,7 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         if (Directory.Exists(s.RegistryPath))
             foreach (var d in svc.LoadHandover(msg.RunId).Decisions)
                 foreach (var check in d.Checks)
-                    outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, $"{d.Id.Value} [{check.Kind}]", check.Run, s.RegistryPath, timeout, cancellationToken));
+                    outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, $"{d.Id.Value} [{check.Kind}]", check.Run, s.RegistryPath, timeout, cancellationToken, d.Id.Value));
         else
             await svc.LogAsync(msg.RunId, "integration_verify", LedgerKinds.Verify, outcome: "skipped_decision_checks",
                 payload: JsonSerializer.Serialize(new { reason = $"registry not found at {s.RegistryPath}" }), ct: cancellationToken);
@@ -191,6 +192,13 @@ internal sealed class FinalizeExecutor(FactoryServices svc) : Executor("Finalize
     private async ValueTask HandleAsync(RunFinished msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         await svc.LogAsync(msg.RunId, "finalize", LedgerKinds.Run, outcome: msg.Status, payload: JsonSerializer.Serialize(msg), ct: cancellationToken);
+        if (Directory.Exists(svc.Settings.RegistryPath))
+        {
+            var run = new List<LedgerEvent>();
+            await foreach (var e in svc.Ledger.ReadAsync(msg.RunId, cancellationToken)) run.Add(e);
+            var rows = RegistryLedgerProjector.Project(run, new HandoverRef(svc.LoadHandover(msg.RunId).Id));
+            await RegistryLedgerWriter.AppendAsync(svc.Settings.RegistryPath, rows, cancellationToken);
+        }
         await context.YieldOutputAsync(msg, cancellationToken);
     }
 }
