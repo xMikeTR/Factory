@@ -33,7 +33,7 @@ public sealed class TeamHarness : IDisposable
     public FactoryServices Services { get; }
     public Handover Handover { get; }
 
-    private TeamHarness(string root, Handover handover, Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand, MergePolicy? mergePolicy)
+    private TeamHarness(string root, Handover handover, Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests)
     {
         _root = root;
         Repo = Path.Combine(root, "repo");
@@ -48,16 +48,44 @@ public sealed class TeamHarness : IDisposable
             new GitWorkspace(Repo, state),
             new VerifyRunner(Ledger, sandboxes),
             sandboxes,
-            new DryRunPullRequests(Path.Combine(state, "runs", RunId)));
+            pullRequests ?? new DryRunPullRequests(Path.Combine(state, "runs", RunId)));
     }
 
     /// `suiteCommand` is the integration test command; "true" writes no results, so there is no
     /// regression baseline and the P2P check is skipped.
     public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand = "true",
-        MergePolicy? mergePolicy = null)
+        MergePolicy? mergePolicy = null, IPullRequests? pullRequests = null)
     {
         var root = Directory.CreateTempSubdirectory("team-").FullName;
         var repo = Path.Combine(root, "repo");
+        await InitRepoAsync(repo);
+        return await WireAsync(root, model, limits, suiteCommand, mergePolicy, pullRequests);
+    }
+
+    /// A clone of a real remote (opt-in live tests). The run's PR goes to that remote.
+    public static async Task<TeamHarness> CloneAsync(string remoteUrl, Microsoft.Extensions.AI.IChatClient model, Limits limits,
+        MergePolicy mergePolicy)
+    {
+        var root = Directory.CreateTempSubdirectory("team-live-").FullName;
+        var repo = Path.Combine(root, "repo");
+        await Git(root, "clone", "-q", remoteUrl, repo);
+        await Git(repo, "config", "user.name", "factory-test");
+        await Git(repo, "config", "user.email", "factory-test@localhost");
+        return await WireAsync(root, model, limits, "true", mergePolicy, new GhCliPullRequests(repo));
+    }
+
+    private static async Task<TeamHarness> WireAsync(string root, Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand,
+        MergePolicy? mergePolicy, IPullRequests? pullRequests)
+    {
+        var handover = await new DesigncHandoverReader().LoadAsync(
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"), S2Config.Default, CancellationToken.None);
+        var h = new TeamHarness(root, handover, model, limits, suiteCommand, mergePolicy, pullRequests);
+        await h.Services.Git.EnsureIntegrationAsync(RunId, "main", CancellationToken.None);
+        return h;
+    }
+
+    private static async Task InitRepoAsync(string repo)
+    {
         Directory.CreateDirectory(Path.Combine(repo, "src", "Pricing.Data"));
         await File.WriteAllTextAsync(Path.Combine(repo, "src", "Pricing.Data", "Quote.cs"), "// quote\n");
         Directory.CreateDirectory(Path.Combine(repo, "tests", "Pricing.Data.Tests"));
@@ -70,12 +98,6 @@ public sealed class TeamHarness : IDisposable
         await Git(repo, "config", "user.email", "factory-test@localhost");
         await Git(repo, "add", "-A");
         await Git(repo, "commit", "-q", "-m", "base");
-
-        var handover = await new DesigncHandoverReader().LoadAsync(
-            Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"), S2Config.Default, CancellationToken.None);
-        var h = new TeamHarness(root, handover, model, limits, suiteCommand, mergePolicy);
-        await h.Services.Git.EnsureIntegrationAsync(RunId, "main", CancellationToken.None);
-        return h;
     }
 
     public static Team TeamOf(PlannedTask task) =>

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Factory.Core;
 using Factory.Harness;
 
 namespace Factory.S2;
@@ -9,10 +11,18 @@ public interface IPullRequests
     Task EnableAutoMergeAsync(string url, CancellationToken ct);
 }
 
-/// GitHub via the gh CLI (authenticated as the factory's GitHub App or a bot user).
-/// Required approvals per tier are enforced by branch protection / CODEOWNERS on GitHub;
-/// the factory only decides whether to enable auto-merge and whom to ask.
-public sealed class GhCliPullRequests(string repoPath) : IPullRequests
+/// A PR host whose comments carry approvals (`/approve <reason>`, `/verified <check>`). Tiered
+/// mode reads them on every run: too few parks the run, enough merges it. Without this the
+/// merge-approval port asks a human instead (dry-run).
+public interface IApprovalComments
+{
+    Task<IReadOnlyList<PrComment>> CommentsAsync(string url, CancellationToken ct);
+    Task MergeAsync(string url, CancellationToken ct);
+}
+
+/// GitHub via the gh CLI, authenticated as the operator. Who may approve is the policy's
+/// allow-list (Merge.approvals), never "whoever commented".
+public sealed class GhCliPullRequests(string repoPath) : IPullRequests, IApprovalComments
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(2);
 
@@ -28,6 +38,16 @@ public sealed class GhCliPullRequests(string repoPath) : IPullRequests
     }
 
     public Task EnableAutoMergeAsync(string url, CancellationToken ct) => Gh(ct, "pr", "merge", url, "--auto", "--squash");
+
+    public Task MergeAsync(string url, CancellationToken ct) => Gh(ct, "pr", "merge", url, "--squash");
+
+    public async Task<IReadOnlyList<PrComment>> CommentsAsync(string url, CancellationToken ct)
+    {
+        using var doc = JsonDocument.Parse(await Gh(ct, "pr", "view", url, "--json", "comments"));
+        return doc.RootElement.GetProperty("comments").EnumerateArray()
+            .Select(c => new PrComment(c.GetProperty("author").GetProperty("login").GetString() ?? "", c.GetProperty("body").GetString() ?? ""))
+            .ToList();
+    }
 
     private async Task<string> Gh(CancellationToken ct, params string[] args)
     {

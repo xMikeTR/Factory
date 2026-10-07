@@ -226,6 +226,33 @@ let tests: (string * (unit -> unit)) list =
           equal MergeAction.MergeNow (Merge.action tiered { Tier = AutoMerge; Reasons = []; Blocks = [] }) "auto tier"
           equal (MergeAction.AwaitApproval(OneApproval, [ "alice" ])) (Merge.action tiered { Tier = OneApproval; Reasons = []; Blocks = [] }) "one"
 
+      "approve: distinct allow-listed logins count; others and plain comments do not", fun () ->
+          let c a b = { Author = a; Body = b }
+          let comments = [ c "alice" "/approve looks right"; c "mallory" "/approve"; c "bob" "nice"; c "ALICE" "/approve again" ]
+          let a = Merge.approvals TwoApprovals [ "alice"; "bob" ] comments
+          equal false a.Approved "one distinct approver"
+          equal [ "alice" ] a.By "by"
+          equal 1 a.Missing "missing"
+          let b = Merge.approvals TwoApprovals [ "alice"; "bob" ] (comments @ [ c "bob" "/approve ok" ])
+          equal true b.Approved "two"
+          equal false b.SingleOperator "not single"
+      "approve: a single operator approves twice with two stated reasons, flagged", fun () ->
+          let c b = { Author = "mike"; Body = b }
+          let once = Merge.approvals TwoApprovals [ "mike" ] [ c "/approve schema reviewed"; c "/approve schema reviewed" ]
+          equal false once.Approved "same reason twice is one approval"
+          let noReason = Merge.approvals TwoApprovals [ "mike" ] [ c "/approve"; c "/approve" ]
+          equal false noReason.Approved "reasons are required"
+          let twice = Merge.approvals TwoApprovals [ "mike" ] [ c "/approve schema reviewed"; c "/approve migration dry-run ok" ]
+          equal true twice.Approved "approved"
+          equal true twice.SingleOperator "flagged"
+          equal false (Merge.approvals OneApproval [ "mike" ] [ c "/approve" ]).SingleOperator "one approval is not an override"
+      "approve: an allow-listed /verified comment clears that manual check's block", fun () ->
+          let v = { Tier = OneApproval; Reasons = []; Blocks = [ ManualVerifyPending "T-001: eyeball"; ScopeLeak "x" ] }
+          let comments = [ { Author = "eve"; Body = "/verified T-001: eyeball" } ]
+          equal v.Blocks (Merge.recordVerified [ "mike" ] comments v).Blocks "not allow-listed"
+          let ok = Merge.recordVerified [ "mike" ] [ { Author = "mike"; Body = "/verified T-001: eyeball" } ] v
+          equal [ ScopeLeak "x" ] ok.Blocks "manual cleared, scope leak stays"
+
       // ---------- regression ----------
       "regression: a test that passed before and fails now is a regression", fun () ->
           let r name passed = { Name = name; Passed = passed }

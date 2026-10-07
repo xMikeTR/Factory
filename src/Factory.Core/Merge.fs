@@ -42,6 +42,18 @@ type MergeAction =
     | AwaitApproval of tier: MergeTier * approvers: string list
     | Blocked of MergeBlock list
 
+/// A PR comment. `/approve <reason>` and `/verified <task>: <check>` count only from allow-listed logins.
+type PrComment = { Author: string; Body: string }
+
+type Approval =
+    { Approved: bool
+      /// Allow-listed logins whose /approve counted.
+      By: string list
+      /// One operator stood in for several approvers (distinct stated reasons); autonomy was
+      /// lower than the policy says, so the ledger records it.
+      SingleOperator: bool
+      Missing: int }
+
 [<RequireQualifiedAccess>]
 module Merge =
 
@@ -121,3 +133,38 @@ module Merge =
         | ScopeLeak f -> $"'{f}' changed but no team declared it in writes"
         | ProtectedPathChanged f -> $"'{f}' is under a protected path"
         | ManualVerifyPending c -> $"manual check pending: {c}"
+
+    let private required =
+        function
+        | AutoMerge -> 0
+        | OneApproval -> 1
+        | TwoApprovals -> 2
+
+    let private allowed (approvers: string list) (login: string) =
+        approvers |> List.exists (fun a -> System.String.Equals(a, login, System.StringComparison.OrdinalIgnoreCase))
+
+    /// The text after `command` when the comment starts with it, trimmed.
+    let private argument (command: string) (body: string) =
+        let b = body.Trim()
+        if b = command || b.StartsWith(command + " ") then Some(b.Substring(command.Length).Trim()) else None
+
+    /// Spec: tests starting "approve:". Distinct allow-listed logins with an /approve comment count
+    /// toward the tier. With exactly one allow-listed login, that operator may meet a tier above
+    /// one approval with one /approve per distinct stated reason (single-operator override).
+    let approvals (tier: MergeTier) (approvers: string list) (comments: PrComment list) : Approval =
+        let need = required tier
+        let approves = comments |> List.choose (fun c -> if allowed approvers c.Author then argument "/approve" c.Body |> Option.map (fun r -> c.Author.ToLowerInvariant(), r) else None)
+        let by = approves |> List.map fst |> List.distinct
+        match approvers with
+        | [ _ ] when need > 1 && by.Length < need ->
+            let reasons = approves |> List.map snd |> List.filter (fun r -> r <> "") |> List.distinct
+            let counted = min need reasons.Length
+            { Approved = counted >= need; By = by; SingleOperator = counted >= need; Missing = need - counted }
+        | _ ->
+            let counted = min need by.Length
+            { Approved = counted >= need; By = by; SingleOperator = false; Missing = need - counted }
+
+    /// Drops ManualVerifyPending blocks an allow-listed `/verified <check>` comment records as done.
+    let recordVerified (approvers: string list) (comments: PrComment list) (verdict: MergeVerdict) : MergeVerdict =
+        let verified = comments |> List.choose (fun c -> if allowed approvers c.Author then argument "/verified" c.Body else None) |> Set.ofList
+        { verdict with Blocks = verdict.Blocks |> List.filter (function ManualVerifyPending c -> not (verified.Contains c) | _ -> true) }

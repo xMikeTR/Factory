@@ -64,6 +64,8 @@ type Core =
     static member DefaultMergePolicy = Merge.defaultPolicy
     static member MergeActionFor(policy: MergePolicy, verdict: MergeVerdict) : MergeAction = Merge.action policy verdict
     static member DescribeBlock(block: MergeBlock) : string = Merge.describe block
+    static member Approvals(tier: MergeTier, approvers: string list, comments: PrComment seq) : Approval = Merge.approvals tier approvers (List.ofSeq comments)
+    static member RecordVerified(approvers: string list, comments: PrComment seq, verdict: MergeVerdict) : MergeVerdict = Merge.recordVerified approvers (List.ofSeq comments) verdict
 
     static member Matches(pattern: PathPattern, path: string) = PathPattern.matches pattern path
 
