@@ -151,6 +151,17 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         return true;
     }
 
+    /// Commit only `paths` (the TestAuthor's tests), leaving any other change in the worktree.
+    public async Task<bool> CommitPathsAsync(string worktree, IReadOnlyCollection<string> paths, string message, CancellationToken ct)
+    {
+        if (paths.Count == 0) return false;
+        await GitAsync(worktree, ct, ["add", "-A", "--", .. paths]);
+        var staged = await GitAsync(worktree, ct, check: false, "diff", "--cached", "--quiet");
+        if (staged.ExitCode == 0) return false;
+        await GitAsync(worktree, ct, "commit", "-m", message);
+        return true;
+    }
+
     /// Merge a finished team branch into integration. Serialised: teams in a wave finish in
     /// parallel, but only one merge touches the integration worktree at a time. Teams never
     /// overlap on declared writes, so a conflict here means something wrote outside its scope.

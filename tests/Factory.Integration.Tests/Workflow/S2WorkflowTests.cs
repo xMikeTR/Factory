@@ -52,6 +52,7 @@ public class S2WorkflowTests
         model.Enqueue(
             Say(PlanFor(h.Handover)),                                   // planner
             Say("Approach: add QuoteStatus.cs"),                        // task-planner
+            Call("declare_done", new { summary = "test already on main" }), Say("done"), // test author
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
             Call("declare_done", new { summary = "added QuoteStatus" }),
             Say("done"));
@@ -84,6 +85,7 @@ public class S2WorkflowTests
         model.Enqueue(
             Say(PlanFor(h.Handover)),
             Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
             Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
             Kill(killed));
         var handover = h.WriteHandoverJson();
