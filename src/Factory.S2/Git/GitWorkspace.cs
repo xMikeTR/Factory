@@ -75,15 +75,37 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     /// Checks leave the worktree as they found it: disposing reverts every path that was not
     /// changed before (generated sources, logs), so only what the agents wrote is ever committed.
     /// A path already changed before is left alone, even if the check rewrote it.
+    /// Directories the check created are removed whole, git-ignored contents included (`p compile`
+    /// generates a project with its own obj/, which the project around it would compile); build
+    /// caches (bin/, obj/, node_modules/) are kept so the next build stays incremental.
     public async Task<IAsyncDisposable> LeaveAsFoundAsync(string worktree, CancellationToken ct)
     {
         var before = (await ChangedPathsAsync(worktree, ct)).ToHashSet();
+        var dirs = Directories(worktree).ToHashSet();
         return new Restore(async () =>
         {
             var added = (await ChangedPathsAsync(worktree, CancellationToken.None)).Where(p => !before.Contains(p)).ToList();
             await RevertPathsAsync(worktree, added, CancellationToken.None);
-            return added.Count > 0;
+            var created = Directories(worktree).Where(d => !dirs.Contains(d)).ToList();
+            foreach (var d in created.Where(d => Directory.Exists(d) && !BuildCaches.Contains(Path.GetFileName(d))))
+                Directory.Delete(d, recursive: true);
+            return added.Count > 0 || created.Count > 0;
         });
+    }
+
+    private static readonly HashSet<string> BuildCaches = ["bin", "obj", "node_modules"];
+
+    /// Every directory in the worktree, not descending into .git or build caches. A directory
+    /// is only yielded after its parent, so a created tree is removed from its top.
+    private static IEnumerable<string> Directories(string root)
+    {
+        var pending = new Queue<string>([root]);
+        while (pending.Count > 0)
+            foreach (var d in Directory.EnumerateDirectories(pending.Dequeue()))
+            {
+                yield return d;
+                if (Path.GetFileName(d) is not ".git" && !BuildCaches.Contains(Path.GetFileName(d))) pending.Enqueue(d);
+            }
     }
 
     /// Take the implementation out of the worktree for the stashed-impl check: copy `paths` aside

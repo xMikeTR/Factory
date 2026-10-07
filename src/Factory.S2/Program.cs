@@ -147,13 +147,14 @@ static FactoryServices Services(FactorySettings settings, string runId, Dictiona
             new HeuristicConfigurator(),
             double.Parse(Environment.GetEnvironmentVariable("FACTORY_LAYA_MIN_CONFIDENCE") ?? "0.7", System.Globalization.CultureInfo.InvariantCulture))
         : new HeuristicConfigurator();
+    var git = new GitWorkspace(settings.RepoPath, settings.StateDir);
     return new FactoryServices(
         settings,
         ledger,
         new FactoryAgents(GatewayOptions.FromEnvironment(env), toolPolicy, ledger, FactoryTelemetry.CaptureContent(env)),
         configurator,
-        new GitWorkspace(settings.RepoPath, settings.StateDir),
-        new VerifyRunner(ledger, sandboxes),
+        git,
+        new VerifyRunner(ledger, sandboxes, git),
         sandboxes,
         pullRequests);
 }

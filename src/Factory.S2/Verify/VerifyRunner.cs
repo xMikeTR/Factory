@@ -2,6 +2,7 @@ using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Sandbox;
+using Factory.S2.Git;
 
 namespace Factory.S2.Verify;
 
@@ -9,10 +10,12 @@ using Core = Factory.Core.Core;
 
 /// Runs verify entries exactly as the plan declared them. The agent never runs these on its own
 /// behalf and cannot edit them: the plan is frozen, and verify scripts sit under protected paths.
-public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes)
+public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitWorkspace git)
 {
-    /// Automated entries run in order. Cleanup always runs, pass or fail, and a failing cleanup
-    /// counts as a failed outcome: leftover seeded state would make the next run lie.
+    /// Automated entries run in order, each against the tree as it found it: whatever a check
+    /// writes (generated code, logs) is reverted before the next one starts, so one check cannot
+    /// break another. Cleanup always runs, pass or fail, and a failing cleanup counts as a failed
+    /// outcome: leftover seeded state would make the next run lie.
     /// Manual entries are logged as pending; they gate the merge tier, not the task.
     /// `stage` labels the ledger row: "verify" (green run), "red_run" or "stash_check".
     public async Task<List<VerifyOutcome>> RunTaskAsync(
@@ -33,6 +36,7 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes)
             switch (entry)
             {
                 case VerifyEntry.Automated { Item: var a }:
+                    await using (await git.LeaveAsFoundAsync(worktree, ct))
                     try
                     {
                         outcomes.Add(ToOutcome(a.Name, await sandbox.RunAsync(a.Run, worktree, TimeSpan.FromSeconds(a.TimeoutSeconds), env, ct)));

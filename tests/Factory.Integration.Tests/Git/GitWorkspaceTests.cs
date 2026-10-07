@@ -44,4 +44,26 @@ public class GitWorkspaceTests
         Assert.True(File.Exists(added));
         Assert.False(await h.Services.Git.RestoreStashAsync(wt, "run-test/team-x", CancellationToken.None));
     }
+
+    /// live2: `p compile` generated a project whose obj/ is git-ignored, so it survived the check
+    /// and the test project around it compiled its AssemblyInfo.cs twice.
+    [Fact]
+    public async Task LeaveAsFound_removes_the_directories_a_check_created_but_keeps_build_caches()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        var generated = Path.Combine(wt, "tests/Pricing.Data.Tests/PModel/PGenerated");
+        var cache = Path.Combine(wt, "tests/Pricing.Data.Tests/bin");
+
+        await using (await h.Services.Git.LeaveAsFoundAsync(wt, CancellationToken.None))
+        {
+            Directory.CreateDirectory(Path.Combine(generated, "bin/Release"));
+            await File.WriteAllTextAsync(Path.Combine(generated, "bin/Release/Gen.AssemblyInfo.cs"), "// ignored\n");
+            Directory.CreateDirectory(cache);
+            await File.WriteAllTextAsync(Path.Combine(cache, "Pricing.Data.Tests.dll"), "cache\n");
+        }
+
+        Assert.False(Directory.Exists(Path.Combine(wt, "tests/Pricing.Data.Tests/PModel")));
+        Assert.True(File.Exists(Path.Combine(cache, "Pricing.Data.Tests.dll")));
+    }
 }
