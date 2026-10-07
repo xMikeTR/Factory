@@ -26,23 +26,28 @@ public static class S2Workflow
         var needsDecision = RequestPort.Create<NeedsDecisionRequest, NeedsDecisionResponse>("needs-decision");
         var mergeApproval = RequestPort.Create<MergeApprovalRequest, MergeApprovalResponse>("merge-approval");
 
-        // TODO(you) — RESOURCES.md §8. Wire the graph. Each edge carries one message type:
-        //   planner     -> validator (PlanDraft), finalize (RunFinished)
-        //   validator   -> planner (PlanRejected), dispatcher (PlanAccepted)
-        //   dispatcher  -> waves (WaveReady), integration (IntegrationReady)
-        //   waves       -> dispatcher (WaveCompleted), needsDecision (NeedsDecisionRequest), finalize (RunFinished)
-        //   needsDecision -> waves            (responses come back to the requester)
-        //   integration -> merge (IntegrationVerified), finalize (RunFinished)
-        //   merge       -> mergeApproval (MergeApprovalRequest), finalize (RunFinished)
-        //   mergeApproval -> merge
-        //   output from finalize
-        // Start: new WorkflowBuilder(planner).AddEdge<object>(planner, validator, When<PlanDraft>)...
-        // Check against your MAF version: conditional AddEdge overload, WithOutputFrom, Build.
-        _ = (validator, dispatcher, waves, integration, merge, finalize, needsDecision, mergeApproval);
-        throw new NotImplementedException("TODO: S2Workflow.Build (RESOURCES.md §8)");
+        // One typed edge per message: an executor's SendsMessage list and these edges must agree,
+        // and a message with no edge is a build-time error in MAF rather than a silent drop.
+        return new WorkflowBuilder(planner)
+            .ForwardMessage<PlanDraft>(planner, validator)
+            .ForwardMessage<RunFinished>(planner, finalize)
+            .ForwardMessage<PlanRejected>(validator, planner)
+            .ForwardMessage<PlanAccepted>(validator, dispatcher)
+            .ForwardMessage<WaveReady>(dispatcher, waves)
+            .ForwardMessage<IntegrationReady>(dispatcher, integration)
+            .ForwardMessage<WaveCompleted>(waves, dispatcher)
+            .ForwardMessage<NeedsDecisionRequest>(waves, needsDecision)
+            .ForwardMessage<RunFinished>(waves, finalize)
+            .ForwardMessage<NeedsDecisionResponse>(needsDecision, waves)
+            .ForwardMessage<IntegrationVerified>(integration, merge)
+            .ForwardMessage<RunFinished>(integration, finalize)
+            .ForwardMessage<MergeApprovalRequest>(merge, mergeApproval)
+            .ForwardMessage<RunFinished>(merge, finalize)
+            .ForwardMessage<MergeApprovalResponse>(mergeApproval, merge)
+            .WithOutputFrom(finalize)
+            .Build();
     }
 
-    private static bool When<T>(object? message) => message is T;
 }
 
 /// Runs the workflow and answers RequestPort requests. This file and S2Workflow.Build are the only
