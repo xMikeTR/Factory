@@ -18,12 +18,14 @@ public sealed class PObserveTests : IDisposable
         File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures/handover/behaviour/quotes-writes.p"), Path.Combine(behaviour, "quotes-writes.p"));
     }
 
-    private async Task<Factory.Harness.ProcessResult> CheckAsync(params string[] log)
+    private Task<Factory.Harness.ProcessResult> CheckAsync(params string[] log) => CheckAsync("", log);
+
+    private async Task<Factory.Harness.ProcessResult> CheckAsync(string flags, params string[] log)
     {
         var logs = Directory.CreateDirectory(Path.Combine(_worktree, "logs")).FullName;
         await File.WriteAllLinesAsync(Path.Combine(logs, "test.log"), log);
         await using var sandbox = await DockerSandbox.StartAsync("pobserve", _worktree, new DockerSandboxOptions(RestoreOnStart: false), default);
-        return await sandbox.RunAsync("pobserve-check behaviour NoLostUpdate logs", _worktree, TimeSpan.FromMinutes(5),
+        return await sandbox.RunAsync($"pobserve-check {flags} behaviour NoLostUpdate logs", _worktree, TimeSpan.FromMinutes(5),
             new Dictionary<string, string>(), default);
     }
 
@@ -95,6 +97,43 @@ public sealed class PObserveTests : IDisposable
 
         Assert.True(r.ExitCode == 4, r.Output); // PObserve: parse error
         Assert.Contains("pobserve eCommitted one", r.Output);
+    }
+
+    /// live5: a log with no marked lines is a test that logged nothing, not a spec that held.
+    [Fact]
+    public async Task A_log_without_events_fails_instead_of_passing_vacuously()
+    {
+        if (!Enabled) return; // opt-in
+
+        var r = await CheckAsync("12:00:01 INFO quotes: write accepted", "12:00:02 INFO {\"event\":\"eCommitted\",\"rev\":1}");
+
+        Assert.True(r.ExitCode == 3, r.Output);
+        Assert.Contains("no events", r.Output);
+    }
+
+    /// live5: `! pobserve-check` turned a spec that did not compile into a passing negative check.
+    [Theory]
+    [InlineData(new[] { "INFO pobserve eCommitted 1", "INFO pobserve eCommitted 1" }, 0)] // the violation it expects
+    [InlineData(new[] { "INFO pobserve eCommitted 1", "INFO pobserve eCommitted 2" }, 1)] // the spec held
+    [InlineData(new[] { "INFO pobserve eCommitted one" }, 4)]                             // garbled, not a violation
+    public async Task Expect_violation_passes_only_on_the_specs_assertion(string[] log, int exit)
+    {
+        if (!Enabled) return; // opt-in
+
+        var r = await CheckAsync("--expect-violation", log);
+
+        Assert.True(r.ExitCode == exit, r.Output);
+    }
+
+    [Fact]
+    public async Task Marked_events_the_spec_does_not_declare_are_named_in_the_output()
+    {
+        if (!Enabled) return; // opt-in
+
+        var r = await CheckAsync("INFO pobserve eCommitted 1", "INFO pobserve eCommited 2");
+
+        Assert.True(r.ExitCode == 0, r.Output);
+        Assert.Contains("not declared in the spec: eCommited", r.Output);
     }
 
     public void Dispose()

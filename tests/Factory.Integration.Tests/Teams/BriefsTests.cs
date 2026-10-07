@@ -21,6 +21,7 @@ public class BriefsTests
         Assert.Contains("no network", prompt);
         Assert.Contains("no Docker daemon", prompt);
         Assert.Contains("pobserve-check <specs-dir> <SpecName> <log file|dir>", prompt);
+        Assert.Contains("--expect-violation", prompt);
     }
 
     /// live3: the planner told the code to log JSON lines, which the PObserve parser cannot read.

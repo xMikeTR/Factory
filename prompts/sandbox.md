@@ -11,7 +11,9 @@ Plan, write and run only what it can run:
   container cannot run. Use an in-process substitute (an EF Core SQLite in-memory database, an
   in-memory fake) and, if the real engine matters, add a `manual` verify entry for that part.
 - There is no `pobserve` command. To check logs against a P spec run
-  `pobserve-check <specs-dir> <SpecName> <log file|dir>` (exit 0 when the spec holds).
+  `pobserve-check <specs-dir> <SpecName> <log file|dir>` (exit 0 when the spec holds; logs with no
+  spec events fail). To prove the spec rejects a log, add `--expect-violation` (exit 0 only on a
+  violation); never negate it with `!`, which also passes when the spec does not compile.
 - Each verify check starts from the tree as it was before the checks: logs and generated files
   from one check are gone before the next. A check that reads logs must produce them itself, in
   the same command.

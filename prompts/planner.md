@@ -37,6 +37,7 @@ Rules the plan is checked against (a plan that breaks any of them is rejected):
   - The PObserve check produces its logs and checks them in one command, passing all three
     arguments, e.g.
     `LOGS=$(mktemp -d) && PRICING_EVENT_LOG_DIR="$LOGS" dotnet test tests/X.Tests && pobserve-check db/pmodel/PSpec NoLostUpdate "$LOGS"`.
+  - A check that the spec rejects a bad log uses `pobserve-check --expect-violation ...`, never `! pobserve-check`.
 
 If the package is missing something you need (an element's code area, a limit, an owner), do not
 invent it: plan what you can and state the gap in that task's `instructions`, starting "GAP:".

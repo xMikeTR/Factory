@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# pobserve-check <specs-dir> <SpecName> <log file|dir>
+# pobserve-check [--expect-violation] <specs-dir> <SpecName> <log file|dir>
 # Checks logs against a P spec with PObserve: compiles every .p file in <specs-dir> in pobserve
 # mode, builds the spec jar with the factory's EventLineParser (logging contract:
-# `pobserve <event> [payload]`), runs the PObserve CLI. Exit 0 when the spec holds, non-zero on
-# an assertion (2), a parse error in a marked line (4) or a bad invocation (1).
+# `pobserve <event> [payload] [key=<id>]`), runs the PObserve CLI. Exit 0 when the spec holds,
+# non-zero on an assertion (2), logs without a single spec event (3), a parse error in a marked
+# line (4) or a bad invocation or compile failure (1).
+# --expect-violation proves the spec rejects a log: exit 0 only on an assertion, 1 if the spec held,
+# and every other failure as usual (never `! pobserve-check`, which also passes on those).
 set -euo pipefail
-[ $# -eq 3 ] || { echo "usage: pobserve-check <specs-dir> <SpecName> <log file|dir>" >&2; exit 1; }
+expect_violation=false
+[ "${1:-}" = "--expect-violation" ] && { expect_violation=true; shift; }
+[ $# -eq 3 ] || { echo "usage: pobserve-check [--expect-violation] <specs-dir> <SpecName> <log file|dir>" >&2; exit 1; }
 specs=$(realpath "$1"); spec=$2; logs=$(realpath "$3")
 home=${POBSERVE_HOME:-/opt/pobserve}
 cli="$home/PObserve.jar"
@@ -44,5 +49,22 @@ for f in "$work"/out/*; do
   case "$(basename "$f")" in PObserveMetrics.txt) ;; *) [ -s "$f" ] && { echo "--- $(basename "$f")"; plain "$f"; echo; } ;; esac
 done
 events=$(awk '/Total Events Read/ { getline; getline; print $1; exit }' "$work/out/PObserveMetrics.txt" 2>/dev/null || true)
+
+# A typo'd event name is skipped by the parser; name it. A warning only: a shared log may carry other specs' events.
+declared=$(grep -ohE '\bevent[[:space:]]+[A-Za-z_][A-Za-z0-9_]*' "${files[@]}" | awk '{ print $2 }' | sort -u || true)
+logged=$(grep -rhoE '(^|[[:space:]])pobserve[[:space:]]+[A-Za-z_][A-Za-z0-9_]*' "$logs" 2>/dev/null | awk '{ print $NF }' | sort -u || true)
+undeclared=$(comm -23 <(printf '%s\n' "$logged" | sed '/^$/d') <(printf '%s\n' "$declared"))
+[ -z "$undeclared" ] || echo "pobserve-check: marked events not declared in the spec: $(echo $undeclared | tr ' ' ',') (skipped)"
+
+if [ $status -eq 0 ] && [ "${events:-0}" = "0" ]; then
+  echo "pobserve-check: $spec saw no events in $logs: nothing was checked (exit 3)"
+  status=3
+fi
 echo "pobserve-check: $spec over ${events:-?} events in $logs: $([ $status -eq 0 ] && echo holds || echo "FAILED (exit $status)")"
+if $expect_violation; then
+  case $status in
+    2) echo "pobserve-check: violation found, as expected"; exit 0 ;;
+    0) echo "pobserve-check: expected a violation, but the spec held"; exit 1 ;;
+  esac
+fi
 exit $status
