@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Telemetry;
 
 namespace Factory.S2.Teams;
 
@@ -59,6 +60,8 @@ internal sealed class TaskLoop(
     /// writes the ledger row first, so replay and reality cannot drift apart.
     public async Task<TeamResult?> RunAsync(IReadOnlyDictionary<string, DecisionAnswer> answers, CancellationToken ct)
     {
+        // Every ledger row and model call below lands in this span's trace (LedgerEvent.TraceId).
+        using var span = FactoryTelemetry.StartTask(runId, _teamId, task);
         var state = Core.Replay(_limits, await TaskPayloadsAsync(ct));
 
         // Crashed between Passed and the commit: the leftovers are this task's work, but only commit
@@ -67,11 +70,15 @@ internal sealed class TaskLoop(
         {
             var changed = await svc.Git.ChangedPathsAsync(worktree, ct);
             if (changed.All(p => InScope(p, task.Writes))) await CommitAsync(ct); // the tests were committed at TestsAuthored
+            FactoryTelemetry.RecordTaskPassed(span, true);
             return null;
         }
 
         if (!task.Verify.Any(v => v.IsAutomated))
+        {
+            FactoryTelemetry.RecordTaskPassed(span, false);
             return new TeamResult(_teamId, TeamStatus.Failed, Failure: $"{_taskId}: no automated verify entry, so there is no red run and nothing can pass");
+        }
 
         if (await svc.Git.RestoreStashAsync(worktree, StashKey, ct)) // crashed during a red run or stash check
             await svc.LogAsync(runId, "resume", LedgerKinds.Verify, outcome: "stash_restored", teamId: _teamId, taskId: _taskId, ct: ct);
@@ -86,9 +93,11 @@ internal sealed class TaskLoop(
                 case TaskState.Passed:
                     await EnforceScopeAsync("task_passed", task.Writes, ct);
                     await CommitAsync(ct);
+                    FactoryTelemetry.RecordTaskPassed(span, true);
                     return null;
 
                 case TaskState.Failed f:
+                    FactoryTelemetry.RecordTaskPassed(span, false);
                     return new TeamResult(_teamId, TeamStatus.Failed, Failure: $"{_taskId}: {f.Item1}");
 
                 case TaskState.Running:
@@ -113,6 +122,7 @@ internal sealed class TaskLoop(
 
                 case TaskState.Verifying v:
                     var attempt = v.Item1.VerifyAttempts;
+                    FactoryTelemetry.RecordAttempt(span, attempt);
                     var green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct);
                     if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
                         && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, svc.Settings.IntegrationTestCommand, worktree, ct) is { } regressed)

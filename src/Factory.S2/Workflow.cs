@@ -1,3 +1,4 @@
+using Factory.Harness.Telemetry;
 using Factory.S2.Executors;
 using Microsoft.Agents.AI.Workflows;
 
@@ -59,6 +60,7 @@ public static class WorkflowHost
 {
     public static async Task<RunFinished?> RunAsync(Workflow workflow, StartRun start, IHumanChannel human, CancellationToken ct)
     {
+        using var span = FactoryTelemetry.StartRun(start.RunId);
         await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, start, cancellationToken: ct);
 
         await foreach (WorkflowEvent evt in run.WatchStreamAsync(ct))

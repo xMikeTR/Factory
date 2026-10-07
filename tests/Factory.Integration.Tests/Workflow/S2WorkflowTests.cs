@@ -25,7 +25,7 @@ public class S2WorkflowTests
         }
     }
 
-    private static string PlanFor(Handover h) => JsonSerializer.Serialize(new
+    internal static string PlanFor(Handover h) => JsonSerializer.Serialize(new
     {
         handover = new { id = h.Id, digest = h.Digest },
         tasks = new[]

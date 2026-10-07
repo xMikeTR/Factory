@@ -2,6 +2,7 @@ using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Governance;
 using Factory.Harness.Sandbox;
+using Factory.Harness.Telemetry;
 using Factory.S2;
 using Factory.S2.Git;
 using Factory.S2.Verify;
@@ -46,6 +47,11 @@ try
             Directory.CreateDirectory(settings.StateDir);
 
             var ledger = new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl"));
+            // Traces leave the process only when OTEL_EXPORTER_OTLP_ENDPOINT is set (Langfuse or any
+            // OTLP collector); disposing the provider at the end of the run flushes them.
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            using var tracing = FactoryTelemetry.CreateTracerProvider(env);
             // Agent code runs only in Docker; FACTORY_SANDBOX=local is the explicit, unisolated fallback.
             ISandboxFactory sandboxes = (Environment.GetEnvironmentVariable("FACTORY_SANDBOX") ?? "docker") switch
             {
@@ -73,7 +79,7 @@ try
             var services = new FactoryServices(
                 settings,
                 ledger,
-                new FactoryAgents(GatewayOptions.FromEnvironment(), toolPolicy, ledger),
+                new FactoryAgents(GatewayOptions.FromEnvironment(env), toolPolicy, ledger, FactoryTelemetry.CaptureContent(env)),
                 configurator,
                 new GitWorkspace(settings.RepoPath, settings.StateDir),
                 new VerifyRunner(ledger, sandboxes),

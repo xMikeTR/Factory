@@ -101,6 +101,25 @@ heuristic decides. Each `configurator` ledger row names the decider and why. Lay
 bound in one function, `tools/laya-sidecar/laya_adapter.py`; until then the sidecar answers 503.
 Sidecar tests: `cd tools/laya-sidecar && python3 -m unittest test_server`.
 
+Traces: a run is one OTel trace (`run <id>`, then `task <id>` per task, then a gen_ai `chat`
+span per model call and an `execute_tool` span per tool call); every ledger row carries its
+`trace_id`. Spans are exported only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (plus
+`OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_HEADERS`), to Langfuse or any OTLP collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:3000/api/public/otel OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $(printf %s "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | base64 -w0)"
+```
+
+The attribute contract (`Factory.Harness/Telemetry/FactoryTelemetry.cs`): `factory.system`,
+`factory.run_id`, `factory.team`, `factory.task`, `factory.element[]`, `factory.decision[]`,
+`factory.attempt`, the score `factory.score.task_passed` (1/0, also a `score` span event), and
+Langfuse's `langfuse.trace.tags=[designc]` and `langfuse.session.id=<run id>`. Langfuse does not
+take scores over OTel; post `task_passed` to its scores API if you want it there as a score.
+Prompts and replies stay off spans unless `FACTORY_OTEL_CAPTURE_CONTENT=1`.
+Opt-in check against langfuse-local (v4; read back through `/api/public/v2/observations`):
+`. ~/Desktop/Coding/langfuse-local/env.sh; FACTORY_LIVE_LANGFUSE=1 dotnet test tests/Factory.Integration.Tests --filter LiveLangfuse`.
+
 The target repo needs `.factory/` in its `.gitignore`, and build/test outputs such as
 `artifacts/` ignored as well. Otherwise the scope check will see them as changes outside the
 task's writes and revert them. Other settings (`FACTORY_MAX_TURNS`, `FACTORY_COMMANDS`,

@@ -13,6 +13,8 @@
     <PackageReference Include="Anthropic" />
     <PackageReference Include="Microsoft.AgentGovernance" />
     <PackageReference Include="YamlDotNet" />
+    <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
   </ItemGroup>
 
   <ItemGroup>
