@@ -46,5 +46,23 @@ public static class DesigncSchema
         return errors;
     }
 
+    /// designc registry.py _valid(): what the gate loader keeps. Stricter than the schema for the
+    /// kinds the gate reads; a row it rejects is silently ignored by the gate.
+    private static readonly HashSet<string> GateEnvelope = ["schema_version", "event_id", "ts", "kind", "by", "system", "session", "task", "element", "payload"];
+    private static readonly string[] GateKinds = ["check", "fitness", "eval", "needs_decision", "needs_decision_resolved"];
+
+    public static bool KeptByGate(string line)
+    {
+        if (Validate(line).Count > 0) return false;
+        var ev = JsonDocument.Parse(line).RootElement;
+        var kind = ev.GetProperty("kind").GetString()!;
+        if (!GateKinds.Contains(kind)) return true;
+        var spec = Schema.GetProperty("kinds").GetProperty(kind);
+        var known = new HashSet<string>(GateEnvelope);
+        known.UnionWith(Strings(spec.GetProperty("required")));
+        known.UnionWith(Strings(spec.GetProperty("optional")));
+        return ev.EnumerateObject().All(p => known.Contains(p.Name));
+    }
+
     private static List<string> Strings(JsonElement array) => array.EnumerateArray().Select(x => x.GetString()!).ToList();
 }

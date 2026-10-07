@@ -49,11 +49,12 @@ public class RegistryLedgerProjectorTests
     }
 
     [Fact]
-    public void Every_row_validates_against_the_designc_schema_and_lands_in_its_kinds_stream()
+    public void Every_row_validates_against_the_designc_schema_is_kept_by_its_gate_and_lands_in_its_kinds_stream()
     {
         foreach (var e in RegistryLedgerProjector.Project(Run(), Handover))
         {
             Assert.Empty(DesigncSchema.Validate(e.Line));
+            Assert.True(DesigncSchema.KeptByGate(e.Line), e.Line);
             Assert.Equal(DesigncSchema.StreamOf(Row(e)["kind"].GetString()!), e.Stream);
         }
     }
