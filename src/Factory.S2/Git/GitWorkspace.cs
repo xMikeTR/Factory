@@ -72,6 +72,20 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         }
     }
 
+    /// Checks leave the worktree as they found it: disposing reverts every path that was not
+    /// changed before (generated sources, logs), so only what the agents wrote is ever committed.
+    /// A path already changed before is left alone, even if the check rewrote it.
+    public async Task<IAsyncDisposable> LeaveAsFoundAsync(string worktree, CancellationToken ct)
+    {
+        var before = (await ChangedPathsAsync(worktree, ct)).ToHashSet();
+        return new Restore(async () =>
+        {
+            var added = (await ChangedPathsAsync(worktree, CancellationToken.None)).Where(p => !before.Contains(p)).ToList();
+            await RevertPathsAsync(worktree, added, CancellationToken.None);
+            return added.Count > 0;
+        });
+    }
+
     /// Take the implementation out of the worktree for the stashed-impl check: copy `paths` aside
     /// under the state dir, then revert them to HEAD. Disposing puts them back. Not `git stash`:
     /// the stash is shared by every worktree of the repo and teams run in parallel. A crash

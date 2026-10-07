@@ -48,7 +48,9 @@ public static class TaskRerun
         var team = new Team(TeamId.NewTeamId("team-" + task.Id.Value), Core.ToList([task]), task.Writes, task.Elements);
         await svc.Git.EnsureIntegrationAsync(runId, svc.Settings.BaseBranch, ct);
         var worktree = await svc.Git.EnsureTeamAsync(runId, team.Id.Value, ct);
-        var baseline = await svc.Verify.BaselineAsync(runId, team.Id.Value, svc.Settings.IntegrationTestCommand, worktree, ct);
+        IReadOnlyList<TestResult>? baseline;
+        await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
+            baseline = await svc.Verify.BaselineAsync(runId, team.Id.Value, svc.Settings.IntegrationTestCommand, worktree, ct);
 
         var stop = await new TaskLoop(svc, handover, runId, team, task, worktree, baseline).RunAsync(NoAnswers, ct);
 
