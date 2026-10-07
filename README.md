@@ -94,6 +94,13 @@ redacts it). Opt-in live check on real Claude models (Sonnet plans, Haiku acts; 
 ledgered and the key is absent from the ledger and the state dir):
 `FACTORY_LIVE_ANTHROPIC=1 ANTHROPIC_API_KEY=<key> dotnet test tests/Factory.Integration.Tests --filter LiveAnthropic`.
 
+Turn routing: by default `HeuristicConfigurator`. With `FACTORY_LAYA_URL` set (run
+`python3 tools/laya-sidecar/server.py`), Laya decides when its confidence is at least
+`FACTORY_LAYA_MIN_CONFIDENCE` (default 0.7); if the sidecar is down, unsure or garbled, the
+heuristic decides. Each `configurator` ledger row names the decider and why. Laya's own call is
+bound in one function, `tools/laya-sidecar/laya_adapter.py`; until then the sidecar answers 503.
+Sidecar tests: `cd tools/laya-sidecar && python3 -m unittest test_server`.
+
 The target repo needs `.factory/` in its `.gitignore`, and build/test outputs such as
 `artifacts/` ignored as well. Otherwise the scope check will see them as changes outside the
 task's writes and revert them. Other settings (`FACTORY_MAX_TURNS`, `FACTORY_COMMANDS`,

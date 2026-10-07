@@ -39,6 +39,8 @@ public class TeamRunnerTests
 
         Assert.Equal(4, h.Rows(LedgerKinds.ToolCall).Count(e => e.Outcome == "allowed"));
         Assert.Single(h.Rows(LedgerKinds.Configurator), e => e.Outcome == "Plan");
+        Assert.All(h.Rows(LedgerKinds.Configurator), e =>
+            Assert.Equal("heuristic", System.Text.Json.JsonDocument.Parse(e.Payload!).RootElement.GetProperty("decider").GetString()));
 
         var turns = h.Rows(LedgerKinds.Turn).ToList();
         Assert.Equal(3, turns.Count);

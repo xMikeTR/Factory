@@ -62,11 +62,19 @@ try
                 "allowlist" => new RoleAllowListPolicy(),
                 var other => throw new ArgumentException($"FACTORY_TOOL_POLICY: '{other}' is not acs|allowlist"),
             };
+            // Laya routes turns when FACTORY_LAYA_URL points at tools/laya-sidecar and it is confident
+            // enough; otherwise (and always when unset) the heuristic decides. The ledger names who did.
+            IConfigurator configurator = Environment.GetEnvironmentVariable("FACTORY_LAYA_URL") is { Length: > 0 } laya
+                ? new FallbackConfigurator(
+                    new LayaConfigurator(new HttpClient { BaseAddress = new Uri(laya), Timeout = TimeSpan.FromSeconds(5) }),
+                    new HeuristicConfigurator(),
+                    double.Parse(Environment.GetEnvironmentVariable("FACTORY_LAYA_MIN_CONFIDENCE") ?? "0.7", System.Globalization.CultureInfo.InvariantCulture))
+                : new HeuristicConfigurator();
             var services = new FactoryServices(
                 settings,
                 ledger,
                 new FactoryAgents(GatewayOptions.FromEnvironment(), toolPolicy, ledger),
-                new HeuristicConfigurator(),
+                configurator,
                 new GitWorkspace(settings.RepoPath, settings.StateDir),
                 new VerifyRunner(ledger, sandboxes),
                 sandboxes,
