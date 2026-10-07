@@ -98,6 +98,16 @@ let tests: (string * (unit -> unit)) list =
       "validator: invariant must run something under test writes or a protected path", fun () ->
           let es = errorsOf (withTask "T-002" (fun t -> { t with TestWrites = [] }))
           check (List.contains (InvariantNotUnderTestWrites(TaskId "T-002", "unit: retry from fresh read")) es) $"%A{es}"
+      "validator: pobserve-check takes specs dir, spec and logs", fun () ->
+          let withRun run =
+              withTask "T-001" (fun t ->
+                  { t with Verify = Automated { Name = "pobserve"; Kind = Invariant; Run = run; Cleanup = None; TimeoutSeconds = 60 } :: t.Verify })
+          let arity es = es |> List.contains (PObserveCheckArity(TaskId "T-001", "pobserve"))
+          let wrong = "L=$(mktemp -d) && dotnet test tests/Quotes.Data.Tests && pobserve-check db/pmodel/PSpec Optimistic"
+          check (arity (errorsOf (withRun wrong))) "two arguments"
+          check (arity (errorsOf (withRun "pobserve-check a b c d"))) "four arguments"
+          let right = "L=$(mktemp -d) && dotnet test tests/Quotes.Data.Tests && pobserve-check db/pmodel/PSpec Optimistic \"$L\"; echo done"
+          check (not (arity (errorsOf (withRun right)))) $"three arguments: %A{errorsOf (withRun right)}"
       "validator: every error has a description", fun () ->
           let es = errorsOf { plan with Tasks = [] ; HandoverId = "x" }
           check (es |> List.forall (fun e -> (PlanError.describe e).Length > 10)) "descriptions"

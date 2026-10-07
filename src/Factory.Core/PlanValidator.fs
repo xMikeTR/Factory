@@ -25,6 +25,8 @@ type PlanError =
     | TestWriteOutsideElement of TaskId * PathPattern
     /// An invariant must run something the Implementer cannot edit: a path under TestWrites or a protected path.
     | InvariantNotUnderTestWrites of TaskId * verifyName: string
+    /// `pobserve-check` takes exactly <specs-dir> <SpecName> <log file|dir>; anything else exits 1.
+    | PObserveCheckArity of TaskId * verifyName: string
 
 [<RequireQualifiedAccess>]
 module PlanError =
@@ -51,6 +53,7 @@ module PlanError =
         | TestWritesOverlapWrites(t, w, tw) -> $"Task {t.Value}: `writes` '{w.Value}' overlaps `testWrites` '{tw.Value}'. Production and test paths must be disjoint: the TestAuthor and the Implementer never edit the same files."
         | TestWriteOutsideElement(t, p) -> $"Task {t.Value} has testWrites '{p.Value}', which is outside the code areas of its elements."
         | InvariantNotUnderTestWrites(t, v) -> $"Task {t.Value}, invariant '{v}' runs nothing under the task's testWrites or a protected path, so the Implementer could weaken it. Point its command at the tests it checks."
+        | PObserveCheckArity(t, v) -> $"Task {t.Value}, verify '{v}' calls pobserve-check with the wrong number of arguments. It takes exactly three: pobserve-check <specs-dir> <SpecName> <log file|dir>, with the logs produced earlier in the same command."
 
 /// A plan that has passed every rule against a specific handover. The only way to get one is
 /// PlanValidator.validate, so anything that takes a ValidatedPlan (the dispatcher, the runner)
@@ -71,6 +74,35 @@ module PlanValidator =
         run.Split([| ' '; '\t'; ';'; '&'; '|'; '('; ')'; '"'; '\''; '<'; '>' |], StringSplitOptions.RemoveEmptyEntries)
         |> Array.choose (fun tok -> match PathPattern.create tok with Ok p -> Some p.Value | Error _ -> None)
         |> Array.exists (fun tok -> areas |> List.exists (fun a -> PathPattern.matches a tok || PathPattern.matches a (tok + "/_")))
+
+    /// Shell words of a command, quotes kept inside a word; `;`, `&`, `|`, `(`, `)` and newlines
+    /// end a command and come out as the word "|".
+    let private shellWords (run: string) =
+        let words = ResizeArray<string>()
+        let word = Text.StringBuilder()
+        let flush () = if word.Length > 0 then words.Add(word.ToString()); word.Clear() |> ignore
+        let mutable quote = None
+        for c in run do
+            match quote, c with
+            | Some q, _ when c = q -> quote <- None; word.Append c |> ignore
+            | Some _, _ -> word.Append c |> ignore
+            | None, ('"' | '\'') -> quote <- Some c; word.Append c |> ignore
+            | None, (' ' | '\t') -> flush ()
+            | None, (';' | '&' | '|' | '(' | ')' | '\n') -> flush (); words.Add "|"
+            | None, _ -> word.Append c |> ignore
+        flush ()
+        List.ofSeq words
+
+    /// Does every `pobserve-check` call in the command pass exactly three arguments?
+    let private pobserveCheckArityOk (run: string) =
+        let rec go words =
+            match words with
+            | [] -> true
+            | "pobserve-check" :: rest ->
+                let args = rest |> List.takeWhile ((<>) "|")
+                args.Length = 3 && go (List.skip args.Length rest)
+            | _ :: rest -> go rest
+        go (shellWords run)
 
     /// First dependency cycle found, as the list of task ids around it (first id repeated at the end).
     ///
@@ -105,7 +137,7 @@ module PlanValidator =
     ///                the same for TestWrites (TestWriteOutsideElement), TestWritesOverlapWrites,
     ///                UnknownDependency, UnknownDecision, CoverWithoutBinding,
     ///                verify entries: EmptyVerify, SelfSeededWithoutCleanup, InvalidTimeout,
-    ///                InvariantNotUnderTestWrites
+    ///                InvariantNotUnderTestWrites, PObserveCheckArity
     ///   whole plan:  UncoveredDecision (every handover decision covered by some task), DependencyCycle
     /// Return Ok(ValidatedPlan(plan, handover)) only when the list is empty. The constructor is
     /// `internal`: this function is the only door into ValidatedPlan.
@@ -129,6 +161,7 @@ module PlanValidator =
                   if a.TimeoutSeconds <= 0 then InvalidTimeout(t.Id, a.Name)
                   if a.Kind = Invariant && not (isBlank a.Run) && not (mentionsPathUnder (t.TestWrites @ handover.ProtectedPaths) a.Run) then
                       InvariantNotUnderTestWrites(t.Id, a.Name)
+                  if not (pobserveCheckArityOk a.Run) then PObserveCheckArity(t.Id, a.Name)
               | Manual m -> if isBlank m.Instructions then EmptyVerify(t.Id, m.Name) ]
 
         let taskLevel (t: PlannedTask) =

@@ -4,17 +4,9 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-07 — live run live2 fixes: each verify check starts from the tree as found
-> (VerifyRunner -> GitWorkspace; created directories removed, build caches kept); the Implementer
-> hands broken tests back to the TestAuthor (`ReturnedToTestAuthor`, `return_to_test_author`);
-> every role's prompt carries the sandbox facts (`prompts/sandbox.md`).
-> Previously: 2026-10-07 — live run live1 fixes: checks leave the worktree as found (generated files
-> never committed), .NET 8 packs in the runner image (P checks build offline), red runs the sandbox
-> could not run park as `environment` (Core `RedRun.classify`).
-> Previously: 2026-10-07 — System 2 plan (PLAN.md A–I) complete: Designc handover reader, registry
-> projector and needs-decisions, three-gate evidence and P2P regression, merge enforcement, Docker
-> sandbox, Anthropic provider, ACS tool policy, Laya configurator, OTel/Langfuse, PObserve,
-> `rerun` (k attempts) and the regeneration drill (`run --since`).
+> Last updated: 2026-10-07 — live run live3 fixes: the plan validator rejects a `pobserve-check`
+> call without exactly three arguments (`PObserveCheckArity`); the planner prompt states the
+> logging contract line format and a worked PObserve check.
 
 ## System Overview
 
@@ -214,6 +206,8 @@ Used by structural-centrality-guard to determine escalation threshold.
 | `Passed` needs red evidence, all-green automated outcomes and a stashed-impl run that fails | `TaskState.fs` `PassedEvidence` | Invariant (type-enforced) | private ctors |
 | TestAuthor writes only `testWrites`, Implementer only `writes`; disjoint | `PlanValidator.fs`, `ScopedWorkspace.cs` | Invariant | scope enforced by tools and after each turn |
 | A test that passed in the team baseline and fails now blocks green (P2P) | `Regression.fs`, `TaskLoop` | Business rule | missing test counts as failing |
+| Every `pobserve-check` call in a verify command passes exactly `<specs-dir> <SpecName> <logs>` | `PlanValidator.fs` `PObserveCheckArity` | Invariant | live3: a 2-arg call always exits 1 |
+| Events are logged as `pobserve <event> <payload>` lines (scalar payload or none) | `prompts/planner.md`, `Briefs.Task`, `EventLineParser.java` | Contract | live3: the planner prescribed JSONL |
 | A red run with any check the sandbox could not run (NU1301, exit 127) is no evidence: the task parks, source `environment` | `TaskState.fs` `RedRun.classify`, `TaskLoop.TestsDoneAsync` | Business rule | before the Implementer's first turn |
 | Checks (baseline, red, green + P2P, stash check) leave the worktree as they found it | `GitWorkspace.LeaveAsFoundAsync`, `TaskLoop`, `TaskRerun` | Invariant | generated output never reaches a commit |
 | Each verify check starts from the tree as found: files and created directories (ignored ones too) are removed before the next check; bin/, obj/, node_modules/ are kept | `VerifyRunner.RunTaskAsync`, `GitWorkspace.LeaveAsFoundAsync` | Invariant | one check cannot break another |

@@ -23,6 +23,16 @@ public class BriefsTests
         Assert.Contains("pobserve-check <specs-dir> <SpecName> <log file|dir>", prompt);
     }
 
+    /// live3: the planner told the code to log JSON lines, which the PObserve parser cannot read.
+    [Fact]
+    public void The_planner_is_told_the_line_format_PObserve_parses()
+    {
+        var prompt = Briefs.Prompt("planner");
+
+        Assert.Contains("`pobserve <event> <payload>`", prompt);
+        Assert.Contains("pobserve-check db/pmodel/PSpec NoLostUpdate \"$LOGS\"", prompt);
+    }
+
     [Fact]
     public async Task The_logging_contract_names_the_events_and_the_line_format_PObserve_parses()
     {
