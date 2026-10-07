@@ -8,6 +8,21 @@ namespace Factory.Integration.Tests.Teams;
 
 public class BriefsTests
 {
+    /// live2: the planner chose Testcontainers and `pobserve`, neither of which the sandbox has.
+    [Theory]
+    [InlineData("planner")]
+    [InlineData("task-planner")]
+    [InlineData("test-author")]
+    [InlineData("implementer")]
+    public void Every_role_is_told_what_the_sandbox_can_run(string role)
+    {
+        var prompt = Briefs.Prompt(role);
+
+        Assert.Contains("no network", prompt);
+        Assert.Contains("no Docker daemon", prompt);
+        Assert.Contains("pobserve-check <specs-dir> <SpecName> <log file|dir>", prompt);
+    }
+
     [Fact]
     public async Task The_logging_contract_names_the_events_and_the_line_format_PObserve_parses()
     {
