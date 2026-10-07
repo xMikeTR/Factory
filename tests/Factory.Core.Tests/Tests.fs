@@ -223,6 +223,21 @@ let tests: (string * (unit -> unit)) list =
           equal [] (Regression.regressions [ r "a" true; r "a" false ] [ r "a" false ]) "flaky in baseline is not p2p"
           equal [ "a" ] (Regression.regressions [ r "a" true ] [ r "a" true; r "a" false ]) "one failing run now"
 
+      // ---------- handover closure ----------
+      "closure: delivered only when merged and every check of every bound decision passed", fun () ->
+          let d1 = { Id = DecisionId "D-0001"; Statement = "s"; Binds = []; Checks = [ { Kind = "p"; Run = "p check -tc a" }; { Kind = "p"; Run = "p check -tc b" } ] }
+          let d2 = { Id = DecisionId "D-0002"; Statement = "s"; Binds = []; Checks = [ { Kind = "p"; Run = "p check -tc c" } ] }
+          let r d run passed = { Decision = DecisionId d; Check = run; Passed = passed }
+          let all = [ r "D-0001" "p check -tc a" true; r "D-0001" "p check -tc b" true; r "D-0002" "p check -tc c" true ]
+          equal HandoverOutcome.Delivered (HandoverClosure.outcome [ d1; d2 ] true all) "all pass"
+          equal HandoverOutcome.Abandoned (HandoverClosure.outcome [ d1; d2 ] false all) "not merged"
+          equal HandoverOutcome.Abandoned (HandoverClosure.outcome [ d1; d2 ] true (List.take 2 all)) "a check never ran"
+          equal HandoverOutcome.Abandoned (HandoverClosure.outcome [ d1; d2 ] true (all @ [ r "D-0002" "p check -tc c" false ])) "latest run failed"
+          equal HandoverOutcome.Delivered (HandoverClosure.outcome [ d1; d2 ] true (r "D-0001" "p check -tc a" false :: all)) "failed then passed"
+      "closure: a decision with no checks does not block delivery", fun () ->
+          let d = { Id = DecisionId "D-0001"; Statement = "s"; Binds = []; Checks = [] }
+          equal HandoverOutcome.Delivered (HandoverClosure.outcome [ d ] true []) "no checks"
+
       // ---------- json ----------
       "json: malformed plan reports every problem at once", fun () ->
           let bad = """{ "handover": {"id":"x","digest":"y"}, "tasks": [ {"id":"A"}, {"id":"B","title":"t","instructions":"i","writes":["../x"]} ] }"""

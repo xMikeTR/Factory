@@ -1,11 +1,16 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Factory.Core;
+using Microsoft.FSharp.Collections;
 
 namespace Factory.Harness.Registry;
 
-/// The handover a run's registry rows belong to.
-public sealed record HandoverRef(string Id);
+/// The handover a run's registry rows belong to, and the decisions whose checks decide how it closes.
+public sealed record HandoverRef(string Id, IReadOnlyList<BoundDecision> Decisions)
+{
+    public static HandoverRef From(Handover h) => new(h.Id, h.Decisions.ToList());
+}
 
 /// One designc ledger row. Line is the canonical compact JSON written to {registry}/ledger/{Stream}.
 public sealed record RegistryEvent(string Stream, string EventId, string Line);
@@ -28,6 +33,7 @@ public static class RegistryLedgerProjector
             if (e.Kind == LedgerKinds.NeedsDecision && NeedsDecision(e) is { } nd) rows.Add((e.Ts, nd));
             else if (e.Kind == LedgerKinds.Verify && e.Decision is not null && Check(e) is { } check) rows.Add((e.Ts, check));
         }
+        if (HandoverClosed(run, handover) is { } closed) rows.Add(closed);
         // Stable: ties keep source order.
         return rows.OrderBy(r => r.Ts).Select(r => r.Row).ToList();
     }
@@ -51,6 +57,34 @@ public static class RegistryLedgerProjector
                 w.WriteString("handover", handover.Id);
             }));
         }
+    }
+
+    /// Run statuses that end the run for good. "parked" waits on a needs-decision and "error" is
+    /// the host failing; both resume under the same run id, so the handover stays open.
+    private static readonly string[] Merged = ["merged", "auto_merge_enabled"];
+    private static readonly string[] StillOpen = ["parked", "error"];
+
+    private static (DateTimeOffset, RegistryEvent)? HandoverClosed(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    {
+        var finished = run.LastOrDefault(e => e.Kind == LedgerKinds.Run);
+        if (finished?.Outcome is null || StillOpen.Contains(finished.Outcome)) return null;
+        var results = run
+            .Where(e => e.Kind == LedgerKinds.Verify && e.Decision is not null && e.Payload is not null)
+            .Select(e => (e, Command: CommandOf(e.Payload!)))
+            .Where(x => x.Command is not null)
+            .Select(x => new CheckResult(DecisionId.NewDecisionId(x.e.Decision!), x.Command!, x.e.Outcome == "passed"));
+        var outcome = HandoverClosure.outcome(ListModule.OfSeq(handover.Decisions), Merged.Contains(finished.Outcome), ListModule.OfSeq(results));
+        return (finished.Ts, Row("designc.jsonl", "handover_closed", finished, w =>
+        {
+            w.WriteString("handover", handover.Id);
+            w.WriteString("outcome", outcome.IsDelivered ? "delivered" : "abandoned");
+        }));
+    }
+
+    private static string? CommandOf(string payload)
+    {
+        using var doc = JsonDocument.Parse(payload);
+        return Prop(doc.RootElement, "command")?.GetString();
     }
 
     /// TaskState case name -> designc task status.
@@ -83,10 +117,9 @@ public static class RegistryLedgerProjector
 
     private static RegistryEvent? Check(LedgerEvent e)
     {
-        if (e.Payload is null) return null;
+        if (e.Payload is null || CommandOf(e.Payload) is not { } command) return null;
         using var doc = JsonDocument.Parse(e.Payload);
         var p = doc.RootElement;
-        if (Prop(p, "command")?.GetString() is not { } command) return null;
         return Row(Checks, "check", e, w =>
         {
             w.WriteString("decision", e.Decision);
