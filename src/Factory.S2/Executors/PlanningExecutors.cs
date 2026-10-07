@@ -6,15 +6,23 @@ using Microsoft.Agents.AI.Workflows;
 
 namespace Factory.S2.Executors;
 
-// VERIFY (Phase 0 spike): [MessageHandler] on partial classes is the documented executor style for
-// current MAF .NET; it needs the workflows source generator, which ships with the Workflows package
-// in recent versions. If your version predates it, derive from Executor<TInput> instead.
+using Core = Factory.Core.Core; // "Core" alone binds to the namespace Factory.Core from inside Factory.*
+
+// Executors declare routes and sent types in ConfigureProtocol by hand. The [MessageHandler] source
+// generator (Microsoft.Agents.AI.Workflows.Generators) needs the .NET 10 Roslyn host, and explicit
+// routes keep each executor's message contract readable in one place.
 
 /// Turns the handover package into plan.json with the planner agent. On rejection it gets the
 /// validator's errors verbatim and tries again, up to MaxPlannerAttempts.
-internal sealed partial class PlannerExecutor(FactoryServices svc) : Executor("Planner")
+internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
 {
-    [MessageHandler]
+    protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocol) => protocol
+        .ConfigureRoutes(routes => routes
+            .AddHandler<StartRun>(HandleStartAsync)
+            .AddHandler<PlanRejected>(HandleRejectedAsync))
+        .SendsMessage<PlanDraft>()
+        .SendsMessage<RunFinished>();
+
     private async ValueTask HandleStartAsync(StartRun msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         var runDir = svc.Settings.RunDir(msg.RunId);
@@ -33,7 +41,6 @@ internal sealed partial class PlannerExecutor(FactoryServices svc) : Executor("P
         await DraftAsync(msg.RunId, 1, previous: null, errors: null, context, cancellationToken);
     }
 
-    [MessageHandler]
     private async ValueTask HandleRejectedAsync(PlanRejected msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         if (msg.Attempt >= svc.Settings.MaxPlannerAttempts)
@@ -96,9 +103,14 @@ internal sealed partial class PlannerExecutor(FactoryServices svc) : Executor("P
 }
 
 /// Deterministic gate on the planner's output. The planner proposes; this decides.
-internal sealed partial class PlanValidatorExecutor(FactoryServices svc) : Executor("PlanValidator")
+internal sealed class PlanValidatorExecutor(FactoryServices svc) : Executor("PlanValidator")
 {
-    [MessageHandler]
+    protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocol) => protocol
+        .ConfigureRoutes(routes => routes
+            .AddHandler<PlanDraft>(HandleAsync))
+        .SendsMessage<PlanAccepted>()
+        .SendsMessage<PlanRejected>();
+
     private async ValueTask HandleAsync(PlanDraft msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         var validation = Core.ValidatePlan(svc.LoadHandover(msg.RunId), await File.ReadAllTextAsync(svc.Settings.PlanPath(msg.RunId), cancellationToken));
@@ -115,9 +127,15 @@ internal sealed partial class PlanValidatorExecutor(FactoryServices svc) : Execu
 }
 
 /// Teams and waves (pure F#), the integration branch, then one wave at a time.
-internal sealed partial class DispatchExecutor(FactoryServices svc) : Executor("Dispatcher")
+internal sealed class DispatchExecutor(FactoryServices svc) : Executor("Dispatcher")
 {
-    [MessageHandler]
+    protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocol) => protocol
+        .ConfigureRoutes(routes => routes
+            .AddHandler<PlanAccepted>(HandleAcceptedAsync)
+            .AddHandler<WaveCompleted>(HandleWaveCompletedAsync))
+        .SendsMessage<WaveReady>()
+        .SendsMessage<IntegrationReady>();
+
     private async ValueTask HandleAcceptedAsync(PlanAccepted msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         var dispatch = svc.LoadDispatch(msg.RunId);
@@ -129,7 +147,6 @@ internal sealed partial class DispatchExecutor(FactoryServices svc) : Executor("
         await NextAsync(msg.RunId, 0, dispatch, context, cancellationToken);
     }
 
-    [MessageHandler]
     private ValueTask HandleWaveCompletedAsync(WaveCompleted msg, IWorkflowContext context, CancellationToken cancellationToken = default) =>
         new(NextAsync(msg.RunId, msg.WaveIndex + 1, svc.LoadDispatch(msg.RunId), context, cancellationToken));
 

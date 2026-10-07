@@ -4,6 +4,8 @@ using Factory.Harness;
 
 namespace Factory.S2.Teams;
 
+using Core = Factory.Core.Core; // "Core" alone binds to the namespace Factory.Core from inside Factory.*
+
 public enum TeamStatus { Passed, Blocked, Failed }
 
 public sealed record TeamResult(string TeamId, TeamStatus Status, BlockedTask? Blocked = null, string? Failure = null);

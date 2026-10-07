@@ -8,15 +8,23 @@ using Microsoft.Agents.AI.Workflows;
 
 namespace Factory.S2.Executors;
 
+using Core = Factory.Core.Core; // "Core" alone binds to the namespace Factory.Core from inside Factory.*
+
 /// Runs every team in a wave in parallel. Blocked teams go out through the needs-decision port as
 /// one request; the response re-runs the wave, where finished teams replay to Passed instantly.
-internal sealed partial class WaveExecutor(FactoryServices svc) : Executor("Waves")
+internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
 {
-    [MessageHandler]
+    protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocol) => protocol
+        .ConfigureRoutes(routes => routes
+            .AddHandler<WaveReady>(HandleReadyAsync)
+            .AddHandler<NeedsDecisionResponse>(HandleAnswersAsync))
+        .SendsMessage<WaveCompleted>()
+        .SendsMessage<NeedsDecisionRequest>()
+        .SendsMessage<RunFinished>();
+
     private ValueTask HandleReadyAsync(WaveReady msg, IWorkflowContext context, CancellationToken cancellationToken = default) =>
         new(RunWaveAsync(msg.RunId, msg.WaveIndex, msg.Answers, context, cancellationToken));
 
-    [MessageHandler]
     private ValueTask HandleAnswersAsync(NeedsDecisionResponse msg, IWorkflowContext context, CancellationToken cancellationToken = default) =>
         new(RunWaveAsync(msg.RunId, msg.WaveIndex, msg.Answers, context, cancellationToken));
 
@@ -65,9 +73,14 @@ internal sealed partial class WaveExecutor(FactoryServices svc) : Executor("Wave
 
 /// Whole-branch checks after every team has merged into integration: the full test suite, PObserve
 /// over the test logs, and every bound decision's own check from the registry.
-internal sealed partial class IntegrationVerifyExecutor(FactoryServices svc) : Executor("IntegrationVerify")
+internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor("IntegrationVerify")
 {
-    [MessageHandler]
+    protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocol) => protocol
+        .ConfigureRoutes(routes => routes
+            .AddHandler<IntegrationReady>(HandleAsync))
+        .SendsMessage<IntegrationVerified>()
+        .SendsMessage<RunFinished>();
+
     private async ValueTask HandleAsync(IntegrationReady msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         var s = svc.Settings;
@@ -99,9 +112,15 @@ internal sealed partial class IntegrationVerifyExecutor(FactoryServices svc) : E
 
 /// Opens the PR and applies tiered merge autonomy (decided in F#). Auto-merge tier enables
 /// GitHub auto-merge; other tiers wait on the merge-approval port.
-internal sealed partial class MergeExecutor(FactoryServices svc) : Executor("Merge")
+internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
 {
-    [MessageHandler]
+    protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocol) => protocol
+        .ConfigureRoutes(routes => routes
+            .AddHandler<IntegrationVerified>(HandleVerifiedAsync)
+            .AddHandler<MergeApprovalResponse>(HandleApprovalAsync))
+        .SendsMessage<MergeApprovalRequest>()
+        .SendsMessage<RunFinished>();
+
     private async ValueTask HandleVerifiedAsync(IntegrationVerified msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         var s = svc.Settings;
@@ -134,7 +153,6 @@ internal sealed partial class MergeExecutor(FactoryServices svc) : Executor("Mer
         }
     }
 
-    [MessageHandler]
     private async ValueTask HandleApprovalAsync(MergeApprovalResponse msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         await svc.LogAsync(msg.RunId, "merge", LedgerKinds.Merge, outcome: msg.Merged ? "merged" : "not_merged",
@@ -163,9 +181,13 @@ internal sealed partial class MergeExecutor(FactoryServices svc) : Executor("Mer
     }
 }
 
-internal sealed partial class FinalizeExecutor(FactoryServices svc) : Executor("Finalize")
+internal sealed class FinalizeExecutor(FactoryServices svc) : Executor("Finalize")
 {
-    [MessageHandler]
+    protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocol) => protocol
+        .ConfigureRoutes(routes => routes
+            .AddHandler<RunFinished>(HandleAsync))
+        .YieldsOutput<RunFinished>();
+
     private async ValueTask HandleAsync(RunFinished msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         await svc.LogAsync(msg.RunId, "finalize", LedgerKinds.Run, outcome: msg.Status, payload: JsonSerializer.Serialize(msg), ct: cancellationToken);
