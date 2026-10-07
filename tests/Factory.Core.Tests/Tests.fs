@@ -114,6 +114,17 @@ let tests: (string * (unit -> unit)) list =
           check (arity (errorsOf (withRun "pobserve-check a b c d"))) "four arguments"
           let right = "L=$(mktemp -d) && dotnet test tests/Quotes.Data.Tests && pobserve-check db/pmodel/PSpec Optimistic \"$L\"; echo done"
           check (not (arity (errorsOf (withRun right)))) $"three arguments: %A{errorsOf (withRun right)}"
+      "validator: a negative PObserve check uses --expect-violation, never !", fun () ->
+          let withRun run =
+              withTask "T-001" (fun t ->
+                  { t with Verify = Automated { Name = "neg"; Kind = Invariant; Run = run; Cleanup = None; TimeoutSeconds = 60 } :: t.Verify })
+          let negated es = es |> List.contains (NegatedPObserveCheck(TaskId "T-001", "neg"))
+          let arity es = es |> List.contains (PObserveCheckArity(TaskId "T-001", "neg"))
+          let bang = "F=$(mktemp) && printf x > \"$F\" && ! pobserve-check db/pmodel/PSpec NoLostUpdate \"$F\""
+          check (negated (errorsOf (withRun bang))) "! pobserve-check"
+          let flag = "F=$(mktemp) && printf x > \"$F\" && pobserve-check --expect-violation db/pmodel/PSpec NoLostUpdate \"$F\""
+          let es = errorsOf (withRun flag)
+          check (not (negated es) && not (arity es)) $"--expect-violation: %A{es}"
       "validator: every error has a description", fun () ->
           let es = errorsOf { plan with Tasks = [] ; HandoverId = "x" }
           check (es |> List.forall (fun e -> (PlanError.describe e).Length > 10)) "descriptions"

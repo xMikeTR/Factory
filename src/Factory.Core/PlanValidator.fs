@@ -27,6 +27,8 @@ type PlanError =
     | InvariantNotUnderTestWrites of TaskId * verifyName: string
     /// `pobserve-check` takes exactly <specs-dir> <SpecName> <log file|dir>; anything else exits 1.
     | PObserveCheckArity of TaskId * verifyName: string
+    /// `! pobserve-check` passes on any failure (compile error, parse error, bad call), not only a violation.
+    | NegatedPObserveCheck of TaskId * verifyName: string
 
 [<RequireQualifiedAccess>]
 module PlanError =
@@ -53,7 +55,8 @@ module PlanError =
         | TestWritesOverlapWrites(t, w, tw) -> $"Task {t.Value}: `writes` '{w.Value}' overlaps `testWrites` '{tw.Value}'. Production and test paths must be disjoint: the TestAuthor and the Implementer never edit the same files."
         | TestWriteOutsideElement(t, p) -> $"Task {t.Value} has testWrites '{p.Value}', which is outside the code areas of its elements."
         | InvariantNotUnderTestWrites(t, v) -> $"Task {t.Value}, invariant '{v}' runs nothing under the task's testWrites or a protected path, so the Implementer could weaken it. Point its command at the tests it checks."
-        | PObserveCheckArity(t, v) -> $"Task {t.Value}, verify '{v}' calls pobserve-check with the wrong number of arguments. It takes exactly three: pobserve-check <specs-dir> <SpecName> <log file|dir>, with the logs produced earlier in the same command."
+        | PObserveCheckArity(t, v) -> $"Task {t.Value}, verify '{v}' calls pobserve-check with the wrong number of arguments. It takes exactly three: pobserve-check [--expect-violation] <specs-dir> <SpecName> <log file|dir>, with the logs produced earlier in the same command."
+        | NegatedPObserveCheck(t, v) -> $"Task {t.Value}, verify '{v}' negates pobserve-check with '!', which also passes when the spec fails to compile or a log line is garbled. To prove the spec rejects a log, run pobserve-check --expect-violation <specs-dir> <SpecName> <log>: it exits 0 only on a spec violation."
 
 /// A plan that has passed every rule against a specific handover. The only way to get one is
 /// PlanValidator.validate, so anything that takes a ValidatedPlan (the dispatcher, the runner)
@@ -93,16 +96,21 @@ module PlanValidator =
         flush ()
         List.ofSeq words
 
-    /// Does every `pobserve-check` call in the command pass exactly three arguments?
+    /// Does every `pobserve-check` call in the command pass exactly three arguments (after an optional --expect-violation)?
     let private pobserveCheckArityOk (run: string) =
         let rec go words =
             match words with
             | [] -> true
             | "pobserve-check" :: rest ->
                 let args = rest |> List.takeWhile ((<>) "|")
-                args.Length = 3 && go (List.skip args.Length rest)
+                let positional = match args with "--expect-violation" :: a -> a | a -> a
+                positional.Length = 3 && go (List.skip args.Length rest)
             | _ :: rest -> go rest
         go (shellWords run)
+
+    /// Is any `pobserve-check` call negated with `!`?
+    let private pobserveCheckNegated (run: string) =
+        shellWords run |> List.pairwise |> List.exists (fun (a, b) -> a = "!" && b = "pobserve-check")
 
     /// First dependency cycle found, as the list of task ids around it (first id repeated at the end).
     ///
@@ -137,7 +145,7 @@ module PlanValidator =
     ///                the same for TestWrites (TestWriteOutsideElement), TestWritesOverlapWrites,
     ///                UnknownDependency, UnknownDecision, CoverWithoutBinding,
     ///                verify entries: EmptyVerify, SelfSeededWithoutCleanup, InvalidTimeout,
-    ///                InvariantNotUnderTestWrites, PObserveCheckArity
+    ///                InvariantNotUnderTestWrites, PObserveCheckArity, NegatedPObserveCheck
     ///   whole plan:  UncoveredDecision (every handover decision covered by some task), DependencyCycle
     /// Return Ok(ValidatedPlan(plan, handover)) only when the list is empty. The constructor is
     /// `internal`: this function is the only door into ValidatedPlan.
@@ -162,6 +170,7 @@ module PlanValidator =
                   if a.Kind = Invariant && not (isBlank a.Run) && not (mentionsPathUnder (t.TestWrites @ handover.ProtectedPaths) a.Run) then
                       InvariantNotUnderTestWrites(t.Id, a.Name)
                   if not (pobserveCheckArityOk a.Run) then PObserveCheckArity(t.Id, a.Name)
+                  if pobserveCheckNegated a.Run then NegatedPObserveCheck(t.Id, a.Name)
               | Manual m -> if isBlank m.Instructions then EmptyVerify(t.Id, m.Name) ]
 
         let taskLevel (t: PlannedTask) =
