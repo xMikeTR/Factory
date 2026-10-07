@@ -283,6 +283,33 @@ let tests: (string * (unit -> unit)) list =
           let d = { Id = DecisionId "D-0001"; Statement = "s"; Binds = []; Checks = [] }
           equal HandoverOutcome.Delivered (HandoverClosure.outcome [ d ] true []) "no checks"
 
+      // ---------- regeneration ----------
+      "regeneration: an unchanged handover re-runs nothing", fun () ->
+          let r = Regeneration.between handover handover plan
+          equal [] r.Changed "changed"
+          equal [] r.Rerun "rerun"
+      "regeneration: a changed decision re-runs only the tasks on the elements it binds", fun () ->
+          let after =
+              { handover with
+                  Decisions = handover.Decisions |> List.map (fun d -> { d with Statement = d.Statement + " Retry once on conflict." }) }
+          let r = Regeneration.between handover after plan
+          equal [ DecisionId "D-0042" ] r.Changed "changed"
+          equal [ TaskId "T-001"; TaskId "T-004" ] r.Rerun "rerun (Quotes DB tasks; T-002/T-003 depend on T-001 but are not bound)"
+      "regeneration: a rebound decision re-runs tasks on the old and the new elements", fun () ->
+          let after =
+              { handover with
+                  Decisions = handover.Decisions |> List.map (fun d -> { d with Binds = [ ElementId "Pricing Platform/Referral Worker" ] }) }
+          equal [ TaskId "T-001"; TaskId "T-003"; TaskId "T-004" ] (Regeneration.between handover after plan).Rerun "rerun"
+      "regeneration: an added or removed decision counts as changed", fun () ->
+          let added =
+              { Id = DecisionId "D-0043"; Statement = "Quotes are priced in the cedant's currency."
+                Binds = [ ElementId "Pricing Platform/Pricing API" ]; Checks = [] }
+          let after = { handover with Decisions = handover.Decisions @ [ added ] }
+          let r = Regeneration.between handover after plan
+          equal [ DecisionId "D-0043" ] r.Changed "added"
+          equal [ TaskId "T-002" ] r.Rerun "rerun"
+          equal [ DecisionId "D-0043" ] (Regeneration.between after handover plan).Changed "removed"
+
       // ---------- json ----------
       "json: malformed plan reports every problem at once", fun () ->
           let bad = """{ "handover": {"id":"x","digest":"y"}, "tasks": [ {"id":"A"}, {"id":"B","title":"t","instructions":"i","writes":["../x"]} ] }"""

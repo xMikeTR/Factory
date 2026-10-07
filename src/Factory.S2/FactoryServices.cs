@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Policy;
@@ -43,6 +44,9 @@ public sealed record FactorySettings(
     public string PlanPath(string runId) => Path.Combine(RunDir(runId), "plan.json");
     public string DispatchPath(string runId) => Path.Combine(RunDir(runId), "dispatch.json");
     public string HandoverCopyPath(string runId) => Path.Combine(RunDir(runId), "handover.json");
+    /// Regeneration: the previous run's id, then (once the plan is accepted) which tasks re-run.
+    public string SincePath(string runId) => Path.Combine(RunDir(runId), "since");
+    public string RegenerationPath(string runId) => Path.Combine(RunDir(runId), "regeneration.json");
 
     private static string Env(string name, string fallback) => Environment.GetEnvironmentVariable(name) ?? fallback;
 }
@@ -83,7 +87,16 @@ public sealed class FactoryServices(
 
     public DispatchPlan LoadDispatch(string runId) => Core.Dispatch(LoadValidatedPlan(runId));
 
+    /// The task ids a regeneration run re-runs; null when every task runs (not a regeneration).
+    public IReadOnlySet<string>? LoadRerun(string runId) =>
+        File.Exists(Settings.RegenerationPath(runId))
+            ? JsonSerializer.Deserialize<RegenerationFile>(File.ReadAllText(Settings.RegenerationPath(runId)))!.Rerun.ToHashSet()
+            : null;
+
     public ValueTask LogAsync(string runId, string stage, string kind, string? outcome = null, string? payload = null,
         string? teamId = null, string? taskId = null, CancellationToken ct = default) =>
         Ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, kind, TaskId: taskId, TeamId: teamId, Outcome: outcome, Payload: payload), ct);
 }
+
+/// regeneration.json: what changed since the previous run and which tasks re-run because of it.
+public sealed record RegenerationFile(string Since, string[] Changed, string[] Rerun);

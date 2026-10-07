@@ -158,6 +158,21 @@ dotnet run --project src/Factory.S2 -- rerun --handover <handover> --plan plan.j
 Outcomes are `passed`, `failed` or `blocked` (a needs-decision; reruns never answer one).
 The tasks it depends on are not replayed, so point `--base` at a branch that has their work.
 
+Regeneration drill: change a decision in Designc, re-freeze the handover, and run again
+`--since` the run that built the previous freeze, from a base that has its merged work:
+
+```bash
+dotnet run --project src/Factory.S2 -- run --handover <re-frozen handover> --repo <target repo> --since <previous run id>
+```
+
+The run reuses the previous plan (re-stamped with the new freeze and re-validated; if it no
+longer fits, the planner redrafts). `Regeneration.between` diffs the bound decisions: a task
+re-runs if it covers a changed, added or removed decision, or touches an element one binds
+(before or after). Every other task is ledgered `carried` and not run. The `regenerate` plan row
+and `.factory/runs/<id>/regeneration.json` record the diff. Integration verify still runs the
+whole suite. Element-only changes (code areas, risk) and the dependents of a re-run task do not
+trigger a re-run.
+
 The merge policy comes from the target repo's `.factory/policy.yaml` (read from the base
 checkout, never a task worktree):
 
