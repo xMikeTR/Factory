@@ -33,7 +33,7 @@ public sealed class TeamHarness : IDisposable
     public FactoryServices Services { get; }
     public Handover Handover { get; }
 
-    private TeamHarness(string root, Handover handover, Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests)
+    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests)
     {
         _root = root;
         Repo = Path.Combine(root, "repo");
@@ -43,7 +43,7 @@ public sealed class TeamHarness : IDisposable
             ["dotnet build", "dotnet test", "ls"], suiteCommand, null, mergePolicy);
         var sandboxes = new LocalSandboxFactory();
         Services = new FactoryServices(settings, Ledger,
-            new FactoryAgents(_ => model, new RoleAllowListPolicy(), Ledger),
+            new FactoryAgents(models, new RoleAllowListPolicy(), Ledger),
             new HeuristicConfigurator(),
             new GitWorkspace(Repo, state),
             new VerifyRunner(Ledger, sandboxes),
@@ -59,7 +59,15 @@ public sealed class TeamHarness : IDisposable
         var root = Directory.CreateTempSubdirectory("team-").FullName;
         var repo = Path.Combine(root, "repo");
         await InitRepoAsync(repo);
-        return await WireAsync(root, model, limits, suiteCommand, mergePolicy, pullRequests);
+        return await WireAsync(root, _ => model, limits, suiteCommand, mergePolicy, pullRequests);
+    }
+
+    /// A real model per tier (opt-in live tests), dry-run merge.
+    public static async Task<TeamHarness> CreateAsync(Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits)
+    {
+        var root = Directory.CreateTempSubdirectory("team-live-").FullName;
+        await InitRepoAsync(Path.Combine(root, "repo"));
+        return await WireAsync(root, models, limits, "true", null, null);
     }
 
     /// A clone of a real remote (opt-in live tests). The run's PR goes to that remote.
@@ -71,15 +79,15 @@ public sealed class TeamHarness : IDisposable
         await Git(root, "clone", "-q", remoteUrl, repo);
         await Git(repo, "config", "user.name", "factory-test");
         await Git(repo, "config", "user.email", "factory-test@localhost");
-        return await WireAsync(root, model, limits, "true", mergePolicy, new GhCliPullRequests(repo));
+        return await WireAsync(root, _ => model, limits, "true", mergePolicy, new GhCliPullRequests(repo));
     }
 
-    private static async Task<TeamHarness> WireAsync(string root, Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand,
+    private static async Task<TeamHarness> WireAsync(string root, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand,
         MergePolicy? mergePolicy, IPullRequests? pullRequests)
     {
         var handover = await new DesigncHandoverReader().LoadAsync(
             Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"), S2Config.Default, CancellationToken.None);
-        var h = new TeamHarness(root, handover, model, limits, suiteCommand, mergePolicy, pullRequests);
+        var h = new TeamHarness(root, handover, models, limits, suiteCommand, mergePolicy, pullRequests);
         await h.Services.Git.EnsureIntegrationAsync(RunId, "main", CancellationToken.None);
         return h;
     }
