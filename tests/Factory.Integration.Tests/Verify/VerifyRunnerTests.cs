@@ -1,0 +1,86 @@
+using Factory.Harness;
+using Factory.Harness.Sandbox;
+using Factory.Integration.Tests.Support;
+using Factory.S2.Verify;
+using Xunit;
+using static Factory.Integration.Tests.Support.Plans;
+
+namespace Factory.Integration.Tests.Verify;
+
+public class VerifyRunnerTests : IDisposable
+{
+    private readonly string _dir = Directory.CreateTempSubdirectory("s2-verify-").FullName;
+    private readonly MemoryLedger _ledger = new();
+    private VerifyRunner Runner => new(_ledger, new LocalSandboxFactory());
+
+    public void Dispose() => Directory.Delete(_dir, recursive: true);
+
+    [Fact]
+    public async Task Cleanup_runs_even_when_the_check_fails()
+    {
+        var outcomes = await Runner.RunTaskAsync("run-1", "team-T-001", Task("T-001",
+            Auto("seeded", "touch seeded; exit 3", cleanup: "rm seeded; touch cleaned")), 1, _dir, default);
+
+        var o = Assert.Single(outcomes);
+        Assert.Equal(("seeded", 3), (o.Name, o.ExitCode));
+        Assert.True(File.Exists(Path.Combine(_dir, "cleaned")));
+        Assert.False(File.Exists(Path.Combine(_dir, "seeded")));
+    }
+
+    [Fact]
+    public async Task A_failed_cleanup_is_a_failed_outcome()
+    {
+        var outcomes = await Runner.RunTaskAsync("run-1", "team-T-001", Task("T-001",
+            Auto("seeded", "true", cleanup: "exit 7")), 1, _dir, default);
+
+        Assert.Equal([("seeded", 0), ("cleanup: seeded", 7)], outcomes.Select(o => (o.Name, o.ExitCode)));
+    }
+
+    [Fact]
+    public async Task A_timeout_kills_the_process_tree()
+    {
+        var started = DateTime.UtcNow;
+        var outcomes = await Runner.RunTaskAsync("run-1", "team-T-001", Task("T-001",
+            Auto("slow", "(sleep 30 & echo $! > child.pid; wait)", timeoutSeconds: 1)), 1, _dir, default);
+
+        Assert.Equal(124, Assert.Single(outcomes).ExitCode);
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(10));
+        var pid = int.Parse(File.ReadAllText(Path.Combine(_dir, "child.pid")).Trim());
+        await System.Threading.Tasks.Task.Delay(200);
+        Assert.False(Directory.Exists($"/proc/{pid}"), $"child {pid} survived the timeout");
+    }
+
+    [Fact]
+    public async Task Secrets_never_reach_the_child_and_the_namespace_does()
+    {
+        Environment.SetEnvironmentVariable("FACTORY_GATEWAY_KEY", "sk-should-not-leak");
+        try
+        {
+            var outcomes = await Runner.RunTaskAsync("run-1", "team-T-001", Task("T-001",
+                Auto("env", "env > env.txt")), 2, _dir, default);
+
+            Assert.Equal(0, Assert.Single(outcomes).ExitCode);
+            var env = File.ReadAllText(Path.Combine(_dir, "env.txt"));
+            Assert.DoesNotContain("sk-should-not-leak", env);
+            Assert.DoesNotContain("FACTORY_GATEWAY_KEY", env);
+            Assert.Contains("FACTORY_VERIFY_NS=run-1-T-001-2", env);
+            Assert.Contains("FACTORY_TASK_ID=T-001", env);
+            Assert.Contains("PATH=", env);
+        }
+        finally { Environment.SetEnvironmentVariable("FACTORY_GATEWAY_KEY", null); }
+    }
+
+    [Fact]
+    public async Task Manual_checks_are_ledgered_pending_and_produce_no_outcome()
+    {
+        var outcomes = await Runner.RunTaskAsync("run-1", "team-T-001", Task("T-001",
+            Auto("unit", "true"), Manual("log format reviewed")), 1, _dir, default);
+
+        Assert.Equal(["unit"], outcomes.Select(o => o.Name));
+        Assert.Contains(_ledger.Events, e => e.Kind == LedgerKinds.Verify && e.Outcome == "manual_pending" && e.TaskId == "T-001");
+        var summary = Assert.Single(_ledger.Events, e => e.Kind == LedgerKinds.Verify && e.Outcome is "passed" or "failed");
+        Assert.Equal(("passed", "team-T-001"), (summary.Outcome, summary.TeamId));
+        Assert.Contains("\"attempt\":1", summary.Payload);
+        Assert.Contains("\"sandbox\":\"local\"", summary.Payload);
+    }
+}

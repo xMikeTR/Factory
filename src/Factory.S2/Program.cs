@@ -1,5 +1,6 @@
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Sandbox;
 using Factory.S2;
 using Factory.S2.Git;
 using Factory.S2.Verify;
@@ -50,7 +51,7 @@ try
                 new FactoryAgents(GatewayOptions.FromEnvironment(), new RoleAllowListPolicy(), ledger),
                 new HeuristicConfigurator(),
                 new GitWorkspace(settings.RepoPath, settings.StateDir),
-                new VerifyRunner(ledger),
+                new VerifyRunner(ledger, new LocalSandboxFactory()),
                 opts.ContainsKey("github")
                     ? new GhCliPullRequests(settings.RepoPath)
                     : new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
