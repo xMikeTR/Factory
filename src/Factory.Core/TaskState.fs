@@ -117,6 +117,9 @@ type TaskEvent =
     | VerifyCompleted of green: VerifyOutcome list * stashedImpl: VerifyOutcome list
     /// TestAuthor -> Implementer. Carries the red run, so it cannot be raised without one.
     | TestsAuthored of RedEvidence
+    /// Implementer -> TestAuthor: the tests or checks are broken in a way only the TestAuthor's
+    /// write paths can fix. The red evidence goes with the phase; the tests need a new red run.
+    | ReturnedToTestAuthor of problem: string
     | Abandon of reason: string
 
 type TransitionError = { State: string; Event: string }
@@ -144,6 +147,7 @@ module TaskState =
         | VerifyRequested -> "VerifyRequested"
         | VerifyCompleted _ -> "VerifyCompleted"
         | TestsAuthored _ -> "TestsAuthored"
+        | ReturnedToTestAuthor _ -> "ReturnedToTestAuthor"
         | Abandon _ -> "Abandon"
 
     /// The whole task lifecycle. Budgets and separation of duties are enforced here, not by
@@ -157,6 +161,7 @@ module TaskState =
     ///   Running(p,ph,_) | Ready    + NeedsDecisionRaised n -> Blocked(p, ph, n)
     ///   Blocked(p,ph,_)            + DecisionBound _       -> Ready(p, ph)
     ///   Ready(p,TestAuthor)        + TestsAuthored red     -> Ready(p, Implementer red)
+    ///   Ready(p,Implementer)       + ReturnedToTestAuthor  -> Ready(p, TestAuthor)
     ///   Ready(p,Implementer)       + VerifyRequested       -> Failed(VerifyBudgetExhausted []) if p.VerifyAttempts >= Max
     ///                                                         else Verifying({p with VerifyAttempts+1}, ph)
     ///   Verifying(p,Implementer r) + VerifyCompleted(g,s)  -> Passed ev   if PassedEvidence.Create succeeds
@@ -181,6 +186,10 @@ module TaskState =
                 match ph with
                 | TestAuthor -> Ok(Ready(p, Implementer red))
                 | Implementer _ -> illegal ()
+            | ReturnedToTestAuthor _ ->
+                match ph with
+                | TestAuthor -> illegal ()
+                | Implementer _ -> Ok(Ready(p, TestAuthor))
             | VerifyRequested ->
                 match ph with
                 | TestAuthor -> illegal ()
@@ -199,7 +208,8 @@ module TaskState =
             | DecisionBound _
             | VerifyRequested
             | VerifyCompleted _
-            | TestsAuthored _ -> illegal ()
+            | TestsAuthored _
+            | ReturnedToTestAuthor _ -> illegal ()
         | Blocked(p, ph, _) ->
             match event with
             | Abandon r -> Ok(Failed(Abandoned r, p))
@@ -209,7 +219,8 @@ module TaskState =
             | NeedsDecisionRaised _
             | VerifyRequested
             | VerifyCompleted _
-            | TestsAuthored _ -> illegal ()
+            | TestsAuthored _
+            | ReturnedToTestAuthor _ -> illegal ()
         | Verifying(p, ph) ->
             match event with
             | Abandon r -> Ok(Failed(Abandoned r, p))
@@ -229,7 +240,8 @@ module TaskState =
             | NeedsDecisionRaised _
             | DecisionBound _
             | VerifyRequested
-            | TestsAuthored _ -> illegal ()
+            | TestsAuthored _
+            | ReturnedToTestAuthor _ -> illegal ()
 
     /// Rebuild a task's state from its ledger events. This is how a restarted runner resumes.
     let replay (limits: Limits) (events: TaskEvent seq) : Result<TaskState, TransitionError> =

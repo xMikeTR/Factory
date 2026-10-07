@@ -262,6 +262,9 @@ module Json =
             set "type" (JsonValue.Create "tests_authored")
             set "kind" (JsonValue.Create(redKindName red.Kind))
             set "outcomes" (outcomesNode red.Outcomes)
+        | ReturnedToTestAuthor problem ->
+            set "type" (JsonValue.Create "returned_to_test_author")
+            set "problem" (JsonValue.Create problem)
         | Abandon r ->
             set "type" (JsonValue.Create "abandon")
             set "reason" (JsonValue.Create r)
@@ -284,5 +287,6 @@ module Json =
                 match RedEvidence.Create(decodeOutcomes o "outcomes", redKindOf "$.kind" (str "$" o "kind")) with
                 | Ok red -> TestsAuthored red
                 | Error e -> fail $"$.outcomes: {e}"
+            | "returned_to_test_author" -> ReturnedToTestAuthor(str "$" o "problem")
             | "abandon" -> Abandon(str "$" o "reason")
             | other -> fail $"$.type: unknown task event '{other}'")

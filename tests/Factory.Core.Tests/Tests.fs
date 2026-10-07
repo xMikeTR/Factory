@@ -168,6 +168,12 @@ let tests: (string * (unit -> unit)) list =
       "state: vacuous tests send the task back to the TestAuthor", fun () ->
           let s = TaskState.replay limits [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], [ outcome "a" 0 ]) ]
           check (match s with Ok(Ready(p, TestAuthor)) -> p.VerifyAttempts = 1 | _ -> false) $"%A{s}"
+      "state: the Implementer hands broken tests back to the TestAuthor, within the turn budget", fun () ->
+          let back = ReturnedToTestAuthor "the P model's generated project sits inside the test project"
+          let s = TaskState.replay limits [ authored; TurnStarted Standard; TurnEnded; back ]
+          check (match s with Ok(Ready(p, TestAuthor)) -> p.Turns = 1 | _ -> false) $"%A{s}"
+          check (Result.isError (TaskState.transition limits TaskState.queued back)) "the TestAuthor cannot hand back to itself"
+          check (Result.isError (TaskState.replay limits [ authored; TurnStarted Standard; back ])) "not mid-turn"
       "evidence: red refuses a run where nothing failed", fun () ->
           check (Result.isError (RedEvidence.Create([ outcome "a" 0; outcome "b" 0 ], AssertionFailure))) "all zero"
           check (Result.isError (RedEvidence.Create([], BuildFailure))) "empty"
@@ -194,7 +200,7 @@ let tests: (string * (unit -> unit)) list =
           let evs =
               [ TurnStarted Frontier; TurnEnded
                 NeedsDecisionRaised { Question = "q"; Elements = [ ElementId "e" ]; Source = "configurator" }
-                DecisionBound(DecisionId "D-1"); authored; VerifyRequested; VerifyCompleted([ outcome "x" 0 ], stashedRed); Abandon "stop" ]
+                DecisionBound(DecisionId "D-1"); authored; ReturnedToTestAuthor "tests broken"; VerifyRequested; VerifyCompleted([ outcome "x" 0 ], stashedRed); Abandon "stop" ]
           for e in evs do
               equal (Ok e) (Json.decodeTaskEvent (Json.encodeTaskEvent e)) "round trip"
 
