@@ -64,10 +64,9 @@ public static class WorkflowHost
             switch (evt)
             {
                 case RequestInfoEvent request:
-                    // VERIFY (Phase 0 spike): typed access to the request payload (DataAs<T> / Data.As<T>).
-                    if (request.Request.DataAs<NeedsDecisionRequest>() is { } nd)
+                    if (request.Request.TryGetDataAs<NeedsDecisionRequest>(out var nd))
                         await run.SendResponseAsync(request.Request.CreateResponse(await human.AskAsync(nd, ct)));
-                    else if (request.Request.DataAs<MergeApprovalRequest>() is { } ma)
+                    else if (request.Request.TryGetDataAs<MergeApprovalRequest>(out var ma))
                         await run.SendResponseAsync(request.Request.CreateResponse(await human.ApproveAsync(ma, ct)));
                     break;
 

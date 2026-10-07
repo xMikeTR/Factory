@@ -5,6 +5,8 @@ using Factory.S2.Verify;
 
 namespace Factory.S2;
 
+using Core = Factory.Core.Core; // "Core" alone binds to the namespace Factory.Core from inside Factory.*
+
 public sealed record FactorySettings(
     string RepoPath,
     string RegistryPath,

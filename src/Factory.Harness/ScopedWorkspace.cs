@@ -4,6 +4,8 @@ using Microsoft.Extensions.AI;
 
 namespace Factory.Harness;
 
+using Core = Factory.Core.Core; // "Core" alone binds to the namespace Factory.Core from inside Factory.*
+
 /// What an agent reported during its turn, through tools rather than free text, so the runner
 /// never has to parse prose to decide what happens next.
 public sealed class TurnSignals
