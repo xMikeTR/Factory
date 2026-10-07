@@ -5,6 +5,8 @@ using Factory.Harness.Sandbox;
 
 namespace Factory.S2.Verify;
 
+using Core = Factory.Core.Core;
+
 /// Runs verify entries exactly as the plan declared them. The agent never runs these on its own
 /// behalf and cannot edit them: the plan is frozen, and verify scripts sit under protected paths.
 public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes)
@@ -76,6 +78,72 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes)
             Outcome: r.Succeeded ? "passed" : "failed",
             Payload: JsonSerializer.Serialize(new { name, command, r.ExitCode, sandbox = sandbox.Kind, tail = r.Tail(2000) })), ct);
         return outcome;
+    }
+
+    /// Where a suite command writes JUnit XML, relative to its working directory. Passed to it as
+    /// FACTORY_TEST_RESULTS; removed after reading so it never shows up as a change.
+    public const string ResultsPath = ".factory-results/junit.xml";
+
+    private static readonly TimeSpan SuiteTimeout = TimeSpan.FromMinutes(30);
+
+    /// The P2P baseline for a team: the suite's results on the team branch before its first task.
+    /// Recorded once in the ledger and reused on resume. Null when the suite writes no JUnit XML,
+    /// which turns the regression check off.
+    public async Task<IReadOnlyList<TestResult>?> BaselineAsync(string runId, string teamId, string command, string worktree, CancellationToken ct)
+    {
+        await foreach (var e in ledger.ReadAsync(runId, ct))
+            if (e is { Kind: LedgerKinds.Verify, Stage: "baseline" } && e.TeamId == teamId && e.Payload is not null)
+                return DecodeTests(e.Payload);
+
+        var (tests, _) = await SuiteAsync(runId, teamId, command, worktree, ct);
+        await ledger.AppendAsync(new LedgerEvent(runId, "S2", "baseline", LedgerKinds.Verify, TeamId: teamId,
+            Outcome: tests is null ? "no_results" : "recorded",
+            Payload: JsonSerializer.Serialize(new { tests = tests?.Select(t => new { name = t.Name, passed = t.Passed }) })), ct);
+        return tests;
+    }
+
+    /// Run the suite after a green run and compare with the baseline. Null when nothing that
+    /// passed before fails now; otherwise a failing outcome naming the regressions, which joins
+    /// the green outcomes (so Passed is refused) and the next brief.
+    public async Task<VerifyOutcome?> RegressionAsync(
+        string runId, string teamId, PlannedTask task, IReadOnlyList<TestResult> baseline, string command, string worktree, CancellationToken ct)
+    {
+        var (current, r) = await SuiteAsync(runId, teamId, command, worktree, ct);
+        var names = Regression.regressions(Core.ToList(baseline), Core.ToList(current ?? [])).ToList();
+        await ledger.AppendAsync(new LedgerEvent(runId, "S2", "regression", LedgerKinds.Verify, TaskId: task.Id.Value, TeamId: teamId,
+            Outcome: names.Count == 0 ? "passed" : "failed",
+            Payload: JsonSerializer.Serialize(new { regressions = names, results = current is not null })), ct);
+        if (names.Count == 0) return null;
+        var tail = "These tests passed before this task and fail now:\n" + string.Join("\n", names.Select(n => $"- {n}"))
+            + (current is null ? "\n\nThe suite wrote no results (did it build?):\n" + r.Tail() : "");
+        return new VerifyOutcome("regressions", 1, (long)r.Duration.TotalMilliseconds, tail);
+    }
+
+    private async Task<(List<TestResult>? Tests, ProcessResult Run)> SuiteAsync(string runId, string teamId, string command, string worktree, CancellationToken ct)
+    {
+        var results = Path.Combine(worktree, ResultsPath);
+        var dir = Path.GetDirectoryName(results)!;
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        try
+        {
+            await using var sandbox = await sandboxes.ForTeamAsync(teamId, worktree, ct);
+            var r = await sandbox.RunAsync(command, worktree, SuiteTimeout,
+                new Dictionary<string, string> { ["FACTORY_RUN_ID"] = runId, ["FACTORY_TEST_RESULTS"] = ResultsPath }, ct);
+            return (File.Exists(results) ? JUnit.Parse(await File.ReadAllTextAsync(results, ct)) : null, r);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    private static List<TestResult>? DecodeTests(string payload)
+    {
+        using var doc = JsonDocument.Parse(payload);
+        if (!doc.RootElement.TryGetProperty("tests", out var tests) || tests.ValueKind != JsonValueKind.Array) return null;
+        return tests.EnumerateArray()
+            .Select(t => new TestResult(t.GetProperty("name").GetString()!, t.GetProperty("passed").GetBoolean()))
+            .ToList();
     }
 
     /// A red run that failed to compile proves less than one whose assertions failed; the kind is

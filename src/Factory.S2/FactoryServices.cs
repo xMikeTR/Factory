@@ -16,6 +16,8 @@ public sealed record FactorySettings(
     int MaxPlannerAttempts,
     Limits TaskLimits,
     IReadOnlyList<string> CommandAllowList,
+    /// Full suite. Also the P2P baseline/regression check when it writes JUnit XML to
+    /// $FACTORY_TEST_RESULTS (relative to the worktree); with no results the check is off.
     string IntegrationTestCommand,
     string? PObserveCommand)
 {

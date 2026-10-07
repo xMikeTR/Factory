@@ -208,6 +208,21 @@ let tests: (string * (unit -> unit)) list =
           let v = Merge.decide Merge.defaultPolicy { Teams = [ team ]; Handover = h; ChangedLines = 40; ChangedFiles = [ "src/PricingApi/Q.cs" ] }
           equal AutoMerge v.Tier "tier"
 
+      // ---------- regression ----------
+      "regression: a test that passed before and fails now is a regression", fun () ->
+          let r name passed = { Name = name; Passed = passed }
+          equal [ "b" ] (Regression.regressions [ r "a" true; r "b" true ] [ r "a" true; r "b" false ]) "p2p"
+      "regression: tests that failed before, or are new, are not regressions", fun () ->
+          let r name passed = { Name = name; Passed = passed }
+          equal [] (Regression.regressions [ r "a" false ] [ r "a" false; r "new" false ]) "f2f and new"
+      "regression: a passing test missing now counts (deleted, or the suite did not build)", fun () ->
+          let r name passed = { Name = name; Passed = passed }
+          equal [ "a"; "b" ] (Regression.regressions [ r "a" true; r "b" true ] []) "missing"
+      "regression: a duplicated name passes only if every run of it passes", fun () ->
+          let r name passed = { Name = name; Passed = passed }
+          equal [] (Regression.regressions [ r "a" true; r "a" false ] [ r "a" false ]) "flaky in baseline is not p2p"
+          equal [ "a" ] (Regression.regressions [ r "a" true ] [ r "a" true; r "a" false ]) "one failing run now"
+
       // ---------- json ----------
       "json: malformed plan reports every problem at once", fun () ->
           let bad = """{ "handover": {"id":"x","digest":"y"}, "tasks": [ {"id":"A"}, {"id":"B","title":"t","instructions":"i","writes":["../x"]} ] }"""
