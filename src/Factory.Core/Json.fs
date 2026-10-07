@@ -208,6 +208,35 @@ module Json =
         | "small" -> Small
         | other -> fail $"{path}: unknown tier '{other}'"
 
+    let private outcomesNode (outcomes: VerifyOutcome list) : JsonNode =
+        outcomes
+        |> List.map (fun v ->
+            let x = JsonObject()
+            x.["name"] <- JsonValue.Create v.Name
+            x.["exitCode"] <- JsonValue.Create v.ExitCode
+            x.["durationMs"] <- JsonValue.Create v.DurationMs
+            x.["outputTail"] <- JsonValue.Create v.OutputTail
+            x :> JsonNode)
+        |> Array.ofList
+        |> JsonArray
+        :> JsonNode
+
+    let private decodeOutcomes (o: JsonObject) (key: string) : VerifyOutcome list =
+        arr "$" o key
+        |> List.map (fun (p, n) ->
+            let x = obj p n
+            { Name = str p x "name"
+              ExitCode = int p x "exitCode" -1
+              DurationMs = (match x.["durationMs"] with null -> 0L | v -> v.GetValue<int64>())
+              OutputTail = defaultArg (optStr x "outputTail") "" })
+
+    let private redKindName = function BuildFailure -> "build_failure" | AssertionFailure -> "assertion_failure"
+
+    let private redKindOf path = function
+        | "build_failure" -> BuildFailure
+        | "assertion_failure" -> AssertionFailure
+        | other -> fail $"{path}: unknown red kind '{other}'"
+
     let encodeTaskEvent (e: TaskEvent) : string =
         let o = JsonObject()
         let set (k: string) (v: JsonNode) = o.[k] <- v
@@ -225,19 +254,14 @@ module Json =
             set "type" (JsonValue.Create "decision_bound")
             set "decision" (JsonValue.Create d.Value)
         | VerifyRequested -> set "type" (JsonValue.Create "verify_requested")
-        | VerifyCompleted outcomes ->
+        | VerifyCompleted(green, stashed) ->
             set "type" (JsonValue.Create "verify_completed")
-            let items =
-                outcomes
-                |> List.map (fun v ->
-                    let x = JsonObject()
-                    x.["name"] <- JsonValue.Create v.Name
-                    x.["exitCode"] <- JsonValue.Create v.ExitCode
-                    x.["durationMs"] <- JsonValue.Create v.DurationMs
-                    x.["outputTail"] <- JsonValue.Create v.OutputTail
-                    x :> JsonNode)
-                |> Array.ofList
-            set "outcomes" (JsonArray(items))
+            set "outcomes" (outcomesNode green)
+            set "stashedImpl" (outcomesNode stashed)
+        | TestsAuthored red ->
+            set "type" (JsonValue.Create "tests_authored")
+            set "kind" (JsonValue.Create(redKindName red.Kind))
+            set "outcomes" (outcomesNode red.Outcomes)
         | Abandon r ->
             set "type" (JsonValue.Create "abandon")
             set "reason" (JsonValue.Create r)
@@ -255,15 +279,10 @@ module Json =
                       Elements = strs "$" o "elements" |> List.map ElementId }
             | "decision_bound" -> DecisionBound(DecisionId(str "$" o "decision"))
             | "verify_requested" -> VerifyRequested
-            | "verify_completed" ->
-                VerifyCompleted(
-                    arr "$" o "outcomes"
-                    |> List.map (fun (p, n) ->
-                        let x = obj p n
-                        { Name = str p x "name"
-                          ExitCode = int p x "exitCode" -1
-                          DurationMs = (match x.["durationMs"] with null -> 0L | v -> v.GetValue<int64>())
-                          OutputTail = defaultArg (optStr x "outputTail") "" })
-                )
+            | "verify_completed" -> VerifyCompleted(decodeOutcomes o "outcomes", decodeOutcomes o "stashedImpl")
+            | "tests_authored" ->
+                match RedEvidence.Create(decodeOutcomes o "outcomes", redKindOf "$.kind" (str "$" o "kind")) with
+                | Ok red -> TestsAuthored red
+                | Error e -> fail $"$.outcomes: {e}"
             | "abandon" -> Abandon(str "$" o "reason")
             | other -> fail $"$.type: unknown task event '{other}'")

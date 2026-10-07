@@ -40,7 +40,7 @@ public class TeamRunnerTests
         Assert.Equal(2, turns.Count);
         Assert.All(turns, t => Assert.True(t.TokensIn > 0 && t.TokensOut > 0));
 
-        Assert.Single(h.Rows(LedgerKinds.Verify));
+        Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "verify");
         Assert.Equal("Passed", h.Rows(LedgerKinds.TaskEvent).Last().Outcome);
 
         var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
@@ -62,7 +62,7 @@ public class TeamRunnerTests
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(never), NoAnswers, default);
 
         Assert.Equal(TeamStatus.Failed, result.Status);
-        Assert.Equal(2, h.Rows(LedgerKinds.Verify).Count());
+        Assert.Equal(2, h.Rows(LedgerKinds.Verify).Count(e => e.Stage == "verify"));
         Assert.Equal("Failed", h.Rows(LedgerKinds.TaskEvent).Last().Outcome);
         // the second acting turn saw the first attempt's failure
         Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("What failed last time"));

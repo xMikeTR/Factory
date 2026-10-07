@@ -72,6 +72,67 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         }
     }
 
+    /// Take the implementation out of the worktree for the stashed-impl check: copy `paths` aside
+    /// under the state dir, then revert them to HEAD. Disposing puts them back. Not `git stash`:
+    /// the stash is shared by every worktree of the repo and teams run in parallel. A crash
+    /// between the two leaves the copy and its manifest behind for RestoreStashAsync.
+    public async Task<IAsyncDisposable> StashImplAsync(string worktree, IReadOnlyCollection<string> paths, string key, CancellationToken ct)
+    {
+        var dir = StashDir(key);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        var files = Path.Combine(dir, "files");
+        Directory.CreateDirectory(files);
+        var manifest = new List<StashEntry>();
+        foreach (var p in paths)
+        {
+            var src = Path.Combine(worktree, p);
+            var exists = File.Exists(src);
+            if (exists)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(files, p))!);
+                File.Copy(src, Path.Combine(files, p));
+            }
+            manifest.Add(new StashEntry(p, exists));
+        }
+        await File.WriteAllTextAsync(Path.Combine(dir, "manifest.json"), System.Text.Json.JsonSerializer.Serialize(manifest), ct);
+        await RevertPathsAsync(worktree, paths, ct);
+        return new Restore(() => RestoreStashAsync(worktree, key, CancellationToken.None));
+    }
+
+    /// Put back a stash left by StashImplAsync. False when there is none.
+    public async Task<bool> RestoreStashAsync(string worktree, string key, CancellationToken ct)
+    {
+        var dir = StashDir(key);
+        var manifestPath = Path.Combine(dir, "manifest.json");
+        if (!File.Exists(manifestPath))
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); // crashed before the revert: nothing was taken
+            return false;
+        }
+        var manifest = System.Text.Json.JsonSerializer.Deserialize<List<StashEntry>>(await File.ReadAllTextAsync(manifestPath, ct))!;
+        foreach (var e in manifest)
+        {
+            var dst = Path.Combine(worktree, e.Path);
+            if (e.Existed)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+                File.Copy(Path.Combine(dir, "files", e.Path), dst, overwrite: true);
+            }
+            else if (File.Exists(dst)) File.Delete(dst);
+        }
+        Directory.Delete(dir, recursive: true);
+        return true;
+    }
+
+    private string StashDir(string key) => Path.Combine(stateDir, "stash", key);
+
+    private sealed record StashEntry(string Path, bool Existed);
+
+    private sealed class Restore(Func<Task<bool>> restore) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await restore();
+    }
+
     /// Fingerprint of uncommitted work, used to detect turns that changed nothing.
     public async Task<string> WorkFingerprintAsync(string worktree, CancellationToken ct)
     {

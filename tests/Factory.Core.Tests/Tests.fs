@@ -33,6 +33,9 @@ let errorsOf pl = match PlanValidator.validate handover pl with Ok _ -> [] | Err
 let validated = lazy (match PlanValidator.validate handover plan with Ok v -> v | Error es -> failwithf "%A" es)
 let limits = { MaxTurns = 3; MaxVerifyAttempts = 2 }
 let outcome name code = { Name = name; ExitCode = code; DurationMs = 10L; OutputTail = "" }
+let red = match RedEvidence.Create([ outcome "a" 1 ], AssertionFailure) with Ok r -> r | Error e -> failwith e
+let authored = TestsAuthored red
+let stashedRed = [ outcome "a" 1 ]
 
 let tests: (string * (unit -> unit)) list =
     [
@@ -129,39 +132,60 @@ let tests: (string * (unit -> unit)) list =
       // ---------- task state ----------
       "state: happy path", fun () ->
           let s =
-              TaskState.replay limits [ TurnStarted Frontier; TurnEnded; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted [ outcome "a" 0 ] ]
-          check (match s with Ok(Passed ev) -> ev.Attempt = 1 | _ -> false) $"%A{s}"
+              TaskState.replay limits
+                  [ TurnStarted Frontier; TurnEnded; authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed) ]
+          check (match s with Ok(Passed ev) -> ev.Attempt = 1 && ev.Red = red && ev.StashedImpl = stashedRed | _ -> false) $"%A{s}"
       "state: failed verify returns to Ready, then passes", fun () ->
           let s =
               TaskState.replay limits
-                  [ TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted [ outcome "a" 1 ]
-                    TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted [ outcome "a" 0 ] ]
+                  [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 1 ], [])
+                    TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed) ]
           check (match s with Ok(Passed ev) -> ev.Attempt = 2 | _ -> false) $"%A{s}"
       "state: verify budget", fun () ->
           let s =
               TaskState.replay limits
-                  [ TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted [ outcome "a" 1 ]
-                    TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted [ outcome "a" 1 ] ]
+                  [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 1 ], [])
+                    TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 1 ], []) ]
           check (match s with Ok(Failed(VerifyBudgetExhausted _, _)) -> true | _ -> false) $"%A{s}"
       "state: turn budget", fun () ->
           let turn = [ TurnStarted Small; TurnEnded ]
           let s = TaskState.replay limits (List.concat [ turn; turn; turn; [ TurnStarted Small ] ])
           check (match s with Ok(Failed(TurnBudgetExhausted 3, _)) -> true | _ -> false) $"%A{s}"
-      "state: escalation blocks and resumes", fun () ->
+      "state: escalation blocks and resumes in the same phase", fun () ->
           let nd = { Question = "Retry limit for stale writes?"; Elements = []; Source = "agent" }
           let s = TaskState.replay limits [ TurnStarted Standard; NeedsDecisionRaised nd ]
-          check (match s with Ok(Blocked _) -> true | _ -> false) "blocked"
-          let s2 = TaskState.replay limits [ TurnStarted Standard; NeedsDecisionRaised nd; DecisionBound(DecisionId "D-0043"); TurnStarted Standard ]
-          check (match s2 with Ok(Running(p, _)) -> p.Turns = 2 | _ -> false) $"resumed %A{s2}"
+          check (match s with Ok(Blocked(_, TestAuthor, _)) -> true | _ -> false) $"blocked %A{s}"
+          let s2 = TaskState.replay limits [ authored; TurnStarted Standard; NeedsDecisionRaised nd; DecisionBound(DecisionId "D-0043"); TurnStarted Standard ]
+          check (match s2 with Ok(Running(p, Implementer _, _)) -> p.Turns = 2 | _ -> false) $"resumed %A{s2}"
+      "state: a task starts with the TestAuthor and moves on only with red evidence", fun () ->
+          check (match TaskState.queued with Ready(_, TestAuthor) -> true | _ -> false) "queued phase"
+          let s = TaskState.replay limits [ TurnStarted Standard; TurnEnded; authored ]
+          check (match s with Ok(Ready(p, Implementer r)) -> p.Turns = 1 && r = red | _ -> false) $"%A{s}"
+      "state: no verify in the TestAuthor phase, no second TestsAuthored", fun () ->
+          check (Result.isError (TaskState.transition limits TaskState.queued VerifyRequested)) "verify before tests"
+          check (Result.isError (TaskState.replay limits [ authored; authored ])) "authored twice"
+          check (Result.isError (TaskState.replay limits [ TurnStarted Small; authored ])) "authored mid-turn"
+      "state: vacuous tests send the task back to the TestAuthor", fun () ->
+          let s = TaskState.replay limits [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], [ outcome "a" 0 ]) ]
+          check (match s with Ok(Ready(p, TestAuthor)) -> p.VerifyAttempts = 1 | _ -> false) $"%A{s}"
+      "evidence: red refuses a run where nothing failed", fun () ->
+          check (Result.isError (RedEvidence.Create([ outcome "a" 0; outcome "b" 0 ], AssertionFailure))) "all zero"
+          check (Result.isError (RedEvidence.Create([], BuildFailure))) "empty"
+          check (Result.isOk (RedEvidence.Create([ outcome "a" 0; outcome "b" 1 ], AssertionFailure))) "one red is enough"
+      "evidence: passed needs green and a stashed-impl run that fails", fun () ->
+          check (Result.isError (PassedEvidence.Create(1, [], red, stashedRed))) "no empty evidence"
+          check (Result.isError (PassedEvidence.Create(1, [ outcome "a" 1 ], red, stashedRed))) "not green"
+          check (Result.isError (PassedEvidence.Create(1, [ outcome "a" 0 ], red, [ outcome "a" 0 ]))) "stash all green"
+          check (Result.isError (PassedEvidence.Create(1, [ outcome "a" 0 ], red, []))) "stash missing"
+          check (Result.isOk (PassedEvidence.Create(1, [ outcome "a" 0 ], red, stashedRed))) "all three gates"
       "state: illegal transitions rejected", fun () ->
-          check (Result.isError (TaskState.transition limits TaskState.queued (VerifyCompleted [ outcome "a" 0 ]))) "no pass without verify"
+          check (Result.isError (TaskState.transition limits TaskState.queued (VerifyCompleted([ outcome "a" 0 ], stashedRed)))) "no pass without verify"
           check (Result.isError (TaskState.transition limits TaskState.queued TurnEnded)) "no turn end before start"
-          check (Result.isError (PassedEvidence.Create(1, []))) "no empty evidence"
       "state: events round-trip through the ledger codec", fun () ->
           let evs =
               [ TurnStarted Frontier; TurnEnded
                 NeedsDecisionRaised { Question = "q"; Elements = [ ElementId "e" ]; Source = "configurator" }
-                DecisionBound(DecisionId "D-1"); VerifyRequested; VerifyCompleted [ outcome "x" 0 ]; Abandon "stop" ]
+                DecisionBound(DecisionId "D-1"); authored; VerifyRequested; VerifyCompleted([ outcome "x" 0 ], stashedRed); Abandon "stop" ]
           for e in evs do
               equal (Ok e) (Json.decodeTaskEvent (Json.encodeTaskEvent e)) "round trip"
 
