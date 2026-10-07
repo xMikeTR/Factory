@@ -14,7 +14,10 @@ public static class Plans
 
     public static VerifyEntry Manual(string name) => VerifyEntry.NewManual(new ManualVerify(name, "look at it"));
 
-    public static PlannedTask Task(string id, params VerifyEntry[] verify) =>
+    public static PlannedTask Task(string id, params VerifyEntry[] verify) => Covering(id, [], verify);
+
+    public static PlannedTask Covering(string id, string[] decisions, params VerifyEntry[] verify) =>
         new(TaskId.NewTaskId(id), "title", "instructions", Core.ToList([ElementId.NewElementId("Pricing Platform/Quotes DB")]),
-            Core.ToList([Pattern("src/Pricing.Data/**")]), Core.ToList([Pattern("tests/Pricing.Data.Tests/**")]), Core.ToList<TaskId>([]), Core.ToList<DecisionId>([]), Core.ToList(verify));
+            Core.ToList([Pattern("src/Pricing.Data/**")]), Core.ToList([Pattern("tests/Pricing.Data.Tests/**")]), Core.ToList<TaskId>([]),
+            Core.ToList(decisions.Select(DecisionId.NewDecisionId)), Core.ToList(verify));
 }
