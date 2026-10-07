@@ -14,7 +14,7 @@
     <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.15.0" />
     <PackageVersion Include="Anthropic" Version="12.49.0" />
     <PackageVersion Include="FSharp.Core" Version="8.0.102" />
-    <PackageVersion Include="YamlDotNet" Version="16.3.0" />
+    <PackageVersion Include="YamlDotNet" Version="18.1.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageVersion Include="xunit" Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
