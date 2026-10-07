@@ -8,10 +8,10 @@ public sealed record PolicyDecision(bool Allowed, string Reason)
 
 /// Evaluated before every tool call, in the agent middleware.
 ///
-/// Target: an adapter over the AGT ACS runtime loading mlang-compiled manifests per role
-/// (Phase 0 exit criterion in the plan). Until then RoleAllowListPolicy gives the same shape of
-/// guarantee for tool names, and ScopedWorkspace enforces paths itself, so path safety does not
-/// depend on the policy engine being wired.
+/// Production: Governance.AcsToolPolicy, the AGT policy engine over per-role files in policies/s2
+/// (hand-authored now, mlang-compiled later). RoleAllowListPolicy is the in-code double; both pass
+/// ToolPolicyContract. ScopedWorkspace enforces paths itself, so path safety does not depend on
+/// either policy.
 public interface IToolPolicy
 {
     PolicyDecision Evaluate(string role, string toolName, IReadOnlyDictionary<string, object?> args);

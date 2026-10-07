@@ -1,5 +1,6 @@
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Governance;
 using Factory.Harness.Sandbox;
 using Factory.S2;
 using Factory.S2.Git;
@@ -53,10 +54,18 @@ try
                 "local" => new LocalSandboxFactory(),
                 var other => throw new ArgumentException($"FACTORY_SANDBOX: '{other}' is not docker|local"),
             };
+            // Tool governance: the AGT policy files per role (policies/s2) by default; the in-code
+            // allow-list is the explicit fallback and the contract-test double.
+            IToolPolicy toolPolicy = (Environment.GetEnvironmentVariable("FACTORY_TOOL_POLICY") ?? "acs") switch
+            {
+                "acs" => AcsToolPolicy.Load(Environment.GetEnvironmentVariable("FACTORY_POLICY_DIR") ?? AcsToolPolicy.DefaultDirectory),
+                "allowlist" => new RoleAllowListPolicy(),
+                var other => throw new ArgumentException($"FACTORY_TOOL_POLICY: '{other}' is not acs|allowlist"),
+            };
             var services = new FactoryServices(
                 settings,
                 ledger,
-                new FactoryAgents(GatewayOptions.FromEnvironment(), new RoleAllowListPolicy(), ledger),
+                new FactoryAgents(GatewayOptions.FromEnvironment(), toolPolicy, ledger),
                 new HeuristicConfigurator(),
                 new GitWorkspace(settings.RepoPath, settings.StateDir),
                 new VerifyRunner(ledger, sandboxes),
