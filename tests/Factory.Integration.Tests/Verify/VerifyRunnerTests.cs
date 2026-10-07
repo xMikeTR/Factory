@@ -40,6 +40,35 @@ public class VerifyRunnerTests : IDisposable
         Assert.Equal([("generates", 0), ("sees nothing", 0)], outcomes.Select(o => (o.Name, o.ExitCode)));
     }
 
+    /// A refused restore means nothing in the task can build: no check runs, and the one outcome says why.
+    [Fact]
+    public async Task A_refused_restore_runs_no_checks()
+    {
+        var runner = new VerifyRunner(_ledger, new RefusingSandboxes(["src/Api/Api.csproj: <Target> is not allowed"]), new GitWorkspace(_dir, Path.Combine(_out, "state")));
+
+        var outcomes = await runner.RunTaskAsync("run-1", "team-T-001", Task("T-001", Auto("ran", $"touch {_out}/ran")), 1, _dir, default);
+
+        var o = Assert.Single(outcomes);
+        Assert.True(Factory.Core.RestoreRefusal.isRefusal(o));
+        Assert.Contains("<Target> is not allowed", o.OutputTail);
+        Assert.False(File.Exists(Path.Combine(_out, "ran")));
+    }
+
+    private sealed class RefusingSandboxes(IReadOnlyList<string> reasons) : ISandboxFactory
+    {
+        public async Task<ICommandSandbox> ForTeamAsync(string teamId, string worktree, CancellationToken ct) =>
+            new Refusing(await new LocalSandboxFactory().ForTeamAsync(teamId, worktree, ct), reasons);
+
+        private sealed class Refusing(ICommandSandbox inner, IReadOnlyList<string> reasons) : ICommandSandbox
+        {
+            public string Kind => inner.Kind;
+            public IReadOnlyList<string>? RestoreRefusal => reasons;
+            public Task<ProcessResult> RunAsync(string command, string workdir, TimeSpan timeout, IReadOnlyDictionary<string, string> env, CancellationToken ct) =>
+                inner.RunAsync(command, workdir, timeout, env, ct);
+            public ValueTask DisposeAsync() => inner.DisposeAsync();
+        }
+    }
+
     [Fact]
     public async Task Cleanup_runs_even_when_the_check_fails()
     {

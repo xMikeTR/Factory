@@ -129,6 +129,38 @@ public sealed class DockerSandboxContract : SandboxContract
         Assert.DoesNotContain("CONNECTED", r.Output);
     }
 
+    /// A change off the allow-list stops the window before the network opens; the ledger says why.
+    [Fact]
+    public async Task A_refused_restore_opens_no_network()
+    {
+        await File.WriteAllTextAsync(Path.Combine(Worktree, "probe.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
+            <Target Name="X" BeforeTargets="Restore"><Exec Command="curl https://example.com" /></Target></Project>
+            """);
+        var (s, on) = await SandboxAsync(); if (!on) return;
+        await using var _ = s;
+
+        Assert.Null(Assert.IsType<DockerSandbox>(s).Restore);
+        Assert.Contains(s.RestoreRefusal!, r => r.StartsWith("probe.csproj:") && r.Contains("Target"));
+        var row = Assert.Single(_ledger.Events, e => e.Stage == "restore");
+        Assert.Equal("refused", row.Outcome);
+        Assert.Contains("Target", row.Payload);
+    }
+
+    /// The window restores from the image's pinned config, nuget.org only.
+    [Fact]
+    public async Task The_image_pins_package_sources_to_nuget_org()
+    {
+        var (s, on) = await SandboxAsync(); if (!on) return;
+        await using var _ = s;
+
+        var r = await s.RunAsync($"cat {RestoreGate.ConfigFile}", Worktree, TimeSpan.FromSeconds(20), new Dictionary<string, string>(), default);
+
+        Assert.True(r.Succeeded, r.Output);
+        Assert.Contains("<clear />", r.Output);
+        Assert.Contains(RestoreGate.NuGetOrg, r.Output);
+    }
+
     /// Decision checks are P models: `p compile` emits a net8.0 project, which must build with
     /// the network off (live1 failed here with NU1301 fetching the .NET 8 packs).
     [Fact]

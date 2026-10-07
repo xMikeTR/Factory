@@ -427,6 +427,8 @@ let tests: (string * (unit -> unit)) list =
               check (Result.isError (ProjectFileChange.review path None (Some "<Project />"))) path
           check (ProjectFileChange.affectsRestore "src/A/A.fsproj" && ProjectFileChange.affectsRestore "NuGet.config"
                  && not (ProjectFileChange.affectsRestore "src/A/A.cs")) "affectsRestore"
+          // P models (.pproj) are compiled by `p compile`, not restored.
+          check (not (ProjectFileChange.affectsRestore "P/Probe.pproj") && not (ProjectFileChange.isProject "Probe.pproj")) "a P project is not restored"
       // ---------- json ----------
       "json: malformed plan reports every problem at once", fun () ->
           let bad = """{ "handover": {"id":"x","digest":"y"}, "tasks": [ {"id":"A"}, {"id":"B","title":"t","instructions":"i","writes":["../x"]} ] }"""
