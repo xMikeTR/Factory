@@ -105,6 +105,15 @@ merge:
 Blocks (a scope leak, a protected path changed, a pending manual check) stop the merge in both
 modes; the run ends `merge_blocked` with the blocks in the PR body.
 
+In tiered mode with `--github`, approvals are PR comments from the allow-listed `approvers`:
+`/approve <reason>` (one per approver; a lone approver meets two approvals with two distinct
+reasons, recorded `single_operator: true` on the Merge ledger row) and `/verified T-001: <check>`
+to record a manual check as done. Too few approvals parks the run (`parked: awaiting_approval
+<url>`, exit 3); re-run with `--run-id` after commenting. Without `--github` the console asks.
+
+Opt-in live test (opens and closes a real PR):
+`FACTORY_LIVE_GITHUB=xMikeTR/pricing-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`
+
 ## Build order
 
 This maps onto Phases 0, 2 and 4 of the implementation plan. Each step leaves you with

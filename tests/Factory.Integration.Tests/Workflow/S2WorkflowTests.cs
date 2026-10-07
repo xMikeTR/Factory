@@ -135,6 +135,49 @@ public class S2WorkflowTests
         Assert.Contains("Merge blocked", prBody);
     }
 
+    /// A GitHub stand-in: PR comments are whatever the test posts; merges are counted.
+    private sealed class FakeGitHub : IPullRequests, IApprovalComments
+    {
+        public List<PrComment> Comments { get; } = [];
+        public int Merges { get; private set; }
+        public Task<string> EnsurePullRequestAsync(string head, string baseBranch, string title, string body, CancellationToken ct) =>
+            Task.FromResult("https://github.com/o/r/pull/1");
+        public Task EnableAutoMergeAsync(string url, CancellationToken ct) => throw new InvalidOperationException("tiered mode never auto-merges");
+        public Task<IReadOnlyList<PrComment>> CommentsAsync(string url, CancellationToken ct) => Task.FromResult<IReadOnlyList<PrComment>>(Comments.ToList());
+        public Task MergeAsync(string url, CancellationToken ct) { Merges++; return Task.CompletedTask; }
+    }
+
+    [Fact]
+    public async Task Tiered_mode_parks_awaiting_approve_comments_and_a_single_operator_merges_with_two_reasons()
+    {
+        var model = new ScriptedChatClient();
+        var github = new FakeGitHub();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), pullRequests: github,
+            mergePolicy: Policy(MergeEnforcement.NewTiered(Microsoft.FSharp.Collections.ListModule.OfSeq(["mike"]))));
+        var human = new ApprovingHuman();
+
+        var waiting = await RunT001(h, model, human);
+
+        Assert.Equal("parked", waiting?.Status); // TwoApprovals (Quotes DB is high risk); the handover stays open
+        Assert.Equal("parked: awaiting_approval https://github.com/o/r/pull/1 (2 more /approve from mike)", RunReport.Line(waiting!));
+        Assert.Empty(human.Approvals);
+        Assert.Equal(0, github.Merges);
+
+        github.Comments.Add(new PrComment("mallory", "/approve"));                 // not allow-listed
+        github.Comments.Add(new PrComment("mike", "/approve schema reviewed"));
+        github.Comments.Add(new PrComment("mike", "/approve migration dry-run ok"));
+        model.Enqueue();
+        var merged = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), human, default);
+
+        Assert.Equal("merged", merged?.Status);
+        Assert.Equal(1, github.Merges);
+        var row = h.Rows(LedgerKinds.Merge).Last();
+        Assert.Equal("merged", row.Outcome);
+        using var payload = JsonDocument.Parse(row.Payload!);
+        Assert.True(payload.RootElement.GetProperty("single_operator").GetBoolean());
+        Assert.Equal(["mike"], payload.RootElement.GetProperty("by").EnumerateArray().Select(x => x.GetString()));
+    }
+
     [Fact]
     public async Task A_finished_run_projects_its_tasks_and_decision_checks_into_the_registry_ledger()
     {

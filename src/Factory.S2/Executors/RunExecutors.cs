@@ -3,6 +3,7 @@ using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Registry;
+using Microsoft.FSharp.Collections;
 using Factory.S2.Git;
 using Factory.S2.Teams;
 using Microsoft.Agents.AI.Workflows;
@@ -180,14 +181,20 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
 
         var policy = s.MergePolicy ?? Core.DefaultMergePolicy;
         var verdict = Core.DecideMerge(policy, new MergeInput(Core.ToList(teams), handover, lines, Core.ToList(files)));
-        var action = Core.MergeActionFor(policy, verdict);
-        var blocks = verdict.Blocks.Select(Core.DescribeBlock).ToArray();
 
         var branch = GitWorkspace.IntegrationBranch(msg.RunId);
         if (svc.PullRequests is GhCliPullRequests) await svc.Git.PushAsync(branch, cancellationToken);
 
         var url = await svc.PullRequests.EnsurePullRequestAsync(branch, s.BaseBranch,
             $"[factory] {handover.Id}: {teams.Sum(t => t.Tasks.Length)} tasks", PullRequestBody(msg.RunId, handover, teams, verdict, lines), cancellationToken);
+
+        // Tiered mode on a PR host: allow-listed comments record manual checks and approvals.
+        var github = svc.PullRequests as IApprovalComments;
+        var approvers = policy.Enforcement is MergeEnforcement.Tiered t ? t.approvers : ListModule.Empty<string>();
+        var comments = github is not null && policy.Enforcement.IsTiered ? await github.CommentsAsync(url, cancellationToken) : [];
+        verdict = Core.RecordVerified(approvers, comments, verdict);
+        var action = Core.MergeActionFor(policy, verdict);
+        var blocks = verdict.Blocks.Select(Core.DescribeBlock).ToArray();
 
         await svc.LogAsync(msg.RunId, "merge", LedgerKinds.Merge, outcome: action.IsBlocked ? "blocked" : verdict.Tier.ToString(),
             payload: JsonSerializer.Serialize(new { url, tier = verdict.Tier.ToString(), verdict.Reasons, blocks, lines, files = files.Count }),
@@ -198,7 +205,20 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
             case MergeAction.Blocked:
                 await context.SendMessageAsync(new RunFinished(msg.RunId, "merge_blocked", string.Join("\n", blocks)), cancellationToken: cancellationToken);
                 break;
-            case MergeAction.AwaitApproval approval:
+            case MergeAction.AwaitApproval approval when github is not null:
+                var a = Core.Approvals(approval.tier, approval.approvers, comments);
+                if (!a.Approved)
+                {
+                    await context.SendMessageAsync(new RunFinished(msg.RunId, "parked",
+                        $"awaiting_approval {url} ({a.Missing} more /approve from {string.Join(", ", approval.approvers)})"), cancellationToken: cancellationToken);
+                    break;
+                }
+                await github.MergeAsync(url, cancellationToken);
+                await svc.LogAsync(msg.RunId, "merge", LedgerKinds.Merge, outcome: "merged",
+                    payload: JsonSerializer.Serialize(new { url, by = a.By, single_operator = a.SingleOperator }), ct: cancellationToken);
+                await context.SendMessageAsync(new RunFinished(msg.RunId, "merged", string.Join(", ", a.By)), cancellationToken: cancellationToken);
+                break;
+            case MergeAction.AwaitApproval approval: // no PR host to read: ask a human
                 await context.SendMessageAsync(new MergeApprovalRequest(msg.RunId, url, approval.tier.ToString(), verdict.Reasons.ToArray()),
                     cancellationToken: cancellationToken);
                 break;
