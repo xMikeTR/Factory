@@ -31,12 +31,21 @@ public sealed record AgentScope(string RunId, string Role, string? TeamId = null
 
 /// The Factory.Harness entry point: every System 2 agent is built here, so every agent gets the
 /// gateway client, the role's tool policy, and ledger rows for each tool call.
-public sealed class FactoryAgents(GatewayOptions gateway, IToolPolicy policy, ILedger ledger)
+/// The chat client per tier is a seam: production goes through the gateway, tests script the model.
+public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPolicy policy, ILedger ledger)
 {
-    public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools)
+    public FactoryAgents(GatewayOptions gateway, IToolPolicy policy, ILedger ledger)
+        : this(tier => GatewayChat(gateway, tier), policy, ledger) { }
+
+    private static IChatClient GatewayChat(GatewayOptions gateway, ModelTier tier)
     {
         var client = new OpenAIClient(new ApiKeyCredential(gateway.ApiKey), new OpenAIClientOptions { Endpoint = gateway.Endpoint });
-        IChatClient chat = client.GetChatClient(gateway.ModelFor(tier)).AsIChatClient();
+        return client.GetChatClient(gateway.ModelFor(tier)).AsIChatClient();
+    }
+
+    public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools)
+    {
+        var chat = chatFor(tier);
 
         AIAgent agent = new ChatClientAgent(chat, instructions: instructions, name: scope.Role, tools: tools);
 
@@ -48,20 +57,28 @@ public sealed class FactoryAgents(GatewayOptions gateway, IToolPolicy policy, IL
             .Build();
     }
 
-    /// Runs before every tool call of every agent. The governance seam: yours to own.
-    ///
-    /// TODO(you) — RESOURCES.md §9.
-    ///   1. name = context.Function.Name; args = context.Arguments as a dictionary
-    ///   2. decision = policy.Evaluate(scope.Role, name, args)       (later: the ACS runtime)
-    ///   3. ledger row: kind tool_call, outcome allowed|denied, model, payload {tool, Summarise(args), reason}
-    ///   4. denied -> return a string the model can act on ("DENIED by policy: ... do not retry")
-    ///      and do NOT call next; allowed -> return await next(context, ct)
-    private ValueTask<object?> GovernedToolCallAsync(
+    /// Runs before every tool call of every agent. The governance seam: the policy decides, the
+    /// ledger records the decision, and a denied call never reaches the tool.
+    /// Later: the ACS runtime replaces `policy` behind the same IToolPolicy shape.
+    private async ValueTask<object?> GovernedToolCallAsync(
         AgentScope scope, ModelTier tier,
         FunctionInvocationContext context,
         Func<FunctionInvocationContext, CancellationToken, ValueTask<object?>> next,
-        CancellationToken ct) =>
-        throw new NotImplementedException("TODO: FactoryAgents.GovernedToolCallAsync (RESOURCES.md §9)");
+        CancellationToken ct)
+    {
+        var name = context.Function.Name;
+        var args = context.Arguments.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var decision = policy.Evaluate(scope.Role, name, args);
+
+        await ledger.AppendAsync(new LedgerEvent(scope.RunId, "S2", scope.Role, LedgerKinds.ToolCall,
+            TaskId: scope.TaskId, TeamId: scope.TeamId,
+            Outcome: decision.Allowed ? "allowed" : "denied", Model: tier.ToString(),
+            Payload: JsonSerializer.Serialize(new { tool = name, args = Summarise(args), reason = decision.Reason })), ct);
+
+        return decision.Allowed
+            ? await next(context, ct)
+            : $"DENIED by policy: {decision.Reason}. This tool is not available to you; do not retry it.";
+    }
 
     // Tool arguments can be whole files; the ledger keeps the shape, not the content.
     private static Dictionary<string, string> Summarise(Dictionary<string, object?> args) =>
