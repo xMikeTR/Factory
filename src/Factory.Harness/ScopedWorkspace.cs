@@ -13,6 +13,7 @@ public sealed class TurnSignals
 {
     public string? DoneSummary { get; set; }
     public string? NeedsDecision { get; set; }
+    public string? ReturnedToTestAuthor { get; set; }
     public List<string> FilesWritten { get; } = [];
 }
 
@@ -53,6 +54,10 @@ public sealed class ScopedWorkspace(
         AIFunctionFactory.Create(DeclareDone, "declare_done"),
         AIFunctionFactory.Create(RaiseNeedsDecision, "raise_needs_decision"),
     ];
+
+    /// The Implementer's tools: the executor's, plus handing broken tests back to the TestAuthor.
+    public IList<AITool> ImplementerTools() =>
+        [.. ExecutorTools(), AIFunctionFactory.Create(ReturnToTestAuthor, "return_to_test_author")];
 
     [Description("Read a UTF-8 text file. Path is relative to the repository root.")]
     public string ReadFile([Description("repo-relative path")] string path)
@@ -128,6 +133,13 @@ public sealed class ScopedWorkspace(
     {
         signals.NeedsDecision = question;
         return "Recorded. Stop now; the question goes to System 1.";
+    }
+
+    [Description("Call when the tests or verify checks are broken in a way only the test author can fix: a test file, test project or fixture outside your write paths, or a test that contradicts the brief. Not for design questions. Ends your turn.")]
+    public string ReturnToTestAuthor([Description("what is broken, where, and why your write paths cannot fix it")] string problem)
+    {
+        signals.ReturnedToTestAuthor = problem;
+        return "Recorded. Stop now; the test author fixes the tests, then the task comes back to you.";
     }
 
     private string? Refusal(string path)

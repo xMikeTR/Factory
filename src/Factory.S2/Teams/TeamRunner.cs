@@ -250,6 +250,14 @@ internal sealed class TaskLoop(
         if (signals.NeedsDecision is { } question)
             return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(new NeedsDecision(question, task.Elements, "agent")), ct);
 
+        if (signals.ReturnedToTestAuthor is { } problem && !phase.IsTestAuthor)
+        {
+            state = await ApplyAsync(state, TaskEvent.TurnEnded, ct);
+            _lastFailures = "The implementer cannot make your tests pass from its write paths and handed them back:\n" + problem
+                + "\n\nFix the tests inside your write paths. They must still fail against the current code.";
+            return await ApplyAsync(state, TaskEvent.NewReturnedToTestAuthor(problem), ct);
+        }
+
         _doneDeclared = signals.DoneSummary is not null && reverted.Count == 0;
         return await ApplyAsync(state, TaskEvent.TurnEnded, ct);
     }
@@ -257,11 +265,12 @@ internal sealed class TaskLoop(
     private async Task RunActAsync(string role, string prompt, IEnumerable<PathPattern> writable, ModelTier tier, TurnSignals signals, CancellationToken ct)
     {
         await using var sandbox = await svc.Sandboxes.ForTeamAsync(_teamId, worktree, ct);
+        var workspace = Workspace(signals, sandbox, writable);
         var agent = svc.Agents.Create(new AgentScope(runId, role, _teamId, _taskId), tier,
-            Briefs.Prompt(prompt), Workspace(signals, sandbox, writable).ExecutorTools());
+            Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools() : workspace.ExecutorTools());
         var response = await agent.RunAsync(Brief(writable), cancellationToken: ct);
         await LogTurnAsync("act", tier, response.Usage,
-            new { role, files = signals.FilesWritten, done = signals.DoneSummary, needs_decision = signals.NeedsDecision }, ct);
+            new { role, files = signals.FilesWritten, done = signals.DoneSummary, needs_decision = signals.NeedsDecision, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
     }
 
     /// The TestAuthor declared done: run its tests without the implementation. They must fail;

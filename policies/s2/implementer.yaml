@@ -37,3 +37,7 @@ rules:
     condition: "tool_name == 'raise_needs_decision'"
     action: allow
     priority: 10
+  - name: allow-return-to-test-author
+    condition: "tool_name == 'return_to_test_author'"
+    action: allow
+    priority: 10

@@ -202,6 +202,39 @@ public class TeamRunnerTests
         Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("Draft and Bound only"));
     }
 
+    /// live2: the Implementer found the fault was in the test project, outside its writes, and
+    /// could only park. Broken tests go back to the TestAuthor instead; no human is needed.
+    [Fact]
+    public async Task The_Implementer_hands_broken_tests_back_to_the_TestAuthor_instead_of_parking()
+    {
+        const string fixture = "tests/Pricing.Data.Tests/fixture.txt";
+        const string problem = "status.sh needs tests/Pricing.Data.Tests/fixture.txt, which is outside my writes";
+        var model = new ScriptedChatClient(
+            Say("Approach: test first"),
+            Call("write_file", new { path = TestFile, content = $"test -f {NewFile} && test -f {fixture}\n" }),
+            Call("declare_done", new { summary = "status test" }), Say("done"),
+            // implementer: writes the code, finds the test can never pass
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("return_to_test_author", new { problem }), Say("handed back"),
+            // test author again
+            Call("write_file", new { path = fixture, content = "x\n" }),
+            Call("declare_done", new { summary = "added the fixture" }), Say("done"),
+            // implementer again: its code is still there
+            Call("declare_done", new { summary = "code unchanged" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Equal(0, model.Remaining);
+        Assert.Empty(h.Rows(LedgerKinds.NeedsDecision));
+        Assert.Contains(h.Rows(LedgerKinds.TaskEvent), e => e.Payload!.Contains("returned_to_test_author"));
+        Assert.Equal(2, h.Rows(LedgerKinds.Verify).Count(e => e.Stage == "red_run"));
+        Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains(problem));
+        var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
+        Assert.True(File.Exists(Path.Combine(integration, fixture)));
+    }
+
     private static IEnumerable<string> ToolResults(ScriptedChatClient model) =>
         model.Requests.SelectMany(r => r).SelectMany(m => m.Contents)
             .OfType<Microsoft.Extensions.AI.FunctionResultContent>()

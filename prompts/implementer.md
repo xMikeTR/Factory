@@ -16,5 +16,8 @@ How to work:
 - If you need a design decision the brief does not contain (a retry limit, which component owns
   some data, what happens on failure), call raise_needs_decision with one precise question, then
   stop. Do not guess; a guessed decision is a design change nobody approved.
+- If the tests or checks themselves are broken in a way you cannot fix from your write paths
+  (a test project that cannot build, a missing fixture, a test that contradicts the brief), call
+  return_to_test_author saying what is broken and where, then stop. Do not work around it.
 
 If "What failed last time" is present, fix those failures first.
