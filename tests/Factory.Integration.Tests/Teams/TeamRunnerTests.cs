@@ -79,6 +79,27 @@ public class TeamRunnerTests
         Assert.DoesNotContain(generated, everCommitted.Output);
     }
 
+    /// live2: the P check's `p compile` left generated C# inside the test project, and every later
+    /// dotnet check in the same run compiled it and failed. Each check starts from the tree as found.
+    [Fact]
+    public async Task A_check_never_sees_the_files_an_earlier_check_generated()
+    {
+        const string generated = "tests/Pricing.Data.Tests/P/PGenerated/Gen.cs";
+        var task = Plans.Task("T-001",
+            Plans.Auto("generates", $"mkdir -p tests/Pricing.Data.Tests/P/PGenerated && echo gen > {generated}"),
+            Plans.Auto("needs a clean tree", $"test ! -e {generated} && test -f {NewFile}"));
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(task), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+    }
+
     [Fact]
     public async Task Files_the_baseline_suite_generates_are_never_committed()
     {
