@@ -67,6 +67,9 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
             return null;
         }
 
+        if (await svc.Git.RestoreStashAsync(worktree, StashKey, ct)) // crashed during a red run or stash check
+            await svc.LogAsync(runId, "resume", LedgerKinds.Verify, outcome: "stash_restored", teamId: _teamId, taskId: _taskId, ct: ct);
+
         _approachNote = await LastApproachNoteAsync(ct);
         var answerUsed = false;
 
@@ -98,19 +101,35 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
                     break;
 
                 case TaskState.Blocked b:
-                    var nd = b.Item2;
+                    var nd = b.Item3;
                     return new TeamResult(_teamId, TeamStatus.Blocked,
                         new BlockedTask(_teamId, _taskId, nd.Question, nd.Source, nd.Elements.Select(e => e.Value).ToArray()));
 
                 case TaskState.Verifying v:
-                    var outcomes = await svc.Verify.RunTaskAsync(runId, _teamId, task, v.Item.VerifyAttempts, worktree, ct);
-                    state = await ApplyAsync(state, TaskEvent.NewVerifyCompleted(Core.ToList(outcomes)), ct);
+                    var attempt = v.Item1.VerifyAttempts;
+                    var green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct);
+                    var stashed = green.Count > 0 && green.All(o => o.ExitCode == 0)
+                        ? await RunWithImplStashedAsync(attempt, "stash_check", ct)
+                        : [];
+                    state = await ApplyAsync(state, TaskEvent.NewVerifyCompleted(Core.ToList(green), Core.ToList(stashed)), ct);
                     _lastVerifyFailed = !state.IsPassed;
-                    if (state.IsReady) _lastFailures = Briefs.Failures(outcomes);
+                    if (state is TaskState.Ready { Item2.IsTestAuthor: true })
+                        _lastFailures = "With the implementation stashed every test still passes, so the tests do not exercise the change: "
+                            + string.Join(", ", stashed.Select(o => o.Name));
+                    else if (state.IsReady) _lastFailures = Briefs.Failures(green);
+                    break;
+
+                case TaskState.Ready { Item2.IsTestAuthor: true } r:
+                    // Transitional (slice C2): the tests are expected on the branch already; C3 gives
+                    // the TestAuthor its own turns before this red run.
+                    var red = await RedRunAsync(r.Item1, ct);
+                    if (red.IsError)
+                        return new TeamResult(_teamId, TeamStatus.Failed, Failure: $"{_taskId}: {red.ErrorValue}");
+                    state = await ApplyAsync(state, TaskEvent.NewTestsAuthored(red.ResultValue), ct);
                     break;
 
                 case TaskState.Ready r:
-                    state = await NextTurnAsync(state, r.Item, ct);
+                    state = await NextTurnAsync(state, r.Item1, ct);
                     break;
 
                 default:
@@ -193,6 +212,23 @@ internal sealed class TaskLoop(FactoryServices svc, Handover handover, string ru
         _doneDeclared = signals.DoneSummary is not null && reverted.Count == 0;
         return await ApplyAsync(state, TaskEvent.TurnEnded, ct);
     }
+
+    /// The task's verify block with the implementation (changed paths under Writes) taken out.
+    /// Used before implementation (red run) and after a green run (stash check).
+    private async Task<List<VerifyOutcome>> RunWithImplStashedAsync(int attempt, string stage, CancellationToken ct)
+    {
+        var impl = (await svc.Git.ChangedPathsAsync(worktree, ct)).Where(p => task.Writes.Any(w => Core.Matches(w, p))).ToList();
+        await using (await svc.Git.StashImplAsync(worktree, impl, StashKey, ct))
+            return await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct, stage);
+    }
+
+    private async Task<Microsoft.FSharp.Core.FSharpResult<RedEvidence, string>> RedRunAsync(Progress progress, CancellationToken ct)
+    {
+        var outcomes = await RunWithImplStashedAsync(progress.VerifyAttempts, "red_run", ct);
+        return RedEvidence.Create(Core.ToList(outcomes), Verify.VerifyRunner.ClassifyRed(outcomes));
+    }
+
+    private string StashKey => $"{runId}/{_teamId}";
 
     private string Brief()
     {

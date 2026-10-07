@@ -101,7 +101,7 @@ public class S2WorkflowTests
         Assert.Equal("merged", result?.Status);
         Assert.Equal(0, model.Remaining);
         Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "drafted");       // plan reused, not redrafted
-        Assert.Single(h.Rows(LedgerKinds.Verify), e => e.TaskId == "T-001");          // verified once
+        Assert.Single(h.Rows(LedgerKinds.Verify), e => e.TaskId == "T-001" && e.Stage == "verify");          // verified once
         var events = h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001").ToList();
         Assert.True(Core.Replay(new Limits(8, 3), events.Select(e => e.Payload!)).IsPassed);
         Assert.Single(events, e => e.Outcome == "Passed");
