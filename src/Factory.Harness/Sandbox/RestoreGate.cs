@@ -65,6 +65,22 @@ public static partial class RestoreGate
         $"rc=0; for d in {string.Join(' ', directories.Select(d => $"'{d}'"))}; do "
         + $"(cd \"$d\" && npm ci --ignore-scripts --no-audit --no-fund --userconfig {NpmConfigFile}) || rc=1; done; exit $rc";
 
+    /// After the restore, offline: only the allow-listed packages run their install script. Names are validated by NpmPolicyFile.
+    public static string RebuildCommand(string directory, IReadOnlyList<string> packages) =>
+        $"cd '{directory}' && npm rebuild {string.Join(' ', packages.Select(p => $"'{p}'"))} --offline --userconfig {NpmConfigFile}";
+
+    /// Packages the lockfile says have an install script that `--ignore-scripts` skipped and the policy did not allow:
+    /// reported, so a build that needs one is a decision for the repo's owners, not a silent gap.
+    public static IReadOnlyList<string> SkippedInstallScripts(string lockfileJson, IReadOnlyList<string> allowed)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(lockfileJson);
+        if (!doc.RootElement.TryGetProperty("packages", out var packages)) return [];
+        return packages.EnumerateObject()
+            .Where(p => p.Value.TryGetProperty("hasInstallScript", out var h) && h.ValueKind == System.Text.Json.JsonValueKind.True)
+            .Select(p => p.Name[(p.Name.LastIndexOf("node_modules/", StringComparison.Ordinal) + "node_modules/".Length)..])
+            .Where(n => !allowed.Contains(n)).ToList();
+    }
+
     /// Every restore the plan needs, as one command for the restore window.
     public static string FullCommand(RestorePlan plan) =>
         string.Join(" && ", new[] { plan.Projects.Count > 0 ? "(" + Command(plan.Projects) + ")" : null, plan.NpmDirs.Count > 0 ? "(" + NpmCommand(plan.NpmDirs) + ")" : null }.OfType<string>());
