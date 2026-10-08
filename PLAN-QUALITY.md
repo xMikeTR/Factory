@@ -331,3 +331,9 @@ judge the integrated result against the baseline. A failure merges nothing and r
 - F# adapter: new project `Factory.Quality.FSharp` (FSharp.Compiler.Service 43.8.400 parse, syntax only), used by `QualityGate` for `.fs`.
   Decision taken: FCS over a token heuristic (accurate ranges and clauses; the cost is the dependency and the FSharp.Core 8.0.102 -> 8.0.400 bump,
   which FCS pins exactly). Cyclomatic walker covers the common SynExpr cases; unhandled expression kinds undercount rather than throw.
+
+### Equivalent-mutant declaration (done)
+TestAuthor tool `declare_equivalent(mutantId, reason)` (flagged widening: `IReviewer.ConfirmEquivalentsAsync`, tool `confirm_equivalents`).
+Claims are kept by file:line:mutator (tool ids are per run), judged once by the reviewer, confirmed ones are excluded via
+`Mutation.confirmedEquivalents`; rejected ones stay survivors and the brief says so. Ledger: `mutation equivalent_confirmed|equivalent_rejected`.
+Not measured: whether a live reviewer judges claims well (paid run).

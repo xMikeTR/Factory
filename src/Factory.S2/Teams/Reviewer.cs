@@ -6,6 +6,12 @@ namespace Factory.S2.Teams;
 /// task's brief. `Open` is what the previous round left blocking (empty on the first).
 public sealed record ReviewRequest(string RunId, string TeamId, string TaskId, string Worktree, string Brief, string Diff, int Round, IReadOnlyList<Finding> Open);
 
+/// One mutant the TestAuthor says no test can kill, and why.
+public sealed record EquivalenceClaim(Mutant Mutant, string Reason);
+
+/// What a reviewer is asked about equivalent mutants: each claim against the code under test.
+public sealed record EquivalenceRequest(string RunId, string TeamId, string TaskId, string Worktree, IReadOnlyList<EquivalenceClaim> Claims);
+
 /// A reviewer's answer: findings as submitted (not yet checked against the diff), or no usable review.
 public abstract record ReviewVerdict
 {
@@ -19,4 +25,7 @@ public interface IReviewer
 {
     Independence Independence { get; }
     Task<ReviewVerdict> ReviewAsync(ReviewRequest request, CancellationToken ct);
+    /// The ids of the claims the reviewer accepts as equivalent. A claim it does not accept, or a turn that
+    /// ends without an answer, is not confirmed.
+    Task<IReadOnlySet<string>> ConfirmEquivalentsAsync(EquivalenceRequest request, CancellationToken ct);
 }

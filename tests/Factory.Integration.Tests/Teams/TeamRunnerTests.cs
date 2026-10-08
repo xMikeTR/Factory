@@ -263,6 +263,54 @@ public class TeamRunnerTests
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("mutants of the code this task changed survived"));
     }
 
+    private static Microsoft.Extensions.AI.ChatResponse[] ClaimEquivalent(string id) =>
+    [
+        Call("declare_equivalent", new { mutantId = id, reason = "the comparison is on an unreachable branch" }),
+        Call("declare_done", new { summary = "claimed" }), Say("done"),
+        Call("declare_done", new { summary = "impl unchanged" }), Say("done"),
+    ];
+
+    [Fact]
+    public async Task A_survivor_the_TestAuthor_declared_equivalent_and_the_reviewer_confirmed_is_left_out_of_the_score()
+    {
+        var model = TestsThenImpl(ClaimEquivalent("m1"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(6, 3), qualityPolicy: MutationOn(QualityMode.Block));
+        h.Mutation.Then(Survivor(), Killed()).Then(Survivor(), Killed());
+        h.Reviewer.ThenConfirmEquivalent("m1");
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Equal("m1", h.Reviewer.EquivalenceRequests.Single().Claims.Single().Mutant.Id);
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "equivalent_confirmed");
+    }
+
+    [Fact]
+    public async Task A_declared_equivalent_the_reviewer_does_not_confirm_still_counts_as_a_survivor_and_goes_back_with_that_said()
+    {
+        var model = TestsThenImpl(ClaimEquivalent("m1"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(6, 3), qualityPolicy: MutationOn(QualityMode.Block));
+        h.Mutation.Then(Survivor(), Killed()).Then(Survivor(), Killed());
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.NotEqual(TeamStatus.Passed, result.Status);
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "equivalent_rejected");
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "blocked" && e.Payload!.Contains("reviewer did not accept it"));
+    }
+
+    [Fact]
+    public async Task Only_the_TestAuthor_may_declare_a_mutant_equivalent()
+    {
+        var policy = new Factory.Harness.RoleAllowListPolicy();
+        var none = new Dictionary<string, object?>();
+        Assert.True(policy.Evaluate(Factory.Harness.Roles.TestAuthor, "declare_equivalent", none).Allowed);
+        Assert.False(policy.Evaluate(Factory.Harness.Roles.Implementer, "declare_equivalent", none).Allowed);
+        Assert.False(policy.Evaluate(Factory.Harness.Roles.Reviewer, "declare_equivalent", none).Allowed);
+        Assert.True(policy.Evaluate(Factory.Harness.Roles.Reviewer, "confirm_equivalents", none).Allowed);
+        Assert.False(policy.Evaluate(Factory.Harness.Roles.TestAuthor, "confirm_equivalents", none).Allowed);
+    }
+
     [Fact]
     public async Task A_mutation_score_on_the_gate_passes()
     {

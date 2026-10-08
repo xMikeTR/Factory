@@ -430,8 +430,10 @@ internal sealed class TaskLoop(
         var workspace = Workspace(signals, sandbox, writable);
         var budget = new TurnBudget(exempt: ExemptFromCap);
         var agent = svc.Agents.Create(new AgentScope(runId, role, _teamId, _taskId), tier,
-            Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools() : workspace.ExecutorTools(), budget);
+            Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools() : role == Roles.TestAuthor ? workspace.TestAuthorTools() : workspace.ExecutorTools(), budget);
         var response = await agent.RunAsync(Brief(writable, await ContextPackAsync(ct)), cancellationToken: ct);
+        foreach (var (id, reason) in signals.DeclaredEquivalents)
+            if (_lastMutants.TryGetValue(id, out var claimed)) _claims[MutantKey(claimed)] = reason; // a mutant of the last run only
         // At the cap the turn counts as done: verify (or the red run) judges whatever is on the worktree.
         if (budget.Exhausted) signals.Capped = true;
         await LogTurnAsync("act", tier, response.Usage,
@@ -506,6 +508,28 @@ internal sealed class TaskLoop(
         return run.TimedOut ? null : run.Mutants.Count(m => m.Status.IsKilled || m.Status.IsTimeout);
     }
 
+    // Equivalence claims are kept by what the mutant is (file, line, mutator), not by the tool's id, which is per run.
+    private Dictionary<string, Mutant> _lastMutants = [];
+    private readonly Dictionary<string, string> _claims = [];
+    private readonly HashSet<string> _confirmed = [], _rejected = [];
+
+    private static string MutantKey(Mutant m) => $"{m.File}:{m.Line}:{m.Mutator}";
+
+    /// Claims on survivors of this run that no reviewer has judged yet go to the reviewer once; a claim is never asked twice.
+    private async Task JudgeClaimsAsync(IEnumerable<Mutant> mutants, CancellationToken ct)
+    {
+        var pending = mutants.Where(m => m.Status.IsSurvived || m.Status.IsNoCoverage)
+            .Where(m => _claims.ContainsKey(MutantKey(m)) && !_confirmed.Contains(MutantKey(m)) && !_rejected.Contains(MutantKey(m)))
+            .GroupBy(MutantKey).Select(g => g.First()).ToList();
+        if (pending.Count == 0) return;
+        var confirmed = await svc.Reviewer.ConfirmEquivalentsAsync(new EquivalenceRequest(runId, _teamId, _taskId, worktree,
+            pending.Select(m => new EquivalenceClaim(m, _claims[MutantKey(m)])).ToList()), ct);
+        foreach (var m in pending) (confirmed.Contains(m.Id) ? _confirmed : _rejected).Add(MutantKey(m));
+        await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, confirmed.Count > 0 ? "equivalent_confirmed" : "equivalent_rejected",
+            JsonSerializer.Serialize(new { confirmed = pending.Where(m => confirmed.Contains(m.Id)).Select(MutantKey), rejected = pending.Where(m => !confirmed.Contains(m.Id)).Select(MutantKey) }),
+            _teamId, _taskId, ct);
+    }
+
     /// Mutation testing of the lines the task changed. Report mode writes the ledger row only; block mode returns the
     /// survivors as a brief for the TestAuthor. A tool that timed out returns exit 124 (never evidence).
     private async Task<VerifyOutcome?> MutationOutcomeAsync(int attempt, CancellationToken ct)
@@ -517,19 +541,27 @@ internal sealed class TaskLoop(
         var run = await runner.RunAsync(worktree, ranges.Select(r => r.File).Distinct().ToList(), ct);
         var elapsed = (long)(DateTime.UtcNow - started).TotalMilliseconds;
         if (run.TimedOut) return new VerifyOutcome("mutation", 124, elapsed, "the mutation tool did not finish");
-        var violations = Mutation.check(policy.Thresholds, MapModule.Empty<string, double>(), SetModule.Empty<string>(), Core.ToList(ranges), Core.ToList(run.Mutants));
+        _lastMutants = run.Mutants.GroupBy(m => m.Id).ToDictionary(g => g.Key, g => g.First());
+        await JudgeClaimsAsync(run.Mutants, ct);
+        var declared = run.Mutants.Where(m => _claims.ContainsKey(MutantKey(m))).Select(m => m.Id).ToHashSet();
+        var confirmedIds = run.Mutants.Where(m => _confirmed.Contains(MutantKey(m))).Select(m => m.Id).ToHashSet();
+        var equivalents = Mutation.confirmedEquivalents(SetModule.OfSeq(declared), SetModule.OfSeq(confirmedIds));
+        var violations = Mutation.check(policy.Thresholds, MapModule.Empty<string, double>(), equivalents, Core.ToList(ranges), Core.ToList(run.Mutants));
         if (violations.IsEmpty)
         {
             if (policy.Mode == QualityMode.Report) await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, "clean", JsonSerializer.Serialize(new { attempt }), _teamId, _taskId, ct);
             return null;
         }
-        var lines = violations.SelectMany(v => v.Survivors.Select(m => $"- {m.File}:{m.Line} {m.Mutator} (file scored {v.Score:P0}, needs {v.Required:P0})")).ToList();
+        var lines = violations.SelectMany(v => v.Survivors.Select(m =>
+            $"- id={m.Id} {m.File}:{m.Line} {m.Mutator} (file scored {v.Score:P0}, needs {v.Required:P0})"
+            + (_rejected.Contains(MutantKey(m)) ? $" - you declared it equivalent and the reviewer did not accept it: {_claims[MutantKey(m)]}" : ""))).ToList();
         var block = policy.Mode == QualityMode.Block;
         await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, block ? "blocked" : "reported",
             JsonSerializer.Serialize(new { attempt, survivors = lines }), _teamId, _taskId, ct);
         return block ? new VerifyOutcome("mutation", 1, elapsed,
             "Your tests pass, but mutants of the code this task changed survived them, so they do not pin the behaviour. "
-            + "Strengthen the tests so each of these changes would make one fail:\n" + string.Join("\n", lines)) : null;
+            + "Strengthen the tests so each of these changes would make one fail. If a change truly cannot be observed by any test, "
+            + "declare it with declare_equivalent (a reviewer must accept it):\n" + string.Join("\n", lines)) : null;
     }
 
     /// A check that timed out (exit 124 after the gate's isolated re-run) says nothing about the code, so
