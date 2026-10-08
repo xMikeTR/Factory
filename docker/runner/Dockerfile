@@ -30,6 +30,12 @@ RUN dotnet tool install P --tool-path /opt/dotnet-tools ${P_VERSION:+--version $
  && chmod -R a+rX /opt/dotnet-tools \
  && p --version
 
+# Mutation testing for C# (strand 4). Pinned: 5.0.0 needs a newer SDK than 9. Runs offline in verify; baked in.
+ARG STRYKER_VERSION=4.16.0
+RUN dotnet tool install dotnet-stryker --tool-path /opt/dotnet-tools ${STRYKER_VERSION:+--version $STRYKER_VERSION} \
+ && chmod -R a+rX /opt/dotnet-tools \
+ && dotnet-stryker --help >/dev/null
+
 # `p compile` emits net8.0 projects. Without the .NET 8 packs the build fetches them from
 # nuget.org, which verify commands cannot reach (--network none). Bake them in.
 COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.NETCore.App.Ref/ /usr/share/dotnet/packs/Microsoft.NETCore.App.Ref/
@@ -43,6 +49,19 @@ RUN mkdir -p /etc/factory && printf '%s\n' '<?xml version="1.0" encoding="utf-8"
       '    <clear />' '    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />' \
       '  </packageSources>' '</configuration>' > /etc/factory/nuget.config \
  && chmod a+r /etc/factory/nuget.config
+
+# Node for TypeScript targets (strand 5): `npm ci --ignore-scripts` runs in the restore window only, against
+# the registry fixed below (RestoreGate passes --userconfig); eslint measures complexity; Playwright's browsers
+# are baked in at one version, so QA runs offline and a repo's @playwright/test must match it.
+COPY --from=node:22-bookworm-slim /usr/local/ /usr/local/
+ARG PLAYWRIGHT_VERSION=1.49.1
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN npm install -g eslint@9 playwright@${PLAYWRIGHT_VERSION} \
+ && npx --no-install playwright install --with-deps chromium \
+ && chmod -R a+rX /opt/playwright \
+ && rm -rf /var/lib/apt/lists/*
+RUN printf '%s\n' 'registry=https://registry.npmjs.org/' 'ignore-scripts=true' 'audit=false' 'fund=false' > /etc/factory/npmrc \
+ && chmod a+r /etc/factory/npmrc
 
 COPY --from=pobserve /PObserve.jar /opt/pobserve/PObserve.jar
 COPY --from=pobserve-parser src/ /opt/pobserve/parser/
