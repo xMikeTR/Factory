@@ -100,4 +100,34 @@ public class AgentQaRunnerTests
         Assert.Equal(QaOutcome.QaPassed, test.OnIntegrated);
         Assert.Equal(1, stopped);
     }
+
+    [Fact]
+    public async Task A_follow_up_run_measures_the_tests_the_author_left_without_asking_the_author_again()
+    {
+        var model = new ScriptedChatClient(
+            Call("write_file", new { path = "tests/qa/status.sh", content = "test -f src/Pricing.Data/QuoteStatus.cs\n" }),
+            Call("submit_qa_tests", new { tests = new[] { Test("status", "new", "sh tests/qa/status.sh") } }), Say("done"));
+        var (h, runner, integration) = await SetUpAsync(model);
+        using var _ = h;
+        await runner.RunAsync(TeamHarness.RunId, integration, default);
+        var requests = model.Requests.Count;
+
+        var again = await runner.RerunAsync(TeamHarness.RunId, integration, default);
+
+        Assert.Equal(requests, model.Requests.Count);
+        Assert.Equal([Req], again.Requirements);
+        Assert.Equal([("status", QaKind.New, QaOutcome.QaFailed, QaOutcome.QaPassed)], again.Tests.Select(t => (t.Id, t.Kind, t.OnBaseline, t.OnIntegrated)));
+    }
+
+    [Fact]
+    public async Task A_follow_up_run_with_no_manifest_has_nothing_to_measure()
+    {
+        var (h, runner, integration) = await SetUpAsync(new ScriptedChatClient());
+        using var _ = h;
+
+        var again = await runner.RerunAsync(TeamHarness.RunId, integration, default);
+
+        Assert.Empty(again.Tests);
+        Assert.False(again.TimedOut);
+    }
 }
