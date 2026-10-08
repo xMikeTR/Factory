@@ -16,7 +16,8 @@ public static class Briefs
 
     public static string Task(
         Handover handover, PlannedTask task, IEnumerable<PathPattern> writable,
-        string? approachNote, string? lastFailures, string? resolvedDecision)
+        string? approachNote, string? lastFailures, string? resolvedDecision,
+        IReadOnlyList<PackFile>? context = null)
     {
         var elements = handover.Elements.Where(e => task.Elements.Contains(e.Id)).ToList();
         var decisions = handover.Decisions
@@ -59,6 +60,20 @@ public static class Briefs
                 case VerifyEntry.Manual { Item: var m }:
                     sb.AppendLine($"- {m.Name} [manual, reviewed at merge]: {m.Instructions}");
                     break;
+            }
+        }
+
+        if (context is { Count: > 0 })
+        {
+            sb.AppendLine().AppendLine("## Context")
+              .AppendLine("Current contents of the files you are most likely to need. You do not have to read them again.");
+            foreach (var f in context)
+            {
+                var why = f.Truncated ? "truncated to fit the context budget"
+                    : f.Source is ContextSource.Nominated n ? n.reason
+                    : f.Source.IsTaskWritten ? "written by this task"
+                    : null;
+                sb.AppendLine().AppendLine($"### `{f.Path}`{(why is null ? "" : $" ({why})")}").AppendLine("```").AppendLine(f.Text).AppendLine("```");
             }
         }
 
