@@ -311,6 +311,45 @@ public class TeamRunnerTests
         Assert.False(policy.Evaluate(Factory.Harness.Roles.TestAuthor, "confirm_equivalents", none).Allowed);
     }
 
+    private const string Existing = "src/Pricing.Data/Quote.cs";
+    private static Mutant OnExisting(string id, MutantStatus status) => new(id, Existing, 2, "Equality", status);
+
+    /// The implementation edits a file the baseline already has, so the baseline can be measured.
+    private static ScriptedChatClient EditsExisting(params Microsoft.Extensions.AI.ChatResponse[] more) => new([
+        Say("Approach: test first"),
+        Call("write_file", new { path = TestFile, content = $"grep -q more {Existing}\n" }),
+        Call("declare_done", new { summary = "tests" }), Say("done"),
+        Call("write_file", new { path = Existing, content = "// quote\n// more\n" }),
+        Call("declare_done", new { summary = "impl" }), Say("done"),
+        .. more]);
+
+    [Fact]
+    public async Task A_file_that_already_scored_lower_on_the_baseline_is_held_to_that_score_not_the_threshold()
+    {
+        using var h = await TeamHarness.CreateAsync(EditsExisting(), new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Block));
+        h.Mutation.Then(OnExisting("s", MutantStatus.Survived), OnExisting("k", MutantStatus.Killed)) // the task: 50% < 80%
+            .Then(OnExisting("b1", MutantStatus.Survived), OnExisting("b2", MutantStatus.Survived), OnExisting("b3", MutantStatus.Killed)); // baseline 33%: 50% is no worse
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Equal(2, h.Mutation.Asked.Count);
+        Assert.NotEqual(h.Mutation.Worktrees[0], h.Mutation.Worktrees[1]);
+        Assert.Equal([Existing], h.Mutation.Asked[1]);
+    }
+
+    [Fact]
+    public async Task A_file_that_scored_higher_on_the_baseline_still_needs_only_the_threshold()
+    {
+        using var h = await TeamHarness.CreateAsync(EditsExisting(Say("I cannot strengthen these")), new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Block));
+        h.Mutation.Then(OnExisting("s", MutantStatus.Survived), OnExisting("k", MutantStatus.Killed))
+            .Then(OnExisting("b1", MutantStatus.Killed), OnExisting("b2", MutantStatus.Killed)); // baseline 100%; required is min(80%, 100%)
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.NotEqual(TeamStatus.Passed, result.Status);
+    }
+
     [Fact]
     public async Task A_mutation_score_on_the_gate_passes()
     {
