@@ -7,8 +7,8 @@ namespace Factory.Integration.Tests.Sandbox;
 /// CPU contention makes checks time out; heavy commands are serialised and a timeout is never evidence.
 public class HeavyGateTests
 {
-    /// Runs `script` per call: how long it holds the slot and whether it reports a timeout.
-    private sealed class FakeSandbox(Func<int, (TimeSpan Hold, bool TimedOut)> script) : ICommandSandbox
+    /// Runs `script` per call: how long it holds the slot and whether it reports a timeout (or, with `exit`, a plain failure).
+    private sealed class FakeSandbox(Func<int, (TimeSpan Hold, bool TimedOut)> script, Func<int, int>? exit = null) : ICommandSandbox
     {
         private int _calls, _running, _peak;
         public int Calls => _calls;
@@ -26,7 +26,7 @@ public class HeavyGateTests
             var (hold, timedOut) = script(call);
             await Task.Delay(hold, ct);
             Interlocked.Decrement(ref _running);
-            return new ProcessResult(timedOut ? 124 : 0, "", hold, timedOut);
+            return new ProcessResult(timedOut ? 124 : exit?.Invoke(call) ?? 0, "", hold, timedOut);
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -89,5 +89,43 @@ public class HeavyGateTests
 
         Assert.Equal(4, inner.Calls);
         Assert.Equal(1, inner.RunningWith[4]); // the isolated re-run started with nothing else running
+    }
+
+    private static readonly Func<int, (TimeSpan, bool)> Quick = _ => (TimeSpan.FromMilliseconds(5), false);
+
+    [Fact]
+    public async Task A_failure_of_a_command_marked_flaky_is_re_run_alone_and_the_second_answer_stands()
+    {
+        var inner = new FakeSandbox(Quick, exit: call => call == 1 ? 1 : 0);
+        var gated = await new GatedSandboxFactory(new FakeFactory(inner), new HeavyGate(2), isFlaky: c => c.Contains("flaky")).ForTeamAsync("t", ".", default);
+
+        var result = await gated.RunAsync("dotnet test flaky", ".", TimeSpan.FromSeconds(5), new Dictionary<string, string>(), default);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(2, inner.Calls);
+    }
+
+    [Fact]
+    public async Task A_failure_of_a_command_not_marked_flaky_is_final()
+    {
+        var inner = new FakeSandbox(Quick, exit: _ => 1);
+        var gated = await new GatedSandboxFactory(new FakeFactory(inner), new HeavyGate(2), isFlaky: c => c.Contains("flaky")).ForTeamAsync("t", ".", default);
+
+        var result = await gated.RunAsync("dotnet test", ".", TimeSpan.FromSeconds(5), new Dictionary<string, string>(), default);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(1, inner.Calls);
+    }
+
+    [Fact]
+    public async Task A_flaky_command_that_fails_twice_fails_and_is_not_run_a_third_time()
+    {
+        var inner = new FakeSandbox(Quick, exit: _ => 1);
+        var gated = await new GatedSandboxFactory(new FakeFactory(inner), new HeavyGate(2), isFlaky: _ => true).ForTeamAsync("t", ".", default);
+
+        var result = await gated.RunAsync("x", ".", TimeSpan.FromSeconds(5), new Dictionary<string, string>(), default);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(2, inner.Calls);
     }
 }

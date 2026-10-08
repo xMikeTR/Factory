@@ -43,13 +43,14 @@ public sealed class HeavyGate(int slots)
 
 /// Every command of every sandbox it hands out goes through the gate. A command that times out is
 /// never taken as evidence: it is re-run once with the machine to itself, and only a second
-/// timeout is reported (as one, exit 124).
-public sealed class GatedSandboxFactory(ISandboxFactory inner, HeavyGate gate) : ISandboxFactory
+/// timeout is reported (as one, exit 124). A command the repo's policy marks flaky (`quality.flaky`) gets the same single
+/// isolated re-run after a plain failure; the second answer stands, and `onFlakyRetry` is told so the retry is never hidden.
+public sealed class GatedSandboxFactory(ISandboxFactory inner, HeavyGate gate, Func<string, bool>? isFlaky = null, Action<string>? onFlakyRetry = null) : ISandboxFactory
 {
     public async Task<ICommandSandbox> ForTeamAsync(string teamId, string worktree, CancellationToken ct) =>
-        new GatedSandbox(await inner.ForTeamAsync(teamId, worktree, ct), gate);
+        new GatedSandbox(await inner.ForTeamAsync(teamId, worktree, ct), gate, isFlaky, onFlakyRetry);
 
-    private sealed class GatedSandbox(ICommandSandbox sandbox, HeavyGate gate) : ICommandSandbox
+    private sealed class GatedSandbox(ICommandSandbox sandbox, HeavyGate gate, Func<string, bool>? isFlaky, Action<string>? onFlakyRetry) : ICommandSandbox
     {
         public string Kind => sandbox.Kind;
         public IReadOnlyList<string>? RestoreRefusal => sandbox.RestoreRefusal;
@@ -60,7 +61,9 @@ public sealed class GatedSandboxFactory(ISandboxFactory inner, HeavyGate gate) :
             ProcessResult result;
             await using (await gate.EnterAsync(ct))
                 result = await sandbox.RunAsync(command, workdir, timeout, env, ct);
-            if (!result.TimedOut) return result;
+            var retry = result.TimedOut || (result.ExitCode != 0 && isFlaky?.Invoke(command) == true);
+            if (!retry) return result;
+            if (!result.TimedOut) onFlakyRetry?.Invoke(command);
 
             await using (await gate.EnterExclusiveAsync(ct))
                 return await sandbox.RunAsync(command, workdir, timeout, env, ct);
