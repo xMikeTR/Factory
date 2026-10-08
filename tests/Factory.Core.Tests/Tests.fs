@@ -409,6 +409,17 @@ let tests: (string * (unit -> unit)) list =
           let isNew = Fitness.newSince [ v "api" "db" ] [ v "api" "db"; v "rating" "db" ] |> List.map (fun x -> x.FromElement.Value)
           equal [ "rating" ] isNew "api->db is debt, rating->db is new"
 
+      "fitness: a hand-written rule forbids edges by path and only new crossings are the task's", fun () ->
+          let rule = { From = PathPattern.createOrFail "src/Domain/**"; To = PathPattern.createOrFail "src/Infra/**"; Why = "domain must not know infrastructure" }
+          let edge a b = { Source = a; Target = b }
+          let hit = edge "src/Domain/D.csproj" "src/Infra/I.csproj"
+          let vs = Fitness.forbidden [ rule ]
+          equal [ hit ] (vs [ hit ] |> List.map (fun v -> v.Edge)) "matches both ends"
+          equal [] (vs [ edge "src/Infra/I.csproj" "src/Domain/D.csproj" ]) "direction matters"
+          equal [] (vs [ edge "src/Domain/D.csproj" "src/Shared/S.csproj" ]) "other target"
+          equal [] (Fitness.newRuleViolationsSince (vs [ hit ]) (vs [ hit ])) "already crossed on the baseline is debt"
+          equal 1 (Fitness.newRuleViolationsSince [] (vs [ hit ]) |> List.length) "new"
+
       // ---------- merge ----------
       "merge: high-risk element needs two approvals and a manual check is a pending block", fun () ->
           let d = Dispatcher.dispatch validated.Value

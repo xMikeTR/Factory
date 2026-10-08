@@ -343,3 +343,8 @@ When the gate would fail, the violating files are mutated on a throwaway checkou
 (`GitWorkspace.BaselineCheckoutAsync`, removed after) and `Mutation.check` gets whole-file baseline scores, so a file that was
 already weaker is held to that score. Measured once per file per task; a file the baseline lacks has no entry; a baseline timeout
 parks as an environment problem. Cost: one extra Stryker run per failing check. Not verified with real Stryker in Docker.
+
+### Hand-written fitness rules (done; decision taken by me, reversible)
+Format chosen without a user answer: `quality.forbid: [{from, to, why}]` in the protected `.factory/policy.yaml` (path globs, same trust
+rule as the rest of `quality:`). `Fitness.forbidden` + `newRuleViolationsSince` (ratchet), `QualityGate.ForbiddenAsync` (csproj references
+only, no using-level edges), reported with the rule's `why` in the same brief as the model-derived fitness findings.

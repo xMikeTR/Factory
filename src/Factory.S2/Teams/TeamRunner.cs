@@ -693,10 +693,13 @@ internal sealed class TaskLoop(
     [
         .. (await QualityGate.EvaluateAsync(svc.Git, worktree, runId, policy.Thresholds, ct, svc.Sandboxes, policy.Coverage)).Select(QualityLine),
         .. (await QualityGate.FitnessAsync(svc.Git, worktree, runId, handover, ct)).Select(FitnessLine),
+        .. (await QualityGate.ForbiddenAsync(svc.Git, worktree, runId, policy.Forbid, ct)).Select(RuleLine),
     ];
 
     private static string FitnessLine(FitnessViolation v) =>
         $"- {v.Edge.Source} references {v.Edge.Target}: {v.FromElement.Value} may not depend on {v.ToElement.Value} (no such relationship in the model)";
+
+    private static string RuleLine(RuleViolation v) => $"- {v.Edge.Source} references {v.Edge.Target}: forbidden by the repo's rules ({v.Rule.Why})";
 
     private static string QualityLine(QualityViolation v) => $"- {v.Function.File}:{v.Function.Line} {v.Function.Name}: {v.Measure} {v.Value:0.#} "
         + (v.Baseline is { } b ? $"(was {b:0.#}; touched code must not get worse)" : $"(limit {v.Limit:0.#} for new code)");
