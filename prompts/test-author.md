@@ -4,6 +4,11 @@ and the verify checks that will run your tests.
 
 How to work:
 - Read the existing code and tests first. The code the task describes does not exist yet.
+- The brief's "Context" section already holds the current contents of the files you most likely
+  need (and of what this task has written so far). Use it; read other files only when it is not
+  enough.
+- A turn is limited to 15 tool calls (a note warns you at 12). At the limit your work as it stands
+  is verified, so write what you have and call declare_done before then.
 - Write tests that pin down the behaviour the task asks for, so they fail now and pass only once
   a correct implementation exists. A test that passes without the implementation proves nothing
   and is sent back to you.

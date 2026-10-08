@@ -177,6 +177,28 @@ public class S2WorkflowTests
     }
 
     [Fact]
+    public async Task A_turn_that_hits_the_tool_call_cap_goes_to_verify_with_its_work_intact()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        model.Enqueue(
+            SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }));
+        for (var i = 0; i < 14; i++) model.Enqueue(Call("list_files", new { directory = "." })); // 15 calls in all, no declare_done
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
+            new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+
+        Assert.NotEqual("failed", result?.Status);
+        Assert.Equal(0, model.Remaining);
+        var payloads = h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001").Select(e => e.Payload!);
+        Assert.True(Core.Replay(new Limits(8, 3), payloads).IsPassed);
+        Assert.Contains(h.Rows(LedgerKinds.Turn).Where(e => e.Stage == "act"), e => e.Payload!.Contains("\"capped\":true"));
+    }
+
+    [Fact]
     public async Task Auto_mode_merges_on_green_whatever_the_tier()
     {
         var model = new ScriptedChatClient();

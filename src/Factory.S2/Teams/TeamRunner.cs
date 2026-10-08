@@ -271,9 +271,12 @@ internal sealed class TaskLoop(
             return await ApplyAsync(state, TaskEvent.NewReturnedToTestAuthor(problem), ct);
         }
 
-        _doneDeclared = signals.DoneSummary is not null && reverted.Count == 0;
+        _doneDeclared = (signals.DoneSummary is not null || signals.Capped) && reverted.Count == 0;
         return await ApplyAsync(state, TaskEvent.TurnEnded, ct);
     }
+
+    /// Feedback tools do not count against a turn's tool-call cap.
+    private static readonly IReadOnlySet<string> ExemptFromCap = new HashSet<string> { "check_quality" };
 
     private static readonly FSharpList<DecisionOption> NoOptions = FSharpList<DecisionOption>.Empty;
 
@@ -284,11 +287,14 @@ internal sealed class TaskLoop(
     {
         await using var sandbox = await svc.Sandboxes.ForTeamAsync(_teamId, worktree, ct);
         var workspace = Workspace(signals, sandbox, writable);
+        var budget = new TurnBudget(exempt: ExemptFromCap);
         var agent = svc.Agents.Create(new AgentScope(runId, role, _teamId, _taskId), tier,
-            Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools() : workspace.ExecutorTools());
+            Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools() : workspace.ExecutorTools(), budget);
         var response = await agent.RunAsync(Brief(writable, await ContextPackAsync(ct)), cancellationToken: ct);
+        // At the cap the turn counts as done: verify (or the red run) judges whatever is on the worktree.
+        if (budget.Exhausted) signals.Capped = true;
         await LogTurnAsync("act", tier, response.Usage,
-            new { role, files = signals.FilesWritten, done = signals.DoneSummary, needs_decision = signals.NeedsDecision?.Question, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
+            new { role, files = signals.FilesWritten, done = signals.DoneSummary, capped = signals.Capped, needs_decision = signals.NeedsDecision?.Question, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
     }
 
     /// The TestAuthor declared done: run its tests without the implementation. They must fail;
