@@ -50,6 +50,12 @@ public class DesigncHandoverReaderTests
 
         Assert.Equal(["registry/**", ".github/**", "scripts/verify/**"], h.ProtectedPaths.Select(p => p.Value));
         Assert.Equal(["eCommitted"], h.EventVocabulary);
+
+        // Only relationships between elements that own code are kept (the person and the external vendor do not).
+        var rels = h.Relationships.Select(r => (r.From.Value, r.To.Value)).ToList();
+        Assert.Contains(("Pricing Platform/Pricing API", "Pricing Platform/Rating Engine"), rels);
+        Assert.Contains(("Pricing Platform/Referral Worker", "Pricing Platform/Quotes DB"), rels);
+        Assert.DoesNotContain(rels, r => r.Item1 == "Underwriter" || r.Item2 == "Cat Model Vendor");
     }
 
     [Fact]

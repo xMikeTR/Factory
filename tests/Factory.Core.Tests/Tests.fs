@@ -631,6 +631,12 @@ let tests: (string * (unit -> unit)) list =
           match Json.parseHandover (Json.writeHandover handover) with
           | Ok h -> equal handover h "round trip"
           | Error es -> failwithf "%A" es
+      "json: relationships round-trip, and a handover frozen before they existed has none", fun () ->
+          let rel = { From = ElementId "Pricing Platform/Pricing API"; To = ElementId "Pricing Platform/Rating Engine" }
+          match Json.parseHandover (Json.writeHandover { handover with Relationships = [ rel ] }) with
+          | Ok h -> equal [ rel ] h.Relationships "round trip"
+          | Error es -> failwithf "%A" es
+          equal [] handover.Relationships "the example predates relationships"
       "json: dispatch serialises", fun () ->
           let text = Json.writeDispatch (Dispatcher.dispatch validated.Value)
           check (text.Contains "team-T-001") text ]
