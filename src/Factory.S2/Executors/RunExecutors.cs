@@ -4,6 +4,7 @@ using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Registry;
 using Factory.S2.Git;
+using Factory.S2.Quality;
 using Factory.S2.Teams;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.FSharp.Collections;
@@ -163,10 +164,27 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
                 payload: JsonSerializer.Serialize(new { reason = $"registry not found at {s.RegistryPath}" }), ct: cancellationToken);
 
         var failed = outcomes.Where(o => o.ExitCode != 0).ToList();
-        object next = failed.Count == 0
-            ? new IntegrationVerified(msg.RunId)
-            : new RunFinished(msg.RunId, "integration_failed", Briefs.Failures(failed));
+        object next = failed.Count > 0
+            ? new RunFinished(msg.RunId, "integration_failed", Briefs.Failures(failed))
+            : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);
         await context.SendMessageAsync(next, cancellationToken: cancellationToken);
+    }
+
+    /// Black-box QA over the integrated result. Null means it may merge (no QA configured, or nothing found). A QA
+    /// that never finished is no evidence either way, so it ends the run as an environment problem, not as a pass.
+    private async Task<RunFinished?> QaAsync(string runId, string integration, CancellationToken ct)
+    {
+        if (svc.Qa is not { } qa) return null;
+        var run = await qa.RunAsync(runId, integration, ct);
+        if (run.TimedOut)
+        {
+            await svc.LogAsync(runId, "qa", LedgerKinds.Verify, "timeout", ct: ct);
+            return new RunFinished(runId, "qa_unrunnable", "QA did not finish (environment or tests timed out), so it says nothing about the integrated result.");
+        }
+        var findings = Qa.judge(Core.ToList(run.Requirements), Core.ToList(run.Tests));
+        await svc.LogAsync(runId, "qa", LedgerKinds.Verify, findings.IsEmpty ? "passed" : "failed",
+            JsonSerializer.Serialize(new { requirements = run.Requirements, tests = run.Tests.Count, findings = findings.Select(f => f.ToString()) }), ct: ct);
+        return findings.IsEmpty ? null : new RunFinished(runId, "qa_failed", QaGate.Brief(findings));
     }
 }
 

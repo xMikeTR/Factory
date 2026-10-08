@@ -4,6 +4,7 @@ using Factory.Core;
 using Factory.Harness;
 using Factory.Integration.Tests.Support;
 using Factory.S2;
+using Factory.S2.Quality;
 using Xunit;
 using static Factory.Integration.Tests.Support.ScriptedChatClient;
 
@@ -295,6 +296,57 @@ public class S2WorkflowTests
         using var payload = JsonDocument.Parse(row.Payload!);
         Assert.True(payload.RootElement.GetProperty("single_operator").GetBoolean());
         Assert.Equal(["mike"], payload.RootElement.GetProperty("by").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    private static void RunScript(ScriptedChatClient model, Handover h) => model.Enqueue(
+        SubmitPlan(PlanFor(h)), Say("submitted"),
+        Say("Approach: add QuoteStatus.cs"),
+        Call("declare_done", new { summary = "test already on main" }), Say("done"),
+        Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+        Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+
+    private static QaTest QaT(string id, QaKind kind, QaOutcome baseline, QaOutcome integrated) => new(id, "R1", kind, baseline, integrated);
+
+    [Fact]
+    public async Task A_QA_escape_ends_the_run_unmerged_with_the_regression_named()
+    {
+        var model = new ScriptedChatClient();
+        var qa = new ScriptedQaRunner(new QaRun(["R1"], [QaT("n", QaKind.New, QaOutcome.QaFailed, QaOutcome.QaPassed), QaT("c", QaKind.Characterisation, QaOutcome.QaPassed, QaOutcome.QaFailed)], false));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qa: qa);
+        RunScript(model, h.Handover);
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+
+        Assert.Equal("qa_failed", result?.Status);
+        Assert.Contains("ESCAPE c", result?.Detail);
+        Assert.Single(qa.Asked);
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "qa" && e.Outcome == "failed");
+    }
+
+    [Fact]
+    public async Task A_QA_run_that_never_finished_is_not_a_pass()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qa: new ScriptedQaRunner(new QaRun([], [], true)));
+        RunScript(model, h.Handover);
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+
+        Assert.Equal("qa_unrunnable", result?.Status);
+    }
+
+    [Fact]
+    public async Task A_clean_QA_judgement_lets_the_run_reach_the_merge()
+    {
+        var model = new ScriptedChatClient();
+        var qa = new ScriptedQaRunner(new QaRun(["R1"], [QaT("n", QaKind.New, QaOutcome.QaFailed, QaOutcome.QaPassed)], false));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qa: qa);
+        RunScript(model, h.Handover);
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+
+        Assert.NotEqual("qa_failed", result?.Status);
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "qa" && e.Outcome == "passed");
     }
 
     [Fact]
