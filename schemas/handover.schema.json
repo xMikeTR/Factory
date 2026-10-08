@@ -46,6 +46,15 @@
       }
     },
     "protectedPaths": { "type": "array", "items": { "type": "string" } },
-    "eventVocabulary": { "type": "array", "items": { "type": "string" } }
+    "eventVocabulary": { "type": "array", "items": { "type": "string" } },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to"],
+        "additionalProperties": false,
+        "properties": { "from": { "type": "string" }, "to": { "type": "string" } }
+      }
+    }
   }
 }

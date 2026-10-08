@@ -6,6 +6,7 @@
 > architecture aggregation.
 > Last updated: 2026-10-08 — CPU gate + timeout rule (strand 3.1): `HeavyGate`/`GatedSandboxFactory` wrap every sandbox;
 > a timed-out check is never evidence (`Verifying + NeedsDecisionRaised -> Blocked`, parked as "environment").
+> Also: `Handover.Relationships` (modelled dependencies; old handovers have none) and fitness (3.5).
 > Also: quality ratchet for C# (strand 3.2/3.3): `Core/Quality.fs`, `S2/Quality/{CSharpMetrics,Cobertura,QualityGate}`, `QualityPolicyFile`.
 > Previously 2026-10-08 — reviewer + provider seam (strand 2 of PLAN-QUALITY.md): the review is the fourth gate
 > (`Reviewing` state, `Review.fs`, `IReviewer`/`AgentReviewer` on a reviewer pool apart from the implementer's,
@@ -100,6 +101,8 @@ C4Container
 | `Factory.Core/Dispatcher.fs` | Overlapping writes -> teams; team DAG -> waves | `Team`, `Wave`, `DispatchPlan` | Merge, Json, Interop, S2 | — |
 | `Factory.Core/TaskState.fs` | Task lifecycle, budgets, phases (TestAuthor/Implementer); `Passed` needs three-gate evidence; `replay` | `TaskState`, `TaskEvent`, `RedEvidence`, `VerifiedEvidence`, `Limits` | Json, Interop, RegistryLedgerProjector, TeamRunner | — |
 | `Factory.Core/Regression.fs` | Pass-to-pass: baseline-passing tests that no longer pass | `TestResult` | Interop, VerifyRunner | — |
+| `Factory.Core/Quality.fs` | Neutral per-function metrics, CRAP, the ratchet (new code meets thresholds, touched code no worse) | `FunctionMetrics`, `QualityThresholds`, `ChangedRange`, `QualityViolation`, `Quality` | TaskLoop, QualityGate | — |
+| `Factory.Core/Fitness.fs` | Code edges between elements must be modelled relationships; baseline element pairs are debt | `CodeEdge`, `FitnessViolation`, `Fitness` | QualityGate | — |
 | `Factory.Core/HandoverClosure.fs` | Handover outcome: delivered only when merged and every decision check passed | `HandoverOutcome` | Interop, RegistryLedgerProjector | — |
 | `Factory.Core/Regeneration.fs` | Re-frozen handover vs plan: changed decisions -> tasks to re-run | `Regeneration` | Interop, S2 (Dispatcher, TeamRunner) | — |
 | `Factory.Core/Merge.fs` | Merge tier (max over rules), enforcement (auto/tiered), hard blocks | `MergeTier`, `MergePolicy`, `MergeEnforcement`, `MergeBlock`, `MergeVerdict` | Interop, MergePolicyFile, MergeExecutor | — |
@@ -125,6 +128,7 @@ C4Container
 | `Factory.S2/Teams/TaskRerun.cs` | k independent attempts at one task: pass rate, turns, tokens | `TaskRerun`, `RerunReport` | Program (`rerun`) | — |
 | `Factory.S2/Teams/Briefs.cs` | Per-turn briefs (incl. the PObserve logging contract); prompts from `prompts/*.md` | `Briefs` (`Task` takes the context pack) | TaskLoop, Planner | — |
 | `Factory.S2/Verify/*` | Verify entries in the sandbox, each from the tree as found, cleanup always, JUnit parsing, baseline/regression | `VerifyRunner`, `VerifyOutcome`, `JUnit` | TaskLoop, IntegrationVerify | Sandbox, GitWorkspace |
+| `Factory.S2/Quality/*` | C# adapters (Roslyn syntax metrics, Cobertura join, csproj edges) and the task-diff gate; policy from `.factory/policy.yaml` `quality:` (`QualityPolicyFile`) | `CSharpMetrics`, `Cobertura`, `CsprojEdges`, `QualityGate` | TaskLoop (`QualityOutcomeAsync`, `check_quality`) | GitWorkspace, Roslyn |
 | `Factory.S2/Git/GitWorkspace.cs` | Integration branch, worktree per team, stash, leave-as-found, idempotent merges | `GitWorkspace` | TeamRunner, TaskRerun, VerifyRunner, executors | git |
 | `Factory.S2/Integrations.cs` | PRs (gh / dry-run), approval comments, human channel | `IPullRequests`, `IApprovalComments`, `GhCliPullRequests`, `IHumanChannel` | MergeExecutor, WorkflowHost, Program | GitHub (gh CLI) |
 | `Factory.S2/HandoverInput.cs` | `--handover` file or Designc dir -> frozen JSON | `HandoverInput` | Program | Registry |
