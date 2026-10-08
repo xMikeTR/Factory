@@ -4,7 +4,10 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-08 — context cut (strand 1 of PLAN-QUALITY.md): `ContextPack` (task-planner nominations
+> Last updated: 2026-10-08 — reviewer + provider seam (strand 2 of PLAN-QUALITY.md): the review is the fourth gate
+> (`Reviewing` state, `Review.fs`, `IReviewer`/`AgentReviewer` on a reviewer pool apart from the implementer's,
+> `ModelGateways`, independence stamped in the ledger and the PR body).
+> Previously 2026-10-08 — context cut (strand 1 of PLAN-QUALITY.md): `ContextPack` (task-planner nominations
 > via `submit_approach` + deterministic defaults, frozen per task, refreshed each turn), `TurnBudget` (15 tool
 > calls per acting turn, then verify), `ToolResultTrimmer` (older tool results stubbed).
 > Previously 2026-10-07 — gated restore window: `RestoreGate` restores every project on disk (live5:
@@ -89,9 +92,10 @@ C4Container
 | `Factory.Core/ProjectFileChange.fs` | Allow-list for changes to files `dotnet restore` reads (project files, Directory.Packages.props; nuget.config/global.json/.props/.targets refused) | `ProjectFileChange.review` | Interop, RestoreGate | — |
 | `Factory.Core/Domain.fs` | Handover, plan and verify types | `Handover`, `ElementSpec`, `BoundDecision`, `PlannedTask`, `VerifyEntry` | every Core module after it, Harness, S2, tests | — |
 | `Factory.Core/ContextPack.fs` | Context pack for acting turns: deterministic defaults, validated nominations (never blocking), task-written files, budget fitting (60k chars) | `ContextPack`, `Selection`, `PackFile` | TaskLoop, ScopedWorkspace (submit_approach), Briefs | — |
+| `Factory.Core/Review.fs` | Review types and pure rules: findings (must cite a diff line), unified-diff parsing, validation, routing (weak tests -> TestAuthor), re-review limits, independence | `Finding`, `FindingCategory`, `ReviewResult`, `ReviewEvidence`, `Independence`, `Diff`, `Review` | TaskState, Json, Interop, TaskLoop | — |
 | `Factory.Core/PlanValidator.fs` | Plan rules (collects all errors); sole constructor of `ValidatedPlan` | `PlanError`, `ValidatedPlan` | Dispatcher, Interop, S2 | — |
 | `Factory.Core/Dispatcher.fs` | Overlapping writes -> teams; team DAG -> waves | `Team`, `Wave`, `DispatchPlan` | Merge, Json, Interop, S2 | — |
-| `Factory.Core/TaskState.fs` | Task lifecycle, budgets, phases (TestAuthor/Implementer); `Passed` needs three-gate evidence; `replay` | `TaskState`, `TaskEvent`, `RedEvidence`, `PassedEvidence`, `Limits` | Json, Interop, RegistryLedgerProjector, TeamRunner | — |
+| `Factory.Core/TaskState.fs` | Task lifecycle, budgets, phases (TestAuthor/Implementer); `Passed` needs three-gate evidence; `replay` | `TaskState`, `TaskEvent`, `RedEvidence`, `VerifiedEvidence`, `Limits` | Json, Interop, RegistryLedgerProjector, TeamRunner | — |
 | `Factory.Core/Regression.fs` | Pass-to-pass: baseline-passing tests that no longer pass | `TestResult` | Interop, VerifyRunner | — |
 | `Factory.Core/HandoverClosure.fs` | Handover outcome: delivered only when merged and every decision check passed | `HandoverOutcome` | Interop, RegistryLedgerProjector | — |
 | `Factory.Core/Regeneration.fs` | Re-frozen handover vs plan: changed decisions -> tasks to re-run | `Regeneration` | Interop, S2 (Dispatcher, TeamRunner) | — |
@@ -99,6 +103,7 @@ C4Container
 | `Factory.Core/Json.fs` | Plan/handover/dispatch/task-event codecs | — | Interop | — |
 | `Factory.Core/Interop.fs` | C#-friendly facade | `Core`, `PlanValidation`, `FactoryRejectedException` | Harness, S2 | — |
 | `Factory.Harness/FactoryAgents.cs` | Builds every agent: provider client per tier, governed tool calls, gen_ai spans | `GatewayOptions`, `ModelProvider`, `AgentScope`, `FactoryAgents` | S2 executors, TaskLoop | Anthropic API / OpenAI-compatible gateway |
+| `Factory.Harness/ModelGateways.cs` | Implementer and reviewer gateway options from env (`FACTORY_REVIEWER_*`, each falling back to the implementer's), model family, start-up independence check (same-family refused unless `FACTORY_REVIEWER_SAME_FAMILY=allow` and merges are dry-run) | `ModelGateways` | FactoryAgents, Program | — |
 | `Factory.Harness/ToolPolicy.cs` | Role allow-list (fallback and contract double) | `IToolPolicy`, `RoleAllowListPolicy`, `Roles` | FactoryAgents, AcsToolPolicy | — |
 | `Factory.Harness/Governance/AcsToolPolicy.cs` | AGT/ACS policy per role from `policies/s2/*.yaml` | `AcsToolPolicy` | Program | Microsoft.AgentGovernance |
 | `Factory.Harness/TurnBudget.cs`, `ToolResultTrimmer.cs` | Per-turn tool-call cap (warn 12, stop 15, `check_quality` exempt); stubs tool results older than the last 5 in what the model sees | `TurnBudget`, `TrimmingChatClient` | FactoryAgents, TaskLoop | — |
@@ -113,6 +118,7 @@ C4Container
 | `Factory.S2/Workflow.cs` | MAF graph + host (merge-approval RequestPort) | `S2Workflow`, `WorkflowHost` | Program, tests | MAF runtime |
 | `Factory.S2/Executors/*` | Planner (reuses the previous plan on `--since`), PlanValidator, Dispatcher (writes regeneration.json), Waves (needs-decision park/resume), IntegrationVerify, Merge, Finalize | executor classes, `Messages.cs` | Workflow | Registry |
 | `Factory.S2/Teams/TeamRunner.cs` | Per-team loop; TaskLoop drives one task (red, green, stash check, P2P, scope); carries regeneration-unaffected tasks | `TeamRunner`, `TaskLoop`, `TeamResult` | WaveExecutor, TaskRerun | — |
+| `Factory.S2/Teams/Reviewer.cs`, `AgentReviewer.cs` | The review seam: `IReviewer` (+ `Independence`), request/verdict types; the agent implementation runs `Roles.Reviewer` read-only with `submit_review` and treats any turn without it as malformed | `IReviewer`, `ReviewRequest`, `ReviewVerdict`, `AgentReviewer` | TaskLoop, FactoryServices, Program | Reviewer model pool |
 | `Factory.S2/Teams/TaskRerun.cs` | k independent attempts at one task: pass rate, turns, tokens | `TaskRerun`, `RerunReport` | Program (`rerun`) | — |
 | `Factory.S2/Teams/Briefs.cs` | Per-turn briefs (incl. the PObserve logging contract); prompts from `prompts/*.md` | `Briefs` (`Task` takes the context pack) | TaskLoop, Planner | — |
 | `Factory.S2/Verify/*` | Verify entries in the sandbox, each from the tree as found, cleanup always, JUnit parsing, baseline/regression | `VerifyRunner`, `VerifyOutcome`, `JUnit` | TaskLoop, IntegrationVerify | Sandbox, GitWorkspace |
@@ -123,7 +129,7 @@ C4Container
 | `docker/runner` | Runner image (`build.sh`) | — | DockerSandbox (by image name) | Docker |
 | `tools/pobserve-parser` | `EventLineParser` (`pobserve <event> <payload> key=<id>` -> P events, one partition per key), `pobserve-check` | — | runner image, `FACTORY_POBSERVE_CMD` | PObserve CLI |
 | `tools/laya-sidecar` | `/decide` HTTP sidecar; `laya_adapter.py` is the one binding point | — | LayaConfigurator | Laya |
-| `policies/s2/*.yaml` | ACS policies per role (`planner`, `task-planner`, `test-author`, `implementer`) | — | AcsToolPolicy | — |
+| `policies/s2/*.yaml` | ACS policies per role (`planner`, `task-planner`, `reviewer`, `test-author`, `implementer`) | — | AcsToolPolicy | — |
 
 ## Module Dependency Diagram
 
@@ -165,6 +171,8 @@ graph TD
     TaskRerun --> TeamRunner
     TeamRunner --> Briefs
     TeamRunner --> ContextPack
+    TeamRunner --> Reviewer["IReviewer / AgentReviewer"]
+    Reviewer --> FactoryAgents
     TeamRunner --> VerifyRunner
     TeamRunner --> GitWorkspace
     VerifyRunner --> Sandbox
@@ -192,12 +200,12 @@ Used by structural-centrality-guard to determine escalation threshold.
 | Domain | `src/Factory.Core/Domain.fs` | 12+ | every Core module after it, Harness, S2, tests |
 | Paths | `src/Factory.Core/Paths.fs` | 10 | Domain, PlanValidator, Dispatcher, Merge, Json, Interop, ScopedWorkspace, DesigncHandoverReader, Briefs, TeamRunner |
 | Ledger | `src/Factory.Harness/Ledger.cs` | 9 | FactoryAgents, DockerSandbox, RegistryLedgerProjector, VerifyRunner, FactoryServices, PlanningExecutors, RunExecutors, TeamRunner, TaskRerun |
-| FactoryServices | `src/Factory.S2/FactoryServices.cs` | 7 | PlanningExecutors, RunExecutors, Workflow, TeamRunner, TaskRerun, Messages, Program |
+| FactoryServices | `src/Factory.S2/FactoryServices.cs` | 7 (gained `Reviewer`) | PlanningExecutors, RunExecutors, Workflow, TeamRunner, TaskRerun, Messages, Program |
 | Sandbox | `src/Factory.Harness/Sandbox/ICommandSandbox.cs` | 6 | Local/DockerSandbox, ScopedWorkspace, VerifyRunner, FactoryServices, TeamRunner, Program |
 | Interop | `src/Factory.Core/Interop.fs` | 6+ | every Harness/S2 file that uses `Core.*` |
 | PlanValidator | `src/Factory.Core/PlanValidator.fs` | 5 | Dispatcher, Interop, FactoryServices, PlanningExecutors, Program |
 | Telemetry | `src/Factory.Harness/Telemetry/FactoryTelemetry.cs` | 4 | FactoryAgents, Workflow, TeamRunner, Program |
-| TaskState | `src/Factory.Core/TaskState.fs` | 4 | Json, Interop, RegistryLedgerProjector, TeamRunner |
+| TaskState | `src/Factory.Core/TaskState.fs` | 5 | Json, Interop, Review (types), RegistryLedgerProjector, TeamRunner |
 | ProcessRunner | `src/Factory.Harness/ProcessRunner.cs` | 4 | DockerSandbox, LocalSandbox, GitWorkspace, Integrations |
 | Regeneration | `src/Factory.Core/Regeneration.fs` | 4 | Interop, FactoryServices, PlanningExecutors, TeamRunner |
 
@@ -221,7 +229,9 @@ Used by structural-centrality-guard to determine escalation threshold.
 |------|---------|------|-------|
 | The task-planner's context nominations are validated and never block (bad paths are reported back, defaults remain); the selection is frozen at the approach turn and recovered from the `task_plan` ledger row, contents are read fresh each turn | `ContextPack.fs`, `TaskLoop.PlanTurnAsync`/`ContextPackAsync` | Invariant | PLAN-QUALITY.md strand 1 |
 | An acting turn is capped at 15 tool calls (`check_quality` exempt); at the cap it counts as done and verify (or the red run) judges the worktree | `TurnBudget.cs`, `FactoryAgents.GovernedToolCallAsync`, `TaskLoop.ActTurnAsync` | Invariant | live1: a 514k-token, 31-call TestAuthor turn |
-| `Passed` needs red evidence, all-green automated outcomes and a stashed-impl run that fails | `TaskState.fs` `PassedEvidence` | Invariant (type-enforced) | private ctors |
+| A task cannot pass without a review of its green diff: findings must cite a line in the diff (the rest are dropped and ledgered), design findings are advice, weak tests go to the TestAuthor first; three blocking rounds, then it parks for a designer (accept / reject / send back); a malformed review is asked for once more, then parks, never passes; a re-review may add findings only on lines the fix changed | `Review.fs`, `TaskState.fs` `Reviewing`, `TaskLoop.ReviewAsync` | Invariant (type-enforced gate) | PLAN-QUALITY.md strand 2 |
+| The reviewer is a different pool from the implementer; unknown model family counts as the same; same-family needs `FACTORY_REVIEWER_SAME_FAMILY=allow` and dry-run merges, and is stamped `independence: same-family` on the ledger and PR | `ModelGateways.cs`, `RunExecutors.ReviewSectionAsync` | Invariant | PLAN-QUALITY.md strand 2 |
+| `Verified` needs red evidence, all-green automated outcomes and a stashed-impl run that fails; `Passed` also needs the review | `TaskState.fs` `VerifiedEvidence` | Invariant (type-enforced) | private ctors |
 | TestAuthor writes only `testWrites`, Implementer only `writes`; disjoint | `PlanValidator.fs`, `ScopedWorkspace.cs` | Invariant | scope enforced by tools and after each turn |
 | A test that passed in the team baseline and fails now blocks green (P2P) | `Regression.fs`, `TaskLoop` | Business rule | missing test counts as failing |
 | Every `pobserve-check` call in a verify command passes exactly `<specs-dir> <SpecName> <logs>` | `PlanValidator.fs` `PObserveCheckArity` | Invariant | live3: a 2-arg call always exits 1 |

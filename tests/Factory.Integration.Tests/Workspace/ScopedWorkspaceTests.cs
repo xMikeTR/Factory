@@ -32,6 +32,29 @@ public class ScopedWorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_reviewer_can_read_and_submit_findings_but_not_write_run_or_park()
+    {
+        var signals = new TurnSignals();
+        var tools = new ScopedWorkspace(_root, [], [], [], signals).ReviewerTools();
+        Assert.Equal(["list_files", "read_file", "submit_review"], tools.Select(t => t.Name).Order());
+        var submit = tools.OfType<Microsoft.Extensions.AI.AIFunction>().Single(t => t.Name == "submit_review");
+
+        var refused = await submit.InvokeAsync(new()
+        {
+            ["findings"] = System.Text.Json.JsonDocument.Parse("""[{"category":"style","file":"src/A.cs","line":3,"message":"x"}]""").RootElement.Clone(),
+        });
+        Assert.Null(signals.Review);
+        Assert.Contains("category 'style'", refused?.ToString());
+
+        await submit.InvokeAsync(new()
+        {
+            ["findings"] = System.Text.Json.JsonDocument.Parse("""[{"category":"weak_tests","file":"tests/A.cs","line":7,"message":"asserts nothing"}]""").RootElement.Clone(),
+        });
+        var finding = Assert.Single(signals.Review!);
+        Assert.Equal((FindingCategory.WeakTests, "tests/A.cs", 7), (finding.Category, finding.File, finding.Line));
+    }
+
+    [Fact]
     public async Task Submit_approach_records_the_note_and_the_validated_selection_and_reports_rejections()
     {
         var signals = new TurnSignals();

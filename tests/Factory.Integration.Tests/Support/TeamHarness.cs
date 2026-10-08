@@ -4,6 +4,7 @@ using Factory.Harness.Registry;
 using Factory.Harness.Sandbox;
 using Factory.S2;
 using Factory.S2.Git;
+using Factory.S2.Teams;
 using Factory.S2.Verify;
 
 namespace Factory.Integration.Tests.Support;
@@ -32,6 +33,8 @@ public sealed class TeamHarness : IDisposable
     public MemoryLedger Ledger { get; } = new();
     public FactoryServices Services { get; }
     public Handover Handover { get; }
+    /// Approves everything unless a test queues verdicts.
+    public ScriptedReviewer Reviewer { get; } = new();
 
     private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests)
     {
@@ -49,7 +52,8 @@ public sealed class TeamHarness : IDisposable
             git,
             new VerifyRunner(Ledger, sandboxes, git),
             sandboxes,
-            pullRequests ?? new DryRunPullRequests(Path.Combine(state, "runs", RunId)));
+            pullRequests ?? new DryRunPullRequests(Path.Combine(state, "runs", RunId)),
+            Reviewer);
     }
 
     /// `suiteCommand` is the integration test command; "true" writes no results, so there is no

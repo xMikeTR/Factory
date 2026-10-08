@@ -42,6 +42,7 @@ public static class LedgerKinds
     public const string Verify = "verify";
     public const string NeedsDecision = "needs_decision";
     public const string ScopeViolation = "scope_violation";
+    public const string Review = "review";          // one review round: outcome, findings kept and dropped, independence
     public const string Merge = "merge";
     public const string Run = "run";
 }

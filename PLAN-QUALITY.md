@@ -178,6 +178,16 @@ independence is stamped in the ledger and the PR body.
    malformed -> retry once -> park, never pass), read-only tools, input = brief + diff; `ApprovingReviewer`
    default in the test harness; PR body and ledger carry `independence`. Policies + prompt `reviewer.md`.
 
+**Done (strand 2).** Deviations from the slices above, all flagged in the commits:
+- `TaskState` has `Reviewing` with events `ReviewCompleted | ReviewAccepted | ReviewGuided` (not `ReviewOverridden`);
+  `NeedsDecisionRaised` is legal in `Reviewing` whenever unparked, so a review that cannot be had parks the
+  task before the rounds run out; `ReviewGuided` resets the rounds only if they had run out.
+- The re-review limit ("new findings only on lines the fix changed") is exact: each review ledgers a git tree
+  snapshot (`GitWorkspace.SnapshotAsync`), and the next review diffs the worktree against it.
+- Option ids A/B/C of a parked review: A accepts (open findings go on the PR via an `accepted` review row), B rejects, C guides.
+- `Briefs.Task` is reused for the reviewer's brief, so it still says "You may write only these paths" with none listed.
+- Not measured: whether the reviewer finds real problems on a live run (needs a paid run; ask first).
+
 ### Test strategy
 - Core: `validate` drops findings outside the diff; `route`; the machine passes only through review;
   3rd blocking round parks; overrides.

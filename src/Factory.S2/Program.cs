@@ -148,15 +148,18 @@ static FactoryServices Services(FactorySettings settings, string runId, Dictiona
             double.Parse(Environment.GetEnvironmentVariable("FACTORY_LAYA_MIN_CONFIDENCE") ?? "0.7", System.Globalization.CultureInfo.InvariantCulture))
         : new HeuristicConfigurator();
     var git = new GitWorkspace(settings.RepoPath, settings.StateDir);
+    var gateways = ModelGateways.FromEnvironment(env, mergesAreDryRun: pullRequests is DryRunPullRequests);
+    var agents = new FactoryAgents(gateways, toolPolicy, ledger, FactoryTelemetry.CaptureContent(env));
     return new FactoryServices(
         settings,
         ledger,
-        new FactoryAgents(ModelGateways.FromEnvironment(env, mergesAreDryRun: pullRequests is DryRunPullRequests), toolPolicy, ledger, FactoryTelemetry.CaptureContent(env)),
+        agents,
         configurator,
         git,
         new VerifyRunner(ledger, sandboxes, git),
         sandboxes,
-        pullRequests);
+        pullRequests,
+        new AgentReviewer(agents, gateways.ReviewerIndependence, settings.CommandAllowList));
 }
 
 static PlanValidation Validate(Dictionary<string, string> opts) =>

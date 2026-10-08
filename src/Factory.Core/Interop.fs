@@ -44,6 +44,8 @@ type Core =
 
     static member Queued = TaskState.queued
 
+    static member MaxReviewRounds = TaskState.maxReviewRounds
+
     static member Transition(limits: Limits, state: TaskState, ev: TaskEvent) : TaskState =
         match TaskState.transition limits state ev with
         | Ok s -> s

@@ -4,6 +4,7 @@ using Factory.Harness;
 using Factory.Harness.Policy;
 using Factory.Harness.Sandbox;
 using Factory.S2.Git;
+using Factory.S2.Teams;
 using Factory.S2.Verify;
 
 namespace Factory.S2;
@@ -60,7 +61,8 @@ public sealed class FactoryServices(
     GitWorkspace git,
     VerifyRunner verify,
     ISandboxFactory sandboxes,
-    IPullRequests pullRequests)
+    IPullRequests pullRequests,
+    IReviewer reviewer)
 {
     public FactorySettings Settings { get; } = settings;
     public ILedger Ledger { get; } = ledger;
@@ -71,6 +73,8 @@ public sealed class FactoryServices(
     /// Where agent commands run during a turn (verify uses its own); never the host environment.
     public ISandboxFactory Sandboxes { get; } = sandboxes;
     public IPullRequests PullRequests { get; } = pullRequests;
+    /// Judges each task's green diff before it can pass; on the reviewer pool, apart from the implementer's.
+    public IReviewer Reviewer { get; } = reviewer;
 
     /// Handover and plan are re-read and re-validated from disk at each step rather than carried
     /// in messages: messages stay small and serialisable for checkpoints, and a resumed run
