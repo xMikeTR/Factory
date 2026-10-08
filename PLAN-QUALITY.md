@@ -375,3 +375,9 @@ returned nothing; the image now carries typescript-eslint + a complexity-only co
 ### Flaky re-run (done, your choice: only when marked flaky)
 `quality.flaky: [substrings]` in .factory/policy.yaml. A command containing one that exits non-zero (not a timeout; those already re-run) is re-run once with the
 machine to itself; the second answer stands; each retry is a `flaky_retry` ledger row so a retried failure is never hidden.
+
+### Namespace fitness rules with ArchUnitNET (done; you named ArchUnitNET)
+`quality.forbidNamespaces: [{from: "Pricing.Domain.**", to: "Pricing.Infra.**", why}]`. Only the dependency graph comes from ArchUnitNET (types in the built assemblies of
+every project on disk; edges between namespaces of those assemblies), not its rule DSL, so the same Core `Fitness.forbidden` + ratchet judge csproj and namespace rules alike.
+Assemblies are read through `MetadataLoadContext`, so no target code is loaded or run. Cost: one build of the worktree and one of a baseline checkout per quality check when
+the policy lists namespace rules (no cache yet). A failing build yields no verdict (the compile check reports it). Verified in Docker on a two-namespace sample. Not done: TS equivalent.
