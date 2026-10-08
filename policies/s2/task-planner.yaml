@@ -21,3 +21,7 @@ rules:
     condition: "tool_name == 'raise_needs_decision'"
     action: allow
     priority: 10
+  - name: allow-submit-approach
+    condition: "tool_name == 'submit_approach'"
+    action: allow
+    priority: 10

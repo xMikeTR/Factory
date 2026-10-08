@@ -66,6 +66,7 @@ internal sealed class TaskLoop(
     private readonly Limits _limits = svc.Settings.TaskLimits;
 
     private string? _approachNote;
+    private Selection? _selection; // frozen at the approach turn; contents are read fresh each turn
     private string? _lastFailures;
     private string? _resolvedDecision;
     private bool _doneDeclared;
@@ -102,7 +103,7 @@ internal sealed class TaskLoop(
         if (await svc.Git.RestoreStashAsync(worktree, StashKey, ct)) // crashed during a red run or stash check
             await svc.LogAsync(runId, "resume", LedgerKinds.Verify, outcome: "stash_restored", teamId: _teamId, taskId: _taskId, ct: ct);
 
-        _approachNote = await LastApproachNoteAsync(ct);
+        (_approachNote, _selection) = await LastApproachAsync(ct);
         var answerUsed = false;
 
         while (true)
@@ -207,8 +208,13 @@ internal sealed class TaskLoop(
         if (state.IsFailed) return state;
 
         var signals = new TurnSignals();
+        var repoFiles = await svc.Git.RepoFilesAsync(worktree, ct);
+        var defaults = ContextPack.defaults(ListModule.OfSeq(repoFiles), ListModule.OfSeq(task.Writes), ListModule.OfSeq(task.TestWrites));
+        Selection Select(IReadOnlyList<Nomination> nominations) =>
+            ContextPack.select(ContextPack.defaultLimits, FuncConvert.FromFunc<string, bool>(p => File.Exists(Path.Combine(worktree, p))),
+                defaults, ListModule.OfSeq(nominations));
         var agent = svc.Agents.Create(new AgentScope(runId, Roles.TaskPlanner, _teamId, _taskId), tier,
-            Briefs.Prompt("task-planner"), Workspace(signals, sandbox: null, []).ReadOnlyTools());
+            Briefs.Prompt("task-planner"), Workspace(signals, sandbox: null, []).TaskPlannerTools(Select));
         var response = await agent.RunAsync(Brief(task.Writes.Concat(task.TestWrites)), cancellationToken: ct);
 
         if (signals.NeedsDecision is { } raised)
@@ -217,8 +223,15 @@ internal sealed class TaskLoop(
             return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(AgentDecision(raised)), ct);
         }
 
-        _approachNote = response.Text;
-        await LogTurnAsync("task_plan", tier, response.Usage, new { note = _approachNote }, ct);
+        // No submit_approach: the reply is the note and the pack is the defaults alone.
+        _approachNote = signals.ApproachNote ?? response.Text;
+        _selection = signals.ContextSelection ?? Select([]);
+        await LogTurnAsync("task_plan", tier, response.Usage, new
+        {
+            note = _approachNote,
+            context = _selection.Entries.Select(e => new { path = e.Path, reason = e.Source is ContextSource.Nominated n ? n.reason : null }),
+            rejected = _selection.Rejected.Select(r => new { path = r.Item1, reason = r.Item2 }),
+        }, ct);
         return await ApplyAsync(state, TaskEvent.TurnEnded, ct);
     }
 
@@ -384,15 +397,28 @@ internal sealed class TaskLoop(
             TokensIn: usage?.InputTokenCount, TokensOut: usage?.OutputTokenCount,
             Payload: JsonSerializer.Serialize(detail)), ct);
 
-    private async Task<string?> LastApproachNoteAsync(CancellationToken ct)
+    /// The approach note and the frozen context selection from the task's last task_plan turn.
+    private async Task<(string? Note, Selection? Selection)> LastApproachAsync(CancellationToken ct)
     {
         string? note = null;
+        Selection? selection = null;
         await foreach (var e in svc.Ledger.ReadAsync(runId, ct))
         {
             if (e.Kind != LedgerKinds.Turn || e.Stage != "task_plan" || e.TaskId != _taskId || e.Payload is null) continue;
             using var doc = JsonDocument.Parse(e.Payload);
-            if (doc.RootElement.TryGetProperty("note", out var n)) note = n.GetString();
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("note", out var n)) continue;
+            note = n.GetString();
+            if (!root.TryGetProperty("context", out var ctx)) { selection = null; continue; }
+            var entries = ctx.EnumerateArray().Select(c => new ContextEntry(
+                c.GetProperty("path").GetString()!,
+                c.GetProperty("reason").ValueKind == JsonValueKind.String
+                    ? ContextSource.NewNominated(c.GetProperty("reason").GetString()!)
+                    : ContextSource.Default));
+            var rejected = root.GetProperty("rejected").EnumerateArray()
+                .Select(r => Tuple.Create(r.GetProperty("path").GetString()!, r.GetProperty("reason").GetString()!));
+            selection = new Selection(ListModule.OfSeq(entries), ListModule.OfSeq(rejected));
         }
-        return note;
+        return (note, selection);
     }
 }
