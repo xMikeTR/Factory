@@ -80,6 +80,8 @@ module RestoreRefusal =
 type RedKind =
     | BuildFailure
     | AssertionFailure
+    /// The tests pass on the existing code but kill a mutant of it: the behaviour exists, the tests pin it.
+    | AgainstMutant
 
 /// Proof that the TestAuthor's tests fail against the code as it was before the Implementer
 /// started. Only constructible from a run with at least one non-zero outcome: a test that
@@ -98,6 +100,13 @@ type RedEvidence =
         | os when os |> List.forall (fun o -> o.ExitCode = 0) ->
             Error("every test passed before implementation, so none of them proves the change: " + System.String.Join(", ", os |> List.map (fun o -> o.Name)))
         | os -> Ok { outcomes = os; kind = kind }
+
+    /// Tests that all pass on the existing code count when they kill at least one mutant of it.
+    static member CreateAgainstMutant(outcomes: VerifyOutcome list, killedMutants: int) : Result<RedEvidence, string> =
+        match outcomes with
+        | [] -> Error "no red run outcomes"
+        | _ when killedMutants < 1 -> Error "the tests pass on the existing code and kill no mutant, so they prove nothing about the change"
+        | os -> Ok { outcomes = os; kind = AgainstMutant }
 
 /// What a red run shows, read before it becomes evidence.
 type RedReading =
