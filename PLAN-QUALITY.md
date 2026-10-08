@@ -218,7 +218,7 @@ Contention stops turning passing checks into timeouts, and a timeout is never ev
   (block: failing `quality` outcome joins green; report: ledger row stage `quality`). `FactorySettings.QualityPolicy` added.
   Not yet: F# adapter (needs a parser decision: FSharp.Compiler.Service is not in the offline cache), coverage collection
   (coverlet via the task's verify), report mode on the PR body.
-- 3.4 `check_quality` inner-loop tool (static, exempt from the tool-call cap).
+- 3.4 ✅ `check_quality` (Implementer only, present when quality mode is not off; exempt from the cap; same ratchet as verify).
 - 3.5 Fitness rules (Designc relationships + hand-written), baseline violations as debt via `asbuilt_edge`.
 - Open: ArchUnitNET vs NetArchTest.
 

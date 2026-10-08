@@ -58,7 +58,8 @@ public sealed class ScopedWorkspace(
     IReadOnlyList<PathPattern> protectedPaths,
     IReadOnlyList<string> commandAllowList,
     TurnSignals signals,
-    ICommandSandbox? sandbox = null)
+    ICommandSandbox? sandbox = null,
+    Func<CancellationToken, Task<string>>? qualityCheck = null)
 {
     private readonly string _root = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
     private const int MaxReadChars = 200_000;
@@ -143,7 +144,16 @@ public sealed class ScopedWorkspace(
 
     /// The Implementer's tools: the executor's, plus handing broken tests back to the TestAuthor.
     public IList<AITool> ImplementerTools() =>
-        [.. ExecutorTools(), AIFunctionFactory.Create(ReturnToTestAuthor, "return_to_test_author")];
+    [
+        .. ExecutorTools(),
+        AIFunctionFactory.Create(ReturnToTestAuthor, "return_to_test_author"),
+        .. qualityCheck is null ? [] : new[] { AIFunctionFactory.Create(CheckQuality, "check_quality") },
+    ];
+
+    [Description("Check your changes so far against the project's quality thresholds (complexity, length). Static and fast; "
+        + "it does not count toward your tool-call limit. Run it before declare_done.")]
+    public async Task<string> CheckQuality(CancellationToken ct = default) =>
+        qualityCheck is null ? "quality is not measured in this run" : await qualityCheck(ct) is { Length: > 0 } found ? found : "no quality findings";
 
     [Description("Read a UTF-8 text file. Path is relative to the repository root.")]
     public string ReadFile([Description("repo-relative path")] string path)

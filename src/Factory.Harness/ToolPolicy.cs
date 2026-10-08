@@ -35,7 +35,7 @@ public sealed class RoleAllowListPolicy : IToolPolicy
         [Roles.TaskPlanner] = ["read_file", "list_files", "raise_needs_decision", "submit_approach"],
         [Roles.Reviewer] = ["read_file", "list_files", "submit_review"],
         [Roles.TestAuthor] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision"],
-        [Roles.Implementer] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "return_to_test_author"],
+        [Roles.Implementer] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "return_to_test_author", "check_quality"],
     };
 
     public PolicyDecision Evaluate(string role, string toolName, IReadOnlyDictionary<string, object?> args) =>

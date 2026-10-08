@@ -16,6 +16,8 @@ How to work:
 - You cannot change the tests, the verify checks or anything under protected paths. Make the code satisfy
   them; never weaken, skip or special-case a test to get it passing.
 - Where code emits events from the logging contract, use the exact event names given.
+- If you have a check_quality tool, call it before declare_done: verify refuses new code over the complexity or
+  length thresholds, and touched code that gets worse. It is free (not counted in your tool-call limit).
 - When you believe every verify check will pass, call declare_done with a one-paragraph summary,
   then stop.
 - If you need a design decision the brief does not contain (a retry limit, which component owns
