@@ -13,6 +13,7 @@ using Factory.S2.Verify;
 // factory-s2 validate --handover h.json --plan plan.json      deterministic, no agents, no git
 // factory-s2 dispatch --handover h.json --plan plan.json      prints teams and waves
 // factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github] [--since <previous run id>]
+// factory-s2 qa --repo . --run-id <id> [--base main]   follow-up QA: the run's protected tests, measured again, no author
 // factory-s2 rerun --handover <h.json | dir> --plan plan.json --task T-001 [--k 3] --repo . [--base main]   k fresh attempts, no merge
 
 var cmd = args.FirstOrDefault() ?? "help";
@@ -104,8 +105,29 @@ try
             return 0;
         }
 
+        case "qa":
+        {
+            var settings = FactorySettings.FromEnvironment(
+                Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
+            var runId = Required(opts, "run-id");
+            Directory.CreateDirectory(settings.StateDir);
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            var services = Services(settings, runId, env, new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+            if (services.Qa is not AgentQaRunner qa) throw new FactoryRejectedException("no QA environment: the repo has no .factory/qa-env.yaml", []);
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+            var run = await qa.RerunAsync(runId, services.Git.IntegrationPath(runId), cts.Token);
+            if (run.TimedOut) { Console.WriteLine("QA timed out: not evidence either way"); return 3; }
+            if (run.Tests.Count == 0) { Console.WriteLine("no QA tests recorded for this run"); return 1; }
+            var findings = Qa.judge(Core.ToList(run.Requirements), Core.ToList(run.Tests));
+            Console.WriteLine(findings.IsEmpty ? $"QA clean: {run.Tests.Count} tests" : QaGate.Brief(findings));
+            return findings.IsEmpty ? 0 : 1;
+        }
+
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa  (see README)");
             return 2;
     }
 }

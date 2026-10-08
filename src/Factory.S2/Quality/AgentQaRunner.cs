@@ -16,6 +16,7 @@ public sealed class AgentQaRunner(
     Func<CancellationToken, Task<QaEnvironment>>? environment = null) : IQaRunner
 {
     public const string TestDir = "tests/qa";
+    public const string ManifestFile = "manifest.json";
     private static readonly TimeSpan DefaultTestTimeout = TimeSpan.FromMinutes(10);
 
     public async Task<QaRun> RunAsync(string runId, string integrationPath, CancellationToken ct)
@@ -30,7 +31,25 @@ public sealed class AgentQaRunner(
 
         var declared = await AuthorAsync(boxes, runId, integrationPath, reqs, ct);
         if (declared.Count == 0) return new QaRun(reqs, [], false);
+        WriteManifest(integrationPath, new QaManifest(reqs, declared.Select(d => new ManifestTest(d.Id, d.Requirement, d.IsNew, d.Command)).ToList()));
+        return await MeasureAsync(boxes, vars, runId, integrationPath, reqs, declared, ct);
+    }
 
+    /// The human follow-up: the author's tests are protected, so they are not written again. The manifest the first run left
+    /// in tests/qa says what to run; the same measurement is taken on a fresh base-branch checkout and the integrated result.
+    public async Task<QaRun> RerunAsync(string runId, string integrationPath, CancellationToken ct)
+    {
+        var manifestPath = Path.Combine(integrationPath, TestDir, ManifestFile);
+        if (!File.Exists(manifestPath)) return new QaRun([], [], false);
+        var manifest = System.Text.Json.JsonSerializer.Deserialize<QaManifest>(await File.ReadAllTextAsync(manifestPath, ct))!;
+        await using var env = environment is null ? null : await environment(ct);
+        return await MeasureAsync(env?.Sandboxes ?? sandboxes, env?.Env ?? new Dictionary<string, string>(), runId, integrationPath, manifest.Requirements,
+            manifest.Tests.Select(t => new QaTestDecl(t.Id, t.Requirement, t.IsNew, t.Command)).ToList(), ct);
+    }
+
+    private async Task<QaRun> MeasureAsync(ISandboxFactory boxes, IReadOnlyDictionary<string, string> vars, string runId, string integrationPath,
+        IReadOnlyList<string> reqs, IReadOnlyList<QaTestDecl> declared, CancellationToken ct)
+    {
         await using var baseline = await git.BaselineCheckoutAsync(runId, ct, baseBranch);
         CopyDirectory(Path.Combine(integrationPath, TestDir), Path.Combine(baseline.Path, TestDir));
 
@@ -43,6 +62,15 @@ public sealed class AgentQaRunner(
             tests.Add(new QaTest(t.Id, t.Requirement, t.IsNew ? QaKind.New : QaKind.Characterisation, onBase, onIntegrated));
         }
         return new QaRun(reqs, tests, false);
+    }
+
+    private sealed record ManifestTest(string Id, string Requirement, bool IsNew, string Command);
+    private sealed record QaManifest(IReadOnlyList<string> Requirements, IReadOnlyList<ManifestTest> Tests);
+
+    private static void WriteManifest(string integrationPath, QaManifest manifest)
+    {
+        Directory.CreateDirectory(Path.Combine(integrationPath, TestDir));
+        File.WriteAllText(Path.Combine(integrationPath, TestDir, ManifestFile), System.Text.Json.JsonSerializer.Serialize(manifest));
     }
 
     private async Task<IReadOnlyList<QaTestDecl>> AuthorAsync(ISandboxFactory sandboxes, string runId, string integrationPath, IReadOnlyList<string> reqs, CancellationToken ct)

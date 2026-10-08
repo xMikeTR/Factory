@@ -354,7 +354,11 @@ only, no using-level edges), reported with the rule's `why` in the same brief as
 sandboxes (`DockerSandboxOptions.Network`) whose restore window reconnects to that network, plus `QA_<NAME>_HOST`. `AgentQaRunner` takes an optional
 environment provider; the env lives for one QA run and is removed on dispose. Only with the docker sandbox. Defaults: no start-up wait/health check,
 services get no env/ports of their own, QA sandboxes bypass the HeavyGate. Verified in Docker with a stand-in service (name resolves from the sandbox; network removed).
-Still open: the human follow-up QA run.
+
+### Human follow-up QA run (done, default design)
+The author's tests are protected: `AgentQaRunner` leaves `tests/qa/manifest.json` (requirements + id/requirement/kind/command). `factory-s2 qa --repo . --run-id X`
+re-measures them on a fresh base checkout and the run's integration checkout (no author turn), judges with `Qa.judge`, exit 0 clean / 1 findings / 3 timeout.
+Defaults: concrete method on `AgentQaRunner` (the `IQaRunner` seam is not widened); trigger is manual; the manifest is not committed by the factory.
 
 ### QA author agent (done, with defaults I chose)
 `AgentQaRunner` (`IQaRunner`): author on the reviewer pool (`Roles.Qa`, `policies/s2/qa.yaml`, `prompts/qa-author.md`) writes under `tests/qa/**` of
