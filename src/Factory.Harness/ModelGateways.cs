@@ -3,12 +3,9 @@ using Microsoft.Extensions.AI;
 
 namespace Factory.Harness;
 
-/// Whether the reviewer's model family differs from the implementer's. Same-family reviews share
-/// the implementer's blind spots, so they are allowed only as an explicit, stamped override.
-public enum Independence { Independent, SameFamily }
-
 /// The two model pools: the one that writes (planner, task-planner, test author, implementer) and the
-/// one that judges (reviewer, QA). Independence is an invariant checked here, at start-up, not a
+/// one that judges (reviewer, QA). Same-family reviews share the implementer's blind spots, so they are
+/// allowed only as an explicit, stamped override (Core's `Independence`). Independence is an invariant checked here, at start-up, not a
 /// per-run choice: Laya picks the tier on the reviewer pool, never the provider.
 ///
 /// Reviewer settings are the implementer's FACTORY_* names with a REVIEWER_ infix, each falling back to
