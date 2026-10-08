@@ -30,7 +30,8 @@ public static class CoverageRunner
     private static readonly System.Text.RegularExpressions.Regex Safe = new(@"^[A-Za-z0-9_./-]+$");
 
     private static IEnumerable<string> TestProjects(string worktree) =>
-        Directory.EnumerateFiles(worktree, "*.csproj", SearchOption.AllDirectories)
+        Directory.EnumerateFiles(worktree, "*.*proj", SearchOption.AllDirectories)
+            .Where(p => p.EndsWith(".csproj") || p.EndsWith(".fsproj"))
             .Select(p => Path.GetRelativePath(worktree, p).Replace('\\', '/'))
             .Where(p => !p.Split('/').Any(seg => seg is "bin" or "obj" or "node_modules") && Safe.IsMatch(p))
             .Where(p => File.ReadAllText(Path.Combine(worktree, p)).Contains("Microsoft.NET.Test.Sdk", StringComparison.Ordinal))

@@ -328,3 +328,6 @@ judge the integrated result against the baseline. A failure merges nothing and r
 - Coverage (CRAP): `quality.coverage: true` runs each test project under coverlet.console (in the image) via `CoverageRunner`; `Cobertura.Join`
   takes one report per test project. Verified for real in the image. Current code only: the baseline has no coverage, so touched-function CRAP
   is not ratcheted against it (cyclomatic and length are).
+- F# adapter: new project `Factory.Quality.FSharp` (FSharp.Compiler.Service 43.8.400 parse, syntax only), used by `QualityGate` for `.fs`.
+  Decision taken: FCS over a token heuristic (accurate ranges and clauses; the cost is the dependency and the FSharp.Core 8.0.102 -> 8.0.400 bump,
+  which FCS pins exactly). Cyclomatic walker covers the common SynExpr cases; unhandled expression kinds undercount rather than throw.

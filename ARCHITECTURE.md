@@ -4,7 +4,7 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-08 — Runner image wiring: `StrykerRunner` (real, in the image), npm rebuild after the restore window + `InstallScriptReport` on the PR body, `EslintRunner` into `QualityGate` for .ts/.tsx. Earlier: QA (strand 6): `Core/Qa.fs` (judge: new vs characterisation, escapes), `QaEnvFile` (protected qa-env.yaml, digest-pinned services,
+> Last updated: 2026-10-08 — F# quality adapter (new project `Factory.Quality.FSharp`, FSharp.Core 8.0.102 -> 8.0.400 for FCS), coverage via coverlet (`CoverageRunner`, `quality.coverage`). Earlier: Runner image wiring: `StrykerRunner` (real, in the image), npm rebuild after the restore window + `InstallScriptReport` on the PR body, `EslintRunner` into `QualityGate` for .ts/.tsx. Earlier: QA (strand 6): `Core/Qa.fs` (judge: new vs characterisation, escapes), `QaEnvFile` (protected qa-env.yaml, digest-pinned services,
 > fidelity gaps), `IQaRunner` seam + `QaGate` brief, `IntegrationVerifyExecutor` runs QA after the checks (qa_failed / qa_unrunnable end the run unmerged).
 > The QA author agent and the sibling-container environment are not built yet.
 > Previously 2026-10-08 — npm gate + TS quality (strand 5): `Core/PackageJsonChange.fs` (package.json/lockfile/.npmrc allow-list, via `Core.ReviewRestoreInput`),
@@ -127,6 +127,7 @@ C4Container
 | `Factory.Harness/Configurator.cs` | plan/act/escalate + tier: heuristic, Laya, fallback | `IConfigurator`, `HeuristicConfigurator`, `LayaConfigurator`, `FallbackConfigurator` | TaskLoop, Program | Laya sidecar (HTTP) |
 | `Factory.Harness/ScopedWorkspace.cs` | Agent tools; refuses writes outside the phase's paths; runs commands in the sandbox | `ScopedWorkspace`, `TurnSignals` (incl. `submit_approach`, `Capped`) | TaskLoop, Planner | File system, sandbox |
 | `Factory.Harness/Sandbox/*` | Command sandbox: Docker container per team (default) or scrubbed local | `ISandboxFactory`, `ICommandSandbox`, `DockerSandbox`, `LocalSandbox`, `RestoreGate`, `HeavyGate`, `GatedSandboxFactory` | ScopedWorkspace, VerifyRunner, TeamRunner, Program | Docker Engine CLI |
+| `Factory.Quality.FSharp/FSharpMetrics.fs` | F# quality adapter: FSharp.Compiler.Service parse (syntax only) to neutral `FunctionMetrics` (cyclomatic from if/loops/match clauses/`&&`/`||`); own project so the compiler dependency stays out of Core; depends on Core only | `FSharpMetrics.measure` | `QualityGate` | FSharp.Compiler.Service 43.8.400 (pins FSharp.Core 8.0.400) |
 | `Factory.Harness/Registry/*` | Designc handover reader (hash-checked) and DSL model; ledger projection; needs-decision ids/resolutions | `DesigncHandoverReader`, `DslModel`, `RegistryLedgerProjector`, `RegistryNeedsDecisions` | HandoverInput, executors | Registry repo files |
 | `Factory.Harness/Policy/MergePolicyFile.cs` | `.factory/policy.yaml` + env override | `MergePolicyFile` | FactorySettings | Target repo file |
 | `Factory.Harness/Telemetry/FactoryTelemetry.cs` | OTel attribute contract, run/task spans, task_passed score, tracer provider | `FactoryTelemetry` | FactoryAgents, Workflow, TaskLoop, Program | OTLP (Langfuse) |
