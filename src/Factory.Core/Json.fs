@@ -99,7 +99,11 @@ module Json =
               Elements = collect (arr "$" o "elements") decodeElement
               Decisions = collect (arr "$" o "decisions") decodeDecision
               ProtectedPaths = strs "$" o "protectedPaths" |> List.map (pattern "$.protectedPaths")
-              EventVocabulary = strs "$" o "eventVocabulary" })
+              EventVocabulary = strs "$" o "eventVocabulary"
+              Relationships =
+                collect (arr "$" o "relationships") (fun p n ->
+                    let ro = obj p n
+                    { From = ElementId(str p ro "from"); To = ElementId(str p ro "to") }) })
 
     // ---------- plan ----------
 
@@ -195,7 +199,8 @@ module Json =
                    "elements", JsonArray(h.Elements |> List.map element |> Array.ofList)
                    "decisions", JsonArray(h.Decisions |> List.map decision |> Array.ofList)
                    "protectedPaths", strArr (h.ProtectedPaths |> List.map (fun p -> p.Value))
-                   "eventVocabulary", strArr h.EventVocabulary ]
+                   "eventVocabulary", strArr h.EventVocabulary
+                   "relationships", JsonArray(h.Relationships |> List.map (fun r -> node [ "from", JsonValue.Create r.From.Value; "to", JsonValue.Create r.To.Value ]) |> Array.ofList) ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     // ---------- task events (the ledger payload a runner replays on resume) ----------

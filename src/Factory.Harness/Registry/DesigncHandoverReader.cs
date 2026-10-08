@@ -69,7 +69,8 @@ public sealed class DesigncHandoverReader : IHandoverSource
             Core.ToList(elements),
             Core.ToList(decisions),
             Core.ToList(protectedPaths),
-            Core.ToList(vocabulary));
+            Core.ToList(vocabulary),
+            Core.ToList(Relationships(model!, elements)));
     }
 
     /// How a decision's check runs, from its command: `p check` is the P checker, `designc check`
@@ -90,6 +91,17 @@ public sealed class DesigncHandoverReader : IHandoverSource
         var h = seed;
         foreach (var unit in s) { h ^= unit; h *= 16777619u; }
         return h.ToString("x8");
+    }
+
+    /// The model's relationships between elements that own code (the others cannot be crossed by a task).
+    private static List<Relationship> Relationships(DslModel model, List<ElementSpec> owners)
+    {
+        var byVariable = model.Elements.Where(e => e.Variable is not null).ToDictionary(e => e.Variable!, e => ElementId.NewElementId(e.Path));
+        var ids = owners.Select(o => o.Id).ToHashSet();
+        return model.Relationships
+            .Where(r => byVariable.TryGetValue(r.Source, out var from) && byVariable.TryGetValue(r.Destination, out var to) && ids.Contains(from) && ids.Contains(to))
+            .Select(r => new Relationship(byVariable[r.Source], byVariable[r.Destination]))
+            .Distinct().ToList();
     }
 
     private static List<ElementSpec> Elements(DslModel model, List<string> errors)

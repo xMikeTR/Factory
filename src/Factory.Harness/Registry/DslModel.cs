@@ -2,10 +2,13 @@ using System.Text;
 
 namespace Factory.Harness.Registry;
 
-internal sealed record DslElement(string Kind, string Name, string Path, Dictionary<string, string> Properties);
+internal sealed record DslElement(string Kind, string Name, string Path, Dictionary<string, string> Properties, string? Variable = null);
+
+/// `a -> b`, by the variable names the model gave its elements.
+internal sealed record DslRelationship(string Source, string Destination);
 
 /// Read-only Structurizr DSL reader, limited to what System 2 needs: people, software systems,
-/// containers and components with their properties. Relationships, views and styles are skipped.
+/// containers and components with their properties, and the relationships between them. Views and styles are skipped.
 /// Anything it cannot place safely (!include, block comments, unbalanced braces) is an error, not
 /// a silent miss: a missing element would let a task write outside its code area.
 internal sealed class DslModel
@@ -13,6 +16,7 @@ internal sealed class DslModel
     private static readonly HashSet<string> ElementKeywords = ["person", "softwareSystem", "container", "component"];
 
     public List<DslElement> Elements { get; } = [];
+    public List<DslRelationship> Relationships { get; } = [];
 
     public static DslModel? Parse(string text, List<string> errors)
     {
@@ -55,6 +59,7 @@ internal sealed class DslModel
 
             if (tokens.Contains("->"))
             {
+                if (tokens is [var source, "->", var destination, ..]) model.Relationships.Add(new DslRelationship(source, destination));
                 if (opens) stack.Push(("other", null));
             }
             else if (ElementKeywords.Contains(keyword))
@@ -63,7 +68,7 @@ internal sealed class DslModel
                 var name = tokens[keywordAt + 1];
                 var parent = stack.Select(f => f.Element).FirstOrDefault(e => e is not null);
                 var path = keyword == "person" || parent is null ? name : parent.Path + "/" + name;
-                var el = new DslElement(keyword, name, path, new Dictionary<string, string>(StringComparer.Ordinal));
+                var el = new DslElement(keyword, name, path, new Dictionary<string, string>(StringComparer.Ordinal), keywordAt == 2 ? tokens[0] : null);
                 model.Elements.Add(el);
                 if (opens) stack.Push(("element", el));
             }

@@ -42,6 +42,10 @@ type BoundDecision =
       Binds: ElementId list
       Checks: DecisionCheck list }
 
+/// A modelled dependency: `From` may call or reference `To`. Anything else crossing between two elements'
+/// code areas is a fitness violation. Directed.
+type Relationship = { From: ElementId; To: ElementId }
+
 type Handover =
     { Id: string
       Digest: string
@@ -50,7 +54,9 @@ type Handover =
       /// Paths no task may write: the registry, CI config, verify scripts, etc.
       ProtectedPaths: PathPattern list
       /// P event names that code must log (the logging contract PObserve checks).
-      EventVocabulary: string list }
+      EventVocabulary: string list
+      /// The model's relationships between elements; empty for a handover frozen before they were carried.
+      Relationships: Relationship list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 
