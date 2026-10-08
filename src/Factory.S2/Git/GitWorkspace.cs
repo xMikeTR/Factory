@@ -42,12 +42,12 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         return path;
     }
 
-    /// A throwaway checkout of the integration branch, apart from every team worktree, to measure the code as it was
+    /// A throwaway checkout of the integration branch (or of `branch`, e.g. the base branch for QA), apart from every team worktree, to measure the code as it was
     /// before the run's tasks (the mutation baseline). Removed when disposed.
-    public async Task<BaselineCheckout> BaselineCheckoutAsync(string runId, CancellationToken ct)
+    public async Task<BaselineCheckout> BaselineCheckoutAsync(string runId, CancellationToken ct, string? branch = null)
     {
         var path = Path.Combine(stateDir, "worktrees", runId, $"baseline-{Guid.NewGuid():N}");
-        await GitAsync(repoPath, ct, "worktree", "add", "--detach", path, IntegrationBranch(runId));
+        await GitAsync(repoPath, ct, "worktree", "add", "--detach", path, branch ?? IntegrationBranch(runId));
         return new BaselineCheckout(path, async () =>
         {
             await GitAsync(repoPath, CancellationToken.None, check: false, "worktree", "remove", "--force", path);

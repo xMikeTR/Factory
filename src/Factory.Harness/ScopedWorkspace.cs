@@ -26,11 +26,22 @@ public sealed class TurnSignals
     /// The last plan the planner passed to submit_plan, as JSON, whatever the validator said about it.
     public string? SubmittedPlan { get; set; }
     public List<string> FilesWritten { get; } = [];
+    /// The QA author's tests (submit_qa_tests); null if it never called the tool.
+    public IReadOnlyList<QaTestDecl>? QaTests { get; set; }
     /// Mutants the TestAuthor declared equivalent (declare_equivalent): id -> why no test could tell it from the original.
     public Dictionary<string, string> DeclaredEquivalents { get; } = [];
     /// Mutant ids the reviewer accepted as equivalent (confirm_equivalents); null if it never called the tool.
     public IReadOnlySet<string>? ConfirmedEquivalents { get; set; }
 }
+
+/// One QA test as the author declares it: which requirement it pins, whether it is new behaviour or a characterisation, and the command that runs it.
+public sealed record QaTestArg(
+    [property: Description("a short unique id, letters digits and dashes")] string Id,
+    [property: Description("the requirement this test pins, copied exactly from the list you were given")] string Requirement,
+    [property: Description("new = behaviour this run adds (fails before, passes after); characterisation = behaviour that must not change (passes on both)")] string Kind,
+    [property: Description("the command that runs this one test from the repository root and exits 0 only if it passes")] string Command);
+
+public sealed record QaTestDecl(string Id, string Requirement, bool IsNew, string Command);
 
 /// One file the task-planner nominates for the context pack.
 public sealed record ContextArg(
@@ -163,6 +174,32 @@ public sealed class ScopedWorkspace(
         signals.DeclaredEquivalents[mutantId.Trim()] = reason.Trim();
         return "Recorded. A reviewer will judge it; carry on with the tests that are still needed.";
     }
+
+    /// The QA author's tools: read the repo, write tests (inside the paths this workspace allows), run commands in the sandbox,
+    /// and submit_qa_tests, which declares each test with its requirement, kind and command and ends the turn.
+    public IList<AITool> QaAuthorTools() =>
+    [
+        AIFunctionFactory.Create(ReadFile, "read_file"),
+        AIFunctionFactory.Create(ListFiles, "list_files"),
+        AIFunctionFactory.Create(WriteFile, "write_file"),
+        AIFunctionFactory.Create(RunCommand, "run_command"),
+        AIFunctionFactory.Create(
+            ([Description("every test, each pinning one requirement")] QaTestArg[] tests) =>
+            {
+                var errors = new List<string>();
+                var parsed = new List<QaTestDecl>();
+                foreach (var t in tests ?? [])
+                {
+                    if (string.IsNullOrWhiteSpace(t.Id) || string.IsNullOrWhiteSpace(t.Requirement) || string.IsNullOrWhiteSpace(t.Command)) errors.Add($"{t.Id}: id, requirement and command are all required");
+                    else if (t.Kind is not ("new" or "characterisation")) errors.Add($"{t.Id}: kind '{t.Kind}' is not new|characterisation");
+                    else if (parsed.Any(p => p.Id == t.Id)) errors.Add($"{t.Id}: duplicate id");
+                    else parsed.Add(new QaTestDecl(t.Id, t.Requirement, t.Kind == "new", t.Command));
+                }
+                if (errors.Count > 0) return "Not recorded. Fix every one and call again:\n- " + string.Join("\n- ", errors);
+                signals.QaTests = parsed;
+                return "Recorded. Stop now.";
+            }, "submit_qa_tests", "Call once, last: your tests. Ends your turn."),
+    ];
 
     public IList<AITool> ExecutorTools() =>
     [

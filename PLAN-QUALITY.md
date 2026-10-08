@@ -348,3 +348,11 @@ parks as an environment problem. Cost: one extra Stryker run per failing check. 
 Format chosen without a user answer: `quality.forbid: [{from, to, why}]` in the protected `.factory/policy.yaml` (path globs, same trust
 rule as the rest of `quality:`). `Fitness.forbidden` + `newRuleViolationsSince` (ratchet), `QualityGate.ForbiddenAsync` (csproj references
 only, no using-level edges), reported with the rule's `why` in the same brief as the model-derived fitness findings.
+
+### QA author agent (done, with defaults I chose; containers still not started)
+`AgentQaRunner` (`IQaRunner`): author on the reviewer pool (`Roles.Qa`, `policies/s2/qa.yaml`, `prompts/qa-author.md`) writes under `tests/qa/**` of
+the integrated checkout and declares tests with `submit_qa_tests` (requirement, new|characterisation, command). Each command runs on a
+`BaselineCheckoutAsync(runId, ct, baseBranch)` (tests copied in) and on the integrated result; any timeout makes the QA a timeout. `Qa.judge` decides.
+Defaults chosen without an answer (reversible): requirements = the plan's tasks (`Tn: title`); QA is on only when the repo has `.factory/qa-env.yaml`.
+Not done: starting the qa-env.yaml sibling containers and joining the sandbox to their network (DockerSandbox has no network option yet), the
+human follow-up run, and any live validation (paid).
