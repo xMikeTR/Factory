@@ -66,4 +66,20 @@ public class GitWorkspaceTests
         Assert.False(Directory.Exists(Path.Combine(wt, "tests/Pricing.Data.Tests/PModel")));
         Assert.True(File.Exists(Path.Combine(cache, "Pricing.Data.Tests.dll")));
     }
+
+    [Fact]
+    public async Task TaskPaths_are_what_the_task_wrote_committed_or_not()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var git = h.Services.Git;
+        var wt = await git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        Assert.Empty(await git.TaskPathsAsync(wt, TeamHarness.RunId, CancellationToken.None));
+
+        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Pricing.Data.Tests/new_test.sh"), "true\n");
+        await git.CommitPathsAsync(wt, ["tests/Pricing.Data.Tests/new_test.sh"], "tests", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs"), "// changed\n");
+
+        var paths = await git.TaskPathsAsync(wt, TeamHarness.RunId, CancellationToken.None);
+        Assert.Equal(["src/Pricing.Data/Quote.cs", "tests/Pricing.Data.Tests/new_test.sh"], paths.Order(StringComparer.Ordinal));
+    }
 }

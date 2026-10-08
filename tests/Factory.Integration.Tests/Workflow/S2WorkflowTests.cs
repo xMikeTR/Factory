@@ -142,6 +142,40 @@ public class S2WorkflowTests
     }
 
     [Fact]
+    public async Task Submit_approach_ledgers_the_note_and_the_validated_context_selection()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        model.Enqueue(
+            SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
+            Call("submit_approach", new
+            {
+                note = "Approach: add QuoteStatus.cs",
+                context = new[]
+                {
+                    new { path = "scripts/suite.sh", reason = "how the suite runs" },
+                    new { path = "src/Pricing.Data/Missing.cs", reason = "guess" },
+                },
+            }), Say("done"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+
+        await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
+            new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+
+        var plan = h.Rows(LedgerKinds.Turn).Single(e => e.Stage == "task_plan");
+        using var doc = JsonDocument.Parse(plan.Payload!);
+        Assert.Equal("Approach: add QuoteStatus.cs", doc.RootElement.GetProperty("note").GetString());
+        var context = doc.RootElement.GetProperty("context").EnumerateArray().ToList();
+        Assert.Contains(context, c => c.GetProperty("path").GetString() == "scripts/suite.sh"
+            && c.GetProperty("reason").GetString() == "how the suite runs");
+        Assert.DoesNotContain(context, c => c.GetProperty("path").GetString() == "src/Pricing.Data/Missing.cs");
+        Assert.Contains(doc.RootElement.GetProperty("rejected").EnumerateArray(),
+            r => r.GetProperty("path").GetString() == "src/Pricing.Data/Missing.cs");
+    }
+
+    [Fact]
     public async Task Auto_mode_merges_on_green_whatever_the_tier()
     {
         var model = new ScriptedChatClient();

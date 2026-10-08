@@ -16,7 +16,7 @@ public abstract class ToolPolicyContract
     private static readonly Dictionary<string, string[]> MayCall = new()
     {
         [Roles.Planner] = ["read_file", "list_files", "submit_plan"],
-        [Roles.TaskPlanner] = ["read_file", "list_files", "raise_needs_decision"],
+        [Roles.TaskPlanner] = ["read_file", "list_files", "raise_needs_decision", "submit_approach"],
         [Roles.TestAuthor] = Tools[..^1],
         [Roles.Implementer] = Tools,
     };
@@ -29,7 +29,7 @@ public abstract class ToolPolicyContract
     [MemberData(nameof(AllRoles))]
     public void A_role_may_call_exactly_its_tools(string role)
     {
-        var allowed = Tools.Append("submit_plan").Where(t => Policy.Evaluate(role, t, Args).Allowed);
+        var allowed = Tools.Append("submit_plan").Append("submit_approach").Where(t => Policy.Evaluate(role, t, Args).Allowed);
 
         Assert.Equal(MayCall[role], allowed);
     }

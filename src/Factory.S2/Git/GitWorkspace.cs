@@ -59,6 +59,23 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         return paths;
     }
 
+    /// Every file git knows in the worktree (tracked, plus untracked that are not ignored).
+    public async Task<List<string>> RepoFilesAsync(string worktree, CancellationToken ct)
+    {
+        var r = await GitAsync(worktree, ct, "ls-files", "--cached", "--others", "--exclude-standard", "-z");
+        return r.Output.Split('\0', StringSplitOptions.RemoveEmptyEntries).ToList();
+    }
+
+    /// Everything the task has written on its team branch: committed since it was cut from the
+    /// integration branch (the TestAuthor's tests), plus what is changed in the worktree now.
+    public async Task<List<string>> TaskPathsAsync(string worktree, string runId, CancellationToken ct)
+    {
+        var committed = await GitAsync(worktree, ct, "diff", "--name-only", $"{IntegrationBranch(runId)}...HEAD");
+        return committed.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Concat(await ChangedPathsAsync(worktree, ct))
+            .Distinct().ToList();
+    }
+
     /// Undo changes to specific paths: restore tracked files, delete untracked ones.
     public async Task RevertPathsAsync(string worktree, IEnumerable<string> paths, CancellationToken ct)
     {

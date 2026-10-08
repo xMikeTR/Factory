@@ -16,10 +16,18 @@ public sealed class TurnSignals
     public string? DoneSummary { get; set; }
     public RaisedDecision? NeedsDecision { get; set; }
     public string? ReturnedToTestAuthor { get; set; }
+    /// The task-planner's approach note and the context selection that survived validation (submit_approach).
+    public string? ApproachNote { get; set; }
+    public Selection? ContextSelection { get; set; }
     /// The last plan the planner passed to submit_plan, as JSON, whatever the validator said about it.
     public string? SubmittedPlan { get; set; }
     public List<string> FilesWritten { get; } = [];
 }
+
+/// One file the task-planner nominates for the context pack.
+public sealed record ContextArg(
+    [property: Description("repo-relative path of an existing file")] string Path,
+    [property: Description("one line: why the test author or implementer needs it")] string Reason);
 
 /// A question raised through raise_needs_decision, with the options the designer chooses between.
 public sealed record RaisedDecision(string Question, IReadOnlyList<DecisionOption> Options, string? Recommended);
@@ -58,6 +66,25 @@ public sealed class ScopedWorkspace(
         AIFunctionFactory.Create(ReadFile, "read_file"),
         AIFunctionFactory.Create(ListFiles, "list_files"),
         AIFunctionFactory.Create(RaiseNeedsDecision, "raise_needs_decision"),
+    ];
+
+    /// The task-planner's tools: read-only, a needs-decision, and submit_approach, which records the
+    /// approach note and nominates context files. `select` validates the nominations; rejections
+    /// are reported back and never fail the turn.
+    public IList<AITool> TaskPlannerTools(Func<IReadOnlyList<Nomination>, Selection> select) =>
+    [
+        .. ReadOnlyTools(),
+        AIFunctionFactory.Create(
+            ([Description("the approach note, under 300 words")] string note,
+             [Description("files the implementer and test author should see in full, each with the reason")] ContextArg[] context) =>
+            {
+                var selection = select((context ?? []).Select(c => new Nomination(c.Path ?? "", c.Reason ?? "")).ToList());
+                signals.ApproachNote = note;
+                signals.ContextSelection = selection;
+                return selection.Rejected.IsEmpty
+                    ? "Recorded. Stop now."
+                    : "Recorded. These nominations were not used: " + string.Join("; ", selection.Rejected.Select(r => $"{r.Item1} ({r.Item2})")) + ". Stop now.";
+            }, "submit_approach", "Call once, last, instead of replying in prose: the approach note, plus the existing files the test author and implementer need to see. Ends your turn."),
     ];
 
     public IList<AITool> ExecutorTools() =>

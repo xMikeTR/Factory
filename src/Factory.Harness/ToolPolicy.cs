@@ -30,7 +30,7 @@ public sealed class RoleAllowListPolicy : IToolPolicy
     private static readonly Dictionary<string, HashSet<string>> Allowed = new()
     {
         [Roles.Planner] = ["read_file", "list_files", "submit_plan"],
-        [Roles.TaskPlanner] = ["read_file", "list_files", "raise_needs_decision"],
+        [Roles.TaskPlanner] = ["read_file", "list_files", "raise_needs_decision", "submit_approach"],
         [Roles.TestAuthor] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision"],
         [Roles.Implementer] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "return_to_test_author"],
     };

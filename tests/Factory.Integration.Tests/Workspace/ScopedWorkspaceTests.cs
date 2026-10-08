@@ -1,3 +1,4 @@
+using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Sandbox;
 using Xunit;
@@ -28,6 +29,33 @@ public class ScopedWorkspaceTests : IDisposable
     {
         var ws = new ScopedWorkspace(_root, [], [], ["printenv"], new TurnSignals());
         Assert.StartsWith("DENIED", await ws.RunCommand("printenv"));
+    }
+
+    [Fact]
+    public async Task Submit_approach_records_the_note_and_the_validated_selection_and_reports_rejections()
+    {
+        var signals = new TurnSignals();
+        var ws = new ScopedWorkspace(_root, [], [], [], signals);
+        var tools = ws.TaskPlannerTools(noms =>
+        {
+            var ok = noms.Where(n => n.Path != "src/Missing.cs").ToList();
+            return new Selection(
+                Microsoft.FSharp.Collections.ListModule.OfSeq(ok.Select(n => new ContextEntry(n.Path, ContextSource.NewNominated(n.Reason)))),
+                Microsoft.FSharp.Collections.ListModule.OfSeq(noms.Except(ok).Select(n => Tuple.Create(n.Path, "does not exist"))));
+        });
+        Assert.Contains(tools, t => t.Name == "raise_needs_decision");
+        var submit = tools.OfType<Microsoft.Extensions.AI.AIFunction>().Single(t => t.Name == "submit_approach");
+
+        var answer = await submit.InvokeAsync(new()
+        {
+            ["note"] = "change Quote.cs first",
+            ["context"] = System.Text.Json.JsonDocument.Parse("""[{"path":"src/A.cs","reason":"calls Quote"},{"path":"src/Missing.cs","reason":"x"}]""").RootElement.Clone(),
+        });
+
+        Assert.Equal("change Quote.cs first", signals.ApproachNote);
+        Assert.Equal(["src/A.cs"], signals.ContextSelection!.Entries.Select(e => e.Path));
+        Assert.Contains("src/Missing.cs", answer?.ToString());
+        Assert.Contains("does not exist", answer?.ToString());
     }
 
     [Fact]
