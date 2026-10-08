@@ -93,10 +93,10 @@ public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, 
     /// Tool results older than this many are replaced by stubs in what the model sees.
     public const int KeepRecentToolResults = 5;
 
-    public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools, TurnBudget? budget = null)
+    public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools, TurnBudget? budget = null, int keepRecentResults = KeepRecentToolResults)
     {
         var chat = chatFor(scope.Role, tier).AsBuilder()
-            .Use(inner => new TrimmingChatClient(inner, KeepRecentToolResults))
+            .Use(inner => new TrimmingChatClient(inner, keepRecentResults))
             .UseOpenTelemetry(sourceName: FactoryTelemetry.SourceName, configure: o => o.EnableSensitiveData = captureContent)
             .Build();
 
