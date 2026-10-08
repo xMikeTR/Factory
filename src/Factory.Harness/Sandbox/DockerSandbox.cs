@@ -68,10 +68,10 @@ public sealed class DockerSandbox : ICommandSandbox
             {
                 var plan = await RestoreGate.PlanAsync(worktree, ct);
                 if (plan.Refusals.Count > 0) sandbox.RestoreRefusal = plan.Refusals;
-                else if (plan.Projects.Count > 0)
+                else if (plan.Projects.Count > 0 || plan.NpmDirs.Count > 0)
                 {
                     sandbox.Restored = plan.Projects;
-                    sandbox.Restore = await sandbox.RestoreWindowAsync(RestoreGate.Command(plan.Projects), ct);
+                    sandbox.Restore = await sandbox.RestoreWindowAsync(RestoreGate.FullCommand(plan), ct);
                 }
             }
             return sandbox;
