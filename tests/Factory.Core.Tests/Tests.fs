@@ -429,6 +429,45 @@ let tests: (string * (unit -> unit)) list =
                  && not (ProjectFileChange.affectsRestore "src/A/A.cs")) "affectsRestore"
           // P models (.pproj) are compiled by `p compile`, not restored.
           check (not (ProjectFileChange.affectsRestore "P/Probe.pproj") && not (ProjectFileChange.isProject "Probe.pproj")) "a P project is not restored"
+      // ---------- context pack ----------
+      "context pack defaults: project file, one convention test, existing in-scope files", fun () ->
+          let repo = [ "src/Pricing.Data/Pricing.Data.csproj"; "src/Pricing.Data/Quote.cs"; "src/Pricing.Data/QuotesDbContext.cs"
+                       "tests/Pricing.Data.Tests/Pricing.Data.Tests.csproj"; "tests/Pricing.Data.Tests/QuoteTests.cs"; "tests/Pricing.Data.Tests/OtherTests.cs"
+                       "src/Pricing.Api/Program.cs" ]
+          let got = ContextPack.defaults repo [ p "src/Pricing.Data/**" ] [ p "tests/Pricing.Data.Tests/**" ]
+          check (List.contains "src/Pricing.Data/Pricing.Data.csproj" got) "project file of the write root"
+          check (List.contains "src/Pricing.Data/Quote.cs" got && List.contains "src/Pricing.Data/QuotesDbContext.cs" got) "files under writes"
+          check (List.contains "tests/Pricing.Data.Tests/Pricing.Data.Tests.csproj" got) "test project file"
+          equal 1 (got |> List.filter (fun f -> f.EndsWith "Tests.cs") |> List.length) "exactly one convention test file"
+          check (not (List.contains "src/Pricing.Api/Program.cs" got)) "nothing outside the task's roots"
+          equal got (List.distinct got) "no duplicates"
+      "context pack select: defaults first, valid nominations kept with their reason", fun () ->
+          let exists f = f <> "src/Missing.cs"
+          let s = ContextPack.select ContextPack.defaultLimits exists [ "src/A.cs" ] [ { Path = "src/B.cs"; Reason = "calls A" } ]
+          equal [ { Path = "src/A.cs"; Source = Default }; { Path = "src/B.cs"; Source = Nominated "calls A" } ] s.Entries "entries"
+          equal [] s.Rejected "nothing rejected"
+      "context pack select: bad nominations are rejected with a reason, never fatal", fun () ->
+          let exists f = f <> "src/Missing.cs"
+          let noms =
+              [ { Path = "src/Missing.cs"; Reason = "r" }
+                { Path = "../secret.txt"; Reason = "r" }
+                { Path = "/etc/passwd"; Reason = "r" }
+                { Path = ".git/config"; Reason = "r" }
+                { Path = ".factory/policy.yaml"; Reason = "r" }
+                { Path = "src/NoReason.cs"; Reason = "  " }
+                { Path = "src/A.cs"; Reason = "already a default" }
+                { Path = "src/Ok.cs"; Reason = "fine" }
+                { Path = "src/Ok.cs"; Reason = "again" } ]
+          let s = ContextPack.select ContextPack.defaultLimits exists [ "src/A.cs" ] noms
+          equal [ "src/A.cs"; "src/Ok.cs" ] (s.Entries |> List.map (fun e -> e.Path)) "kept"
+          equal 8 s.Rejected.Length "every bad nomination is reported once"
+          check (s.Rejected |> List.forall (fun (_, why) -> why <> "")) "each rejection has a reason"
+      "context pack select: at most MaxNominations, the rest rejected in order", fun () ->
+          let limits = { ContextPack.defaultLimits with MaxNominations = 2 }
+          let noms = [ for i in 1..4 -> { Path = $"src/F{i}.cs"; Reason = "r" } ]
+          let s = ContextPack.select limits (fun _ -> true) [] noms
+          equal [ "src/F1.cs"; "src/F2.cs" ] (s.Entries |> List.map (fun e -> e.Path)) "first two kept"
+          equal [ "src/F3.cs"; "src/F4.cs" ] (s.Rejected |> List.map fst) "rest rejected"
       // ---------- json ----------
       "json: malformed plan reports every problem at once", fun () ->
           let bad = """{ "handover": {"id":"x","digest":"y"}, "tasks": [ {"id":"A"}, {"id":"B","title":"t","instructions":"i","writes":["../x"]} ] }"""
