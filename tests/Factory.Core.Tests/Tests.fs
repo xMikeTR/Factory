@@ -312,6 +312,29 @@ let tests: (string * (unit -> unit)) list =
           for e in evs do
               equal (Ok e) (Json.decodeTaskEvent (Json.encodeTaskEvent e)) "round trip"
 
+      // ---------- quality ----------
+      "quality: CRAP is c^2 (1-cov)^3 + c, and a function with no coverage data counts as uncovered", fun () ->
+          let f c cov = { File = "a.cs"; Name = "F"; Line = 1; Cyclomatic = c; Lines = 10; Coverage = cov }
+          equal 12.0 (Quality.crap (f 3 (Some 0.0))) "uncovered: c^2 + c"
+          equal 3.0 (Quality.crap (f 3 (Some 1.0))) "fully covered: c"
+          equal 12.0 (Quality.crap (f 3 None)) "no data is uncovered"
+      "quality: a new function must meet every threshold; a function that was already over is only held to its baseline", fun () ->
+          let t = { MaxCyclomatic = 10; MaxCrap = 30.0; MaxLines = 60 }
+          let f name c = { File = "a.cs"; Name = name; Line = 1; Cyclomatic = c; Lines = 20; Coverage = Some 1.0 }
+          let touched = [ { File = "a.cs"; First = 1; Last = 20 } ]
+          equal [] (Quality.check t [] [ f "New" 10 ] touched |> List.map (fun v -> v.Measure)) "at the limit is fine"
+          equal [ Cyclomatic ] (Quality.check t [] [ f "New" 11 ] touched |> List.map (fun v -> v.Measure)) "new code over the limit"
+          equal [] (Quality.check t [ f "Old" 15 ] [ f "Old" 15 ] touched) "touched and no worse than before"
+          equal [ Cyclomatic; Crap ] (Quality.check t [ f "Old" 15 ] [ f "Old" 16 ] touched |> List.map (fun v -> v.Measure)) "touched and worse (CRAP follows complexity)"
+          equal [] (Quality.check t [ f "Old" 15 ] [ f "Old" 12 ] touched) "touched and better"
+      "quality: untouched functions are not judged, and a function is identified by file and name, not line", fun () ->
+          let t = { MaxCyclomatic = 10; MaxCrap = 30.0; MaxLines = 60 }
+          let f line c = { File = "a.cs"; Name = "Old"; Line = line; Cyclomatic = c; Lines = 20; Coverage = Some 1.0 }
+          equal [] (Quality.check t [ f 1 15 ] [ f 100 16 ] [ { File = "a.cs"; First = 1; Last = 5 } ]) "worse but untouched (moved down)"
+          equal [] (Quality.check t [ f 1 15 ] [ f 100 15 ] [ { File = "a.cs"; First = 100; Last = 100 } ]) "moved but same: same function"
+          equal [ Cyclomatic; Crap ] (Quality.check t [ f 1 15 ] [ f 100 16 ] [ { File = "a.cs"; First = 110; Last = 110 } ] |> List.map (fun v -> v.Measure)) "touched inside the moved body"
+          equal [] (Quality.check t [] [ f 100 99 ] [ { File = "b.cs"; First = 100; Last = 100 } ]) "other file touched"
+
       // ---------- merge ----------
       "merge: high-risk element needs two approvals and a manual check is a pending block", fun () ->
           let d = Dispatcher.dispatch validated.Value
