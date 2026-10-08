@@ -10,7 +10,7 @@ using Core = Factory.Core.Core;
 
 /// Runs verify entries exactly as the plan declared them. The agent never runs these on its own
 /// behalf and cannot edit them: the plan is frozen, and verify scripts sit under protected paths.
-public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitWorkspace git)
+public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitWorkspace git, TimeSpan? suiteTimeout = null)
 {
     /// Automated entries run in order, each against the tree as it found it: whatever a check
     /// writes (generated code, logs) is reverted before the next one starts, so one check cannot
@@ -92,20 +92,21 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
     /// FACTORY_TEST_RESULTS; removed after reading so it never shows up as a change.
     public const string ResultsPath = ".factory-results/junit.xml";
 
-    private static readonly TimeSpan SuiteTimeout = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan DefaultSuiteTimeout = TimeSpan.FromMinutes(30);
+    private TimeSpan SuiteTimeout => suiteTimeout ?? DefaultSuiteTimeout;
 
     /// The P2P baseline for a team: the suite's results on the team branch before its first task.
     /// Recorded once in the ledger and reused on resume. Null when the suite writes no JUnit XML,
-    /// which turns the regression check off.
+    /// which turns the regression check off, or when it timed out (ledgered as timed_out, measured again on resume).
     public async Task<IReadOnlyList<TestResult>?> BaselineAsync(string runId, string teamId, string command, string worktree, CancellationToken ct)
     {
         await foreach (var e in ledger.ReadAsync(runId, ct))
-            if (e is { Kind: LedgerKinds.Verify, Stage: "baseline" } && e.TeamId == teamId && e.Payload is not null)
+            if (e is { Kind: LedgerKinds.Verify, Stage: "baseline" } && e.TeamId == teamId && e.Payload is not null && e.Outcome != "timed_out")
                 return DecodeTests(e.Payload);
 
-        var (tests, _) = await SuiteAsync(runId, teamId, command, worktree, ct);
+        var (tests, run) = await SuiteAsync(runId, teamId, command, worktree, ct);
         await ledger.AppendAsync(new LedgerEvent(runId, "S2", "baseline", LedgerKinds.Verify, TeamId: teamId,
-            Outcome: tests is null ? "no_results" : "recorded",
+            Outcome: run.TimedOut ? "timed_out" : tests is null ? "no_results" : "recorded",
             Payload: JsonSerializer.Serialize(new { tests = tests?.Select(t => new { name = t.Name, passed = t.Passed }) })), ct);
         return tests;
     }

@@ -82,8 +82,8 @@ public class HeavyGateTests
         var inner = new FakeSandbox(call => call == 1 ? (TimeSpan.FromMilliseconds(5), true) : (TimeSpan.FromMilliseconds(80), false));
         var gated = await new GatedSandboxFactory(new FakeFactory(inner), new HeavyGate(3)).ForTeamAsync("t", ".", default);
 
+        // Each Run reaches the fake (and numbers its call) synchronously, so calls 1-3 are all in flight before any await yields.
         var timedOut = Run(gated);
-        await Task.Delay(1);
         var others = Task.WhenAll(Run(gated), Run(gated));
         await Task.WhenAll(timedOut, others);
 

@@ -30,6 +30,20 @@ public class VerifyRunnerTests : IDisposable
         Directory.Delete(_out, recursive: true);
     }
 
+    /// A suite that timed out says nothing about which tests pass, so it is not recorded as "this suite writes no results"
+    /// (which would switch the regression check off for good): the row says timed_out and a resume measures again.
+    [Fact]
+    public async Task A_baseline_that_times_out_is_recorded_as_such_and_measured_again_on_resume()
+    {
+        var runner = new VerifyRunner(_ledger, new LocalSandboxFactory(), new GitWorkspace(_dir, Path.Combine(_out, "state")), TimeSpan.FromSeconds(1));
+
+        Assert.Null(await runner.BaselineAsync("run-1", "team-T-001", "sleep 10", _dir, default));
+        Assert.Equal("timed_out", _ledger.Events.Single(e => e.Stage == "baseline").Outcome);
+
+        Assert.Null(await runner.BaselineAsync("run-1", "team-T-001", "true", _dir, default));
+        Assert.Equal(["timed_out", "no_results"], _ledger.Events.Where(e => e.Stage == "baseline").Select(e => e.Outcome));
+    }
+
     [Fact]
     public async Task Each_check_starts_from_the_tree_as_found()
     {
