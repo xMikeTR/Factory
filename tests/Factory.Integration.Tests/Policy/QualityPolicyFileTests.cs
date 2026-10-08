@@ -33,6 +33,23 @@ public class QualityPolicyFileTests
     }
 
     [Fact]
+    public void Mutation_is_off_unless_the_file_turns_it_on_and_wants_eighty_percent()
+    {
+        Assert.Equal(QualityMode.Off, QualityPolicyFile.Load(RepoWith(null)).Mutation!.Mode);
+
+        var m = QualityPolicyFile.Load(RepoWith("quality:\n  mutation: block\n")).Mutation!;
+        Assert.Equal((QualityMode.Block, 0.8), (m.Mode, m.Thresholds.MinScore));
+        Assert.Equal(0.6, QualityPolicyFile.Load(RepoWith("quality:\n  mutation: report\n  mutationMinScore: 0.6\n")).Mutation!.Thresholds.MinScore);
+    }
+
+    [Fact]
+    public void An_unknown_mutation_mode_or_a_score_outside_zero_to_one_is_rejected()
+    {
+        Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  mutation: yolo\n")));
+        Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  mutationMinScore: 1.5\n")));
+    }
+
+    [Fact]
     public void An_unknown_mode_or_a_non_positive_limit_is_rejected()
     {
         Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  mode: yolo\n")));

@@ -36,6 +36,8 @@ public sealed class TeamHarness : IDisposable
     public Handover Handover { get; }
     /// Approves everything unless a test queues verdicts.
     public ScriptedReviewer Reviewer { get; } = new();
+    /// Finds nothing unless a test queues mutants; consulted only when the quality policy turns mutation on.
+    public ScriptedMutationRunner Mutation { get; } = new();
 
     private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy)
     {
@@ -54,7 +56,8 @@ public sealed class TeamHarness : IDisposable
             new VerifyRunner(Ledger, sandboxes, git),
             sandboxes,
             pullRequests ?? new DryRunPullRequests(Path.Combine(state, "runs", RunId)),
-            Reviewer);
+            Reviewer,
+            Mutation);
     }
 
     /// `suiteCommand` is the integration test command; "true" writes no results, so there is no

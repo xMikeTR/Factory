@@ -7,7 +7,10 @@ namespace Factory.Harness.Policy;
 /// violation fails the task's verify like any other check.
 public enum QualityMode { Off, Report, Block }
 
-public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Thresholds);
+/// Mutation testing of the lines a task changed. Mode off by default: it needs the tool in the runner image.
+public sealed record MutationPolicy(QualityMode Mode, MutationThresholds Thresholds);
+
+public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Thresholds, MutationPolicy? Mutation = null);
 
 /// The `quality:` section of the target repo's .factory/policy.yaml (same file and same trust rule as
 /// MergePolicyFile: read from the base checkout, never a task worktree).
@@ -17,6 +20,8 @@ public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Threshold
 ///     maxCyclomatic: 15
 ///     maxCrap: 30
 ///     maxLines: 80
+///     mutation: off | report | block  # default off
+///     mutationMinScore: 0.8           # share of mutants on changed lines the tests must kill
 public static class QualityPolicyFile
 {
     public static readonly QualityPolicy Default = new(QualityMode.Report, new QualityThresholds(15, 30.0, 80));
@@ -29,6 +34,8 @@ public static class QualityPolicyFile
         public int? MaxCyclomatic { get; set; }
         public double? MaxCrap { get; set; }
         public int? MaxLines { get; set; }
+        public string? Mutation { get; set; }
+        public double? MutationMinScore { get; set; }
     }
 
     private static readonly IDeserializer Yaml = new DeserializerBuilder()
@@ -56,7 +63,18 @@ public static class QualityPolicyFile
         if (q.MaxCrap is <= 0) errors.Add("quality.maxCrap: must be > 0");
         if (q.MaxLines is <= 0) errors.Add("quality.maxLines: must be > 0");
 
+        QualityMode? mutation = q.Mutation?.ToLowerInvariant() switch
+        {
+            null or "off" => QualityMode.Off,
+            "report" => QualityMode.Report,
+            "block" => QualityMode.Block,
+            _ => null,
+        };
+        if (mutation is null) errors.Add($"quality.mutation: '{q.Mutation}' is not off|report|block");
+        if (q.MutationMinScore is <= 0 or > 1) errors.Add("quality.mutationMinScore: must be in (0, 1]");
+
         if (errors.Count > 0) throw new FactoryRejectedException($"{path} is invalid", errors.ToArray());
-        return new QualityPolicy(mode!.Value, new QualityThresholds(q.MaxCyclomatic ?? d.MaxCyclomatic, q.MaxCrap ?? d.MaxCrap, q.MaxLines ?? d.MaxLines));
+        return new QualityPolicy(mode!.Value, new QualityThresholds(q.MaxCyclomatic ?? d.MaxCyclomatic, q.MaxCrap ?? d.MaxCrap, q.MaxLines ?? d.MaxLines),
+            new MutationPolicy(mutation!.Value, new MutationThresholds(q.MutationMinScore ?? 0.8)));
     }
 }

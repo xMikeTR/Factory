@@ -234,6 +234,73 @@ public class TeamRunnerTests
         Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "reported");
     }
 
+    private static Mutant Survivor(string id = "m1") => new(id, NewFile, 1, "Equality", MutantStatus.Survived);
+    private static Mutant Killed(string id = "m2") => new(id, NewFile, 1, "Arithmetic", MutantStatus.Killed);
+    private static QualityPolicy MutationOn(QualityMode mode) =>
+        new(QualityMode.Off, Tight, new MutationPolicy(mode, new MutationThresholds(0.8)));
+
+    private static ScriptedChatClient TestsThenImpl(params Microsoft.Extensions.AI.ChatResponse[] more) => new([
+        Say("Approach: test first"),
+        Call("write_file", new { path = TestFile, content = $"test -f {NewFile}\n" }),
+        Call("declare_done", new { summary = "tests" }), Say("done"),
+        Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+        Call("declare_done", new { summary = "impl" }), Say("done"),
+        .. more]);
+
+    [Fact]
+    public async Task In_block_mode_surviving_mutants_send_the_task_back_to_the_TestAuthor_with_the_survivors()
+    {
+        var model = TestsThenImpl(Say("I cannot strengthen these"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Block));
+        h.Mutation.Then(Survivor(), Killed());
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.NotEqual(TeamStatus.Passed, result.Status);
+        Assert.Equal([NewFile], h.Mutation.Asked.Single());
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "blocked" && e.Payload!.Contains("QuoteStatus.cs:1"));
+        Assert.Contains(h.Rows(LedgerKinds.TaskEvent), e => e.Payload!.Contains("returned_to_test_author"));
+        Assert.Contains(model.Requests.Last(), m => m.Text.Contains("mutants of the code this task changed survived"));
+    }
+
+    [Fact]
+    public async Task A_mutation_score_on_the_gate_passes()
+    {
+        var model = TestsThenImpl();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Block));
+        h.Mutation.Then(Killed("a"), Killed("b"), Killed("c"), Killed("d"), Survivor()); // 80%
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+    }
+
+    [Fact]
+    public async Task In_report_mode_survivors_are_in_the_ledger_and_the_task_passes()
+    {
+        var model = TestsThenImpl();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Report));
+        h.Mutation.Then(Survivor());
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "reported");
+    }
+
+    [Fact]
+    public async Task A_mutation_run_that_times_out_parks_the_task_as_an_environment_problem()
+    {
+        var model = TestsThenImpl();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Block));
+        h.Mutation.ThenTimeout();
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Blocked, result.Status);
+        Assert.Equal("environment", result.Blocked!.Source);
+    }
+
     [Fact]
     public async Task Failing_verify_gets_one_verify_row_per_attempt_then_fails_the_team()
     {

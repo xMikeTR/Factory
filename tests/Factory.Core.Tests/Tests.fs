@@ -181,6 +181,15 @@ let tests: (string * (unit -> unit)) list =
                   [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 1 ], [])
                     TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 1 ], []) ]
           check (match s with Ok(Failed(VerifyBudgetExhausted _, _)) -> true | _ -> false) $"%A{s}"
+      "state: surviving mutants in a green verify send the task back to the TestAuthor", fun () ->
+          let s = TaskState.replay limits [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; ReturnedToTestAuthor "2 mutants survived" ]
+          check (match s with Ok(Ready(_, TestAuthor)) -> true | _ -> false) $"%A{s}"
+      "state: survivors with the verify budget used up fail the task", fun () ->
+          let s =
+              TaskState.replay limits
+                  [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 1 ], [])
+                    TurnStarted Standard; TurnEnded; VerifyRequested; ReturnedToTestAuthor "2 mutants survived" ]
+          check (match s with Ok(Failed(VerifyBudgetExhausted [ o ], _)) -> o.Name = "mutation" && o.OutputTail = "2 mutants survived" | _ -> false) $"%A{s}"
       "state: turn budget", fun () ->
           let turn = [ TurnStarted Small; TurnEnded ]
           let s = TaskState.replay limits (List.concat [ turn; turn; turn; [ TurnStarted Small ] ])
