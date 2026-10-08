@@ -508,6 +508,29 @@ internal sealed class TaskLoop(
         return run.TimedOut ? null : run.Mutants.Count(m => m.Status.IsKilled || m.Status.IsTimeout);
     }
 
+    private readonly Dictionary<string, double?> _baselineScores = [];
+
+    /// Whole-file mutation score of each file on a checkout of the integration branch (as before the run's tasks); a file the
+    /// baseline does not have, or that has nothing to judge, has no entry. Measured once per file. Null if the tool timed out.
+    private async Task<Dictionary<string, double>?> BaselineScoresAsync(IMutationRunner runner, IReadOnlyList<string> files, CancellationToken ct)
+    {
+        var missing = files.Where(f => !_baselineScores.ContainsKey(f)).ToList();
+        if (missing.Count > 0)
+        {
+            await using var checkout = await svc.Git.BaselineCheckoutAsync(runId, ct);
+            var present = missing.Where(f => File.Exists(Path.Combine(checkout.Path, f))).ToList();
+            foreach (var f in missing.Except(present)) _baselineScores[f] = null;
+            if (present.Count > 0)
+            {
+                var baseline = await runner.RunAsync(checkout.Path, present, ct);
+                if (baseline.TimedOut) return null;
+                foreach (var f in present)
+                    _baselineScores[f] = Mutation.score(Core.ToList(baseline.Mutants.Where(m => m.File == f))) is { } sc ? sc.Value : null;
+            }
+        }
+        return files.Where(f => _baselineScores[f] is not null).ToDictionary(f => f, f => _baselineScores[f]!.Value);
+    }
+
     // Equivalence claims are kept by what the mutant is (file, line, mutator), not by the tool's id, which is per run.
     private Dictionary<string, Mutant> _lastMutants = [];
     private readonly Dictionary<string, string> _claims = [];
@@ -547,6 +570,13 @@ internal sealed class TaskLoop(
         var confirmedIds = run.Mutants.Where(m => _confirmed.Contains(MutantKey(m))).Select(m => m.Id).ToHashSet();
         var equivalents = Mutation.confirmedEquivalents(SetModule.OfSeq(declared), SetModule.OfSeq(confirmedIds));
         var violations = Mutation.check(policy.Thresholds, MapModule.Empty<string, double>(), equivalents, Core.ToList(ranges), Core.ToList(run.Mutants));
+        if (!violations.IsEmpty)
+        {
+            // A file that already scored lower before the run is held to that score, not the threshold.
+            var scores = await BaselineScoresAsync(runner, violations.Select(v => v.File).ToList(), ct);
+            if (scores is null) return new VerifyOutcome("mutation", 124, elapsed, "the mutation tool did not finish on the baseline");
+            violations = Mutation.check(policy.Thresholds, MapModule.OfSeq(scores.Select(kv => Tuple.Create(kv.Key, kv.Value))), equivalents, Core.ToList(ranges), Core.ToList(run.Mutants));
+        }
         if (violations.IsEmpty)
         {
             if (policy.Mode == QualityMode.Report) await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, "clean", JsonSerializer.Serialize(new { attempt }), _teamId, _taskId, ct);

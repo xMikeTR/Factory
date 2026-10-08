@@ -8,6 +8,7 @@ public sealed class ScriptedMutationRunner : IMutationRunner
 {
     private readonly Queue<MutationRun> _runs = new();
     public List<IReadOnlyList<string>> Asked { get; } = [];
+    public List<string> Worktrees { get; } = [];
 
     public ScriptedMutationRunner Then(params Mutant[] mutants) { _runs.Enqueue(new MutationRun(mutants, false)); return this; }
     public ScriptedMutationRunner ThenTimeout() { _runs.Enqueue(new MutationRun([], true)); return this; }
@@ -15,6 +16,7 @@ public sealed class ScriptedMutationRunner : IMutationRunner
     public Task<MutationRun> RunAsync(string worktree, IReadOnlyList<string> files, CancellationToken ct)
     {
         Asked.Add(files);
+        Worktrees.Add(worktree);
         return Task.FromResult(_runs.Count > 0 ? _runs.Dequeue() : new MutationRun([], false));
     }
 }

@@ -337,3 +337,9 @@ TestAuthor tool `declare_equivalent(mutantId, reason)` (flagged widening: `IRevi
 Claims are kept by file:line:mutator (tool ids are per run), judged once by the reviewer, confirmed ones are excluded via
 `Mutation.confirmedEquivalents`; rejected ones stay survivors and the brief says so. Ledger: `mutation equivalent_confirmed|equivalent_rejected`.
 Not measured: whether a live reviewer judges claims well (paid run).
+
+### Per-file baseline mutation score (done)
+When the gate would fail, the violating files are mutated on a throwaway checkout of the integration branch
+(`GitWorkspace.BaselineCheckoutAsync`, removed after) and `Mutation.check` gets whole-file baseline scores, so a file that was
+already weaker is held to that score. Measured once per file per task; a file the baseline lacks has no entry; a baseline timeout
+parks as an environment problem. Cost: one extra Stryker run per failing check. Not verified with real Stryker in Docker.

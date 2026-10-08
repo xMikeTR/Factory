@@ -7,6 +7,25 @@ namespace Factory.Integration.Tests.Git;
 public class GitWorkspaceTests
 {
     [Fact]
+    public async Task A_baseline_checkout_is_the_integration_branch_apart_from_the_team_worktree_and_is_removed_after()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs"), "// changed\n");
+        string path;
+
+        await using (var baseline = await h.Services.Git.BaselineCheckoutAsync(TeamHarness.RunId, CancellationToken.None))
+        {
+            path = baseline.Path;
+            Assert.NotEqual(wt, path);
+            Assert.Equal("// quote\n", await File.ReadAllTextAsync(Path.Combine(path, "src/Pricing.Data/Quote.cs")));
+        }
+
+        Assert.False(Directory.Exists(path));
+        Assert.Equal("// changed\n", await File.ReadAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs")));
+    }
+
+    [Fact]
     public async Task StashImpl_hides_the_implementation_and_restores_it()
     {
         using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));

@@ -42,6 +42,19 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         return path;
     }
 
+    /// A throwaway checkout of the integration branch, apart from every team worktree, to measure the code as it was
+    /// before the run's tasks (the mutation baseline). Removed when disposed.
+    public async Task<BaselineCheckout> BaselineCheckoutAsync(string runId, CancellationToken ct)
+    {
+        var path = Path.Combine(stateDir, "worktrees", runId, $"baseline-{Guid.NewGuid():N}");
+        await GitAsync(repoPath, ct, "worktree", "add", "--detach", path, IntegrationBranch(runId));
+        return new BaselineCheckout(path, async () =>
+        {
+            await GitAsync(repoPath, CancellationToken.None, check: false, "worktree", "remove", "--force", path);
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        });
+    }
+
     /// Paths changed in the worktree since its last commit, tracked and untracked.
     public async Task<List<string>> ChangedPathsAsync(string worktree, CancellationToken ct)
     {
@@ -305,4 +318,11 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
             throw new InvalidOperationException($"git {string.Join(' ', args)} failed in {dir}:\n{r.Tail()}");
         return r;
     }
+}
+
+/// A detached checkout of the integration branch; disposing removes it.
+public sealed class BaselineCheckout(string path, Func<Task> remove) : IAsyncDisposable
+{
+    public string Path { get; } = path;
+    public async ValueTask DisposeAsync() => await remove();
 }
