@@ -64,6 +64,9 @@ RUN npm install -g eslint@9 playwright@${PLAYWRIGHT_VERSION} \
  && npx --no-install playwright install --with-deps chromium \
  && chmod -R a+rX /opt/playwright \
  && rm -rf /var/lib/apt/lists/*
+COPY eslint/eslint.config.mjs /opt/factory/eslint/eslint.config.mjs
+RUN cd /opt/factory/eslint && npm install --no-save --ignore-scripts typescript-eslint@8 typescript@5 eslint@9 \
+ && chmod -R a+rX /opt/factory
 RUN printf '%s\n' 'registry=https://registry.npmjs.org/' 'ignore-scripts=true' 'audit=false' 'fund=false' > /etc/factory/npmrc \
  && chmod a+r /etc/factory/npmrc
 
