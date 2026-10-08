@@ -83,9 +83,13 @@ public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPol
     public FactoryAgents(GatewayOptions gateway, IToolPolicy policy, ILedger ledger, bool captureContent = false)
         : this(gateway.ChatClientFor, policy, ledger, captureContent) { }
 
+    /// Tool results older than this many are replaced by stubs in what the model sees.
+    public const int KeepRecentToolResults = 5;
+
     public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools)
     {
         var chat = chatFor(tier).AsBuilder()
+            .Use(inner => new TrimmingChatClient(inner, KeepRecentToolResults))
             .UseOpenTelemetry(sourceName: FactoryTelemetry.SourceName, configure: o => o.EnableSensitiveData = captureContent)
             .Build();
 
