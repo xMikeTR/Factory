@@ -74,7 +74,7 @@ results; the selection survives resume (from the ledger).
 | Module | Change | Blast radius |
 |---|---|---|
 | `Core/ContextPack.fs` (new, after `Domain.fs`) | pure selection + budget fitting | Interop, TeamRunner |
-| `Core/Interop.fs` ⚠ high-centrality | expose ContextPack to C# | additive only |
+| `Core/Interop.fs` | not touched: C# calls `ContextPack` directly | none |
 | `Harness/FactoryAgents.cs` | `TurnBudget` (cap/warn/exempt) in the governed middleware; `ToolResultTrimmer` in the chat pipeline | every agent; `Create` gains an optional parameter |
 | `Harness/ScopedWorkspace.cs` | `submit_approach` tool for the task-planner | task-planner only |
 | `S2/Teams/Briefs.cs` | `Task` gains the context pack | TeamRunner, BriefsTests |
@@ -116,7 +116,7 @@ public static IList<ChatMessage> ToolResultTrimmer.Trim(IList<ChatMessage> messa
 // Briefs.Task(..., IReadOnlyList<PackFile> context)
 ```
 Ledger: the `task_plan` turn payload gains `context: [{path, reason}]` and `rejected`; resume reads
-the selection back from it (frozen). A capped turn ledgers `tool_call` outcome `capped`.
+the selection back from it (frozen). A capped call ledgers `tool_call` outcome `capped`; the act turn payload carries `capped`.
 
 ### Test strategy
 - Core (F#, pure): `select` rejects missing/escaping/duplicate/over-limit nominations and keeps

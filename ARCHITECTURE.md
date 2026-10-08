@@ -4,7 +4,10 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-07 — gated restore window: `RestoreGate` restores every project on disk (live5:
+> Last updated: 2026-10-08 — context cut (strand 1 of PLAN-QUALITY.md): `ContextPack` (task-planner nominations
+> via `submit_approach` + deterministic defaults, frozen per task, refreshed each turn), `TurnBudget` (15 tool
+> calls per acting turn, then verify), `ToolResultTrimmer` (older tool results stubbed).
+> Previously 2026-10-07 — gated restore window: `RestoreGate` restores every project on disk (live5:
 > a test project outside the sln was never restored), reviews changed restore inputs against HEAD with
 > `ProjectFileChange`'s allow-list before the network opens, and pins sources to nuget.org
 > (`/etc/factory/nuget.config` in the image). A refusal runs no checks and goes back to the TestAuthor
@@ -85,6 +88,7 @@ C4Container
 | `Factory.Core/Paths.fs` | Safe globs: create, match, overlap (over-approx), containment (under-approx) | `PathPattern` | Domain, PlanValidator, Dispatcher, Merge, Json, Interop, ScopedWorkspace, DesigncHandoverReader, Briefs, TeamRunner | — |
 | `Factory.Core/ProjectFileChange.fs` | Allow-list for changes to files `dotnet restore` reads (project files, Directory.Packages.props; nuget.config/global.json/.props/.targets refused) | `ProjectFileChange.review` | Interop, RestoreGate | — |
 | `Factory.Core/Domain.fs` | Handover, plan and verify types | `Handover`, `ElementSpec`, `BoundDecision`, `PlannedTask`, `VerifyEntry` | every Core module after it, Harness, S2, tests | — |
+| `Factory.Core/ContextPack.fs` | Context pack for acting turns: deterministic defaults, validated nominations (never blocking), task-written files, budget fitting (60k chars) | `ContextPack`, `Selection`, `PackFile` | TaskLoop, ScopedWorkspace (submit_approach), Briefs | — |
 | `Factory.Core/PlanValidator.fs` | Plan rules (collects all errors); sole constructor of `ValidatedPlan` | `PlanError`, `ValidatedPlan` | Dispatcher, Interop, S2 | — |
 | `Factory.Core/Dispatcher.fs` | Overlapping writes -> teams; team DAG -> waves | `Team`, `Wave`, `DispatchPlan` | Merge, Json, Interop, S2 | — |
 | `Factory.Core/TaskState.fs` | Task lifecycle, budgets, phases (TestAuthor/Implementer); `Passed` needs three-gate evidence; `replay` | `TaskState`, `TaskEvent`, `RedEvidence`, `PassedEvidence`, `Limits` | Json, Interop, RegistryLedgerProjector, TeamRunner | — |
@@ -97,8 +101,9 @@ C4Container
 | `Factory.Harness/FactoryAgents.cs` | Builds every agent: provider client per tier, governed tool calls, gen_ai spans | `GatewayOptions`, `ModelProvider`, `AgentScope`, `FactoryAgents` | S2 executors, TaskLoop | Anthropic API / OpenAI-compatible gateway |
 | `Factory.Harness/ToolPolicy.cs` | Role allow-list (fallback and contract double) | `IToolPolicy`, `RoleAllowListPolicy`, `Roles` | FactoryAgents, AcsToolPolicy | — |
 | `Factory.Harness/Governance/AcsToolPolicy.cs` | AGT/ACS policy per role from `policies/s2/*.yaml` | `AcsToolPolicy` | Program | Microsoft.AgentGovernance |
+| `Factory.Harness/TurnBudget.cs`, `ToolResultTrimmer.cs` | Per-turn tool-call cap (warn 12, stop 15, `check_quality` exempt); stubs tool results older than the last 5 in what the model sees | `TurnBudget`, `TrimmingChatClient` | FactoryAgents, TaskLoop | — |
 | `Factory.Harness/Configurator.cs` | plan/act/escalate + tier: heuristic, Laya, fallback | `IConfigurator`, `HeuristicConfigurator`, `LayaConfigurator`, `FallbackConfigurator` | TaskLoop, Program | Laya sidecar (HTTP) |
-| `Factory.Harness/ScopedWorkspace.cs` | Agent tools; refuses writes outside the phase's paths; runs commands in the sandbox | `ScopedWorkspace`, `TurnSignals` | TaskLoop, Planner | File system, sandbox |
+| `Factory.Harness/ScopedWorkspace.cs` | Agent tools; refuses writes outside the phase's paths; runs commands in the sandbox | `ScopedWorkspace`, `TurnSignals` (incl. `submit_approach`, `Capped`) | TaskLoop, Planner | File system, sandbox |
 | `Factory.Harness/Sandbox/*` | Command sandbox: Docker container per team (default) or scrubbed local | `ISandboxFactory`, `ICommandSandbox`, `DockerSandbox`, `LocalSandbox`, `RestoreGate` | ScopedWorkspace, VerifyRunner, TeamRunner, Program | Docker Engine CLI |
 | `Factory.Harness/Registry/*` | Designc handover reader (hash-checked) and DSL model; ledger projection; needs-decision ids/resolutions | `DesigncHandoverReader`, `DslModel`, `RegistryLedgerProjector`, `RegistryNeedsDecisions` | HandoverInput, executors | Registry repo files |
 | `Factory.Harness/Policy/MergePolicyFile.cs` | `.factory/policy.yaml` + env override | `MergePolicyFile` | FactorySettings | Target repo file |
@@ -109,7 +114,7 @@ C4Container
 | `Factory.S2/Executors/*` | Planner (reuses the previous plan on `--since`), PlanValidator, Dispatcher (writes regeneration.json), Waves (needs-decision park/resume), IntegrationVerify, Merge, Finalize | executor classes, `Messages.cs` | Workflow | Registry |
 | `Factory.S2/Teams/TeamRunner.cs` | Per-team loop; TaskLoop drives one task (red, green, stash check, P2P, scope); carries regeneration-unaffected tasks | `TeamRunner`, `TaskLoop`, `TeamResult` | WaveExecutor, TaskRerun | — |
 | `Factory.S2/Teams/TaskRerun.cs` | k independent attempts at one task: pass rate, turns, tokens | `TaskRerun`, `RerunReport` | Program (`rerun`) | — |
-| `Factory.S2/Teams/Briefs.cs` | Per-turn briefs (incl. the PObserve logging contract); prompts from `prompts/*.md` | `Briefs` | TaskLoop, Planner | — |
+| `Factory.S2/Teams/Briefs.cs` | Per-turn briefs (incl. the PObserve logging contract); prompts from `prompts/*.md` | `Briefs` (`Task` takes the context pack) | TaskLoop, Planner | — |
 | `Factory.S2/Verify/*` | Verify entries in the sandbox, each from the tree as found, cleanup always, JUnit parsing, baseline/regression | `VerifyRunner`, `VerifyOutcome`, `JUnit` | TaskLoop, IntegrationVerify | Sandbox, GitWorkspace |
 | `Factory.S2/Git/GitWorkspace.cs` | Integration branch, worktree per team, stash, leave-as-found, idempotent merges | `GitWorkspace` | TeamRunner, TaskRerun, VerifyRunner, executors | git |
 | `Factory.S2/Integrations.cs` | PRs (gh / dry-run), approval comments, human channel | `IPullRequests`, `IApprovalComments`, `GhCliPullRequests`, `IHumanChannel` | MergeExecutor, WorkflowHost, Program | GitHub (gh CLI) |
@@ -159,6 +164,7 @@ graph TD
     Executors --> TeamRunner
     TaskRerun --> TeamRunner
     TeamRunner --> Briefs
+    TeamRunner --> ContextPack
     TeamRunner --> VerifyRunner
     TeamRunner --> GitWorkspace
     VerifyRunner --> Sandbox
@@ -213,6 +219,8 @@ Used by structural-centrality-guard to determine escalation threshold.
 
 | Rule | Location | Type | Notes |
 |------|---------|------|-------|
+| The task-planner's context nominations are validated and never block (bad paths are reported back, defaults remain); the selection is frozen at the approach turn and recovered from the `task_plan` ledger row, contents are read fresh each turn | `ContextPack.fs`, `TaskLoop.PlanTurnAsync`/`ContextPackAsync` | Invariant | PLAN-QUALITY.md strand 1 |
+| An acting turn is capped at 15 tool calls (`check_quality` exempt); at the cap it counts as done and verify (or the red run) judges the worktree | `TurnBudget.cs`, `FactoryAgents.GovernedToolCallAsync`, `TaskLoop.ActTurnAsync` | Invariant | live1: a 514k-token, 31-call TestAuthor turn |
 | `Passed` needs red evidence, all-green automated outcomes and a stashed-impl run that fails | `TaskState.fs` `PassedEvidence` | Invariant (type-enforced) | private ctors |
 | TestAuthor writes only `testWrites`, Implementer only `writes`; disjoint | `PlanValidator.fs`, `ScopedWorkspace.cs` | Invariant | scope enforced by tools and after each turn |
 | A test that passed in the team baseline and fails now blocks green (P2P) | `Regression.fs`, `TaskLoop` | Business rule | missing test counts as failing |
