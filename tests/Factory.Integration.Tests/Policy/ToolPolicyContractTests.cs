@@ -100,7 +100,7 @@ public class AcsToolPolicyTests
     {
         var policy = AcsToolPolicy.Load(AcsToolPolicy.DefaultDirectory);
 
-        Assert.Equal([Roles.Implementer, Roles.Planner, Roles.Reviewer, Roles.TaskPlanner, Roles.TestAuthor], policy.Roles.Order());
+        Assert.Equal([Roles.Implementer, Roles.Planner, Roles.Qa, Roles.Reviewer, Roles.TaskPlanner, Roles.TestAuthor], policy.Roles.Order());
     }
 
     [Theory]

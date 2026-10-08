@@ -1,6 +1,7 @@
 using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Governance;
+using Factory.Harness.Policy;
 using Factory.Harness.Sandbox;
 using Factory.Harness.Telemetry;
 using Factory.S2;
@@ -154,7 +155,13 @@ static FactoryServices Services(FactorySettings settings, string runId, Dictiona
     var git = new GitWorkspace(settings.RepoPath, settings.StateDir);
     var gateways = ModelGateways.FromEnvironment(env, mergesAreDryRun: pullRequests is DryRunPullRequests);
     var agents = new FactoryAgents(gateways, toolPolicy, ledger, FactoryTelemetry.CaptureContent(env));
-    return new FactoryServices(
+    // QA runs only for a repo that describes a QA environment (.factory/qa-env.yaml); its requirements are the plan's tasks
+    // (default source, until the handover carries requirements of its own).
+    FactoryServices? built = null;
+    IQaRunner? qa = QaEnvFile.Load(settings.RepoPath) is null ? null
+        : new AgentQaRunner(agents, git, sandboxes, settings.BaseBranch,
+            id => built!.LoadValidatedPlan(id).Plan.Tasks.Select(t => $"{t.Id.Value}: {t.Title}").ToList(), settings.CommandAllowList);
+    built = new FactoryServices(
         settings,
         ledger,
         agents,
@@ -164,7 +171,9 @@ static FactoryServices Services(FactorySettings settings, string runId, Dictiona
         sandboxes,
         pullRequests,
         new AgentReviewer(agents, gateways.ReviewerIndependence, settings.CommandAllowList),
-        mutation: new StrykerRunner(sandboxes));
+        mutation: new StrykerRunner(sandboxes),
+        qa: qa);
+    return built;
 }
 
 static PlanValidation Validate(Dictionary<string, string> opts) =>
