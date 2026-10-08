@@ -20,7 +20,7 @@ public static class MergePolicyFile
 {
     public const string RelativePath = ".factory/policy.yaml";
 
-    private sealed class Doc { public Section? Merge { get; set; } }
+    private sealed class Doc { public Section? Merge { get; set; } public object? Quality { get; set; } /* read by QualityPolicyFile */ }
 
     private sealed class Section
     {
