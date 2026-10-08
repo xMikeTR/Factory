@@ -36,6 +36,10 @@ RUN dotnet tool install dotnet-stryker --tool-path /opt/dotnet-tools ${STRYKER_V
  && chmod -R a+rX /opt/dotnet-tools \
  && dotnet-stryker --help >/dev/null
 
+# Line coverage for CRAP (quality.coverage): coverlet.console runs the test project's dll, offline.
+RUN dotnet tool install coverlet.console --tool-path /opt/dotnet-tools --version 10.1.0 \
+ && chmod -R a+rX /opt/dotnet-tools
+
 # `p compile` emits net8.0 projects. Without the .NET 8 packs the build fetches them from
 # nuget.org, which verify commands cannot reach (--network none). Bake them in.
 COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.NETCore.App.Ref/ /usr/share/dotnet/packs/Microsoft.NETCore.App.Ref/

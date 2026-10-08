@@ -12,7 +12,7 @@ using CoreQuality = Factory.Core.Quality;
 public static class QualityGate
 {
     public static async Task<IReadOnlyList<QualityViolation>> EvaluateAsync(
-        GitWorkspace git, string worktree, string runId, QualityThresholds thresholds, CancellationToken ct, ISandboxFactory? sandboxes = null)
+        GitWorkspace git, string worktree, string runId, QualityThresholds thresholds, CancellationToken ct, ISandboxFactory? sandboxes = null, bool coverage = false)
     {
         var all = Diff.parse(await git.TaskDiffAsync(worktree, runId, ct)).Added;
         var added = all
@@ -30,9 +30,12 @@ public static class QualityGate
         }
         // TypeScript: ESLint runs in the sandbox, current and baseline source under the same file name.
         var typescript = all.Where(kv => IsTypeScript(kv.Key) && File.Exists(Path.Combine(worktree, kv.Key))).ToList();
-        if (sandboxes is not null && typescript.Count > 0)
+        var withCoverage = coverage && added.Count > 0;
+        if (sandboxes is not null && (typescript.Count > 0 || withCoverage))
         {
             await using var sandbox = await sandboxes.ForTeamAsync("quality", worktree, ct);
+            // Coverage of the current code only: a baseline without it is judged on cyclomatic and length, never CRAP.
+            if (withCoverage) current = Cobertura.Join(current, await CoverageRunner.CollectAsync(sandbox, worktree, ct)).ToList();
             foreach (var (file, lines) in typescript.Select(kv => (kv.Key, kv.Value)))
             {
                 current.AddRange(await EslintRunner.MeasureAsync(sandbox, worktree, file, null, ct));

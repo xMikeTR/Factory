@@ -33,6 +33,13 @@ public class QualityPolicyFileTests
     }
 
     [Fact]
+    public void Coverage_is_off_unless_the_file_turns_it_on()
+    {
+        Assert.False(QualityPolicyFile.Load(RepoWith(null)).Coverage);
+        Assert.True(QualityPolicyFile.Load(RepoWith("quality:\n  coverage: true\n")).Coverage);
+    }
+
+    [Fact]
     public void Mutation_is_off_unless_the_file_turns_it_on_and_wants_eighty_percent()
     {
         Assert.Equal(QualityMode.Off, QualityPolicyFile.Load(RepoWith(null)).Mutation!.Mode);

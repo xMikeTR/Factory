@@ -325,3 +325,6 @@ judge the integrated result against the baseline. A failure merges nothing and r
   Not covered end to end: the TeamHarness uses a local sandbox, so only the runner and report parsing are unit-tested.
 - Report mode now reaches the PR: quality/mutation rows ledger "reported" or "clean" per attempt; `QualityReport` renders the last row per task
   and stage as "### Quality findings". The baseline suite timing out is ledgered `timed_out` and re-measured on resume (it no longer reads as "no results").
+- Coverage (CRAP): `quality.coverage: true` runs each test project under coverlet.console (in the image) via `CoverageRunner`; `Cobertura.Join`
+  takes one report per test project. Verified for real in the image. Current code only: the baseline has no coverage, so touched-function CRAP
+  is not ratcheted against it (cyclomatic and length are).
