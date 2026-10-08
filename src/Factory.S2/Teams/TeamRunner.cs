@@ -171,9 +171,19 @@ internal sealed class TaskLoop(
                             && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, svc.Settings.IntegrationTestCommand, worktree, ct) is { } regressed)
                             green.Add(regressed); // P2P: a test that passed before fails now, so this is not green
                     }
+                    if (TimedOut(green) is { } greenTimeout)
+                    {
+                        state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(greenTimeout), ct);
+                        break;
+                    }
                     var stashed = green.Count > 0 && green.All(o => o.ExitCode == 0)
                         ? await RunWithImplStashedAsync(attempt, "stash_check", ct)
                         : [];
+                    if (TimedOut(stashed) is { } stashTimeout)
+                    {
+                        state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(stashTimeout), ct);
+                        break;
+                    }
                     state = await ApplyAsync(state, TaskEvent.NewVerifyCompleted(Core.ToList(green), Core.ToList(stashed)), ct);
                     _lastVerifyFailed = state.IsReady; // Reviewing is a verify that passed
                     if (state is TaskState.Ready { Item2.IsTestAuthor: true })
@@ -418,6 +428,7 @@ internal sealed class TaskLoop(
     private async Task<TaskState> TestsDoneAsync(TaskState state, Progress progress, CancellationToken ct)
     {
         var outcomes = await RunWithImplStashedAsync(progress.VerifyAttempts, "red_run", ct);
+        if (TimedOut(outcomes) is { } timeout) return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(timeout), ct);
         var kind = RedRun.classify(Core.ToList(outcomes));
         if (kind is RedReading.Refused refused)
         {
@@ -446,6 +457,17 @@ internal sealed class TaskLoop(
         _lastFailures = null;
         return await ApplyAsync(state, TaskEvent.NewTestsAuthored(red.ResultValue), ct);
     }
+
+    /// A check that timed out (exit 124 after the gate's isolated re-run) says nothing about the code, so
+    /// it is neither red nor green evidence: the task parks as an environment problem instead.
+    private NeedsDecision? TimedOut(IReadOnlyList<VerifyOutcome> outcomes) =>
+        outcomes.Where(o => o.ExitCode == 124).Select(o => o.Name).ToList() is { Count: > 0 } names
+            ? new NeedsDecision(
+                $"These checks timed out, even when run alone, so they say nothing about the code: {string.Join(", ", names)}. "
+                + "Raise the check's timeout, make it faster, or free the machine, then resume.\n\n"
+                + Briefs.Failures(outcomes.Where(o => o.ExitCode == 124)),
+                task.Elements, "environment", NoOptions, null)
+            : null;
 
     /// The task's verify block with the implementation taken out. Used for the red run (after a
     /// vacuous verdict there is an implementation to take out) and the stash check after green.

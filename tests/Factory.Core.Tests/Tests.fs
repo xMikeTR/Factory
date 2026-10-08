@@ -191,6 +191,12 @@ let tests: (string * (unit -> unit)) list =
           check (match s with Ok(Blocked(_, TestAuthor, _)) -> true | _ -> false) $"blocked %A{s}"
           let s2 = TaskState.replay limits [ authored; TurnStarted Standard; NeedsDecisionRaised nd; DecisionBound(DecisionId "D-0043"); TurnStarted Standard ]
           check (match s2 with Ok(Running(p, Implementer _, _)) -> p.Turns = 2 | _ -> false) $"resumed %A{s2}"
+      "state: a check that cannot answer blocks the verify, and the decision resumes the implementer", fun () ->
+          let nd = { Question = "verify timed out twice"; Elements = []; Source = "environment"; Options = []; Recommended = None }
+          let s = TaskState.replay limits [ authored; VerifyRequested; NeedsDecisionRaised nd ]
+          check (match s with Ok(Blocked(p, Implementer _, _)) -> p.VerifyAttempts = 1 | _ -> false) $"blocked %A{s}"
+          let s2 = TaskState.replay limits [ authored; VerifyRequested; NeedsDecisionRaised nd; DecisionBound(DecisionId "D-1") ]
+          check (match s2 with Ok(Ready(_, Implementer _)) -> true | _ -> false) $"resumed %A{s2}"
       "state: a task starts with the TestAuthor and moves on only with red evidence", fun () ->
           check (match TaskState.queued with Ready(_, TestAuthor) -> true | _ -> false) "queued phase"
           let s = TaskState.replay limits [ TurnStarted Standard; TurnEnded; authored ]

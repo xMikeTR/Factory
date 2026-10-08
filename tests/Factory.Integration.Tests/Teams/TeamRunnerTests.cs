@@ -140,6 +140,45 @@ public class TeamRunnerTests
         Assert.DoesNotContain(h.Rows(LedgerKinds.TaskEvent), e => e.Payload?.Contains("tests_authored") == true);
     }
 
+    /// A check that times out (twice: the gate re-runs it alone once) says nothing about the code:
+    /// not red, not green. The task parks as an environment problem.
+    [Fact]
+    public async Task A_red_run_that_times_out_is_not_red_evidence_and_parks()
+    {
+        var task = Plans.Task("T-001", Plans.Auto("slow check", "sleep 5", timeoutSeconds: 1));
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "tests" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(task), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Blocked, result.Status);
+        Assert.Equal("environment", result.Blocked!.Source);
+        Assert.Contains("slow check", result.Blocked.Question);
+        Assert.Equal(0, model.Remaining);
+        Assert.DoesNotContain(h.Rows(LedgerKinds.TaskEvent), e => e.Payload?.Contains("tests_authored") == true);
+    }
+
+    [Fact]
+    public async Task A_green_verify_that_times_out_parks_instead_of_counting_an_attempt_as_failed_code()
+    {
+        var task = Plans.Task("T-001", Plans.Auto("slow once built", $"test -f {NewFile} && sleep 5", timeoutSeconds: 1));
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "tests" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(task), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Blocked, result.Status);
+        Assert.Equal("environment", result.Blocked!.Source);
+        Assert.Contains("slow once built", result.Blocked.Question);
+        Assert.Equal(0, model.Remaining); // no second Implementer turn to "fix" a timeout
+    }
+
     [Fact]
     public async Task Failing_verify_gets_one_verify_row_per_attempt_then_fails_the_team()
     {

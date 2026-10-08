@@ -124,13 +124,16 @@ static FactoryServices Services(FactorySettings settings, string runId, Dictiona
 {
     var ledger = new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl"));
     // Agent code runs only in Docker; FACTORY_SANDBOX=local is the explicit, unisolated fallback.
-    ISandboxFactory sandboxes = (Environment.GetEnvironmentVariable("FACTORY_SANDBOX") ?? "docker") switch
+    ISandboxFactory inner = (Environment.GetEnvironmentVariable("FACTORY_SANDBOX") ?? "docker") switch
     {
         "docker" => new DockerSandboxFactory(new DockerSandboxOptions(
             Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest"), ledger, runId),
         "local" => new LocalSandboxFactory(),
         var other => throw new ArgumentException($"FACTORY_SANDBOX: '{other}' is not docker|local"),
     };
+    // Heavy commands share the machine's CPU across teams; a timeout is re-run once alone (FACTORY_HEAVY_SLOTS).
+    ISandboxFactory sandboxes = new GatedSandboxFactory(inner, new HeavyGate(
+        int.TryParse(Environment.GetEnvironmentVariable("FACTORY_HEAVY_SLOTS"), out var slots) && slots > 0 ? slots : HeavyGate.DefaultSlots));
     // Tool governance: the AGT policy files per role (policies/s2) by default; the in-code
     // allow-list is the explicit fallback and the contract-test double.
     IToolPolicy toolPolicy = (Environment.GetEnvironmentVariable("FACTORY_TOOL_POLICY") ?? "acs") switch

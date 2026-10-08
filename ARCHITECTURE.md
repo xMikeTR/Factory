@@ -4,7 +4,9 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-08 — reviewer + provider seam (strand 2 of PLAN-QUALITY.md): the review is the fourth gate
+> Last updated: 2026-10-08 — CPU gate + timeout rule (strand 3.1): `HeavyGate`/`GatedSandboxFactory` wrap every sandbox;
+> a timed-out check is never evidence (`Verifying + NeedsDecisionRaised -> Blocked`, parked as "environment").
+> Previously 2026-10-08 — reviewer + provider seam (strand 2 of PLAN-QUALITY.md): the review is the fourth gate
 > (`Reviewing` state, `Review.fs`, `IReviewer`/`AgentReviewer` on a reviewer pool apart from the implementer's,
 > `ModelGateways`, independence stamped in the ledger and the PR body).
 > Previously 2026-10-08 — context cut (strand 1 of PLAN-QUALITY.md): `ContextPack` (task-planner nominations
@@ -109,7 +111,7 @@ C4Container
 | `Factory.Harness/TurnBudget.cs`, `ToolResultTrimmer.cs` | Per-turn tool-call cap (warn 12, stop 15, `check_quality` exempt); stubs tool results older than the last 5 in what the model sees | `TurnBudget`, `TrimmingChatClient` | FactoryAgents, TaskLoop | — |
 | `Factory.Harness/Configurator.cs` | plan/act/escalate + tier: heuristic, Laya, fallback | `IConfigurator`, `HeuristicConfigurator`, `LayaConfigurator`, `FallbackConfigurator` | TaskLoop, Program | Laya sidecar (HTTP) |
 | `Factory.Harness/ScopedWorkspace.cs` | Agent tools; refuses writes outside the phase's paths; runs commands in the sandbox | `ScopedWorkspace`, `TurnSignals` (incl. `submit_approach`, `Capped`) | TaskLoop, Planner | File system, sandbox |
-| `Factory.Harness/Sandbox/*` | Command sandbox: Docker container per team (default) or scrubbed local | `ISandboxFactory`, `ICommandSandbox`, `DockerSandbox`, `LocalSandbox`, `RestoreGate` | ScopedWorkspace, VerifyRunner, TeamRunner, Program | Docker Engine CLI |
+| `Factory.Harness/Sandbox/*` | Command sandbox: Docker container per team (default) or scrubbed local | `ISandboxFactory`, `ICommandSandbox`, `DockerSandbox`, `LocalSandbox`, `RestoreGate`, `HeavyGate`, `GatedSandboxFactory` | ScopedWorkspace, VerifyRunner, TeamRunner, Program | Docker Engine CLI |
 | `Factory.Harness/Registry/*` | Designc handover reader (hash-checked) and DSL model; ledger projection; needs-decision ids/resolutions | `DesigncHandoverReader`, `DslModel`, `RegistryLedgerProjector`, `RegistryNeedsDecisions` | HandoverInput, executors | Registry repo files |
 | `Factory.Harness/Policy/MergePolicyFile.cs` | `.factory/policy.yaml` + env override | `MergePolicyFile` | FactorySettings | Target repo file |
 | `Factory.Harness/Telemetry/FactoryTelemetry.cs` | OTel attribute contract, run/task spans, task_passed score, tracer provider | `FactoryTelemetry` | FactoryAgents, Workflow, TaskLoop, Program | OTLP (Langfuse) |
