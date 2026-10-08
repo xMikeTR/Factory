@@ -148,3 +148,43 @@ the selection back from it (frozen). A capped call ledgers `tool_call` outcome `
 - The task-planner itself stays uncapped (it is where exploration is supposed to happen); its
   tool results are still trimmed.
 - `FunctionInvocationContext.Terminate` semantics in MEAI 10.x: verify in step 4 that the turn ends cleanly.
+
+---
+
+## Strand 2 — Reviewer + provider seam
+
+### Goal
+An independent per-task review, blocking on what the grill agreed, on a model pool that is not the
+implementer's. **Success:** a task cannot reach `Passed` without a review of its green diff; blocking
+findings go back to the right role; the reviewer's provider is checked at start-up; the review's
+independence is stamped in the ledger and the PR body.
+
+### Slices (each committed green)
+1. **Provider seam.** `ModelGateways` (implementer + reviewer `GatewayOptions`, family per side from
+   `FACTORY_MODEL_FAMILY` / `FACTORY_REVIEWER_MODEL_FAMILY`, defaulting to `anthropic` for the Anthropic
+   provider and unknown otherwise). Independent iff both known and different. Same/unknown family needs
+   `FACTORY_REVIEWER_SAME_FAMILY=allow` and dry-run merges, else start-up refuses. `FactoryAgents` routes
+   by role (`Roles.Reviewer`, `Roles.Qa` -> reviewer gateway). ⚠ `FactoryAgents` ctor gains a role-aware
+   form (old form kept).
+2. **Review rules (pure F#, `Core/Review.fs`).** `Finding` (category, file, line, message), categories
+   `TestGaming | Intent | BoundDecision | Security | WeakTests | Design`; blocking = all but `Design`;
+   `Review.validate` keeps only findings citing a file:line inside the diff (`DiffLines` parsed from a
+   unified diff); `Review.route` sends `WeakTests` to the TestAuthor and the rest to the Implementer.
+3. **Machine.** ⚠ `TaskState` gains `Reviewing`; events `ReviewCompleted`, `ReviewOverridden`; `Passed`
+   needs review evidence (advisory findings + independence). Max 3 rounds then parked with options
+   A accept with findings / B reject / C send back with guidance. Review turns don't count against
+   `MaxTurns`; the send-back fix turns do. `Json.fs` encodes the new events. Core tests updated.
+4. **`IReviewer` + `AgentReviewer` + TaskLoop.** Schema'd `submit_review` tool (invalid findings dropped,
+   malformed -> retry once -> park, never pass), read-only tools, input = brief + diff; `ApprovingReviewer`
+   default in the test harness; PR body and ledger carry `independence`. Policies + prompt `reviewer.md`.
+
+### Test strategy
+- Core: `validate` drops findings outside the diff; `route`; the machine passes only through review;
+  3rd blocking round parks; overrides.
+- Integration: start-up independence matrix; a scripted reviewer's blocking finding sends the task back to
+  the right role and a re-review passes; a malformed review parks (never passes); same-family stamp in the PR body.
+
+### Risks
+- Biggest assumption: one `Reviewing` state with a parked flag is enough for the options flow.
+- Old ledgers (verify_completed straight to Passed) no longer replay to Passed: only matters for runs in
+  flight across this change (none: live5 is gone).
