@@ -16,6 +16,8 @@ public sealed class TurnSignals
     public string? DoneSummary { get; set; }
     public RaisedDecision? NeedsDecision { get; set; }
     public string? ReturnedToTestAuthor { get; set; }
+    /// The turn hit its tool-call cap and was stopped by the harness.
+    public bool Capped { get; set; }
     /// The task-planner's approach note and the context selection that survived validation (submit_approach).
     public string? ApproachNote { get; set; }
     public Selection? ContextSelection { get; set; }

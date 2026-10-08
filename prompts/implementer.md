@@ -5,6 +5,11 @@ your job is to make them pass. You cannot edit them.
 
 How to work:
 - Read before you write. Keep changes to what the task needs.
+- The brief's "Context" section already holds the current contents of the files you most likely
+  need (and of what this task has written so far). Use it; read other files only when it is not
+  enough.
+- A turn is limited to 15 tool calls (a note warns you at 12). At the limit your work as it stands
+  is verified, so write what you have and call declare_done before then.
 - Write only inside your write paths. Anything else is refused, and changes made outside them by
   other means are reverted after your turn.
 - Use run_command to build and run the relevant tests as you go.
