@@ -1,5 +1,6 @@
 using Factory.Core;
 using CoreHelpers = Factory.Core.Core;
+using Factory.Harness.Sandbox;
 using Factory.Integration.Tests.Support;
 using Factory.S2.Quality;
 using Xunit;
@@ -80,5 +81,23 @@ public class AgentQaRunnerTests
         var run = await runner.RunAsync(TeamHarness.RunId, integration, default);
 
         Assert.Equal(QaFinding.NewUncovered(Req).ToString(), Assert.Single(Qa.judge(CoreHelpers.ToList(run.Requirements), CoreHelpers.ToList(run.Tests))).ToString());
+    }
+
+    [Fact]
+    public async Task The_environment_lives_for_the_run_and_its_variables_reach_the_tests()
+    {
+        var model = new ScriptedChatClient(
+            Call("submit_qa_tests", new { tests = new[] { Test("env", "new", "test \"$QA_SQL_HOST\" = sql") } }), Say("done"));
+        var (h, _, integration) = await SetUpAsync(model);
+        using var _h = h;
+        var stopped = 0;
+        var runner = new AgentQaRunner(h.Services.Agents, h.Services.Git, h.Services.Sandboxes, "main", _ => [Req], ["ls"], TimeSpan.FromSeconds(30),
+            environment: _ => Task.FromResult(new QaEnvironment(h.Services.Sandboxes, new Dictionary<string, string> { ["QA_SQL_HOST"] = "sql" }, () => { stopped++; return Task.CompletedTask; })));
+
+        var run = await runner.RunAsync(TeamHarness.RunId, integration, default);
+
+        var test = Assert.Single(run.Tests);
+        Assert.Equal(QaOutcome.QaPassed, test.OnIntegrated);
+        Assert.Equal(1, stopped);
     }
 }

@@ -73,4 +73,25 @@ public class StrykerDockerTests
         Assert.All(run.Mutants, m => Assert.Equal("src/Calc.cs", m.File));
         Assert.Contains(run.Mutants, m => m.Status.IsKilled);
     }
+
+    [Fact]
+    public async Task A_qa_environment_service_is_reachable_by_name_from_the_sandbox_and_removed_with_it()
+    {
+        if (!Enabled) return;
+        var root = await SampleRepoAsync();
+        var qa = new Factory.Harness.Policy.QaEnv([new Factory.Harness.Policy.QaService("db", "factory-s2-runner:latest")], []);
+        string network;
+        await using (var env = await QaEnvironment.StartAsync(qa, new DockerSandboxOptions(), default))
+        {
+            Assert.Equal("db", env.Env["QA_DB_HOST"]);
+            await using var sandbox = await env.Sandboxes.ForTeamAsync("qa-net", root, default);
+            var found = await sandbox.RunAsync("getent hosts db", root, TimeSpan.FromSeconds(30), new Dictionary<string, string>(), default);
+            Assert.Equal(0, found.ExitCode);
+            var nets = await ProcessRunner.RunAsync("docker", ["network", "ls", "--format", "{{.Name}}", "--filter", "name=s2-qa-"], root, TimeSpan.FromSeconds(30));
+            network = nets.Output.Trim();
+            Assert.NotEmpty(network);
+        }
+        var after = await ProcessRunner.RunAsync("docker", ["network", "ls", "--format", "{{.Name}}", "--filter", "name=s2-qa-"], root, TimeSpan.FromSeconds(30));
+        Assert.DoesNotContain(network.Split('\n')[0], after.Output);
+    }
 }

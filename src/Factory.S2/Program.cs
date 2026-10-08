@@ -158,9 +158,14 @@ static FactoryServices Services(FactorySettings settings, string runId, Dictiona
     // QA runs only for a repo that describes a QA environment (.factory/qa-env.yaml); its requirements are the plan's tasks
     // (default source, until the handover carries requirements of its own).
     FactoryServices? built = null;
-    IQaRunner? qa = QaEnvFile.Load(settings.RepoPath) is null ? null
+    var qaEnv = QaEnvFile.Load(settings.RepoPath);
+    var dockerOptions = new DockerSandboxOptions(
+        Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest", NpmRebuild: settings.Npm?.Rebuild);
+    // The qa-env.yaml services run on their own docker network for the length of one QA run; the QA sandboxes join it (docker only).
+    IQaRunner? qa = qaEnv is null ? null
         : new AgentQaRunner(agents, git, sandboxes, settings.BaseBranch,
-            id => built!.LoadValidatedPlan(id).Plan.Tasks.Select(t => $"{t.Id.Value}: {t.Title}").ToList(), settings.CommandAllowList);
+            id => built!.LoadValidatedPlan(id).Plan.Tasks.Select(t => $"{t.Id.Value}: {t.Title}").ToList(), settings.CommandAllowList,
+            environment: inner is DockerSandboxFactory ? ct => QaEnvironment.StartAsync(qaEnv, dockerOptions, ct) : null);
     built = new FactoryServices(
         settings,
         ledger,

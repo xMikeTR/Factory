@@ -1,6 +1,6 @@
 namespace Factory.Harness.Sandbox;
 
-/// Image built from docker/runner. NuGetCache is a host directory (owned by the host user)
+/// Image built from docker/runner. `Network` is an existing (internal) docker network to live on instead of none, e.g. the QA environment's. NuGetCache is a host directory (owned by the host user)
 /// shared by every team container, so restores after the first are local.
 public sealed record DockerSandboxOptions(
     string Image = "factory-s2-runner:latest",
@@ -9,7 +9,8 @@ public sealed record DockerSandboxOptions(
     int Pids = 1024,
     string? NuGetCache = null,
     bool RestoreOnStart = true,
-    IReadOnlyList<string>? NpmRebuild = null)
+    IReadOnlyList<string>? NpmRebuild = null,
+    string? Network = null)
 {
     public string NuGetCacheDir => NuGetCache ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "factory-s2", "nuget");
@@ -30,8 +31,11 @@ public sealed class DockerSandbox : ICommandSandbox
     private readonly string _worktree;
     private readonly string _nuget;
 
-    private DockerSandbox(string container, string worktree, string nuget)
+    private readonly string _network;
+
+    private DockerSandbox(string container, string worktree, string nuget, string network)
     {
+        _network = network;
         _container = container;
         _worktree = worktree;
         _nuget = nuget;
@@ -63,12 +67,12 @@ public sealed class DockerSandbox : ICommandSandbox
         var name = $"s2-{team[..Math.Min(24, team.Length)]}-{Guid.NewGuid():N}";
         var user = $"{await IdAsync("-u", ct)}:{await IdAsync("-g", ct)}";
         await DockerAsync(ct, "run", "-d", "--rm", "--name", name,
-            "--network", "none", "--memory", o.Memory, "--cpus", o.Cpus.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--network", o.Network ?? "none", "--memory", o.Memory, "--cpus", o.Cpus.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "--pids-limit", o.Pids.ToString(), "--security-opt", "no-new-privileges", "--cap-drop", "ALL",
             "--user", user, "--tmpfs", "/tmp:exec,mode=1777",
             "-v", $"{worktree}:{worktree}", "-v", $"{o.NuGetCacheDir}:/nuget",
             "-w", worktree, o.Image, "sleep", "infinity");
-        var sandbox = new DockerSandbox(name, worktree, "/nuget");
+        var sandbox = new DockerSandbox(name, worktree, "/nuget", o.Network ?? "none");
         try
         {
             if (o.RestoreOnStart)
@@ -120,7 +124,7 @@ public sealed class DockerSandbox : ICommandSandbox
     private async Task<ProcessResult> RestoreWindowAsync(string command, CancellationToken ct)
     {
         // "none" is exclusive: swap it for the bridge for the restore, then swap back.
-        await DockerAsync(ct, "network", "disconnect", "none", _container);
+        await DockerAsync(ct, "network", "disconnect", _network, _container);
         try
         {
             await DockerAsync(ct, "network", "connect", RestoreNetwork, _container);
@@ -129,7 +133,7 @@ public sealed class DockerSandbox : ICommandSandbox
         finally
         {
             await DockerAsync(CancellationToken.None, check: false, "network", "disconnect", "--force", RestoreNetwork, _container);
-            await DockerAsync(CancellationToken.None, "network", "connect", "none", _container);
+            await DockerAsync(CancellationToken.None, "network", "connect", _network, _container);
         }
     }
 
@@ -158,9 +162,9 @@ public sealed class DockerSandbox : ICommandSandbox
         return env;
     }
 
-    private static Task DockerAsync(CancellationToken ct, params string[] args) => DockerAsync(ct, check: true, args);
+    internal static Task DockerAsync(CancellationToken ct, params string[] args) => DockerAsync(ct, check: true, args);
 
-    private static async Task DockerAsync(CancellationToken ct, bool check, params string[] args)
+    internal static async Task DockerAsync(CancellationToken ct, bool check, params string[] args)
     {
         var r = await ProcessRunner.RunAsync("docker", args, Environment.CurrentDirectory, DockerTimeout, DockerCliEnv(), ct, inheritEnvironment: false);
         if (check && !r.Succeeded) throw new InvalidOperationException($"docker {string.Join(' ', args.Take(3))} failed:\n{r.Tail()}");
