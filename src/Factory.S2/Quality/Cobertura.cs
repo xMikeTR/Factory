@@ -8,13 +8,17 @@ namespace Factory.S2.Quality;
 /// repo-relative path. No coverable lines in range means no data (None), which `Quality.crap` counts as uncovered.
 public static class Cobertura
 {
-    public static IReadOnlyList<FunctionMetrics> Join(IReadOnlyList<FunctionMetrics> functions, string xml)
+    public static IReadOnlyList<FunctionMetrics> Join(IReadOnlyList<FunctionMetrics> functions, string xml) => Join(functions, [xml]);
+
+    /// One report per test project: a line is covered if any of them ran it.
+    public static IReadOnlyList<FunctionMetrics> Join(IReadOnlyList<FunctionMetrics> functions, IReadOnlyList<string> reports)
     {
-        var lines = XDocument.Parse(xml).Descendants("class")
+        if (reports.Count == 0) return functions;
+        var lines = reports.SelectMany(xml => XDocument.Parse(xml).Descendants("class")
             .SelectMany(c => c.Descendants("line").Select(l => (
                 File: ((string?)c.Attribute("filename") ?? "").Replace('\\', '/'),
                 Number: (int)l.Attribute("number")!,
-                Hits: (int)l.Attribute("hits")!)))
+                Hits: (int)l.Attribute("hits")!))))
             .ToList();
 
         return functions.Select(f =>

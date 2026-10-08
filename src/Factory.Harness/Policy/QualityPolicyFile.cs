@@ -10,7 +10,7 @@ public enum QualityMode { Off, Report, Block }
 /// Mutation testing of the lines a task changed. Mode off by default: it needs the tool in the runner image.
 public sealed record MutationPolicy(QualityMode Mode, MutationThresholds Thresholds);
 
-public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Thresholds, MutationPolicy? Mutation = null);
+public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Thresholds, MutationPolicy? Mutation = null, bool Coverage = false);
 
 /// The `quality:` section of the target repo's .factory/policy.yaml (same file and same trust rule as
 /// MergePolicyFile: read from the base checkout, never a task worktree).
@@ -21,6 +21,7 @@ public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Threshold
 ///     maxCrap: 30
 ///     maxLines: 80
 ///     mutation: off | report | block  # default off
+///     coverage: false                 # true: run the tests under coverlet so CRAP is judged (one more test run per verify)
 ///     mutationMinScore: 0.8           # share of mutants on changed lines the tests must kill
 public static class QualityPolicyFile
 {
@@ -36,6 +37,7 @@ public static class QualityPolicyFile
         public int? MaxLines { get; set; }
         public string? Mutation { get; set; }
         public double? MutationMinScore { get; set; }
+        public bool? Coverage { get; set; }
     }
 
     private static readonly IDeserializer Yaml = new DeserializerBuilder()
@@ -75,6 +77,6 @@ public static class QualityPolicyFile
 
         if (errors.Count > 0) throw new FactoryRejectedException($"{path} is invalid", errors.ToArray());
         return new QualityPolicy(mode!.Value, new QualityThresholds(q.MaxCyclomatic ?? d.MaxCyclomatic, q.MaxCrap ?? d.MaxCrap, q.MaxLines ?? d.MaxLines),
-            new MutationPolicy(mutation!.Value, new MutationThresholds(q.MutationMinScore ?? 0.8)));
+            new MutationPolicy(mutation!.Value, new MutationThresholds(q.MutationMinScore ?? 0.8)), q.Coverage ?? false);
     }
 }
