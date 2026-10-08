@@ -4,7 +4,9 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-08 — mutation (strand 4): `Core/Mutation.fs` (score, 80% gate per file on changed lines, confirmed equivalents),
+> Last updated: 2026-10-08 — npm gate + TS quality (strand 5): `Core/PackageJsonChange.fs` (package.json/lockfile/.npmrc allow-list, via `Core.ReviewRestoreInput`),
+> `RestoreGate` plans `npm ci --ignore-scripts` per lockfile directory, `NpmPolicyFile` (`npm.rebuild`), `S2/Quality/EslintMetrics`. Image has no node yet.
+> Previously 2026-10-08 — mutation (strand 4): `Core/Mutation.fs` (score, 80% gate per file on changed lines, confirmed equivalents),
 > `RedKind.AgainstMutant`, `S2/Quality/{StrykerReport,IMutationRunner}`, `quality.mutation` policy; survivors return the task to the TestAuthor
 > (`Verifying + ReturnedToTestAuthor`). The real Stryker runner is not installed yet (seam only).
 > Previously 2026-10-08 — CPU gate + timeout rule (strand 3.1): `HeavyGate`/`GatedSandboxFactory` wrap every sandbox;
@@ -104,6 +106,7 @@ C4Container
 | `Factory.Core/Dispatcher.fs` | Overlapping writes -> teams; team DAG -> waves | `Team`, `Wave`, `DispatchPlan` | Merge, Json, Interop, S2 | — |
 | `Factory.Core/TaskState.fs` | Task lifecycle, budgets, phases (TestAuthor/Implementer); `Passed` needs three-gate evidence; `replay` | `TaskState`, `TaskEvent`, `RedEvidence`, `VerifiedEvidence`, `Limits` | Json, Interop, RegistryLedgerProjector, TeamRunner | — |
 | `Factory.Core/Regression.fs` | Pass-to-pass: baseline-passing tests that no longer pass | `TestResult` | Interop, VerifyRunner | — |
+| `Factory.Core/PackageJsonChange.fs` | Allow-list for npm restore inputs (registry specs only, no install-time scripts, lockfile from the pinned registry) | `PackageJsonChange` | RestoreGate (via `Core.ReviewRestoreInput`) | — |
 | `Factory.Core/Mutation.fs` | Mutant statuses, score, per-file gate over changed lines, confirmed equivalents | `Mutant`, `MutantStatus`, `MutationThresholds`, `MutationViolation`, `Mutation` | TaskLoop, tests | — |
 | `Factory.Core/Quality.fs` | Neutral per-function metrics, CRAP, the ratchet (new code meets thresholds, touched code no worse) | `FunctionMetrics`, `QualityThresholds`, `ChangedRange`, `QualityViolation`, `Quality` | TaskLoop, QualityGate | — |
 | `Factory.Core/Fitness.fs` | Code edges between elements must be modelled relationships; baseline element pairs are debt | `CodeEdge`, `FitnessViolation`, `Fitness` | QualityGate | — |
@@ -132,7 +135,7 @@ C4Container
 | `Factory.S2/Teams/TaskRerun.cs` | k independent attempts at one task: pass rate, turns, tokens | `TaskRerun`, `RerunReport` | Program (`rerun`) | — |
 | `Factory.S2/Teams/Briefs.cs` | Per-turn briefs (incl. the PObserve logging contract); prompts from `prompts/*.md` | `Briefs` (`Task` takes the context pack) | TaskLoop, Planner | — |
 | `Factory.S2/Verify/*` | Verify entries in the sandbox, each from the tree as found, cleanup always, JUnit parsing, baseline/regression | `VerifyRunner`, `VerifyOutcome`, `JUnit` | TaskLoop, IntegrationVerify | Sandbox, GitWorkspace |
-| `Factory.S2/Quality/*` | C# adapters (Roslyn syntax metrics, Cobertura join, csproj edges) and the task-diff gate; policy from `.factory/policy.yaml` `quality:` (`QualityPolicyFile`) | `CSharpMetrics`, `Cobertura`, `CsprojEdges`, `QualityGate`, `StrykerReport`, `IMutationRunner` | TaskLoop (`QualityOutcomeAsync`, `check_quality`) | GitWorkspace, Roslyn |
+| `Factory.S2/Quality/*` | C# adapters (Roslyn syntax metrics, Cobertura join, csproj edges) and the task-diff gate; policy from `.factory/policy.yaml` `quality:` (`QualityPolicyFile`) | `CSharpMetrics`, `Cobertura`, `CsprojEdges`, `QualityGate`, `StrykerReport`, `IMutationRunner`, `EslintMetrics` | TaskLoop (`QualityOutcomeAsync`, `check_quality`) | GitWorkspace, Roslyn |
 | `Factory.S2/Git/GitWorkspace.cs` | Integration branch, worktree per team, stash, leave-as-found, idempotent merges | `GitWorkspace` | TeamRunner, TaskRerun, VerifyRunner, executors | git |
 | `Factory.S2/Integrations.cs` | PRs (gh / dry-run), approval comments, human channel | `IPullRequests`, `IApprovalComments`, `GhCliPullRequests`, `IHumanChannel` | MergeExecutor, WorkflowHost, Program | GitHub (gh CLI) |
 | `Factory.S2/HandoverInput.cs` | `--handover` file or Designc dir -> frozen JSON | `HandoverInput` | Program | Registry |
