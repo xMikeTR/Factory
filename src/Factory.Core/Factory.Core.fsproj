@@ -13,6 +13,7 @@
     <Compile Include="ProjectFileChange.fs" />
     <Compile Include="Domain.fs" />
     <Compile Include="ContextPack.fs" />
+    <Compile Include="Review.fs" />
     <Compile Include="PlanValidator.fs" />
     <Compile Include="Dispatcher.fs" />
     <Compile Include="TaskState.fs" />
