@@ -22,6 +22,20 @@ public sealed class AgentReviewer(FactoryAgents agents, Independence independenc
             : new ReviewVerdict.Malformed("the reviewer ended its turn without calling submit_review");
     }
 
+    public async Task<IReadOnlySet<string>> ConfirmEquivalentsAsync(EquivalenceRequest request, CancellationToken ct)
+    {
+        var signals = new TurnSignals();
+        var workspace = new ScopedWorkspace(request.Worktree, [], [], commandAllowList, signals);
+        var agent = agents.Create(new AgentScope(request.RunId, Roles.Reviewer, request.TeamId, request.TaskId), ModelTier.Standard,
+            Briefs.Prompt("equivalence-reviewer"), workspace.EquivalenceReviewerTools(), new TurnBudget());
+        var sb = new StringBuilder("## Mutants claimed equivalent\n");
+        foreach (var c in request.Claims)
+            sb.AppendLine($"- id={c.Mutant.Id} {c.Mutant.File}:{c.Mutant.Line} {c.Mutant.Mutator}: {c.Reason}");
+        await agent.RunAsync(sb.ToString(), cancellationToken: ct);
+        var asked = request.Claims.Select(c => c.Mutant.Id).ToHashSet();
+        return (signals.ConfirmedEquivalents ?? new HashSet<string>()).Where(asked.Contains).ToHashSet();
+    }
+
     private static string Message(ReviewRequest r)
     {
         var sb = new StringBuilder(r.Brief).AppendLine().AppendLine();

@@ -26,6 +26,10 @@ public sealed class TurnSignals
     /// The last plan the planner passed to submit_plan, as JSON, whatever the validator said about it.
     public string? SubmittedPlan { get; set; }
     public List<string> FilesWritten { get; } = [];
+    /// Mutants the TestAuthor declared equivalent (declare_equivalent): id -> why no test could tell it from the original.
+    public Dictionary<string, string> DeclaredEquivalents { get; } = [];
+    /// Mutant ids the reviewer accepted as equivalent (confirm_equivalents); null if it never called the tool.
+    public IReadOnlySet<string>? ConfirmedEquivalents { get; set; }
 }
 
 /// One file the task-planner nominates for the context pack.
@@ -130,6 +134,35 @@ public sealed class ScopedWorkspace(
         ["weak_tests"] = FindingCategory.WeakTests,
         ["design"] = FindingCategory.Design,
     };
+
+    /// The reviewer's tools when asked about equivalent mutants: read the repo, and confirm_equivalents, which ends the turn.
+    public IList<AITool> EquivalenceReviewerTools() =>
+    [
+        AIFunctionFactory.Create(ReadFile, "read_file"),
+        AIFunctionFactory.Create(ListFiles, "list_files"),
+        AIFunctionFactory.Create(
+            ([Description("the ids of the claims you accept as truly equivalent; leave out every one you doubt")] string[] confirmed) =>
+            {
+                signals.ConfirmedEquivalents = (confirmed ?? []).ToHashSet();
+                return "Recorded. Stop now.";
+            }, "confirm_equivalents", "Call once, last: the mutant ids you accept as equivalent. Ends your turn."),
+    ];
+
+    /// The TestAuthor's tools: the executor's, plus declaring a surviving mutant equivalent.
+    public IList<AITool> TestAuthorTools() =>
+    [
+        .. ExecutorTools(),
+        AIFunctionFactory.Create(DeclareEquivalent, "declare_equivalent"),
+    ];
+
+    [Description("Claim a surviving mutant is equivalent: no test could tell it from the original code, so it is not a weakness of your tests. "
+        + "A reviewer must accept the claim; a claim that is wrong costs you the task, so do not use this to avoid writing a test.")]
+    public string DeclareEquivalent([Description("the mutant id from the survivor list")] string mutantId, [Description("why every input behaves the same")] string reason)
+    {
+        if (string.IsNullOrWhiteSpace(mutantId) || string.IsNullOrWhiteSpace(reason)) return "Not recorded: give the mutant id and the reason.";
+        signals.DeclaredEquivalents[mutantId.Trim()] = reason.Trim();
+        return "Recorded. A reviewer will judge it; carry on with the tests that are still needed.";
+    }
 
     public IList<AITool> ExecutorTools() =>
     [

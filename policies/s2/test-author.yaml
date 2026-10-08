@@ -37,3 +37,7 @@ rules:
     condition: "tool_name == 'raise_needs_decision'"
     action: allow
     priority: 10
+  - name: allow-declare-equivalent
+    condition: "tool_name == 'declare_equivalent'"
+    action: allow
+    priority: 10

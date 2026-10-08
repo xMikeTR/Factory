@@ -21,3 +21,7 @@ rules:
     condition: "tool_name == 'submit_review'"
     action: allow
     priority: 10
+  - name: allow-confirm-equivalents
+    condition: "tool_name == 'confirm_equivalents'"
+    action: allow
+    priority: 10
