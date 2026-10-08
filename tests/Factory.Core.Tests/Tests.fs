@@ -222,6 +222,21 @@ let tests: (string * (unit -> unit)) list =
       "npm: which repo files are npm restore inputs", fun () ->
           check (PackageJsonChange.affects "web/package.json" && PackageJsonChange.affects "package-lock.json" && PackageJsonChange.affects ".npmrc") "inputs"
           check (not (PackageJsonChange.affects "src/Rater.cs")) "not an input"
+      "qa: a new test must fail on the baseline and pass on the integrated result", fun () ->
+          let t id kind b i = { Id = id; Requirement = "R1"; Kind = kind; OnBaseline = b; OnIntegrated = i }
+          equal [] (Qa.judge [ "R1" ] [ t "a" New QaFailed QaPassed ]) "ok"
+          equal [ NotDone "a" ] (Qa.judge [ "R1" ] [ t "a" New QaFailed QaFailed ]) "still failing"
+          equal [ Vacuous "a" ] (Qa.judge [ "R1" ] [ t "a" New QaPassed QaPassed ]) "passes on baseline: proves nothing new"
+      "qa: a characterisation test that passes on the baseline and fails on the integrated result is an escape", fun () ->
+          let t id kind b i = { Id = id; Requirement = "R1"; Kind = kind; OnBaseline = b; OnIntegrated = i }
+          let news = t "n" New QaFailed QaPassed
+          equal [] (Qa.judge [ "R1" ] [ news; t "c" Characterisation QaPassed QaPassed ]) "ok"
+          equal [ Escape "c" ] (Qa.judge [ "R1" ] [ news; t "c" Characterisation QaPassed QaFailed ]) "regression"
+          equal [ InvalidCharacterisation "c" ] (Qa.judge [ "R1" ] [ news; t "c" Characterisation QaFailed QaPassed ]) "cannot describe existing behaviour"
+      "qa: every requirement needs a new test", fun () ->
+          let t id req = { Id = id; Requirement = req; Kind = New; OnBaseline = QaFailed; OnIntegrated = QaPassed }
+          equal [ Uncovered "R2" ] (Qa.judge [ "R1"; "R2" ] [ t "a" "R1" ]) "R2 has none"
+          equal [ Uncovered "R1" ] (Qa.judge [ "R1" ] []) "no tests at all"
       "state: turn budget", fun () ->
           let turn = [ TurnStarted Small; TurnEnded ]
           let s = TaskState.replay limits (List.concat [ turn; turn; turn; [ TurnStarted Small ] ])

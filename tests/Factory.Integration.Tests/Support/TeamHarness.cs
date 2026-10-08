@@ -4,6 +4,7 @@ using Factory.Harness.Policy;
 using Factory.Harness.Registry;
 using Factory.Harness.Sandbox;
 using Factory.S2;
+using Factory.S2.Quality;
 using Factory.S2.Git;
 using Factory.S2.Teams;
 using Factory.S2.Verify;
@@ -39,7 +40,7 @@ public sealed class TeamHarness : IDisposable
     /// Finds nothing unless a test queues mutants; consulted only when the quality policy turns mutation on.
     public ScriptedMutationRunner Mutation { get; } = new();
 
-    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy)
+    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa)
     {
         _root = root;
         Repo = Path.Combine(root, "repo");
@@ -57,18 +58,18 @@ public sealed class TeamHarness : IDisposable
             sandboxes,
             pullRequests ?? new DryRunPullRequests(Path.Combine(state, "runs", RunId)),
             Reviewer,
-            Mutation);
+            Mutation, qa);
     }
 
     /// `suiteCommand` is the integration test command; "true" writes no results, so there is no
     /// regression baseline and the P2P check is skipped.
     public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand = "true",
-        MergePolicy? mergePolicy = null, IPullRequests? pullRequests = null, QualityPolicy? qualityPolicy = null)
+        MergePolicy? mergePolicy = null, IPullRequests? pullRequests = null, QualityPolicy? qualityPolicy = null, IQaRunner? qa = null)
     {
         var root = Directory.CreateTempSubdirectory("team-").FullName;
         var repo = Path.Combine(root, "repo");
         await InitRepoAsync(repo);
-        return await WireAsync(root, _ => model, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy);
+        return await WireAsync(root, _ => model, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy, qa);
     }
 
     /// A real model per tier (opt-in live tests), dry-run merge.
@@ -76,7 +77,7 @@ public sealed class TeamHarness : IDisposable
     {
         var root = Directory.CreateTempSubdirectory("team-live-").FullName;
         await InitRepoAsync(Path.Combine(root, "repo"));
-        return await WireAsync(root, models, limits, "true", null, null, null);
+        return await WireAsync(root, models, limits, "true", null, null, null, null);
     }
 
     /// A clone of a real remote (opt-in live tests). The run's PR goes to that remote.
@@ -88,15 +89,15 @@ public sealed class TeamHarness : IDisposable
         await Git(root, "clone", "-q", remoteUrl, repo);
         await Git(repo, "config", "user.name", "factory-test");
         await Git(repo, "config", "user.email", "factory-test@localhost");
-        return await WireAsync(root, _ => model, limits, "true", mergePolicy, new GhCliPullRequests(repo), null);
+        return await WireAsync(root, _ => model, limits, "true", mergePolicy, new GhCliPullRequests(repo), null, null);
     }
 
     private static async Task<TeamHarness> WireAsync(string root, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand,
-        MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy)
+        MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa)
     {
         var handover = await new DesigncHandoverReader().LoadAsync(
             Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"), S2Config.Default, CancellationToken.None);
-        var h = new TeamHarness(root, handover, models, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy);
+        var h = new TeamHarness(root, handover, models, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy, qa);
         await h.Services.Git.EnsureIntegrationAsync(RunId, "main", CancellationToken.None);
         return h;
     }

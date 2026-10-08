@@ -22,6 +22,7 @@
     <Compile Include="Quality.fs" />
     <Compile Include="Fitness.fs" />
     <Compile Include="Mutation.fs" />
+    <Compile Include="Qa.fs" />
     <Compile Include="HandoverClosure.fs" />
     <Compile Include="Regeneration.fs" />
     <Compile Include="Merge.fs" />

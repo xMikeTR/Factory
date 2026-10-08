@@ -291,3 +291,25 @@ reviewed inputs, no install scripts, registry fixed by the image; and TS code me
 ### Interface changes (flagged)
 - `Core.ReviewRestoreInput` now also judges package.json, package-lock.json and .npmrc; `RestoreGate.PlanAsync` may add npm restores
   and refusals; policy gains an `npm.rebuild` list.
+
+## Strand 6 — QA
+
+### Goal
+After the integration checks pass, black-box tests written at requirement level (by the reviewer pool, never the Implementer's)
+judge the integrated result against the baseline. A failure merges nothing and raises an escape + needs-decision to Designc.
+
+### Slices (each committed green)
+- 6.1 ✅ Pure Core `Qa.fs`: `QaKind` (New | Characterisation), per-test baseline/integrated outcomes, `judge`:
+  every requirement needs a `new` test; `new` must fail on baseline and pass on integrated (passing on baseline = vacuous,
+  failing on integrated = not done); `characterisation` must pass on both (failing only on integrated = regression ESCAPE,
+  failing on baseline = invalid test). Wording flag: the grill note said "failing on baseline = escape"; a characterisation
+  test that fails on the baseline cannot describe existing behaviour, so it is an invalid test, and the escape is the regression.
+- 6.2 ✅ `QaEnvFile` (protected `.factory/qa-env.yaml`): sibling services with digest-pinned images, `fidelity` gaps declared.
+- 6.3 ✅ `IQaRunner` seam (null = QA skipped) + `QaGate` and the `IntegrationVerifyExecutor` hook: a failing judgement ends the run
+  (`qa_failed`), writes `qa` ledger rows and a Designc needs-decision brief. Budget constant 8 turns for the author.
+- Deferred: the QA author agent itself (reviewer pool, prompt, tool policy, writes into the repo's Playwright project, 8-turn
+  budget), starting the sibling containers from `qa-env.yaml`, running the tests on baseline and integrated, the human follow-up run
+  with QA tests protected, and the open question where requirements come from (the handover carries none yet).
+
+### Interface changes (flagged)
+- `FactoryServices` ctor gains an optional `IQaRunner`; `IntegrationVerifyExecutor` consults it after the checks pass.
