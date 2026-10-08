@@ -39,6 +39,10 @@ let outcome name code = { Name = name; ExitCode = code; DurationMs = 10L; Output
 let red = match RedEvidence.Create([ outcome "a" 1 ], AssertionFailure) with Ok r -> r | Error e -> failwith e
 let authored = TestsAuthored red
 let stashedRed = [ outcome "a" 1 ]
+let finding cat = { Category = cat; File = "src/Q.cs"; Line = 4; Message = "m" }
+let reviewed blocking advisory = ReviewCompleted { Blocking = blocking; Advisory = advisory; Independence = Independent }
+let approved = reviewed [] []
+let verified = [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed) ]
 
 let tests: (string * (unit -> unit)) list =
     [
@@ -163,14 +167,14 @@ let tests: (string * (unit -> unit)) list =
       "state: happy path", fun () ->
           let s =
               TaskState.replay limits
-                  [ TurnStarted Frontier; TurnEnded; authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed) ]
-          check (match s with Ok(Passed ev) -> ev.Attempt = 1 && ev.Red = red && ev.StashedImpl = stashedRed | _ -> false) $"%A{s}"
+                  [ TurnStarted Frontier; TurnEnded; authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed); approved ]
+          check (match s with Ok(Passed(ev, _)) -> ev.Attempt = 1 && ev.Red = red && ev.StashedImpl = stashedRed | _ -> false) $"%A{s}"
       "state: failed verify returns to Ready, then passes", fun () ->
           let s =
               TaskState.replay limits
                   [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 1 ], [])
-                    TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed) ]
-          check (match s with Ok(Passed ev) -> ev.Attempt = 2 | _ -> false) $"%A{s}"
+                    TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed); approved ]
+          check (match s with Ok(Passed(ev, _)) -> ev.Attempt = 2 | _ -> false) $"%A{s}"
       "state: verify budget", fun () ->
           let s =
               TaskState.replay limits
@@ -204,6 +208,38 @@ let tests: (string * (unit -> unit)) list =
           check (match s with Ok(Ready(p, TestAuthor)) -> p.Turns = 1 | _ -> false) $"%A{s}"
           check (Result.isError (TaskState.transition limits TaskState.queued back)) "the TestAuthor cannot hand back to itself"
           check (Result.isError (TaskState.replay limits [ authored; TurnStarted Standard; back ])) "not mid-turn"
+      // ---------- task state: review ----------
+      "review state: green verification is not a pass, the review is the fourth gate", fun () ->
+          let s = TaskState.replay limits verified
+          check (match s with Ok(Reviewing(p, Implementer _, _, None)) -> p.ReviewRounds = 0 | _ -> false) $"reviewing %A{s}"
+          let passed = TaskState.replay limits (verified @ [ reviewed [] [ finding Design ] ])
+          check (match passed with Ok(Passed(ev, r)) -> ev.Attempt = 1 && r.Rounds = 1 && r.Advisory = [ finding Design ] && r.Accepted = [] | _ -> false) $"%A{passed}"
+          check (Result.isError (TaskState.replay limits [ authored; TurnStarted Standard; TurnEnded; approved ])) "no review before verification"
+      "review state: a blocking finding sends the task back to the implementer; the fix turn counts, the review does not", fun () ->
+          let s = TaskState.replay limits (verified @ [ reviewed [ finding Security ] [] ])
+          check (match s with Ok(Ready(p, Implementer _)) -> p.Turns = 1 && p.ReviewRounds = 1 && p.OpenFindings = [ finding Security ] | _ -> false) $"%A{s}"
+          let again = TaskState.replay limits (verified @ [ reviewed [ finding Security ] []; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed); approved ])
+          check (match again with Ok(Passed(_, r)) -> r.Rounds = 2 | _ -> false) $"%A{again}"
+      "review state: weak tests go back to the test author", fun () ->
+          let s = TaskState.replay limits (verified @ [ reviewed [ finding WeakTests; finding Security ] [] ])
+          check (match s with Ok(Ready(p, TestAuthor)) -> p.ReviewRounds = 1 | _ -> false) $"%A{s}"
+      "review state: after three blocking rounds the task parks for a designer, who accepts, rejects or guides", fun () ->
+          let lim = { limits with MaxTurns = 9; MaxVerifyAttempts = 9 }
+          let round = [ reviewed [ finding Intent ] []; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed) ]
+          let exhausted = verified @ round @ round @ [ reviewed [ finding Intent ] [] ]
+          let nd = { Question = "q"; Elements = []; Source = "reviewer"; Options = abOptions; Recommended = None }
+          let s = TaskState.replay lim exhausted
+          check (match s with Ok(Reviewing(p, _, _, None)) -> p.ReviewRounds = 3 && p.OpenFindings = [ finding Intent ] | _ -> false) $"exhausted %A{s}"
+          check (Result.isError (TaskState.replay lim (exhausted @ [ approved ]))) "no fourth review"
+          let parked = exhausted @ [ NeedsDecisionRaised nd ]
+          check (match TaskState.replay lim parked with Ok(Reviewing(_, _, _, Some n)) -> n = nd | other -> false) "parked"
+          check (match TaskState.replay lim (parked @ [ ReviewAccepted("ship it", SameFamily) ]) with
+                 | Ok(Passed(_, r)) -> r.Accepted = [ finding Intent ] && r.Independence = SameFamily && r.Note = Some "ship it"
+                 | _ -> false) "accepted"
+          check (match TaskState.replay lim (parked @ [ ReviewGuided "do X" ]) with
+                 | Ok(Ready(p, Implementer _)) -> p.ReviewRounds = 0 | _ -> false) "guided gets three fresh rounds"
+          check (match TaskState.replay lim (parked @ [ Abandon "rejected" ]) with Ok(Failed(Abandoned _, _)) -> true | _ -> false) "rejected"
+          check (Result.isError (TaskState.replay lim (verified @ [ ReviewAccepted("x", Independent) ]))) "accept needs a parked review"
       "evidence: red refuses a run where nothing failed", fun () ->
           check (Result.isError (RedEvidence.Create([ outcome "a" 0; outcome "b" 0 ], AssertionFailure))) "all zero"
           check (Result.isError (RedEvidence.Create([], BuildFailure))) "empty"
@@ -220,13 +256,13 @@ let tests: (string * (unit -> unit)) list =
       "red run: a refused restore ran no check: it goes back to the author with the reasons", fun () ->
           let refused = RestoreRefusal.outcome [ "tests/A/A.csproj: <Target> is not allowed" ]
           equal (Refused "tests/A/A.csproj: <Target> is not allowed") (RedRun.classify [ refused ]) "refused"
-      "evidence: passed needs green and a stashed-impl run that fails", fun () ->
-          check (Result.isError (PassedEvidence.Create(1, [], red, stashedRed))) "no empty evidence"
-          check (Result.isError (PassedEvidence.Create(1, [ outcome "a" 1 ], red, stashedRed))) "not green"
-          check (Result.isError (PassedEvidence.Create(1, [ outcome "a" 0 ], red, [ outcome "a" 0 ]))) "stash all green"
-          check (Result.isError (PassedEvidence.Create(1, [ outcome "a" 0 ], red, []))) "stash missing"
-          check (Result.isError (PassedEvidence.Create(1, [ outcome "a" 0 ], red, [ RestoreRefusal.outcome [ "x" ] ]))) "a refused restore is not a failing stash check"
-          check (Result.isOk (PassedEvidence.Create(1, [ outcome "a" 0 ], red, stashedRed))) "all three gates"
+      "evidence: verified needs green and a stashed-impl run that fails", fun () ->
+          check (Result.isError (VerifiedEvidence.Create(1, [], red, stashedRed))) "no empty evidence"
+          check (Result.isError (VerifiedEvidence.Create(1, [ outcome "a" 1 ], red, stashedRed))) "not green"
+          check (Result.isError (VerifiedEvidence.Create(1, [ outcome "a" 0 ], red, [ outcome "a" 0 ]))) "stash all green"
+          check (Result.isError (VerifiedEvidence.Create(1, [ outcome "a" 0 ], red, []))) "stash missing"
+          check (Result.isError (VerifiedEvidence.Create(1, [ outcome "a" 0 ], red, [ RestoreRefusal.outcome [ "x" ] ]))) "a refused restore is not a failing stash check"
+          check (Result.isOk (VerifiedEvidence.Create(1, [ outcome "a" 0 ], red, stashedRed))) "all three gates"
       "state: illegal transitions rejected", fun () ->
           check (Result.isError (TaskState.transition limits TaskState.queued (VerifyCompleted([ outcome "a" 0 ], stashedRed)))) "no pass without verify"
           check (Result.isError (TaskState.transition limits TaskState.queued TurnEnded)) "no turn end before start"
@@ -256,7 +292,10 @@ let tests: (string * (unit -> unit)) list =
               [ TurnStarted Frontier; TurnEnded
                 NeedsDecisionRaised { Question = "q"; Elements = [ ElementId "e" ]; Source = "configurator"; Options = []; Recommended = None }
                 NeedsDecisionRaised { Question = "q"; Elements = []; Source = "agent"; Options = abOptions; Recommended = Some "A" }
-                DecisionBound(DecisionId "D-1"); authored; ReturnedToTestAuthor "tests broken"; VerifyRequested; VerifyCompleted([ outcome "x" 0 ], stashedRed); Abandon "stop" ]
+                DecisionBound(DecisionId "D-1"); authored; ReturnedToTestAuthor "tests broken"; VerifyRequested; VerifyCompleted([ outcome "x" 0 ], stashedRed); Abandon "stop"
+                reviewed [ finding Security; finding WeakTests ] [ finding Design ]
+                ReviewCompleted { Blocking = []; Advisory = []; Independence = SameFamily }
+                ReviewAccepted("fine for now", SameFamily); ReviewGuided "use the repository, not a static" ]
           for e in evs do
               equal (Ok e) (Json.decodeTaskEvent (Json.encodeTaskEvent e)) "round trip"
 

@@ -19,6 +19,26 @@ type Finding =
       Line: int
       Message: string }
 
+/// Whether the reviewer's model family differs from the implementer's; stamped on every review.
+type Independence =
+    | Independent
+    | SameFamily
+
+/// One review round's outcome: what blocks, what is only advice, and who reviewed.
+type ReviewResult =
+    { Blocking: Finding list
+      Advisory: Finding list
+      Independence: Independence }
+
+/// Proof that a task was reviewed: the advice that stays on the PR, findings a designer accepted
+/// at the round limit, who reviewed, how many rounds it took.
+type ReviewEvidence =
+    { Advisory: Finding list
+      Accepted: Finding list
+      Independence: Independence
+      Rounds: int
+      Note: string option }
+
 type ReviewTarget =
     | ToTestAuthor
     | ToImplementer

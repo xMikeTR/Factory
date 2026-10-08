@@ -237,6 +237,42 @@ module Json =
         | "assertion_failure" -> AssertionFailure
         | other -> fail $"{path}: unknown red kind '{other}'"
 
+    let private categoryName = function
+        | TestGaming -> "test_gaming" | Intent -> "intent" | BoundDecision -> "bound_decision"
+        | Security -> "security" | WeakTests -> "weak_tests" | Design -> "design"
+
+    let private categoryOf path = function
+        | "test_gaming" -> TestGaming | "intent" -> Intent | "bound_decision" -> BoundDecision
+        | "security" -> Security | "weak_tests" -> WeakTests | "design" -> Design
+        | other -> fail $"{path}: unknown finding category '{other}'"
+
+    let private independenceName = function Independent -> "independent" | SameFamily -> "same_family"
+
+    let private independenceOf path = function
+        | "independent" -> Independent
+        | "same_family" -> SameFamily
+        | other -> fail $"{path}: unknown independence '{other}'"
+
+    let private findingsNode (fs: Finding list) : JsonNode =
+        let arr = JsonArray()
+        for f in fs do
+            let x = JsonObject()
+            x.["category"] <- JsonValue.Create(categoryName f.Category)
+            x.["file"] <- JsonValue.Create f.File
+            x.["line"] <- JsonValue.Create f.Line
+            x.["message"] <- JsonValue.Create f.Message
+            arr.Add x
+        arr
+
+    let private decodeFindings (o: JsonObject) (key: string) : Finding list =
+        arr "$" o key
+        |> List.map (fun (p, n) ->
+            let x = obj p n
+            { Category = categoryOf $"{p}.category" (str p x "category")
+              File = str p x "file"
+              Line = int p x "line" 0
+              Message = str p x "message" })
+
     let encodeTaskEvent (e: TaskEvent) : string =
         let o = JsonObject()
         let set (k: string) (v: JsonNode) = o.[k] <- v
@@ -275,6 +311,18 @@ module Json =
         | ReturnedToTestAuthor problem ->
             set "type" (JsonValue.Create "returned_to_test_author")
             set "problem" (JsonValue.Create problem)
+        | ReviewCompleted r ->
+            set "type" (JsonValue.Create "review_completed")
+            set "blocking" (findingsNode r.Blocking)
+            set "advisory" (findingsNode r.Advisory)
+            set "independence" (JsonValue.Create(independenceName r.Independence))
+        | ReviewAccepted(note, independence) ->
+            set "type" (JsonValue.Create "review_accepted")
+            set "note" (JsonValue.Create note)
+            set "independence" (JsonValue.Create(independenceName independence))
+        | ReviewGuided guidance ->
+            set "type" (JsonValue.Create "review_guided")
+            set "guidance" (JsonValue.Create guidance)
         | Abandon r ->
             set "type" (JsonValue.Create "abandon")
             set "reason" (JsonValue.Create r)
@@ -310,5 +358,12 @@ module Json =
                 | Ok red -> TestsAuthored red
                 | Error e -> fail $"$.outcomes: {e}"
             | "returned_to_test_author" -> ReturnedToTestAuthor(str "$" o "problem")
+            | "review_completed" ->
+                ReviewCompleted
+                    { Blocking = decodeFindings o "blocking"
+                      Advisory = decodeFindings o "advisory"
+                      Independence = independenceOf "$.independence" (str "$" o "independence") }
+            | "review_accepted" -> ReviewAccepted(str "$" o "note", independenceOf "$.independence" (str "$" o "independence"))
+            | "review_guided" -> ReviewGuided(str "$" o "guidance")
             | "abandon" -> Abandon(str "$" o "reason")
             | other -> fail $"$.type: unknown task event '{other}'")
