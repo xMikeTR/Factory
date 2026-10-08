@@ -32,6 +32,18 @@ public class ScopedWorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_implementer_gets_check_quality_only_when_the_run_measures_quality()
+    {
+        Assert.DoesNotContain("check_quality", new ScopedWorkspace(_root, [], [], [], new TurnSignals()).ImplementerTools().Select(t => t.Name));
+
+        var tools = new ScopedWorkspace(_root, [], [], [], new TurnSignals(), qualityCheck: _ => Task.FromResult("- A.cs:3 A.F: Cyclomatic 9")).ImplementerTools();
+        var check = tools.OfType<Microsoft.Extensions.AI.AIFunction>().Single(t => t.Name == "check_quality");
+
+        Assert.Contains("A.F: Cyclomatic 9", (await check.InvokeAsync())?.ToString());
+        Assert.DoesNotContain("check_quality", new ScopedWorkspace(_root, [], [], [], new TurnSignals(), qualityCheck: _ => Task.FromResult("")).ExecutorTools().Select(t => t.Name));
+    }
+
+    [Fact]
     public async Task The_reviewer_can_read_and_submit_findings_but_not_write_run_or_park()
     {
         var signals = new TurnSignals();

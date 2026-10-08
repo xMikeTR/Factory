@@ -41,3 +41,7 @@ rules:
     condition: "tool_name == 'return_to_test_author'"
     action: allow
     priority: 10
+  - name: allow-check-quality
+    condition: "tool_name == 'check_quality'"
+    action: allow
+    priority: 10

@@ -470,8 +470,7 @@ internal sealed class TaskLoop(
         var started = DateTime.UtcNow;
         var violations = await QualityGate.EvaluateAsync(svc.Git, worktree, runId, policy.Thresholds, ct);
         if (violations.Count == 0) return null;
-        var lines = violations.Select(v => $"- {v.Function.File}:{v.Function.Line} {v.Function.Name}: {v.Measure} {v.Value:0.#} "
-            + (v.Baseline is { } b ? $"(was {b:0.#}; touched code must not get worse)" : $"(limit {v.Limit:0.#} for new code)"));
+        var lines = violations.Select(QualityLine).ToList();
         var block = policy.Mode == QualityMode.Block;
         await svc.LogAsync(runId, "quality", LedgerKinds.Verify, block ? "blocked" : "reported",
             JsonSerializer.Serialize(new { attempt, violations = lines }), _teamId, _taskId, ct);
@@ -567,7 +566,15 @@ internal sealed class TaskLoop(
         svc.Git.CommitAllAsync(worktree, $"{_taskId}: {task.Title}\n\nfactory-run: {runId}\nfactory-team: {_teamId}", ct);
 
     private ScopedWorkspace Workspace(TurnSignals signals, Factory.Harness.Sandbox.ICommandSandbox? sandbox, IEnumerable<PathPattern> writable) =>
-        new(worktree, writable.ToList(), handover.ProtectedPaths.ToList(), svc.Settings.CommandAllowList, signals, sandbox);
+        new(worktree, writable.ToList(), handover.ProtectedPaths.ToList(), svc.Settings.CommandAllowList, signals, sandbox,
+            svc.Settings.QualityPolicy is { Mode: not QualityMode.Off } ? QualityFindingsAsync : null);
+
+    /// What `check_quality` shows the Implementer: the same ratchet verify applies, so nothing surprises it there.
+    private async Task<string> QualityFindingsAsync(CancellationToken ct) =>
+        string.Join("\n", (await QualityGate.EvaluateAsync(svc.Git, worktree, runId, svc.Settings.QualityPolicy!.Thresholds, ct)).Select(QualityLine));
+
+    private static string QualityLine(QualityViolation v) => $"- {v.Function.File}:{v.Function.Line} {v.Function.Name}: {v.Measure} {v.Value:0.#} "
+        + (v.Baseline is { } b ? $"(was {b:0.#}; touched code must not get worse)" : $"(limit {v.Limit:0.#} for new code)");
 
     private async Task<TaskState> ApplyAsync(TaskState state, TaskEvent ev, CancellationToken ct)
     {
