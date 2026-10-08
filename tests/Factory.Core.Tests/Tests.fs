@@ -493,6 +493,58 @@ let tests: (string * (unit -> unit)) list =
           let got = ContextPack.fit limits [ { Path = "w.cs"; Source = TaskWritten }, String.replicate 1000 "x" ]
           equal 1 got.Length "kept"
           check (got.[0].Truncated && got.[0].Text.Length <= 300) "cut to budget"
+      // ---------- review ----------
+      "review diff: the new-side lines of each hunk are visible, added ones marked", fun () ->
+          let diff =
+              String.concat "\n"
+                  [ "diff --git a/src/Q.cs b/src/Q.cs"
+                    "--- a/src/Q.cs"
+                    "+++ b/src/Q.cs"
+                    "@@ -3,3 +3,4 @@ class Q"
+                    " keep"
+                    "-old"
+                    "+new1"
+                    "+new2"
+                    " tail"
+                    "diff --git a/src/Gone.cs b/src/Gone.cs"
+                    "--- a/src/Gone.cs"
+                    "+++ /dev/null"
+                    "@@ -1,2 +0,0 @@"
+                    "-x"
+                    "-y" ]
+          let d = Diff.parse diff
+          equal (Set.ofList [ 3; 4; 5; 6 ]) (d.Visible.["src/Q.cs"]) "context and added lines, new-side numbering"
+          equal (Set.ofList [ 4; 5 ]) (d.Added.["src/Q.cs"]) "added lines"
+          check (not (d.Visible.ContainsKey "src/Gone.cs")) "a deleted file has no new-side lines"
+      "review validate: findings must cite a file:line inside the diff; the rest are dropped with a reason", fun () ->
+          let f cat file line = { Category = cat; File = file; Line = line; Message = "m" }
+          let inside = f Intent "src/Q.cs" 4
+          let outside = f Security "src/Q.cs" 99
+          let elsewhere = f Intent "src/Other.cs" 1
+          let kept, dropped =
+              Review.validate (fun file line -> file = "src/Q.cs" && line < 10) [ inside; outside; elsewhere ]
+          equal [ inside ] kept "kept"
+          equal 2 dropped.Length "dropped"
+          check (dropped |> List.forall (fun (_, why) -> why.Contains "not in the diff")) "reason says why"
+      "review: design findings are advisory, every other category blocks", fun () ->
+          let f cat = { Category = cat; File = "a"; Line = 1; Message = "m" }
+          let blocking, advisory =
+              Review.split [ f TestGaming; f Intent; f BoundDecision; f Security; f WeakTests; f Design ]
+          equal 5 blocking.Length "five block"
+          equal [ f Design ] advisory "design is advisory"
+      "review route: weak tests go back to the test author, anything else to the implementer", fun () ->
+          let f cat = { Category = cat; File = "a"; Line = 1; Message = "m" }
+          equal ToImplementer (Review.route [ f Security; f Intent ]) "implementation findings"
+          equal ToTestAuthor (Review.route [ f WeakTests ]) "weak tests"
+          equal ToTestAuthor (Review.route [ f Security; f WeakTests ]) "the tests change first when both"
+      "review re-review: new findings only on lines the fix changed, open findings anywhere visible", fun () ->
+          let f cat file line = { Category = cat; File = file; Line = line; Message = "m" }
+          let open1 = f Security "src/Q.cs" 7
+          let changed file line = file = "src/Q.cs" && line = 4
+          let allowed = Review.reReviewAllows [ open1 ] changed
+          check (allowed (f Intent "src/Q.cs" 4)) "a new finding on a changed line"
+          check (not (allowed (f Intent "src/Q.cs" 8))) "a new finding on an untouched line is out of scope"
+          check (allowed (f Security "src/Q.cs" 8)) "the same category in the same file is still the open finding"
       // ---------- json ----------
       "json: malformed plan reports every problem at once", fun () ->
           let bad = """{ "handover": {"id":"x","digest":"y"}, "tasks": [ {"id":"A"}, {"id":"B","title":"t","instructions":"i","writes":["../x"]} ] }"""
