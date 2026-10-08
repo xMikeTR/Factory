@@ -621,7 +621,7 @@ internal sealed class TaskLoop(
 
     private async Task<List<string>> QualityLinesAsync(QualityPolicy policy, CancellationToken ct) =>
     [
-        .. (await QualityGate.EvaluateAsync(svc.Git, worktree, runId, policy.Thresholds, ct)).Select(QualityLine),
+        .. (await QualityGate.EvaluateAsync(svc.Git, worktree, runId, policy.Thresholds, ct, svc.Sandboxes)).Select(QualityLine),
         .. (await QualityGate.FitnessAsync(svc.Git, worktree, runId, handover, ct)).Select(FitnessLine),
     ];
 

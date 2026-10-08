@@ -27,7 +27,9 @@ public sealed record FactorySettings(
     /// From the target repo's .factory/policy.yaml; null is the default (auto).
     MergePolicy? MergePolicy = null,
     /// From the same file's `quality:` section; null is off (no measuring).
-    QualityPolicy? QualityPolicy = null)
+    QualityPolicy? QualityPolicy = null,
+    /// From the same file's `npm:` section.
+    NpmPolicy? Npm = null)
 {
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
         RepoPath: Path.GetFullPath(repo),
@@ -43,7 +45,8 @@ public sealed record FactorySettings(
         IntegrationTestCommand: Env("FACTORY_INTEGRATION_TEST_CMD", "dotnet test"),
         PObserveCommand: Environment.GetEnvironmentVariable("FACTORY_POBSERVE_CMD"),
         MergePolicy: MergePolicyFile.FromEnvironment(Path.GetFullPath(repo)),
-        QualityPolicy: QualityPolicyFile.Load(Path.GetFullPath(repo)));
+        QualityPolicy: QualityPolicyFile.Load(Path.GetFullPath(repo)),
+        Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)));
 
     public string RunDir(string runId) => Path.Combine(StateDir, "runs", runId);
     public string PlanPath(string runId) => Path.Combine(RunDir(runId), "plan.json");

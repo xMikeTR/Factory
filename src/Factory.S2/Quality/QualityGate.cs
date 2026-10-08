@@ -1,4 +1,5 @@
 using Factory.Core;
+using Factory.Harness.Sandbox;
 using Factory.S2.Git;
 
 namespace Factory.S2.Quality;
@@ -7,13 +8,14 @@ using Core = Factory.Core.Core;
 using CoreQuality = Factory.Core.Quality;
 
 /// The ratchet for one task: what the task's diff did to the functions it touched, against the
-/// integration branch as the baseline. C# only so far (other languages join as adapters are added).
+/// integration branch as the baseline. C# (Roslyn) and TypeScript (ESLint in the sandbox); other languages join as adapters are added.
 public static class QualityGate
 {
     public static async Task<IReadOnlyList<QualityViolation>> EvaluateAsync(
-        GitWorkspace git, string worktree, string runId, QualityThresholds thresholds, CancellationToken ct)
+        GitWorkspace git, string worktree, string runId, QualityThresholds thresholds, CancellationToken ct, ISandboxFactory? sandboxes = null)
     {
-        var added = Diff.parse(await git.TaskDiffAsync(worktree, runId, ct)).Added
+        var all = Diff.parse(await git.TaskDiffAsync(worktree, runId, ct)).Added;
+        var added = all
             .Where(kv => kv.Key.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(worktree, kv.Key)))
             .ToList();
 
@@ -25,6 +27,19 @@ public static class QualityGate
             current.AddRange(CSharpMetrics.Measure(file, await File.ReadAllTextAsync(Path.Combine(worktree, file), ct)));
             if (await git.BaseFileAsync(worktree, runId, file, ct) is { } before) baseline.AddRange(CSharpMetrics.Measure(file, before));
             changed.AddRange(Ranges(file, lines));
+        }
+        // TypeScript: ESLint runs in the sandbox, current and baseline source under the same file name.
+        var typescript = all.Where(kv => IsTypeScript(kv.Key) && File.Exists(Path.Combine(worktree, kv.Key))).ToList();
+        if (sandboxes is not null && typescript.Count > 0)
+        {
+            await using var sandbox = await sandboxes.ForTeamAsync("quality", worktree, ct);
+            foreach (var (file, lines) in typescript.Select(kv => (kv.Key, kv.Value)))
+            {
+                current.AddRange(await EslintRunner.MeasureAsync(sandbox, worktree, file, null, ct));
+                if (await git.BaseFileAsync(worktree, runId, file, ct) is { } before)
+                    baseline.AddRange(await EslintRunner.MeasureAsync(sandbox, worktree, file, before, ct));
+                changed.AddRange(Ranges(file, lines));
+            }
         }
         return CoreQuality.check(thresholds, Core.ToList(baseline), Core.ToList(current), Core.ToList(changed)).ToList();
     }
@@ -52,6 +67,9 @@ public static class QualityGate
         var judge = (IEnumerable<CodeEdge> edges) => Fitness.violations(handover.Elements, handover.Relationships, Core.ToList(edges));
         return Fitness.newSince(judge(before), judge(current)).ToList();
     }
+
+    private static bool IsTypeScript(string path) =>
+        path.EndsWith(".ts", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".tsx", StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<ChangedRange> Ranges(string file, IEnumerable<int> lines)
     {
