@@ -208,14 +208,11 @@ internal sealed class TaskLoop(
         if (state.IsFailed) return state;
 
         var signals = new TurnSignals();
-        var repoFiles = await svc.Git.RepoFilesAsync(worktree, ct);
-        var defaults = ContextPack.defaults(ListModule.OfSeq(repoFiles), ListModule.OfSeq(task.Writes), ListModule.OfSeq(task.TestWrites));
-        Selection Select(IReadOnlyList<Nomination> nominations) =>
-            ContextPack.select(ContextPack.defaultLimits, FuncConvert.FromFunc<string, bool>(p => File.Exists(Path.Combine(worktree, p))),
-                defaults, ListModule.OfSeq(nominations));
+        var defaults = await DefaultContextAsync(ct);
+        Selection Select(IReadOnlyList<Nomination> nominations) => SelectContext(defaults, nominations);
         var agent = svc.Agents.Create(new AgentScope(runId, Roles.TaskPlanner, _teamId, _taskId), tier,
             Briefs.Prompt("task-planner"), Workspace(signals, sandbox: null, []).TaskPlannerTools(Select));
-        var response = await agent.RunAsync(Brief(task.Writes.Concat(task.TestWrites)), cancellationToken: ct);
+        var response = await agent.RunAsync(Brief(task.Writes.Concat(task.TestWrites), null), cancellationToken: ct);
 
         if (signals.NeedsDecision is { } raised)
         {
@@ -289,7 +286,7 @@ internal sealed class TaskLoop(
         var workspace = Workspace(signals, sandbox, writable);
         var agent = svc.Agents.Create(new AgentScope(runId, role, _teamId, _taskId), tier,
             Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools() : workspace.ExecutorTools());
-        var response = await agent.RunAsync(Brief(writable), cancellationToken: ct);
+        var response = await agent.RunAsync(Brief(writable, await ContextPackAsync(ct)), cancellationToken: ct);
         await LogTurnAsync("act", tier, response.Usage,
             new { role, files = signals.FilesWritten, done = signals.DoneSummary, needs_decision = signals.NeedsDecision?.Question, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
     }
@@ -344,12 +341,36 @@ internal sealed class TaskLoop(
 
     private string StashKey => $"{runId}/{_teamId}";
 
-    private string Brief(IEnumerable<PathPattern> writable)
+    private async Task<FSharpList<string>> DefaultContextAsync(CancellationToken ct) =>
+        ContextPack.defaults(ListModule.OfSeq(await svc.Git.RepoFilesAsync(worktree, ct)), ListModule.OfSeq(task.Writes), ListModule.OfSeq(task.TestWrites));
+
+    private Selection SelectContext(FSharpList<string> defaults, IReadOnlyList<Nomination> nominations) =>
+        ContextPack.select(ContextPack.defaultLimits, FuncConvert.FromFunc<string, bool>(p => File.Exists(Path.Combine(worktree, p))),
+            defaults, ListModule.OfSeq(nominations));
+
+    /// What the acting turn sees up front: the frozen selection (defaults if no approach turn ran) plus
+    /// everything this task has written so far, each file read now so edits since the last turn show.
+    private async Task<IReadOnlyList<PackFile>> ContextPackAsync(CancellationToken ct)
+    {
+        _selection ??= SelectContext(await DefaultContextAsync(ct), []);
+        var written = (await svc.Git.TaskPathsAsync(worktree, runId, ct)).Where(p => !p.StartsWith(".git/") && !p.StartsWith(".factory/")).ToList();
+        var contents = new List<Tuple<ContextEntry, string>>();
+        foreach (var entry in ContextPack.withWritten(_selection, ListModule.OfSeq(written)))
+        {
+            var path = Path.Combine(worktree, entry.Path);
+            if (!File.Exists(path)) continue; // deleted since it was selected
+            var text = await File.ReadAllTextAsync(path, ct);
+            contents.Add(Tuple.Create(entry, text.Length > ContextPack.defaultLimits.MaxChars ? text[..ContextPack.defaultLimits.MaxChars] : text));
+        }
+        return ContextPack.fit(ContextPack.defaultLimits, ListModule.OfSeq(contents)).ToList();
+    }
+
+    private string Brief(IEnumerable<PathPattern> writable, IReadOnlyList<PackFile>? context)
     {
         var failures = _reverted is null
             ? _lastFailures
             : $"These changes were outside your writes and were reverted: {_reverted}\n\n{_lastFailures}".TrimEnd();
-        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision);
+        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context);
     }
 
     private bool InScope(string path, IEnumerable<PathPattern> writable) =>

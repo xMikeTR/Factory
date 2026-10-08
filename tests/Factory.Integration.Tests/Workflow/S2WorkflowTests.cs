@@ -164,6 +164,7 @@ public class S2WorkflowTests
         await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
             new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
 
+        Assert.Contains(model.Requests, r => r.Any(m => m.Text.Contains("### `scripts/suite.sh` (how the suite runs)")));
         var plan = h.Rows(LedgerKinds.Turn).Single(e => e.Stage == "task_plan");
         using var doc = JsonDocument.Parse(plan.Payload!);
         Assert.Equal("Approach: add QuoteStatus.cs", doc.RootElement.GetProperty("note").GetString());
@@ -296,7 +297,7 @@ public class S2WorkflowTests
         Directory.CreateDirectory(registry);
         model.Enqueue(
             SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
-            Say("Approach: add QuoteStatus.cs"),
+            Call("submit_approach", new { note = "Approach: add QuoteStatus.cs", context = new[] { new { path = "scripts/suite.sh", reason = "how the suite runs" } } }), Say("done"),
             Call("raise_needs_decision", new { question = "Is Draft the only initial status?", options = new[] { new { id = "A", summary = "Draft only", consequence = "one initial status" }, new { id = "B", summary = "Draft and Bound", consequence = "two initial statuses" } }, recommended = "A" }), Say("blocked"));
         var handover = h.WriteHandoverJson();
 
@@ -344,6 +345,9 @@ public class S2WorkflowTests
         var payloads = h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001").Select(e => e.Payload!);
         Assert.True(Core.Replay(new Limits(8, 3), payloads).IsPassed);
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("ND-0001"));
+        // The planner did not run again: the nominated file comes from the selection frozen in the ledger.
+        Assert.Contains(model.Requests.Last(), m => m.Text.Contains("### `scripts/suite.sh` (how the suite runs)"));
+        Assert.Contains(model.Requests.Last(), m => m.Text.Contains("### `src/Pricing.Data/Quote.cs`"));
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("Chosen option B: Draft and Bound") && m.Text.Contains("Bound comes from imports"));
         var pipeline = await File.ReadAllLinesAsync(Path.Combine(registry, "ledger", "pipeline.jsonl"));
         Assert.Single(pipeline, l => l.Contains("\"kind\":\"needs_decision\"") && l.Contains("\"status\":\"resolved\""));

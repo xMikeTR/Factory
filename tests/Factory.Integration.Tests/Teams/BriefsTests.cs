@@ -46,4 +46,25 @@ public class BriefsTests
         Assert.Contains("`pobserve <event> <payload> key=<id>`", brief);
         Assert.Contains("`pobserve eCommitted 3 key=Q-42`", brief);
     }
+
+    [Fact]
+    public async Task The_context_section_inlines_each_file_with_why_it_is_there_and_marks_truncation()
+    {
+        var handover = await new DesigncHandoverReader().LoadAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"),
+            new S2Config([]), CancellationToken.None);
+        PackFile[] context =
+        [
+            new("src/Quote.cs", ContextSource.TaskWritten, "class Quote {}", false),
+            new("src/Repo.cs", ContextSource.NewNominated("Quote is loaded here"), "class Repo {}", false),
+            new("src/Big.cs", ContextSource.Default, "class Big {", true),
+        ];
+
+        var brief = Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null, context);
+
+        Assert.Contains("## Context", brief);
+        Assert.Contains("### `src/Quote.cs` (written by this task)\n```\nclass Quote {}\n```", brief);
+        Assert.Contains("### `src/Repo.cs` (Quote is loaded here)", brief);
+        Assert.Contains("### `src/Big.cs` (truncated to fit the context budget)", brief);
+        Assert.DoesNotContain("## Context", Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null));
+    }
 }
