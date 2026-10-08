@@ -29,6 +29,12 @@ public static class QualityGate
         return CoreQuality.check(thresholds, Core.ToList(baseline), Core.ToList(current), Core.ToList(changed)).ToList();
     }
 
+    /// The lines of C# the task's diff added or changed, per file (what mutation judges).
+    public static async Task<IReadOnlyList<ChangedRange>> ChangedRangesAsync(GitWorkspace git, string worktree, string runId, CancellationToken ct) =>
+        Diff.parse(await git.TaskDiffAsync(worktree, runId, ct)).Added
+            .Where(kv => kv.Key.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(worktree, kv.Key)))
+            .SelectMany(kv => Ranges(kv.Key, kv.Value)).ToList();
+
     /// The fitness ratchet for one task: project references the diff added or changed that the model does
     /// not allow, minus the element pairs the baseline already crossed (those are debt, not this task's).
     public static async Task<IReadOnlyList<FitnessViolation>> FitnessAsync(

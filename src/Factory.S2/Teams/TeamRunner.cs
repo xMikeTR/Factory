@@ -175,6 +175,17 @@ internal sealed class TaskLoop(
                     }
                     if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await QualityOutcomeAsync(attempt, ct) is { } quality)
                         green.Add(quality); // block mode: a ratchet violation is not green
+                    if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await MutationOutcomeAsync(attempt, ct) is { } mutation)
+                    {
+                        if (mutation.ExitCode == 124) green.Add(mutation); // the tool never finished: parks below
+                        else
+                        {
+                            // Mutants survived the green tests: the tests are too weak for this change, so the TestAuthor strengthens them.
+                            _lastFailures = mutation.OutputTail;
+                            state = await ApplyAsync(state, TaskEvent.NewReturnedToTestAuthor(mutation.OutputTail), ct);
+                            break;
+                        }
+                    }
                     if (TimedOut(green) is { } greenTimeout)
                     {
                         state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(greenTimeout), ct);
@@ -475,6 +486,28 @@ internal sealed class TaskLoop(
             JsonSerializer.Serialize(new { attempt, violations = lines }), _teamId, _taskId, ct);
         return block ? new VerifyOutcome("quality", 1, (long)(DateTime.UtcNow - started).TotalMilliseconds,
             "The change leaves code harder to maintain than the policy allows. Simplify it (extract, flatten, remove branches):\n" + string.Join("\n", lines)) : null;
+    }
+
+    /// Mutation testing of the lines the task changed. Report mode writes the ledger row only; block mode returns the
+    /// survivors as a brief for the TestAuthor. A tool that timed out returns exit 124 (never evidence).
+    private async Task<VerifyOutcome?> MutationOutcomeAsync(int attempt, CancellationToken ct)
+    {
+        if (svc.Mutation is not { } runner || svc.Settings.QualityPolicy?.Mutation is not { Mode: not QualityMode.Off } policy) return null;
+        var ranges = await QualityGate.ChangedRangesAsync(svc.Git, worktree, runId, ct);
+        if (ranges.Count == 0) return null;
+        var started = DateTime.UtcNow;
+        var run = await runner.RunAsync(worktree, ranges.Select(r => r.File).Distinct().ToList(), ct);
+        var elapsed = (long)(DateTime.UtcNow - started).TotalMilliseconds;
+        if (run.TimedOut) return new VerifyOutcome("mutation", 124, elapsed, "the mutation tool did not finish");
+        var violations = Mutation.check(policy.Thresholds, MapModule.Empty<string, double>(), SetModule.Empty<string>(), Core.ToList(ranges), Core.ToList(run.Mutants));
+        if (violations.IsEmpty) return null;
+        var lines = violations.SelectMany(v => v.Survivors.Select(m => $"- {m.File}:{m.Line} {m.Mutator} (file scored {v.Score:P0}, needs {v.Required:P0})")).ToList();
+        var block = policy.Mode == QualityMode.Block;
+        await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, block ? "blocked" : "reported",
+            JsonSerializer.Serialize(new { attempt, survivors = lines }), _teamId, _taskId, ct);
+        return block ? new VerifyOutcome("mutation", 1, elapsed,
+            "Your tests pass, but mutants of the code this task changed survived them, so they do not pin the behaviour. "
+            + "Strengthen the tests so each of these changes would make one fail:\n" + string.Join("\n", lines)) : null;
     }
 
     /// A check that timed out (exit 124 after the gate's isolated re-run) says nothing about the code, so

@@ -260,6 +260,7 @@ module TaskState =
     ///   Ready(p,Implementer)       + VerifyRequested       -> Failed(VerifyBudgetExhausted []) if p.VerifyAttempts >= Max
     ///                                                         else Verifying({p with VerifyAttempts+1}, ph)
     ///   Verifying(p,ph)            + NeedsDecisionRaised n -> Blocked(p, ph, n) (a check timed out twice)
+    ///   Verifying(p,ph)            + ReturnedToTestAuthor  -> Ready(p, TestAuthor) (mutants survived), or Failed at the attempt limit
     ///   Verifying(p,Implementer r) + VerifyCompleted(g,s)  -> Reviewing(p, ph, ev) if VerifiedEvidence.Create succeeds
     ///                                                      -> Failed(VerifyBudgetExhausted) if attempts used up
     ///                                                      -> Ready(p, TestAuthor) if green but the stash check failed
@@ -347,12 +348,15 @@ module TaskState =
                     | Error _ when greenOk -> Ok(Ready(p, TestAuthor))
                     | Error _ -> Ok(Ready(p, ph))
             | NeedsDecisionRaised n -> Ok(Blocked(p, ph, n)) // a check that could not answer (timed out twice) is not evidence either way
+            | ReturnedToTestAuthor problem -> // mutants survived a green verify: the tests are too weak for the change
+                if p.VerifyAttempts >= limits.MaxVerifyAttempts then
+                    Ok(Failed(VerifyBudgetExhausted [ { Name = "mutation"; ExitCode = 1; DurationMs = 0L; OutputTail = problem } ], p))
+                else Ok(Ready(p, TestAuthor))
             | TurnStarted _
             | TurnEnded
             | DecisionBound _
             | VerifyRequested
             | TestsAuthored _
-            | ReturnedToTestAuthor _
             | ReviewCompleted _
             | ReviewAccepted _
             | ReviewGuided _ -> illegal ()
