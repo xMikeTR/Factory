@@ -85,6 +85,10 @@ export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MOD
 #   or the native Anthropic client (public API unless FACTORY_GATEWAY_URL is set; models default
 #   to claude-opus-5-5 / claude-sonnet-5-5 / claude-haiku-4-5):
 #   export FACTORY_PROVIDER=anthropic ANTHROPIC_API_KEY=<key>
+#   The reviewer and QA run on another model family (FACTORY_REVIEWER_PROVIDER / _GATEWAY_URL /
+#   _GATEWAY_KEY / _MODEL_*, and declare FACTORY_MODEL_FAMILY + FACTORY_REVIEWER_MODEL_FAMILY); start-up
+#   refuses otherwise. With one provider only: FACTORY_REVIEWER_SAME_FAMILY=allow, dry-run merges only
+#   (not --github); those reviews are stamped same-family.
 dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/pricing-v3/handover.json \
     --repo <target repo> --registry <registry repo> [--base main] [--github] [--run-id <id to resume>]
 ```

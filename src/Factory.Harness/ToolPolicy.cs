@@ -23,6 +23,8 @@ public static class Roles
     public const string TaskPlanner = "s2-task-planner";    // per-task approach note, read-only
     public const string TestAuthor = "s2-test-author";      // writes tests inside `testWrites`, before any code
     public const string Implementer = "s2-implementer";     // writes code inside `writes`; the tests are fixed by then
+    public const string Reviewer = "s2-reviewer";           // judges one task's green diff, read-only; on the reviewer pool
+    public const string Qa = "s2-qa";                       // black-box tests of a run's requirements; on the reviewer pool
 }
 
 public sealed class RoleAllowListPolicy : IToolPolicy

@@ -78,8 +78,15 @@ public sealed record AgentScope(string RunId, string Role, string? TeamId = null
 /// The chat client per tier is a seam: production goes through the gateway, tests script the model.
 /// Every model call is a gen_ai span on FactoryTelemetry.Source, nested under the task span;
 /// prompts and replies go on it only when `captureContent` is set.
-public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPolicy policy, ILedger ledger, bool captureContent = false)
+public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, IToolPolicy policy, ILedger ledger, bool captureContent = false)
 {
+    public FactoryAgents(ModelGateways gateways, IToolPolicy policy, ILedger ledger, bool captureContent = false)
+        : this(gateways.ChatClientFor, policy, ledger, captureContent) { }
+
+    /// One model pool for every role (tests, single-provider setups).
+    public FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPolicy policy, ILedger ledger, bool captureContent = false)
+        : this((_, tier) => chatFor(tier), policy, ledger, captureContent) { }
+
     public FactoryAgents(GatewayOptions gateway, IToolPolicy policy, ILedger ledger, bool captureContent = false)
         : this(gateway.ChatClientFor, policy, ledger, captureContent) { }
 
@@ -88,7 +95,7 @@ public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPol
 
     public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools, TurnBudget? budget = null)
     {
-        var chat = chatFor(tier).AsBuilder()
+        var chat = chatFor(scope.Role, tier).AsBuilder()
             .Use(inner => new TrimmingChatClient(inner, KeepRecentToolResults))
             .UseOpenTelemetry(sourceName: FactoryTelemetry.SourceName, configure: o => o.EnableSensitiveData = captureContent)
             .Build();
