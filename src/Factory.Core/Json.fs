@@ -235,11 +235,12 @@ module Json =
               DurationMs = (match x.["durationMs"] with null -> 0L | v -> v.GetValue<int64>())
               OutputTail = defaultArg (optStr x "outputTail") "" })
 
-    let private redKindName = function BuildFailure -> "build_failure" | AssertionFailure -> "assertion_failure"
+    let private redKindName = function BuildFailure -> "build_failure" | AssertionFailure -> "assertion_failure" | AgainstMutant -> "against_mutant"
 
     let private redKindOf path = function
         | "build_failure" -> BuildFailure
         | "assertion_failure" -> AssertionFailure
+        | "against_mutant" -> AgainstMutant
         | other -> fail $"{path}: unknown red kind '{other}'"
 
     let private categoryName = function
@@ -359,7 +360,13 @@ module Json =
             | "verify_requested" -> VerifyRequested
             | "verify_completed" -> VerifyCompleted(decodeOutcomes o "outcomes", decodeOutcomes o "stashedImpl")
             | "tests_authored" ->
-                match RedEvidence.Create(decodeOutcomes o "outcomes", redKindOf "$.kind" (str "$" o "kind")) with
+                let outcomes = decodeOutcomes o "outcomes"
+                // A frozen AgainstMutant record was accepted with at least one kill; the count is not kept.
+                let created =
+                    match redKindOf "$.kind" (str "$" o "kind") with
+                    | AgainstMutant -> RedEvidence.CreateAgainstMutant(outcomes, 1)
+                    | kind -> RedEvidence.Create(outcomes, kind)
+                match created with
                 | Ok red -> TestsAuthored red
                 | Error e -> fail $"$.outcomes: {e}"
             | "returned_to_test_author" -> ReturnedToTestAuthor(str "$" o "problem")

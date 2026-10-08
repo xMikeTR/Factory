@@ -654,6 +654,46 @@ let tests: (string * (unit -> unit)) list =
           | Ok h -> equal [ rel ] h.Relationships "round trip"
           | Error es -> failwithf "%A" es
           equal [] handover.Relationships "the example predates relationships"
+      "mutation: score counts killed and timed-out mutants, ignoring compile errors and ignored ones", fun () ->
+          let m id st = { Id = id; File = "A.cs"; Line = 1; Mutator = "Arithmetic"; Status = st }
+          equal (Some 0.5) (Mutation.score [ m "1" Killed; m "2" Survived; m "3" CompileError; m "4" Ignored ]) "score"
+          equal (Some 1.0) (Mutation.score [ m "1" Timeout ]) "timeout is detected"
+          equal (Some 0.0) (Mutation.score [ m "1" NoCoverage ]) "no coverage is undetected"
+          equal None (Mutation.score [ m "1" CompileError ]) "nothing to judge"
+      "mutation: only mutants on changed lines are judged, each file against the threshold", fun () ->
+          let m id file line st = { Id = id; File = file; Line = line; Mutator = "x"; Status = st }
+          let ranges = [ { File = "A.cs"; First = 10; Last = 20 } ]
+          let ms = [ m "1" "A.cs" 12 Killed; m "2" "A.cs" 15 Survived; m "3" "A.cs" 99 Survived; m "4" "B.cs" 12 Survived ]
+          match Mutation.check { MinScore = 0.8 } Map.empty Set.empty ranges ms with
+          | [ v ] ->
+              equal "A.cs" v.File "file"
+              equal [ "2" ] (v.Survivors |> List.map (fun x -> x.Id)) "survivors"
+              equal 0.8 v.Required "required"
+          | other -> failwithf "%A" other
+          equal [] (Mutation.check { MinScore = 0.5 } Map.empty Set.empty ranges ms) "50% passes a 50% gate"
+      "mutation: a file already below the gate need only not get worse", fun () ->
+          let m id st = { Id = id; File = "A.cs"; Line = 12; Mutator = "x"; Status = st }
+          let ranges = [ { File = "A.cs"; First = 10; Last = 20 } ]
+          let ms = [ m "1" Killed; m "2" Survived ]
+          equal [] (Mutation.check { MinScore = 0.8 } (Map.ofList [ "A.cs", 0.4 ]) Set.empty ranges ms) "0.5 >= baseline 0.4"
+          check (not (List.isEmpty (Mutation.check { MinScore = 0.8 } (Map.ofList [ "A.cs", 0.6 ]) Set.empty ranges ms))) "0.5 < baseline 0.6"
+      "mutation: an equivalent mutant counts only when the reviewer confirmed it", fun () ->
+          let m id st = { Id = id; File = "A.cs"; Line = 12; Mutator = "x"; Status = st }
+          let ranges = [ { File = "A.cs"; First = 10; Last = 20 } ]
+          let ms = [ m "1" Killed; m "2" Survived ]
+          equal [] (Mutation.check { MinScore = 1.0 } Map.empty (Mutation.confirmedEquivalents (set [ "2" ]) (set [ "2" ])) ranges ms) "confirmed"
+          check (not (List.isEmpty (Mutation.check { MinScore = 1.0 } Map.empty (Mutation.confirmedEquivalents (set [ "2" ]) Set.empty) ranges ms))) "declared only"
+      "red evidence: tests that already pass are red evidence only if they kill a mutant", fun () ->
+          check (Result.isError (RedEvidence.CreateAgainstMutant([ outcome "a" 0 ], 0))) "no kill"
+          check (Result.isError (RedEvidence.CreateAgainstMutant([], 1))) "no outcomes"
+          match RedEvidence.CreateAgainstMutant([ outcome "a" 0 ], 2) with
+          | Ok r -> equal AgainstMutant r.Kind "kind"
+          | Error e -> failwith e
+      "json: against_mutant red evidence round-trips", fun () ->
+          let r = match RedEvidence.CreateAgainstMutant([ outcome "a" 0 ], 1) with Ok r -> r | Error e -> failwith e
+          match Json.decodeTaskEvent (Json.encodeTaskEvent (TestsAuthored r)) with
+          | Ok(TestsAuthored r2) -> equal AgainstMutant r2.Kind "kind"
+          | other -> failwithf "%A" other
       "json: dispatch serialises", fun () ->
           let text = Json.writeDispatch (Dispatcher.dispatch validated.Value)
           check (text.Contains "team-T-001") text ]
