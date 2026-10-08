@@ -110,4 +110,18 @@ public class StrykerDockerTests
         Assert.Equal("web/a.ts", pick.File);
         Assert.True(pick.Cyclomatic >= 4, $"complexity {pick.Cyclomatic}");
     }
+
+    [Fact]
+    public async Task A_namespace_rule_is_judged_on_assemblies_built_in_the_sandbox()
+    {
+        if (!Enabled) return;
+        var root = await SampleRepoAsync();
+        File.WriteAllText(Path.Combine(root, "src/Calc.cs"), "namespace L.Inner { public static class Helper { public static int One() => 1; } }\nnamespace L { public static class Calc { public static int Add(int a, int b) => a + b + L.Inner.Helper.One() - 1; } }");
+        var dlls = await NamespaceGate.BuildAsync(new DockerSandboxFactory(new DockerSandboxOptions()), "arch", root, default);
+
+        Assert.Contains(dlls, d => d.EndsWith("Lib.dll"));
+        var rule = new Factory.Core.ForbiddenDependency(Factory.Core.PathPatternModule.createOrFail("L"), Factory.Core.PathPatternModule.createOrFail("L/Inner"), "the facade must not reach inward");
+        var found = Assert.Single(NamespaceGate.Judge([rule], baseline: [], current: dlls));
+        Assert.Equal(("L", "L/Inner"), (found.Edge.Source, found.Edge.Target));
+    }
 }

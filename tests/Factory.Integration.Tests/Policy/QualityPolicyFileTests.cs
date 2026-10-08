@@ -90,4 +90,16 @@ public class QualityPolicyFileTests
         Assert.Empty(QualityPolicyFile.Load(RepoWith("quality:\n  mode: report\n")).Flaky);
         Assert.Equal(["dotnet test --filter Slow"], QualityPolicyFile.Load(RepoWith("quality:\n  flaky:\n    - dotnet test --filter Slow\n")).Flaky);
     }
+
+    [Fact]
+    public void Forbidden_namespaces_use_dotted_globs_and_are_kept_apart_from_project_rules()
+    {
+        var policy = QualityPolicyFile.Load(RepoWith(
+            "quality:\n  forbidNamespaces:\n    - from: Pricing.Domain.**\n      to: Pricing.Infra.**\n      why: domain is pure\n"));
+
+        var rule = Assert.Single(policy.ForbidNamespaces);
+        Assert.Equal(("Pricing/Domain/**", "Pricing/Infra/**", "domain is pure"), (rule.From.Value, rule.To.Value, rule.Why));
+        Assert.Empty(policy.Forbid);
+        Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  forbidNamespaces:\n    - from: Pricing.Domain.**\n")));
+    }
 }

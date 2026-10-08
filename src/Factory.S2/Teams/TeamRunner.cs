@@ -694,6 +694,7 @@ internal sealed class TaskLoop(
         .. (await QualityGate.EvaluateAsync(svc.Git, worktree, runId, policy.Thresholds, ct, svc.Sandboxes, policy.Coverage)).Select(QualityLine),
         .. (await QualityGate.FitnessAsync(svc.Git, worktree, runId, handover, ct)).Select(FitnessLine),
         .. (await QualityGate.ForbiddenAsync(svc.Git, worktree, runId, policy.Forbid, ct)).Select(RuleLine),
+        .. (await NamespaceGate.CheckAsync(svc.Sandboxes, svc.Git, worktree, runId, policy.ForbidNamespaces, ct)).Select(RuleLine),
     ];
 
     private static string FitnessLine(FitnessViolation v) =>
