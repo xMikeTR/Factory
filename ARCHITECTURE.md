@@ -6,6 +6,7 @@
 > architecture aggregation.
 > Last updated: 2026-10-08 — CPU gate + timeout rule (strand 3.1): `HeavyGate`/`GatedSandboxFactory` wrap every sandbox;
 > a timed-out check is never evidence (`Verifying + NeedsDecisionRaised -> Blocked`, parked as "environment").
+> Also: quality ratchet for C# (strand 3.2/3.3): `Core/Quality.fs`, `S2/Quality/{CSharpMetrics,Cobertura,QualityGate}`, `QualityPolicyFile`.
 > Previously 2026-10-08 — reviewer + provider seam (strand 2 of PLAN-QUALITY.md): the review is the fourth gate
 > (`Reviewing` state, `Review.fs`, `IReviewer`/`AgentReviewer` on a reviewer pool apart from the implementer's,
 > `ModelGateways`, independence stamped in the ledger and the PR body).

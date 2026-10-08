@@ -323,6 +323,7 @@ let tests: (string * (unit -> unit)) list =
           let f name c = { File = "a.cs"; Name = name; Line = 1; Cyclomatic = c; Lines = 20; Coverage = Some 1.0 }
           let touched = [ { File = "a.cs"; First = 1; Last = 20 } ]
           equal [] (Quality.check t [] [ f "New" 10 ] touched |> List.map (fun v -> v.Measure)) "at the limit is fine"
+          equal [] (Quality.check t [] [ { f "New" 9 with Coverage = None; Lines = 20 } ] touched) "no coverage data: CRAP is not judged"
           equal [ Cyclomatic ] (Quality.check t [] [ f "New" 11 ] touched |> List.map (fun v -> v.Measure)) "new code over the limit"
           equal [] (Quality.check t [ f "Old" 15 ] [ f "Old" 15 ] touched) "touched and no worse than before"
           equal [ Cyclomatic; Crap ] (Quality.check t [ f "Old" 15 ] [ f "Old" 16 ] touched |> List.map (fun v -> v.Measure)) "touched and worse (CRAP follows complexity)"

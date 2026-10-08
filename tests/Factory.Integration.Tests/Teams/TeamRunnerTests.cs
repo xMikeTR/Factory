@@ -1,5 +1,6 @@
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Policy;
 using Factory.Integration.Tests.Support;
 using Factory.S2;
 using Factory.S2.Teams;
@@ -177,6 +178,41 @@ public class TeamRunnerTests
         Assert.Equal("environment", result.Blocked!.Source);
         Assert.Contains("slow once built", result.Blocked.Question);
         Assert.Equal(0, model.Remaining); // no second Implementer turn to "fix" a timeout
+    }
+
+    private const string Branchy = "class QuoteStatus { int F(int x) { if (x > 1) x++; if (x > 2) x++; if (x > 3) x++; return x; } }\n";
+    private static readonly QualityThresholds Tight = new(2, 30.0, 80);
+
+    [Fact]
+    public async Task In_block_mode_new_code_over_a_quality_threshold_fails_the_verify_and_the_Implementer_fixes_it()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "tests" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = Branchy }), Call("declare_done", new { summary = "too branchy" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }), Call("declare_done", new { summary = "simpler" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qualityPolicy: new QualityPolicy(QualityMode.Block, Tight));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Equal(0, model.Remaining);
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "blocked" && e.Payload!.Contains("QuoteStatus.F"));
+    }
+
+    [Fact]
+    public async Task In_report_mode_the_same_code_passes_and_the_finding_is_in_the_ledger()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "tests" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = Branchy }), Call("declare_done", new { summary = "branchy" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qualityPolicy: new QualityPolicy(QualityMode.Report, Tight));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "reported");
     }
 
     [Fact]
