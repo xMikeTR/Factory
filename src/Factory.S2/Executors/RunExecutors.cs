@@ -6,6 +6,7 @@ using Factory.Harness.Registry;
 using Factory.S2.Git;
 using Factory.S2.Quality;
 using Factory.S2.Teams;
+using Factory.S2.Verify;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.FSharp.Collections;
 using Microsoft.FSharp.Core;
@@ -156,9 +157,22 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, "PObserve", pobserve, integration, timeout, cancellationToken));
 
         if (Directory.Exists(s.RegistryPath))
-            foreach (var d in svc.LoadHandover(msg.RunId).Decisions)
+        {
+            var decisions = svc.LoadHandover(msg.RunId).Decisions;
+            // `p check` runs a compiled model and the registry holds sources: compile them once, in the sandbox, in a scratch copy.
+            string? pModel = null;
+            if (decisions.Any(d => d.Checks.Any(c => c.Kind == "p"))
+                && PModel.Prepare(s.RegistryPath, Path.Combine(s.RunDir(msg.RunId), "p-model")) is { } prepared)
+            {
+                var compiled = await svc.Verify.RunCommandAsync(msg.RunId, "P compile", "p compile", prepared, timeout, cancellationToken);
+                outcomes.Add(compiled);
+                if (compiled.ExitCode == 0) pModel = prepared;
+            }
+            foreach (var d in decisions)
                 foreach (var check in d.Checks)
-                    outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, $"{d.Id.Value} [{check.Kind}]", check.Run, s.RegistryPath, timeout, cancellationToken, d.Id.Value));
+                    outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, $"{d.Id.Value} [{check.Kind}]", check.Run,
+                        check.Kind == "p" && pModel is not null ? pModel : s.RegistryPath, timeout, cancellationToken, d.Id.Value));
+        }
         else
             await svc.LogAsync(msg.RunId, "integration_verify", LedgerKinds.Verify, outcome: "skipped_decision_checks",
                 payload: JsonSerializer.Serialize(new { reason = $"registry not found at {s.RegistryPath}" }), ct: cancellationToken);
