@@ -18,6 +18,7 @@
     <Compile Include="Dispatcher.fs" />
     <Compile Include="TaskState.fs" />
     <Compile Include="Regression.fs" />
+    <Compile Include="Quality.fs" />
     <Compile Include="HandoverClosure.fs" />
     <Compile Include="Regeneration.fs" />
     <Compile Include="Merge.fs" />
