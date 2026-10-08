@@ -21,6 +21,8 @@ public sealed class TurnSignals
     /// The task-planner's approach note and the context selection that survived validation (submit_approach).
     public string? ApproachNote { get; set; }
     public Selection? ContextSelection { get; set; }
+    /// The reviewer's findings as submitted (submit_review); null if it never called the tool.
+    public IReadOnlyList<Finding>? Review { get; set; }
     /// The last plan the planner passed to submit_plan, as JSON, whatever the validator said about it.
     public string? SubmittedPlan { get; set; }
     public List<string> FilesWritten { get; } = [];
@@ -30,6 +32,13 @@ public sealed class TurnSignals
 public sealed record ContextArg(
     [property: Description("repo-relative path of an existing file")] string Path,
     [property: Description("one line: why the test author or implementer needs it")] string Reason);
+
+/// One finding of submit_review, as the reviewer sends it.
+public sealed record FindingArg(
+    [property: Description("test_gaming | intent | bound_decision | security | weak_tests | design (design is advice and never blocks)")] string Category,
+    [property: Description("repo-relative path of a file in the diff")] string File,
+    [property: Description("a line of that file shown in the diff (new-side line number)")] int Line,
+    [property: Description("what is wrong and what would fix it, in one or two sentences")] string Message);
 
 /// A question raised through raise_needs_decision, with the options the designer chooses between.
 public sealed record RaisedDecision(string Question, IReadOnlyList<DecisionOption> Options, string? Recommended);
@@ -88,6 +97,38 @@ public sealed class ScopedWorkspace(
                     : "Recorded. These nominations were not used: " + string.Join("; ", selection.Rejected.Select(r => $"{r.Item1} ({r.Item2})")) + ". Stop now.";
             }, "submit_approach", "Call once, last, instead of replying in prose: the approach note, plus the existing files the test author and implementer need to see. Ends your turn."),
     ];
+
+    /// The reviewer's tools: read the repo, and submit_review, which ends the review. No writes, no
+    /// commands, no way to park: a reviewer that cannot judge submits nothing and the harness parks.
+    public IList<AITool> ReviewerTools() =>
+    [
+        AIFunctionFactory.Create(ReadFile, "read_file"),
+        AIFunctionFactory.Create(ListFiles, "list_files"),
+        AIFunctionFactory.Create(
+            ([Description("every problem you found, each citing a line in the diff; empty if there is none")] FindingArg[] findings) =>
+            {
+                var parsed = new List<Finding>();
+                var errors = new List<string>();
+                foreach (var f in findings ?? [])
+                {
+                    if (FindingCategories.TryGetValue(f.Category ?? "", out var category)) parsed.Add(new Finding(category, f.File ?? "", f.Line, f.Message ?? ""));
+                    else errors.Add($"{f.File}:{f.Line}: category '{f.Category}' is not one of {string.Join(", ", FindingCategories.Keys)}");
+                }
+                if (errors.Count > 0) return "Not recorded. Fix every one and call again:\n- " + string.Join("\n- ", errors);
+                signals.Review = parsed;
+                return "Recorded. Stop now.";
+            }, "submit_review", "Call once, last: your findings (an empty list approves). Ends your turn."),
+    ];
+
+    private static readonly IReadOnlyDictionary<string, FindingCategory> FindingCategories = new Dictionary<string, FindingCategory>
+    {
+        ["test_gaming"] = FindingCategory.TestGaming,
+        ["intent"] = FindingCategory.Intent,
+        ["bound_decision"] = FindingCategory.BoundDecision,
+        ["security"] = FindingCategory.Security,
+        ["weak_tests"] = FindingCategory.WeakTests,
+        ["design"] = FindingCategory.Design,
+    };
 
     public IList<AITool> ExecutorTools() =>
     [

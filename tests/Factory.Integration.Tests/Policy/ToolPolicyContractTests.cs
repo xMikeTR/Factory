@@ -17,19 +17,20 @@ public abstract class ToolPolicyContract
     {
         [Roles.Planner] = ["read_file", "list_files", "submit_plan"],
         [Roles.TaskPlanner] = ["read_file", "list_files", "raise_needs_decision", "submit_approach"],
+        [Roles.Reviewer] = ["read_file", "list_files", "submit_review"],
         [Roles.TestAuthor] = Tools[..^1],
         [Roles.Implementer] = Tools,
     };
 
     private static readonly Dictionary<string, object?> Args = new() { ["path"] = "src/x.cs" };
 
-    public static TheoryData<string> AllRoles() => [Roles.Planner, Roles.TaskPlanner, Roles.TestAuthor, Roles.Implementer];
+    public static TheoryData<string> AllRoles() => [Roles.Planner, Roles.TaskPlanner, Roles.Reviewer, Roles.TestAuthor, Roles.Implementer];
 
     [Theory]
     [MemberData(nameof(AllRoles))]
     public void A_role_may_call_exactly_its_tools(string role)
     {
-        var allowed = Tools.Append("submit_plan").Append("submit_approach").Where(t => Policy.Evaluate(role, t, Args).Allowed);
+        var allowed = Tools.Append("submit_plan").Append("submit_approach").Append("submit_review").Where(t => Policy.Evaluate(role, t, Args).Allowed);
 
         Assert.Equal(MayCall[role], allowed);
     }
@@ -99,7 +100,7 @@ public class AcsToolPolicyTests
     {
         var policy = AcsToolPolicy.Load(AcsToolPolicy.DefaultDirectory);
 
-        Assert.Equal([Roles.Implementer, Roles.Planner, Roles.TaskPlanner, Roles.TestAuthor], policy.Roles.Order());
+        Assert.Equal([Roles.Implementer, Roles.Planner, Roles.Reviewer, Roles.TaskPlanner, Roles.TestAuthor], policy.Roles.Order());
     }
 
     [Theory]

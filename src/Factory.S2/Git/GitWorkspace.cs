@@ -76,6 +76,35 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
             .Distinct().ToList();
     }
 
+    /// The task's whole diff against the integration branch, committed and uncommitted, new files
+    /// included (staged as intent-to-add for git to see them, then unstaged). Factory state is left out.
+    public async Task<string> TaskDiffAsync(string worktree, string runId, CancellationToken ct)
+    {
+        await GitAsync(worktree, ct, "add", "-A", "-N");
+        var r = await GitAsync(worktree, ct, "diff", IntegrationBranch(runId), "--", ".", ":(exclude).factory");
+        await GitAsync(worktree, ct, "reset", "-q"); // an index entry would make RevertPathsAsync think a new file is tracked
+        return r.Output;
+    }
+
+    /// The worktree as a git tree (what `commit -a` would record), so a later review can ask what the
+    /// fix changed since this one. Written into the object store only; no commit, no ref.
+    public async Task<string> SnapshotAsync(string worktree, CancellationToken ct)
+    {
+        await GitAsync(worktree, ct, "add", "-A");
+        var tree = (await GitAsync(worktree, ct, "write-tree")).Output.Trim();
+        await GitAsync(worktree, ct, "reset", "-q");
+        return tree;
+    }
+
+    /// What changed in the worktree since `tree` (a SnapshotAsync result), new files included.
+    public async Task<string> DiffSinceAsync(string worktree, string tree, CancellationToken ct)
+    {
+        await GitAsync(worktree, ct, "add", "-A");
+        var diff = (await GitAsync(worktree, ct, "diff", "--cached", tree, "--", ".", ":(exclude).factory")).Output;
+        await GitAsync(worktree, ct, "reset", "-q");
+        return diff;
+    }
+
     /// Undo changes to specific paths: restore tracked files, delete untracked ones.
     public async Task RevertPathsAsync(string worktree, IEnumerable<string> paths, CancellationToken ct)
     {

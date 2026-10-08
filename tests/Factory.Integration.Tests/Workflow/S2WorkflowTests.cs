@@ -75,6 +75,27 @@ public class S2WorkflowTests
         Assert.Single(h.Rows(LedgerKinds.Run), e => e.Outcome == "merged");
     }
 
+    [Fact]
+    public async Task The_pull_request_says_who_reviewed_and_carries_the_advice()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.Auto));
+        h.Reviewer.Independence = Independence.SameFamily;
+        h.Reviewer.Then(new Finding(FindingCategory.Design, NewFile, 1, "name it QuoteState"));
+        model.Enqueue(
+            SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+
+        await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+
+        var prBody = await File.ReadAllTextAsync(Path.Combine(h.StateDir, "runs", TeamHarness.RunId, $"factory_{TeamHarness.RunId}_integration.pr.md"));
+        Assert.Contains("independence: same-family", prBody);
+        Assert.Contains($"T-001 [Design] {NewFile}:1: name it QuoteState", prBody);
+    }
+
     /// live2-live5: free-text plans broke on raw newlines and every rejection cost a fresh turn.
     [Fact]
     public async Task The_planner_fixes_a_rejected_plan_inside_one_turn_through_submit_plan()

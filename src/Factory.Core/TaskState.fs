@@ -169,7 +169,7 @@ type TaskState =
     | Blocked of Progress * Phase * NeedsDecision
     | Verifying of Progress * Phase
     /// Verified, awaiting review. With `Some nd` it is parked for a designer: the review rounds ran
-    /// out (`ReviewRounds >= maxReviewRounds`) and `OpenFindings` are still blocking.
+    /// out (`ReviewRounds >= maxReviewRounds`, `OpenFindings` still blocking) or no usable review came back.
     | Reviewing of Progress * Phase * VerifiedEvidence * NeedsDecision option
     | Passed of VerifiedEvidence * ReviewEvidence
     | Failed of FailureReason * Progress
@@ -257,9 +257,9 @@ module TaskState =
     ///   Reviewing(p,ph,ev,None)    + ReviewCompleted r     -> Passed(ev, review) if nothing blocks; else ReviewRounds+1 and
     ///                                                         Ready(p, TestAuthor) for weak tests, Ready(p, ph) otherwise,
     ///                                                         or, at maxReviewRounds, Reviewing awaiting a ND (not a turn)
-    ///   Reviewing(exhausted,None)  + NeedsDecisionRaised n -> Reviewing(.., Some n)
+    ///   Reviewing(p,None)          + NeedsDecisionRaised n -> Reviewing(.., Some n) (rounds ran out, or no usable review)
     ///   Reviewing(.., Some _)      + ReviewAccepted        -> Passed(ev, open findings accepted)
-    ///   Reviewing(.., Some _)      + ReviewGuided          -> Ready({p with ReviewRounds = 0}, ph)
+    ///   Reviewing(.., Some _)      + ReviewGuided          -> Ready(p, ph); ReviewRounds reset only if they had run out
     let transition (limits: Limits) (state: TaskState) (event: TaskEvent) : Result<TaskState, TransitionError> =
         let illegal () = Error { State = name state; Event = eventName event }
         // Outer match on state, inner on event, no wildcards: adding a case to either DU is a
@@ -362,10 +362,10 @@ module TaskState =
                         match Review.route blocking with
                         | ToTestAuthor -> Ok(Ready(p', TestAuthor))
                         | ToImplementer -> Ok(Ready(p', ph))
-            | NeedsDecisionRaised n, None when exhausted -> Ok(Reviewing(p, ph, ev, Some n))
+            | NeedsDecisionRaised n, None -> Ok(Reviewing(p, ph, ev, Some n)) // rounds ran out, or no usable review could be had
             | ReviewAccepted(note, independence), Some _ ->
                 passed { Advisory = []; Accepted = p.OpenFindings; Independence = independence; Rounds = p.ReviewRounds; Note = Some note }
-            | ReviewGuided _, Some _ -> Ok(Ready({ p with ReviewRounds = 0 }, ph))
+            | ReviewGuided _, Some _ -> Ok(Ready((if exhausted then { p with ReviewRounds = 0 } else p), ph)) // guidance buys fresh rounds only once they ran out
             | (ReviewCompleted _ | NeedsDecisionRaised _ | ReviewAccepted _ | ReviewGuided _), _
             | (TurnStarted _ | TurnEnded | DecisionBound _ | VerifyRequested | VerifyCompleted _ | TestsAuthored _ | ReturnedToTestAuthor _), _ -> illegal ()
 

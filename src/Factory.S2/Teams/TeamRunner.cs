@@ -141,6 +141,25 @@ internal sealed class TaskLoop(
                         new BlockedTask(_teamId, _taskId, nd.Question, nd.Source, nd.Elements.Select(e => e.Value).ToArray(),
                             nd.Options.Select(o => new OfferedOption(o.Id, o.Summary, o.Consequence)).ToArray(), nd.Recommended?.Value));
 
+                case TaskState.Reviewing { Item4: { } } when !answerUsed && answers.TryGetValue(_taskId, out var reviewAnswer):
+                    answerUsed = true;
+                    var progress = ((TaskState.Reviewing)state).Item1;
+                    var answered = ReviewAnswer(reviewAnswer, progress);
+                    state = await ApplyAsync(state, answered, ct);
+                    if (answered is TaskEvent.ReviewAccepted accepted) // what the designer let through stays on the pull request
+                        await LogReviewAsync("accepted", progress.ReviewRounds, await LastReviewTreeAsync(ct) ?? "",
+                            new { note = accepted.note, accepted = progress.OpenFindings.Select(FindingJson) }, ct);
+                    break;
+
+                case TaskState.Reviewing { Item4: { } parked }:
+                    return new TeamResult(_teamId, TeamStatus.Blocked,
+                        new BlockedTask(_teamId, _taskId, parked.Value.Question, parked.Value.Source, parked.Value.Elements.Select(e => e.Value).ToArray(),
+                            parked.Value.Options.Select(o => new OfferedOption(o.Id, o.Summary, o.Consequence)).ToArray(), parked.Value.Recommended?.Value));
+
+                case TaskState.Reviewing rv:
+                    state = await ReviewAsync(state, rv.Item1, ct);
+                    break;
+
                 case TaskState.Verifying v:
                     var attempt = v.Item1.VerifyAttempts;
                     FactoryTelemetry.RecordAttempt(span, attempt);
@@ -156,7 +175,7 @@ internal sealed class TaskLoop(
                         ? await RunWithImplStashedAsync(attempt, "stash_check", ct)
                         : [];
                     state = await ApplyAsync(state, TaskEvent.NewVerifyCompleted(Core.ToList(green), Core.ToList(stashed)), ct);
-                    _lastVerifyFailed = !state.IsPassed;
+                    _lastVerifyFailed = state.IsReady; // Reviewing is a verify that passed
                     if (state is TaskState.Ready { Item2.IsTestAuthor: true })
                         _lastFailures = "With the implementation stashed every test still passes, so the tests do not exercise the change: "
                             + string.Join(", ", stashed.Select(o => o.Name));
@@ -171,6 +190,103 @@ internal sealed class TaskLoop(
                     throw new InvalidOperationException($"unknown task state {state}");
             }
         }
+    }
+
+    /// One review of the verified task, or the park once the rounds are used up. A malformed review
+    /// is asked for once more, then parks: a review that cannot be had is never an approval.
+    private async Task<TaskState> ReviewAsync(TaskState state, Progress progress, CancellationToken ct)
+    {
+        if (progress.ReviewRounds >= Core.MaxReviewRounds)
+            return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(ReviewDecision(
+                $"Task {_taskId} still has blocking review findings after {progress.ReviewRounds} rounds:\n{FindingLines(progress.OpenFindings)}\nWhat now?")), ct);
+
+        var round = progress.ReviewRounds + 1;
+        var diff = await svc.Git.TaskDiffAsync(worktree, runId, ct);
+        var tree = await svc.Git.SnapshotAsync(worktree, ct);
+        var request = new ReviewRequest(runId, _teamId, _taskId, worktree,
+            Briefs.Task(handover, task, [], _approachNote, null, _resolvedDecision), diff, round, progress.OpenFindings.ToList());
+
+        var verdict = await svc.Reviewer.ReviewAsync(request, ct);
+        if (verdict is ReviewVerdict.Malformed)
+            verdict = await svc.Reviewer.ReviewAsync(request, ct);
+        if (verdict is ReviewVerdict.Malformed malformed)
+        {
+            await LogReviewAsync("malformed", round, tree, new { reason = malformed.Reason }, ct);
+            return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(ReviewDecision(
+                $"Task {_taskId} could not be reviewed after two tries ({malformed.Reason}). What now?")), ct);
+        }
+
+        var seen = Diff.parse(diff).Visible;
+        var kept = Review.validate(FuncConvert.FromFunc<string, int, bool>((file, line) => seen.TryGetValue(file, out var lines) && lines.Contains(line)),
+            ListModule.OfSeq(((ReviewVerdict.Submitted)verdict).Findings));
+        var accepted = kept.Item1;
+        var dropped = kept.Item2.Select(d => (d.Item1, d.Item2)).ToList();
+
+        // From the second round on, a new finding must sit on a line the fix changed.
+        if (round > 1 && await LastReviewTreeAsync(ct) is { } previous)
+        {
+            var changed = Diff.parse(await svc.Git.DiffSinceAsync(worktree, previous, ct)).Added;
+            var onChangedLine = FuncConvert.FromFunc<string, int, bool>((file, line) => changed.TryGetValue(file, out var lines) && lines.Contains(line));
+            var late = accepted.Where(f => !Review.reReviewAllows(progress.OpenFindings, onChangedLine, f)).ToList();
+            dropped.AddRange(late.Select(f => (f, $"{f.File}:{f.Line} is not on a line the fix changed")));
+            accepted = ListModule.OfSeq(accepted.Where(f => !late.Contains(f)));
+        }
+
+        var split = Review.split(accepted);
+        var result = new ReviewResult(split.Item1, split.Item2, svc.Reviewer.Independence);
+        await LogReviewAsync(result.Blocking.IsEmpty ? "passed" : "blocked", round, tree, new
+        {
+            independence = result.Independence.ToString(),
+            blocking = result.Blocking.Select(FindingJson),
+            advisory = result.Advisory.Select(FindingJson),
+            dropped = dropped.Select(d => new { finding = FindingJson(d.Item1), reason = d.Item2 }),
+        }, ct);
+
+        state = await ApplyAsync(state, TaskEvent.NewReviewCompleted(result), ct);
+        if (state.IsReady)
+            _lastFailures = "A reviewer who did not write this code found problems that must be fixed before the task can pass:\n" + FindingLines(result.Blocking);
+        return state;
+    }
+
+    private static object FindingJson(Finding f) => new { category = f.Category.ToString(), file = f.File, line = f.Line, message = f.Message };
+
+    private static string FindingLines(IEnumerable<Finding> findings) =>
+        string.Join("\n", findings.Select(f => $"- [{f.Category}] {f.File}:{f.Line}: {f.Message}"));
+
+    private static readonly FSharpList<DecisionOption> ReviewOptions = Core.ToList(new[]
+    {
+        new DecisionOption("A", "Accept the task with its open findings", "The task passes; the findings stay on the pull request for the human reviewer."),
+        new DecisionOption("B", "Reject the task", "The task fails and the run does not merge."),
+        new DecisionOption("C", "Send it back with guidance", "The note is given to the agent and the review rounds start again."),
+    });
+
+    private NeedsDecision ReviewDecision(string question) => new(question, task.Elements, "reviewer", ReviewOptions, null);
+
+    /// A designer's answer to a parked review: A accepts, C guides (the note is the guidance), anything else rejects.
+    private TaskEvent ReviewAnswer(DecisionAnswer answer, Progress progress)
+    {
+        switch (answer.DecisionId)
+        {
+            case "A": return TaskEvent.NewReviewAccepted(answer.Note ?? "accepted by the designer", svc.Reviewer.Independence);
+            case "C":
+                _lastFailures = $"A designer read the open review findings and sends the task back: {answer.Note}\n\nOpen findings:\n{FindingLines(progress.OpenFindings)}";
+                return TaskEvent.NewReviewGuided(answer.Note ?? "");
+            default: return TaskEvent.NewAbandon(answer.Note ?? "rejected by the designer");
+        }
+    }
+
+    private ValueTask LogReviewAsync(string outcome, int round, string tree, object detail, CancellationToken ct) =>
+        svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "review", LedgerKinds.Review, TaskId: _taskId, TeamId: _teamId, Outcome: outcome,
+            Payload: JsonSerializer.Serialize(new { round, tree, detail })), ct);
+
+    /// The worktree snapshot taken at this task's last review (null before the first).
+    private async Task<string?> LastReviewTreeAsync(CancellationToken ct)
+    {
+        string? tree = null;
+        await foreach (var e in svc.Ledger.ReadAsync(runId, ct))
+            if (e.Kind == LedgerKinds.Review && e.TaskId == _taskId && e.Payload is not null)
+                tree = JsonDocument.Parse(e.Payload).RootElement.GetProperty("tree").GetString();
+        return tree;
     }
 
     /// One turn from Ready. If the agent declared done: the TestAuthor's tests get their red run,

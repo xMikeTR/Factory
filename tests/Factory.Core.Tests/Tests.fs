@@ -240,6 +240,13 @@ let tests: (string * (unit -> unit)) list =
                  | Ok(Ready(p, Implementer _)) -> p.ReviewRounds = 0 | _ -> false) "guided gets three fresh rounds"
           check (match TaskState.replay lim (parked @ [ Abandon "rejected" ]) with Ok(Failed(Abandoned _, _)) -> true | _ -> false) "rejected"
           check (Result.isError (TaskState.replay lim (verified @ [ ReviewAccepted("x", Independent) ]))) "accept needs a parked review"
+      "review state: a review that cannot be had parks the task before the rounds run out; guiding keeps the rounds used", fun () ->
+          let nd = { Question = "no usable review"; Elements = []; Source = "reviewer"; Options = abOptions; Recommended = None }
+          let parked = verified @ [ reviewed [ finding Intent ] []; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed); NeedsDecisionRaised nd ]
+          check (match TaskState.replay limits parked with Ok(Reviewing(p, _, _, Some n)) -> p.ReviewRounds = 1 && n = nd | _ -> false) "parked after one round"
+          check (match TaskState.replay limits (parked @ [ ReviewGuided "retry" ]) with Ok(Ready(p, _)) -> p.ReviewRounds = 1 | _ -> false) "rounds kept"
+          check (match TaskState.replay limits (parked @ [ ReviewAccepted("unreviewed", Independent) ]) with
+                 | Ok(Passed(_, r)) -> r.Accepted = [ finding Intent ] | _ -> false) "accepted"
       "evidence: red refuses a run where nothing failed", fun () ->
           check (Result.isError (RedEvidence.Create([ outcome "a" 0; outcome "b" 0 ], AssertionFailure))) "all zero"
           check (Result.isError (RedEvidence.Create([], BuildFailure))) "empty"
