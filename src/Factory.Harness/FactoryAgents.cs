@@ -86,7 +86,7 @@ public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPol
     /// Tool results older than this many are replaced by stubs in what the model sees.
     public const int KeepRecentToolResults = 5;
 
-    public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools)
+    public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools, TurnBudget? budget = null)
     {
         var chat = chatFor(tier).AsBuilder()
             .Use(inner => new TrimmingChatClient(inner, KeepRecentToolResults))
@@ -98,14 +98,14 @@ public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPol
         // AGT governs through `policy` (AcsToolPolicy) inside this middleware, so its decisions are
         // ledgered with ours; AGT's own MAF extension (preview) is deliberately not used.
         return agent.AsBuilder()
-            .Use((a, context, next, ct) => GovernedToolCallAsync(scope, tier, context, next, ct))
+            .Use((a, context, next, ct) => GovernedToolCallAsync(scope, tier, budget, context, next, ct))
             .Build();
     }
 
     /// Runs before every tool call of every agent. The governance seam: the policy decides, the
     /// ledger records the decision, and a denied call never reaches the tool.
     private async ValueTask<object?> GovernedToolCallAsync(
-        AgentScope scope, ModelTier tier,
+        AgentScope scope, ModelTier tier, TurnBudget? budget,
         FunctionInvocationContext context,
         Func<FunctionInvocationContext, CancellationToken, ValueTask<object?>> next,
         CancellationToken ct)
@@ -119,6 +119,13 @@ public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPol
             return $"DENIED by policy: {decision.Reason}. This tool is not available to you; do not retry it.";
         }
 
+        if (budget is not null && !budget.TryAdmit(name))
+        {
+            context.Terminate = true;
+            await LogToolCallAsync(scope, tier, name, args, "capped", "turn tool-call limit reached", ct);
+            return "DENIED: this turn's tool-call limit is reached. The turn is over.";
+        }
+
         // The tool itself can still refuse (a path outside the role's writes, a protected path, a
         // command off the allow-list); that is a denial too and is ledgered as one.
         var result = await next(context, ct);
@@ -127,6 +134,10 @@ public sealed class FactoryAgents(Func<ModelTier, IChatClient> chatFor, IToolPol
             await LogToolCallAsync(scope, tier, name, args, "denied", text, ct);
         else
             await LogToolCallAsync(scope, tier, name, args, "allowed", decision.Reason, ct);
+
+        if (budget?.Completed(name) is { } note)
+            result = text is not null ? text + note : result;
+        if (budget?.Exhausted == true) context.Terminate = true;
         return result;
     }
 
