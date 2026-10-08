@@ -265,3 +265,26 @@ change (the behaviour already exists) can still be valid red evidence if they ki
 
 ### Risks
 - Stryker.NET not installable offline: everything is behind the seam and fixture-tested; live behaviour unmeasured.
+
+## Strand 5 — npm gate + TS quality
+
+### Goal
+A TypeScript target repo restores and verifies under the same rule as .NET: network only inside a gated restore window over
+reviewed inputs, no install scripts, registry fixed by the image; and TS code meets the quality ratchet.
+
+### Slices (each committed green)
+- 5.1 Pure Core `PackageJsonChange.review` (package.json: registry-semver dependency specs only, no install-time lifecycle scripts,
+  no bundled deps; package-lock.json: new/changed `resolved` URLs on the pinned registry; `.npmrc` cannot change), same shape as
+  `ProjectFileChange.review`; `affects` extends the restore inputs; `Core.ReviewRestoreInput` dispatches.
+- 5.2 `RestoreGate` plans npm restores: one `npm ci --ignore-scripts` per package.json that has a lockfile, registry pinned from
+  the image's npmrc; a package.json without a lockfile is refused (no lockfile = no reproducible restore).
+- 5.3 Protected `npm.rebuild` allow-list in `.factory/policy.yaml`: packages whose install script may run offline after restore;
+  scripts skipped (lockfile `hasInstallScript`) and not allowed are reported. (policy + report line; the run happens in the image.)
+- 5.4 TS quality adapter: parse `eslint --format json` (complexity, max-lines-per-function) into neutral `FunctionMetrics`;
+  same Core ratchet. Fixture-tested; the eslint run belongs to the image.
+- Deferred: baking node, npm and Playwright browsers into docker/runner/Dockerfile (needs network at build; then `./docker/runner/build.sh`),
+  ArchUnit-equivalent for TS (dependency-cruiser rules from the model's relationships), coverage for TS CRAP.
+
+### Interface changes (flagged)
+- `Core.ReviewRestoreInput` now also judges package.json, package-lock.json and .npmrc; `RestoreGate.PlanAsync` may add npm restores
+  and refusals; policy gains an `npm.rebuild` list.

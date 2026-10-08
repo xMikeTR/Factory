@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="Paths.fs" />
     <Compile Include="ProjectFileChange.fs" />
+    <Compile Include="PackageJsonChange.fs" />
     <Compile Include="Domain.fs" />
     <Compile Include="ContextPack.fs" />
     <Compile Include="Review.fs" />

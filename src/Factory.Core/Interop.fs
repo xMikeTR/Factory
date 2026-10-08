@@ -79,7 +79,8 @@ type Core =
 
     /// Why a changed restore input stops the restore window; empty when it may restore. Null before = new file.
     static member ReviewRestoreInput(path: string, before: string, after: string) : string list =
-        match ProjectFileChange.review path (Option.ofObj before) (Some after) with
+        let review = if PackageJsonChange.affects path then PackageJsonChange.review else ProjectFileChange.review
+        match review path (Option.ofObj before) (Some after) with
         | Ok() -> []
         | Error errors -> errors
 

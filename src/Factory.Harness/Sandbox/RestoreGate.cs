@@ -7,11 +7,16 @@ namespace Factory.Harness.Sandbox;
 /// Projects: every project file on disk (live5: a project outside the sln was never restored).
 /// Refusals: changes since HEAD to the files `dotnet restore` reads that are off the
 /// ProjectFileChange allow-list, and project paths the restore command cannot carry safely.
-public sealed record RestorePlan(IReadOnlyList<string> Projects, IReadOnlyList<string> Refusals);
+public sealed record RestorePlan(IReadOnlyList<string> Projects, IReadOnlyList<string> Refusals, IReadOnlyList<string>? NpmDirectories = null)
+{
+    /// Directories whose package.json and lockfile `npm ci` restores.
+    public IReadOnlyList<string> NpmDirs => NpmDirectories ?? [];
+}
 
 public static partial class RestoreGate
 {
     public const string ConfigFile = "/etc/factory/nuget.config";
+    public const string NpmConfigFile = "/etc/factory/npmrc";
     public const string NuGetOrg = "https://api.nuget.org/v3/index.json";
     private static readonly string[] Skipped = ["bin", "obj", "node_modules"];
 
@@ -21,6 +26,7 @@ public static partial class RestoreGate
     {
         var projects = new List<string>();
         var refusals = new List<string>();
+        var npm = new List<string>();
         foreach (var path in Inputs(worktree, worktree))
         {
             var before = await HeadAsync(worktree, path, ct);
@@ -29,11 +35,21 @@ public static partial class RestoreGate
                 refusals.AddRange(errors);
                 continue;
             }
+            if (Path.GetFileName(path) == "package.json")
+            {
+                var dir = Path.GetDirectoryName(path)!.Replace('\\', '/');
+                if (!File.Exists(Path.Combine(worktree, dir, "package-lock.json")))
+                    refusals.Add($"{path}: no package-lock.json next to it; npm ci restores only from a lockfile (nothing else pins what would install)");
+                else if (dir.Length > 0 && !SafePath().IsMatch(dir))
+                    refusals.Add($"{path}: the directory has characters the restore command does not carry (letters, digits, . _ - + / only)");
+                else npm.Add(dir.Length == 0 ? "." : dir);
+                continue;
+            }
             if (!ProjectFileChange.isProject(Path.GetFileName(path))) continue;
             if (SafePath().IsMatch(path)) projects.Add(path);
             else refusals.Add($"{path}: the project path has characters the restore command does not carry (letters, digits, . _ - + / only)");
         }
-        return new RestorePlan(projects, refusals);
+        return new RestorePlan(projects, refusals, npm);
     }
 
     /// One restore per project, sources pinned: the image's config lists nuget.org only, and the
@@ -44,12 +60,21 @@ public static partial class RestoreGate
         + $"dotnet restore \"$p\" --configfile {ConfigFile} -p:RestoreSources={NuGetOrg} -p:RestoreAdditionalProjectSources= "
         + "-p:ImportProjectExtensionProps=false -p:ImportProjectExtensionTargets=false || rc=1; done; exit $rc";
 
+    /// One `npm ci` per directory: lockfile only, no install scripts, the registry from the image's config.
+    public static string NpmCommand(IReadOnlyList<string> directories) =>
+        $"rc=0; for d in {string.Join(' ', directories.Select(d => $"'{d}'"))}; do "
+        + $"(cd \"$d\" && npm ci --ignore-scripts --no-audit --no-fund --userconfig {NpmConfigFile}) || rc=1; done; exit $rc";
+
+    /// Every restore the plan needs, as one command for the restore window.
+    public static string FullCommand(RestorePlan plan) =>
+        string.Join(" && ", new[] { plan.Projects.Count > 0 ? "(" + Command(plan.Projects) + ")" : null, plan.NpmDirs.Count > 0 ? "(" + NpmCommand(plan.NpmDirs) + ")" : null }.OfType<string>());
+
     private static IEnumerable<string> Inputs(string root, string dir)
     {
         foreach (var file in Directory.EnumerateFiles(dir).Order(StringComparer.Ordinal))
         {
             var rel = Path.GetRelativePath(root, file).Replace('\\', '/');
-            if (ProjectFileChange.affectsRestore(rel)) yield return rel;
+            if (ProjectFileChange.affectsRestore(rel) || PackageJsonChange.affects(rel)) yield return rel;
         }
         foreach (var sub in Directory.EnumerateDirectories(dir).Order(StringComparer.Ordinal))
         {
