@@ -58,13 +58,14 @@ module Quality =
 
     /// The ratchet. New functions must meet every threshold. A function that already existed and the
     /// task touched must be no worse than it was (so old debt is never demanded, only never grown).
-    /// Functions the task did not touch are not judged.
+    /// Functions the task did not touch are not judged. CRAP is judged only where coverage data exists.
     let check (t: QualityThresholds) (baseline: FunctionMetrics list) (current: FunctionMetrics list) (changed: ChangedRange list)
         : QualityViolation list =
         let before = baseline |> List.map (fun f -> key f, f) |> Map.ofList
         [ for f in current do
               if touches changed f then
-                  for m in [ Cyclomatic; Crap; Length ] do
+                  // CRAP needs coverage: without data for this function it is not judged (rather than assumed 0%)
+                  for m in [ Cyclomatic; Crap; Length ] |> List.filter (fun m -> m <> Crap || f.Coverage.IsSome) do
                       let v = value m f
                       match Map.tryFind (key f) before with
                       | None when v > limit t m -> yield { Function = f; Measure = m; Value = v; Limit = limit t m; Baseline = None }

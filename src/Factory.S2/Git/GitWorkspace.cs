@@ -86,6 +86,13 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         return r.Output;
     }
 
+    /// A file as the integration branch has it; null when the branch does not have it.
+    public async Task<string?> BaseFileAsync(string worktree, string runId, string path, CancellationToken ct)
+    {
+        var r = await GitAsync(worktree, ct, check: false, "show", $"{IntegrationBranch(runId)}:{path}");
+        return r.Succeeded ? r.Output : null;
+    }
+
     /// The worktree as a git tree (what `commit -a` would record), so a later review can ask what the
     /// fix changed since this one. Written into the object store only; no commit, no ref.
     public async Task<string> SnapshotAsync(string worktree, CancellationToken ct)

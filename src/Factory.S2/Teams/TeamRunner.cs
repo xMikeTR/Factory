@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Policy;
 using Factory.Harness.Telemetry;
+using Factory.S2.Quality;
 using Microsoft.FSharp.Collections;
 using Microsoft.FSharp.Core;
 
@@ -171,6 +173,8 @@ internal sealed class TaskLoop(
                             && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, svc.Settings.IntegrationTestCommand, worktree, ct) is { } regressed)
                             green.Add(regressed); // P2P: a test that passed before fails now, so this is not green
                     }
+                    if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await QualityOutcomeAsync(attempt, ct) is { } quality)
+                        green.Add(quality); // block mode: a ratchet violation is not green
                     if (TimedOut(green) is { } greenTimeout)
                     {
                         state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(greenTimeout), ct);
@@ -456,6 +460,23 @@ internal sealed class TaskLoop(
         await svc.Git.CommitPathsAsync(worktree, tests, $"{_taskId} (tests): {task.Title}\n\nfactory-run: {runId}\nfactory-team: {_teamId}", ct);
         _lastFailures = null;
         return await ApplyAsync(state, TaskEvent.NewTestsAuthored(red.ResultValue), ct);
+    }
+
+    /// The quality ratchet over the task's diff. Block mode returns a failing outcome that joins the
+    /// green ones (so it is refused and reaches the next brief); report mode only writes the ledger row.
+    private async Task<VerifyOutcome?> QualityOutcomeAsync(int attempt, CancellationToken ct)
+    {
+        if (svc.Settings.QualityPolicy is not { Mode: not QualityMode.Off } policy) return null;
+        var started = DateTime.UtcNow;
+        var violations = await QualityGate.EvaluateAsync(svc.Git, worktree, runId, policy.Thresholds, ct);
+        if (violations.Count == 0) return null;
+        var lines = violations.Select(v => $"- {v.Function.File}:{v.Function.Line} {v.Function.Name}: {v.Measure} {v.Value:0.#} "
+            + (v.Baseline is { } b ? $"(was {b:0.#}; touched code must not get worse)" : $"(limit {v.Limit:0.#} for new code)"));
+        var block = policy.Mode == QualityMode.Block;
+        await svc.LogAsync(runId, "quality", LedgerKinds.Verify, block ? "blocked" : "reported",
+            JsonSerializer.Serialize(new { attempt, violations = lines }), _teamId, _taskId, ct);
+        return block ? new VerifyOutcome("quality", 1, (long)(DateTime.UtcNow - started).TotalMilliseconds,
+            "The change leaves code harder to maintain than the policy allows. Simplify it (extract, flatten, remove branches):\n" + string.Join("\n", lines)) : null;
     }
 
     /// A check that timed out (exit 124 after the gate's isolated re-run) says nothing about the code, so

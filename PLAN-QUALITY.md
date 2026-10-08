@@ -211,8 +211,13 @@ Contention stops turning passing checks into timeouts, and a timeout is never ev
   Core: `Verifying + NeedsDecisionRaised -> Blocked`. TaskLoop parks (source "environment") on any exit-124
   outcome in the red run, green verify and stash check; `RegressionAsync` returns a 124 outcome for a timed-out suite.
   Gap: a baseline timeout still turns P2P off silently.
-- 3.2 Pure `Quality.fs`: neutral per-function metrics (file, name, line, cyclomatic, lines, coverage), CRAP, ratchet.
-- 3.3 C# and F# adapters (F# without mutation) + thresholds in the protected `.factory/policy.yaml`.
+- 3.2 ✅ Pure `Quality.fs`: neutral per-function metrics (file, name, line, cyclomatic, lines, coverage), CRAP, ratchet
+  (new code meets thresholds; touched old code no worse; CRAP only where coverage data exists).
+- 3.3 ✅ (C#) `CSharpMetrics` (Roslyn syntax, no compilation), `Cobertura.Join`, `QualityPolicyFile` (`quality:` in
+  `.factory/policy.yaml`: mode off|report|block), `QualityGate` (diff vs integration branch), TaskLoop `QualityOutcomeAsync`
+  (block: failing `quality` outcome joins green; report: ledger row stage `quality`). `FactorySettings.QualityPolicy` added.
+  Not yet: F# adapter (needs a parser decision: FSharp.Compiler.Service is not in the offline cache), coverage collection
+  (coverlet via the task's verify), report mode on the PR body.
 - 3.4 `check_quality` inner-loop tool (static, exempt from the tool-call cap).
 - 3.5 Fitness rules (Designc relationships + hand-written), baseline violations as debt via `asbuilt_edge`.
 - Open: ArchUnitNET vs NetArchTest.

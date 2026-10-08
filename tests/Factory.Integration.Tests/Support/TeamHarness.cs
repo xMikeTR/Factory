@@ -1,5 +1,6 @@
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Policy;
 using Factory.Harness.Registry;
 using Factory.Harness.Sandbox;
 using Factory.S2;
@@ -36,14 +37,14 @@ public sealed class TeamHarness : IDisposable
     /// Approves everything unless a test queues verdicts.
     public ScriptedReviewer Reviewer { get; } = new();
 
-    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests)
+    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy)
     {
         _root = root;
         Repo = Path.Combine(root, "repo");
         Handover = handover;
         var state = Path.Combine(root, "state");
         var settings = new FactorySettings(Repo, Path.Combine(root, "registry"), "main", state, 3, limits,
-            ["dotnet build", "dotnet test", "ls"], suiteCommand, null, mergePolicy);
+            ["dotnet build", "dotnet test", "ls"], suiteCommand, null, mergePolicy, qualityPolicy);
         var sandboxes = new GatedSandboxFactory(new LocalSandboxFactory(), new HeavyGate(2));
         var git = new GitWorkspace(Repo, state);
         Services = new FactoryServices(settings, Ledger,
@@ -59,12 +60,12 @@ public sealed class TeamHarness : IDisposable
     /// `suiteCommand` is the integration test command; "true" writes no results, so there is no
     /// regression baseline and the P2P check is skipped.
     public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand = "true",
-        MergePolicy? mergePolicy = null, IPullRequests? pullRequests = null)
+        MergePolicy? mergePolicy = null, IPullRequests? pullRequests = null, QualityPolicy? qualityPolicy = null)
     {
         var root = Directory.CreateTempSubdirectory("team-").FullName;
         var repo = Path.Combine(root, "repo");
         await InitRepoAsync(repo);
-        return await WireAsync(root, _ => model, limits, suiteCommand, mergePolicy, pullRequests);
+        return await WireAsync(root, _ => model, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy);
     }
 
     /// A real model per tier (opt-in live tests), dry-run merge.
@@ -72,7 +73,7 @@ public sealed class TeamHarness : IDisposable
     {
         var root = Directory.CreateTempSubdirectory("team-live-").FullName;
         await InitRepoAsync(Path.Combine(root, "repo"));
-        return await WireAsync(root, models, limits, "true", null, null);
+        return await WireAsync(root, models, limits, "true", null, null, null);
     }
 
     /// A clone of a real remote (opt-in live tests). The run's PR goes to that remote.
@@ -84,15 +85,15 @@ public sealed class TeamHarness : IDisposable
         await Git(root, "clone", "-q", remoteUrl, repo);
         await Git(repo, "config", "user.name", "factory-test");
         await Git(repo, "config", "user.email", "factory-test@localhost");
-        return await WireAsync(root, _ => model, limits, "true", mergePolicy, new GhCliPullRequests(repo));
+        return await WireAsync(root, _ => model, limits, "true", mergePolicy, new GhCliPullRequests(repo), null);
     }
 
     private static async Task<TeamHarness> WireAsync(string root, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand,
-        MergePolicy? mergePolicy, IPullRequests? pullRequests)
+        MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy)
     {
         var handover = await new DesigncHandoverReader().LoadAsync(
             Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"), S2Config.Default, CancellationToken.None);
-        var h = new TeamHarness(root, handover, models, limits, suiteCommand, mergePolicy, pullRequests);
+        var h = new TeamHarness(root, handover, models, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy);
         await h.Services.Git.EnsureIntegrationAsync(RunId, "main", CancellationToken.None);
         return h;
     }
