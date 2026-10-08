@@ -302,6 +302,41 @@ public class TeamRunnerTests
     }
 
     [Fact]
+    public async Task Tests_that_pass_on_the_existing_code_are_red_evidence_when_they_kill_a_mutant()
+    {
+        const string existing = "src/Pricing.Data/Quote.cs";
+        var model = new ScriptedChatClient(
+            Say("Approach: pin the existing behaviour"),
+            Call("write_file", new { path = TestFile, content = $"test -f {existing}\n" }),
+            Call("declare_done", new { summary = "pins Quote" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "impl" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Block));
+        h.Mutation.Then(new Mutant("k1", existing, 1, "Block", MutantStatus.Killed)); // red run: the test killed a mutant of Quote.cs
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Contains(h.Rows(LedgerKinds.TaskEvent), e => e.Payload!.Contains("against_mutant"));
+    }
+
+    [Fact]
+    public async Task Tests_that_pass_on_the_existing_code_and_kill_nothing_stay_with_the_TestAuthor()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: pin"),
+            Call("write_file", new { path = TestFile, content = "test -f src/Pricing.Data/Quote.cs\n" }),
+            Call("declare_done", new { summary = "pins Quote" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(2, 3), qualityPolicy: MutationOn(QualityMode.Block));
+        h.Mutation.Then(new Mutant("s1", "src/Pricing.Data/Quote.cs", 1, "Block", MutantStatus.Survived));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.NotEqual(TeamStatus.Passed, result.Status);
+        Assert.DoesNotContain(h.Rows(LedgerKinds.TaskEvent), e => e.Payload!.Contains("against_mutant"));
+    }
+
+    [Fact]
     public async Task Failing_verify_gets_one_verify_row_per_attempt_then_fails_the_team()
     {
         var never = Plans.Task("T-001", Plans.Auto("never passes", "test -f does-not-exist"));

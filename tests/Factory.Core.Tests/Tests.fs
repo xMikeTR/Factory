@@ -190,6 +190,10 @@ let tests: (string * (unit -> unit)) list =
                   [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 1 ], [])
                     TurnStarted Standard; TurnEnded; VerifyRequested; ReturnedToTestAuthor "2 mutants survived" ]
           check (match s with Ok(Failed(VerifyBudgetExhausted [ o ], _)) -> o.Name = "mutation" && o.OutputTail = "2 mutants survived" | _ -> false) $"%A{s}"
+      "evidence: tests red against a mutant need no failing stash check, the mutation gate judges the change instead", fun () ->
+          let mutRed = match RedEvidence.CreateAgainstMutant([ outcome "a" 0 ], 1) with Ok r -> r | Error e -> failwith e
+          check (Result.isOk (VerifiedEvidence.Create(1, [ outcome "a" 0 ], mutRed, [ outcome "a" 0 ]))) "stash all green is fine"
+          check (Result.isError (VerifiedEvidence.Create(1, [ outcome "a" 0 ], red, [ outcome "a" 0 ]))) "still an error for ordinary red"
       "state: turn budget", fun () ->
           let turn = [ TurnStarted Small; TurnEnded ]
           let s = TaskState.replay limits (List.concat [ turn; turn; turn; [ TurnStarted Small ] ])

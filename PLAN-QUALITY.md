@@ -239,18 +239,28 @@ too many mutants alive on the lines it changed goes back to the TestAuthor; test
 change (the behaviour already exists) can still be valid red evidence if they kill a mutant.
 
 ### Slices (each committed green)
-- 4.1 Pure Core `Mutation.fs`: `MutantStatus` (Killed|Survived|Timeout|NoCoverage|CompileError|Ignored), `Mutant`
+- 4.1 ✅ Pure Core `Mutation.fs`: `MutantStatus` (Killed|Survived|Timeout|NoCoverage|CompileError|Ignored), `Mutant`
   (file, line, mutator, status, id), `score` (killed+timeout over detected-able; CompileError/Ignored excluded),
   `check thresholds baseline mutants changedRanges` (80% on new lines, ratchet on touched lines), equivalents declared
   by the TestAuthor and excluded only once the reviewer confirmed them.
-- 4.2 `RedKind.AgainstMutant` (FLAGGED: widens a closed union; Json codec + exhaustive matches updated) and
+- 4.2 ✅ `RedKind.AgainstMutant` (FLAGGED: widens a closed union; Json codec + exhaustive matches updated) and
   `RedEvidence.CreateAgainstMutant(outcomes, killed)`: all-green outcomes accepted only with >= 1 killed mutant.
-- 4.3 `StrykerReport` parser (S2/Quality, fixture-tested) behind `IMutationRunner` (the real tool cannot be installed
+- 4.3 ✅ `StrykerReport` parser (S2/Quality, fixture-tested) behind `IMutationRunner` (the real tool cannot be installed
   offline here; the image install is a later, separate step with `./docker/runner/build.sh`).
-- 4.4 TaskLoop: mutation gate after green verify when `quality.mutation` is on (off|report|block); survivors go back
+- 4.4 ✅ TaskLoop: mutation gate after green verify when `quality.mutation` is on (off|report|block); survivors go back
   to the TestAuthor as a brief; timeouts never evidence.
 
+- Also landed: `Verifying + ReturnedToTestAuthor -> Ready(TestAuthor)` (Failed at the attempt limit); `VerifiedEvidence` exempts
+  `AgainstMutant` red from the failing stash check; `TestsDoneAsync` tries a mutation run over the existing `Writes` files when a
+  red run is all green; `IMutationRunner` seam on `FactoryServices` (null = no tool, gate skipped); `quality.mutation` and
+  `quality.mutationMinScore` in the policy (default off, 0.8).
+- **Deferred from strand 4**: the real `StrykerRunner` and its image install (Stryker.NET not installable offline here; add via
+  `dotnet tool install --tool-path /opt/dotnet-tools` in docker/runner/Dockerfile, then `./docker/runner/build.sh`), the
+  TestAuthor's equivalent-mutant declaration tool and the reviewer's confirmation (pure rule exists: `Mutation.confirmedEquivalents`),
+  the per-file baseline score for the ratchet (the check takes it; the runner passes none yet, so the flat 80% applies), F#/TS mutation.
+
 ### Interface changes (flagged)
+- `Verifying` accepts `ReturnedToTestAuthor`. `FactoryServices` ctor gains an optional `IMutationRunner`. `QualityPolicy` gains an optional `Mutation`.
 - `RedKind` gains `AgainstMutant`; `RedEvidence` gains a second constructor. Policy gains `quality.mutation`.
 
 ### Risks

@@ -147,7 +147,8 @@ type Phase =
 
 /// Proof that a task's checks hold. Three gates: the tests were red before implementation, every
 /// automated check is green now, and with the implementation stashed at least one check fails
-/// again (so the tests exercise the change rather than pass vacuously). The fourth gate, the
+/// again (so the tests exercise the change rather than pass vacuously). Red evidence against a mutant
+/// is exempt from that third gate: those tests pin existing behaviour and pass on the stashed code too. The fourth gate, the
 /// review, is what turns this into a pass.
 [<Sealed>]
 type VerifiedEvidence private (attempt: int, green: VerifyOutcome list, red: RedEvidence, stashedImpl: VerifyOutcome list) =
@@ -162,7 +163,7 @@ type VerifiedEvidence private (attempt: int, green: VerifyOutcome list, red: Red
         | os when os |> List.exists (fun o -> o.ExitCode <> 0) ->
             let failed = os |> List.filter (fun o -> o.ExitCode <> 0) |> List.map (fun o -> o.Name)
             Error("failed: " + System.String.Join(", ", failed))
-        | _ when stashedImpl |> List.forall (fun o -> o.ExitCode = 0 || RestoreRefusal.isRefusal o) ->
+        | _ when red.Kind <> AgainstMutant && stashedImpl |> List.forall (fun o -> o.ExitCode = 0 || RestoreRefusal.isRefusal o) ->
             Error "stashed-impl check: with the implementation stashed every test still passes, so the tests do not exercise it"
         | _ -> Ok(VerifiedEvidence(attempt, green, red, stashedImpl))
 
