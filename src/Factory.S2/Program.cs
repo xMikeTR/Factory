@@ -151,7 +151,7 @@ static FactoryServices Services(FactorySettings settings, string runId, Dictiona
     return new FactoryServices(
         settings,
         ledger,
-        new FactoryAgents(GatewayOptions.FromEnvironment(env), toolPolicy, ledger, FactoryTelemetry.CaptureContent(env)),
+        new FactoryAgents(ModelGateways.FromEnvironment(env, mergesAreDryRun: pullRequests is DryRunPullRequests), toolPolicy, ledger, FactoryTelemetry.CaptureContent(env)),
         configurator,
         git,
         new VerifyRunner(ledger, sandboxes, git),
