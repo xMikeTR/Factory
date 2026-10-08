@@ -381,3 +381,8 @@ machine to itself; the second answer stands; each retry is a `flaky_retry` ledge
 every project on disk; edges between namespaces of those assemblies), not its rule DSL, so the same Core `Fitness.forbidden` + ratchet judge csproj and namespace rules alike.
 Assemblies are read through `MetadataLoadContext`, so no target code is loaded or run. Cost: one build of the worktree and one of a baseline checkout per quality check when
 the policy lists namespace rules (no cache yet). A failing build yields no verdict (the compile check reports it). Verified in Docker on a two-namespace sample. Not done: TS equivalent.
+
+## live9 finding: QA author starved by history trimming (2026-10-08)
+live9 (real Sonnet) reached QA for the first time. The QA author made 15 read calls (8 files, then 5 of them again) and never wrote a test:
+the 5-result history trim evicted what it had just read, it re-read, and the 15-call cap ended the turn. QA then failed closed ("no passing new test").
+Fix: `FactoryAgents.Create(..., keepRecentResults)`; the QA author keeps every result in view and has a 30-call budget (warn at 24).

@@ -75,11 +75,12 @@ public sealed class AgentQaRunner(
 
     private async Task<IReadOnlyList<QaTestDecl>> AuthorAsync(ISandboxFactory sandboxes, string runId, string integrationPath, IReadOnlyList<string> reqs, CancellationToken ct)
     {
+        // QA reads the system before it writes: every result stays in view (trimming made it re-read the same files until the cap).
         var signals = new TurnSignals();
         await using var sandbox = await sandboxes.ForTeamAsync("qa", integrationPath, ct);
         var workspace = new ScopedWorkspace(integrationPath, [PathPatternModule.createOrFail(TestDir + "/**")], [], commandAllowList, signals, sandbox);
         var agent = agents.Create(new AgentScope(runId, Roles.Qa, "qa", "qa"), ModelTier.Standard,
-            Briefs.Prompt("qa-author"), workspace.QaAuthorTools(), new TurnBudget());
+            Briefs.Prompt("qa-author"), workspace.QaAuthorTools(), new TurnBudget(30, 24), keepRecentResults: int.MaxValue);
         await agent.RunAsync("## Requirements this run was meant to deliver\n" + string.Join("\n", reqs.Select(r => "- " + r)), cancellationToken: ct);
         return signals.QaTests ?? [];
     }

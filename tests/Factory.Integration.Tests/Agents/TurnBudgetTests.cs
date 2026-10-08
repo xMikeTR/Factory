@@ -45,6 +45,19 @@ public class TurnBudgetTests
     }
 
     [Fact]
+    public async Task A_role_that_only_reads_can_keep_every_result_in_view()
+    {
+        var model = new ScriptedChatClient([.. Reads(8), Say("done")]);
+        var agent = new FactoryAgents(_ => model, new AllowAll(), new MemoryLedger())
+            .Create(Scope, ModelTier.Standard, "qa", Tools(), new TurnBudget(30, 24), keepRecentResults: int.MaxValue);
+
+        await agent.RunAsync("go");
+
+        var last = model.Requests[^1].SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => r.Result?.ToString());
+        Assert.DoesNotContain(last, r => r!.Contains("elided"));
+    }
+
+    [Fact]
     public async Task A_turn_under_the_cap_is_not_exhausted()
     {
         var model = new ScriptedChatClient([.. Reads(3), Say("done")]);
