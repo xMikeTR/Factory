@@ -11,8 +11,11 @@ public enum QualityMode { Off, Report, Block }
 public sealed record MutationPolicy(QualityMode Mode, MutationThresholds Thresholds);
 
 public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Thresholds, MutationPolicy? Mutation = null, bool Coverage = false,
-    IReadOnlyList<ForbiddenDependency>? ForbidRules = null)
+    IReadOnlyList<ForbiddenDependency>? ForbidRules = null, IReadOnlyList<string>? FlakyCommands = null)
 {
+    /// Commands (substrings) whose plain failure is re-run once alone: the repo says they are flaky.
+    public IReadOnlyList<string> Flaky => FlakyCommands ?? [];
+
     /// Hand-written architecture rules: project references from `From` to `To` that this repo forbids.
     public IReadOnlyList<ForbiddenDependency> Forbid => ForbidRules ?? [];
 }
@@ -29,6 +32,7 @@ public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Threshold
 ///     coverage: false                 # true: run the tests under coverlet so CRAP is judged (one more test run per verify)
 ///     forbid:                         # hand-written fitness rules: project references the repo forbids
 ///       - { from: "src/Domain/**", to: "src/Infra/**", why: "the domain layer is pure" }
+///     flaky: ["dotnet test --filter Slow"]  # commands (substrings) whose failure is re-run once alone
 ///     mutationMinScore: 0.8           # share of mutants on changed lines the tests must kill
 public static class QualityPolicyFile
 {
@@ -46,6 +50,7 @@ public static class QualityPolicyFile
         public double? MutationMinScore { get; set; }
         public bool? Coverage { get; set; }
         public List<ForbidEntry>? Forbid { get; set; }
+        public List<string>? Flaky { get; set; }
     }
 
     private sealed class ForbidEntry { public string? From { get; set; } public string? To { get; set; } public string? Why { get; set; } }
@@ -99,6 +104,6 @@ public static class QualityPolicyFile
 
         if (errors.Count > 0) throw new FactoryRejectedException($"{path} is invalid", errors.ToArray());
         return new QualityPolicy(mode!.Value, new QualityThresholds(q.MaxCyclomatic ?? d.MaxCyclomatic, q.MaxCrap ?? d.MaxCrap, q.MaxLines ?? d.MaxLines),
-            new MutationPolicy(mutation!.Value, new MutationThresholds(q.MutationMinScore ?? 0.8)), q.Coverage ?? false, forbid);
+            new MutationPolicy(mutation!.Value, new MutationThresholds(q.MutationMinScore ?? 0.8)), q.Coverage ?? false, forbid, (q.Flaky ?? []).Where(f => !string.IsNullOrWhiteSpace(f)).ToList());
     }
 }

@@ -83,4 +83,11 @@ public class QualityPolicyFileTests
         Assert.Equal(QualityMode.Off, QualityPolicyFile.Load(repo).Mode);
         Assert.True(MergePolicyFile.Load(repo, new Dictionary<string, string>()).Enforcement.IsAuto);
     }
+
+    [Fact]
+    public void Commands_marked_flaky_are_read_and_default_to_none()
+    {
+        Assert.Empty(QualityPolicyFile.Load(RepoWith("quality:\n  mode: report\n")).Flaky);
+        Assert.Equal(["dotnet test --filter Slow"], QualityPolicyFile.Load(RepoWith("quality:\n  flaky:\n    - dotnet test --filter Slow\n")).Flaky);
+    }
 }

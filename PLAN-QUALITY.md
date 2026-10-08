@@ -371,3 +371,7 @@ human follow-up run, and any live validation (paid).
 ### TS quality end to end (done)
 Opt-in Docker test runs the real ESLint in the image on a .ts file. It found that the image had no TS parser and no config, so `EslintRunner` silently
 returned nothing; the image now carries typescript-eslint + a complexity-only config and the runner passes `--no-config-lookup -c`. Rebuild with `./docker/runner/build.sh`.
+
+### Flaky re-run (done, your choice: only when marked flaky)
+`quality.flaky: [substrings]` in .factory/policy.yaml. A command containing one that exits non-zero (not a timeout; those already re-run) is re-run once with the
+machine to itself; the second answer stands; each retry is a `flaky_retry` ledger row so a retried failure is never hidden.

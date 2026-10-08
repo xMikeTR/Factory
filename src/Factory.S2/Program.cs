@@ -156,8 +156,11 @@ static FactoryServices Services(FactorySettings settings, string runId, Dictiona
         var other => throw new ArgumentException($"FACTORY_SANDBOX: '{other}' is not docker|local"),
     };
     // Heavy commands share the machine's CPU across teams; a timeout is re-run once alone (FACTORY_HEAVY_SLOTS).
+    var flaky = settings.QualityPolicy?.Flaky ?? [];
     ISandboxFactory sandboxes = new GatedSandboxFactory(inner, new HeavyGate(
-        int.TryParse(Environment.GetEnvironmentVariable("FACTORY_HEAVY_SLOTS"), out var slots) && slots > 0 ? slots : HeavyGate.DefaultSlots));
+        int.TryParse(Environment.GetEnvironmentVariable("FACTORY_HEAVY_SLOTS"), out var slots) && slots > 0 ? slots : HeavyGate.DefaultSlots),
+        isFlaky: command => flaky.Any(command.Contains),
+        onFlakyRetry: command => ledger.AppendAsync(new LedgerEvent(runId, "S2", "flaky_retry", LedgerKinds.Verify, Outcome: "re-run alone", Payload: System.Text.Json.JsonSerializer.Serialize(new { command })), default).GetAwaiter().GetResult());
     // Tool governance: the AGT policy files per role (policies/s2) by default; the in-code
     // allow-list is the explicit fallback and the contract-test double.
     IToolPolicy toolPolicy = (Environment.GetEnvironmentVariable("FACTORY_TOOL_POLICY") ?? "acs") switch
