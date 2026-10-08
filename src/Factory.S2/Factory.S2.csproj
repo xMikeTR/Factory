@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="../Factory.Core/Factory.Core.fsproj" />
     <ProjectReference Include="../Factory.Harness/Factory.Harness.csproj" />
+    <ProjectReference Include="../Factory.Quality.FSharp/Factory.Quality.FSharp.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

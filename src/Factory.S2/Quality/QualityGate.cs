@@ -8,7 +8,7 @@ using Core = Factory.Core.Core;
 using CoreQuality = Factory.Core.Quality;
 
 /// The ratchet for one task: what the task's diff did to the functions it touched, against the
-/// integration branch as the baseline. C# (Roslyn) and TypeScript (ESLint in the sandbox); other languages join as adapters are added.
+/// integration branch as the baseline. C# (Roslyn), F# (FSharp.Compiler.Service) and TypeScript (ESLint in the sandbox); other languages join as adapters are added.
 public static class QualityGate
 {
     public static async Task<IReadOnlyList<QualityViolation>> EvaluateAsync(
@@ -16,7 +16,7 @@ public static class QualityGate
     {
         var all = Diff.parse(await git.TaskDiffAsync(worktree, runId, ct)).Added;
         var added = all
-            .Where(kv => kv.Key.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(worktree, kv.Key)))
+            .Where(kv => IsMeasured(kv.Key) && File.Exists(Path.Combine(worktree, kv.Key)))
             .ToList();
 
         var baseline = new List<FunctionMetrics>();
@@ -24,8 +24,8 @@ public static class QualityGate
         var changed = new List<ChangedRange>();
         foreach (var (file, lines) in added.Select(kv => (kv.Key, kv.Value)))
         {
-            current.AddRange(CSharpMetrics.Measure(file, await File.ReadAllTextAsync(Path.Combine(worktree, file), ct)));
-            if (await git.BaseFileAsync(worktree, runId, file, ct) is { } before) baseline.AddRange(CSharpMetrics.Measure(file, before));
+            current.AddRange(Measure(file, await File.ReadAllTextAsync(Path.Combine(worktree, file), ct)));
+            if (await git.BaseFileAsync(worktree, runId, file, ct) is { } before) baseline.AddRange(Measure(file, before));
             changed.AddRange(Ranges(file, lines));
         }
         // TypeScript: ESLint runs in the sandbox, current and baseline source under the same file name.
@@ -70,6 +70,15 @@ public static class QualityGate
         var judge = (IEnumerable<CodeEdge> edges) => Fitness.violations(handover.Elements, handover.Relationships, Core.ToList(edges));
         return Fitness.newSince(judge(before), judge(current)).ToList();
     }
+
+    /// C# (Roslyn) and F# (FSharp.Compiler.Service) are measured in-process; TypeScript goes through ESLint in the sandbox.
+    private static bool IsMeasured(string path) =>
+        path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".fs", StringComparison.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<FunctionMetrics> Measure(string file, string source) =>
+        file.EndsWith(".fs", StringComparison.OrdinalIgnoreCase)
+            ? Factory.Quality.FSharp.FSharpMetrics.measure(file, source).ToList()
+            : CSharpMetrics.Measure(file, source);
 
     private static bool IsTypeScript(string path) =>
         path.EndsWith(".ts", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".tsx", StringComparison.OrdinalIgnoreCase);
