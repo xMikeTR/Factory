@@ -367,3 +367,7 @@ the integrated checkout and declares tests with `submit_qa_tests` (requirement, 
 Defaults chosen without an answer (reversible): requirements = the plan's tasks (`Tn: title`); QA is on only when the repo has `.factory/qa-env.yaml`.
 Not done: starting the qa-env.yaml sibling containers and joining the sandbox to their network (DockerSandbox has no network option yet), the
 human follow-up run, and any live validation (paid).
+
+### TS quality end to end (done)
+Opt-in Docker test runs the real ESLint in the image on a .ts file. It found that the image had no TS parser and no config, so `EslintRunner` silently
+returned nothing; the image now carries typescript-eslint + a complexity-only config and the runner passes `--no-config-lookup -c`. Rebuild with `./docker/runner/build.sh`.

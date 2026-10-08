@@ -9,7 +9,9 @@ namespace Factory.S2.Quality;
 public static class EslintRunner
 {
     private static readonly System.Text.RegularExpressions.Regex SafePath = new(@"^[A-Za-z0-9_./-]+$");
-    private const string Rule = "--rule 'complexity: [warn, 0]' --format json";
+    // The image's own config (typescript-eslint parser, nothing else): the repo's config is not consulted.
+    public const string ConfigPath = "/opt/factory/eslint/eslint.config.mjs";
+    private const string Rule = $"--no-config-lookup -c {ConfigPath} --rule 'complexity: [warn, 0]' --format json";
 
     public static async Task<IReadOnlyList<FunctionMetrics>> MeasureAsync(
         ICommandSandbox sandbox, string worktree, string file, string? source, CancellationToken ct)

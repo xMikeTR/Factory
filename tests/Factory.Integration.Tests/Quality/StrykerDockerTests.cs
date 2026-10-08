@@ -94,4 +94,20 @@ public class StrykerDockerTests
         var after = await ProcessRunner.RunAsync("docker", ["network", "ls", "--format", "{{.Name}}", "--filter", "name=s2-qa-"], root, TimeSpan.FromSeconds(30));
         Assert.DoesNotContain(network.Split('\n')[0], after.Output);
     }
+
+    [Fact]
+    public async Task Eslint_in_the_image_measures_the_complexity_of_a_ts_function_offline()
+    {
+        if (!Enabled) return;
+        var root = Directory.CreateTempSubdirectory("eslint-docker").FullName;
+        Directory.CreateDirectory(Path.Combine(root, "web"));
+        File.WriteAllText(Path.Combine(root, "web/a.ts"), "export function pick(a: number, b: number): number {\n  if (a > b) { return a; }\n  return b > 0 && a > 0 ? b : 0;\n}\n");
+        await using var sandbox = await new DockerSandboxFactory(new DockerSandboxOptions()).ForTeamAsync("eslint", root, default);
+
+        var fns = await EslintRunner.MeasureAsync(sandbox, root, "web/a.ts", null, default);
+
+        var pick = Assert.Single(fns);
+        Assert.Equal("web/a.ts", pick.File);
+        Assert.True(pick.Cyclomatic >= 4, $"complexity {pick.Cyclomatic}");
+    }
 }
