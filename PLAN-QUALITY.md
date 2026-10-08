@@ -219,7 +219,13 @@ Contention stops turning passing checks into timeouts, and a timeout is never ev
   Not yet: F# adapter (needs a parser decision: FSharp.Compiler.Service is not in the offline cache), coverage collection
   (coverlet via the task's verify), report mode on the PR body.
 - 3.4 ✅ `check_quality` (Implementer only, present when quality mode is not off; exempt from the cap; same ratchet as verify).
-- 3.5 Fitness rules (Designc relationships + hand-written), baseline violations as debt via `asbuilt_edge`.
+- 3.5 ✅ (csproj edges) `Handover.Relationships` (FLAGGED contract widening; optional in JSON, schema updated, read from the
+  DSL `a -> b` between code-owning elements), `Fitness` (pure), `CsprojEdges`, `QualityGate.FitnessAsync`; violations join the
+  quality outcome (block/report) and `check_quality`. Baseline element pairs are excluded (debt).
+- **Deferred from strand 3** (recorded, not forgotten): F# adapter (FCS not in the offline cache; token heuristic vs FCS is a
+  decision), coverage collection (coverlet in the task's verify; CRAP is skipped without data), report-mode findings on the PR
+  body, `asbuilt_edge` debt alerts to Designc (format not in this repo), hand-written fitness rules, one isolated re-run of
+  flaky-looking failures, a baseline suite timeout still turns P2P off silently.
 - Open: ArchUnitNET vs NetArchTest.
 
 ### Interface changes (flagged)

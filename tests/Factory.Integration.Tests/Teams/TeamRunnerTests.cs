@@ -201,6 +201,25 @@ public class TeamRunnerTests
     }
 
     [Fact]
+    public async Task In_block_mode_a_project_reference_the_model_does_not_allow_fails_the_verify()
+    {
+        const string csproj = "src/Pricing.Data/Pricing.Data.csproj";
+        const string refsRating = "<Project><ItemGroup><ProjectReference Include=\"..\\Rating.Engine\\Rating.Engine.csproj\" /></ItemGroup></Project>\n";
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "tests" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("write_file", new { path = csproj, content = refsRating }), Call("declare_done", new { summary = "referenced rating" }), Say("done"),
+            Call("write_file", new { path = csproj, content = "<Project />\n" }), Call("declare_done", new { summary = "dropped the reference" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qualityPolicy: new QualityPolicy(QualityMode.Block, new QualityThresholds(50, 100.0, 500)));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "blocked" && e.Payload!.Contains("Quotes DB") && e.Payload.Contains("Rating Engine"));
+    }
+
+    [Fact]
     public async Task In_report_mode_the_same_code_passes_and_the_finding_is_in_the_ledger()
     {
         var model = new ScriptedChatClient(

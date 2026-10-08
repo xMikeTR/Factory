@@ -72,3 +72,35 @@ public class QualityGateTests
         Assert.Empty(await QualityGate.EvaluateAsync(h.Services.Git, wt, TeamHarness.RunId, Limits3, CancellationToken.None));
     }
 }
+
+public class FitnessGateTests
+{
+    private const string RefsRating = """
+        <Project Sdk="Microsoft.NET.Sdk">
+          <ItemGroup><ProjectReference Include="..\Rating.Engine\Rating.Engine.csproj" /></ItemGroup>
+        </Project>
+        """;
+
+    [Fact]
+    public void A_project_reference_is_an_edge_between_repo_relative_projects()
+    {
+        var edges = CsprojEdges.Read("src/Pricing.Data/Pricing.Data.csproj", RefsRating);
+
+        var e = Assert.Single(edges);
+        Assert.Equal(("src/Pricing.Data/Pricing.Data.csproj", "src/Rating.Engine/Rating.Engine.csproj"), (e.Source, e.Target));
+    }
+
+    [Fact]
+    public async Task A_new_reference_the_model_does_not_allow_is_a_violation_and_one_it_allows_is_not()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Pricing.Data.csproj"), RefsRating);
+
+        var violations = await QualityGate.FitnessAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, CancellationToken.None);
+
+        var v = Assert.Single(violations);
+        Assert.Equal("Pricing Platform/Quotes DB", v.FromElement.Value);
+        Assert.Equal("Pricing Platform/Rating Engine", v.ToElement.Value);
+    }
+}

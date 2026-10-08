@@ -336,6 +336,23 @@ let tests: (string * (unit -> unit)) list =
           equal [ Cyclomatic; Crap ] (Quality.check t [ f 1 15 ] [ f 100 16 ] [ { File = "a.cs"; First = 110; Last = 110 } ] |> List.map (fun v -> v.Measure)) "touched inside the moved body"
           equal [] (Quality.check t [] [ f 100 99 ] [ { File = "b.cs"; First = 100; Last = 100 } ]) "other file touched"
 
+      // ---------- fitness ----------
+      "fitness: a code edge between two elements must be a modelled relationship, in that direction", fun () ->
+          let el id area = { Id = ElementId id; Name = id; CodeAreas = [ PathPattern.createOrFail area ]; Risk = Low }
+          let elements = [ el "api" "src/Api/**"; el "rating" "src/Rating/**"; el "db" "src/Db/**" ]
+          let rels = [ { From = ElementId "api"; To = ElementId "rating" } ]
+          let edge a b = { Source = a; Target = b }
+          let vs es = Fitness.violations elements rels es |> List.map (fun v -> v.FromElement.Value, v.ToElement.Value)
+          equal [] (vs [ edge "src/Api/Api.csproj" "src/Rating/Rating.csproj" ]) "modelled"
+          equal [ "rating", "api" ] (vs [ edge "src/Rating/Rating.csproj" "src/Api/Api.csproj" ]) "the model says api -> rating, not back"
+          equal [ "api", "db" ] (vs [ edge "src/Api/Api.csproj" "src/Db/Db.csproj" ]) "no relationship"
+          equal [] (vs [ edge "src/Api/Api.csproj" "src/Api/Api.Tests.csproj" ]) "inside one element"
+          equal [] (vs [ edge "src/Api/Api.csproj" "src/Shared/Shared.csproj" ]) "unowned code is not judged"
+      "fitness: only element pairs the baseline did not already cross are new", fun () ->
+          let v a b = { Edge = { Source = "x"; Target = "y" }; FromElement = ElementId a; ToElement = ElementId b }
+          let isNew = Fitness.newSince [ v "api" "db" ] [ v "api" "db"; v "rating" "db" ] |> List.map (fun x -> x.FromElement.Value)
+          equal [ "rating" ] isNew "api->db is debt, rating->db is new"
+
       // ---------- merge ----------
       "merge: high-risk element needs two approvals and a manual check is a pending block", fun () ->
           let d = Dispatcher.dispatch validated.Value

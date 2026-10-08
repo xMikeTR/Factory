@@ -29,6 +29,24 @@ public static class QualityGate
         return CoreQuality.check(thresholds, Core.ToList(baseline), Core.ToList(current), Core.ToList(changed)).ToList();
     }
 
+    /// The fitness ratchet for one task: project references the diff added or changed that the model does
+    /// not allow, minus the element pairs the baseline already crossed (those are debt, not this task's).
+    public static async Task<IReadOnlyList<FitnessViolation>> FitnessAsync(
+        GitWorkspace git, string worktree, string runId, Handover handover, CancellationToken ct)
+    {
+        var projects = (await git.TaskPathsAsync(worktree, runId, ct))
+            .Where(p => p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(worktree, p))).ToList();
+        var current = new List<CodeEdge>();
+        var before = new List<CodeEdge>();
+        foreach (var p in projects)
+        {
+            current.AddRange(CsprojEdges.Read(p, await File.ReadAllTextAsync(Path.Combine(worktree, p), ct)));
+            if (await git.BaseFileAsync(worktree, runId, p, ct) is { } old) before.AddRange(CsprojEdges.Read(p, old));
+        }
+        var judge = (IEnumerable<CodeEdge> edges) => Fitness.violations(handover.Elements, handover.Relationships, Core.ToList(edges));
+        return Fitness.newSince(judge(before), judge(current)).ToList();
+    }
+
     private static IEnumerable<ChangedRange> Ranges(string file, IEnumerable<int> lines)
     {
         int? first = null, last = null;

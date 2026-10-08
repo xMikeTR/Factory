@@ -468,9 +468,8 @@ internal sealed class TaskLoop(
     {
         if (svc.Settings.QualityPolicy is not { Mode: not QualityMode.Off } policy) return null;
         var started = DateTime.UtcNow;
-        var violations = await QualityGate.EvaluateAsync(svc.Git, worktree, runId, policy.Thresholds, ct);
-        if (violations.Count == 0) return null;
-        var lines = violations.Select(QualityLine).ToList();
+        var lines = await QualityLinesAsync(policy, ct);
+        if (lines.Count == 0) return null;
         var block = policy.Mode == QualityMode.Block;
         await svc.LogAsync(runId, "quality", LedgerKinds.Verify, block ? "blocked" : "reported",
             JsonSerializer.Serialize(new { attempt, violations = lines }), _teamId, _taskId, ct);
@@ -571,7 +570,16 @@ internal sealed class TaskLoop(
 
     /// What `check_quality` shows the Implementer: the same ratchet verify applies, so nothing surprises it there.
     private async Task<string> QualityFindingsAsync(CancellationToken ct) =>
-        string.Join("\n", (await QualityGate.EvaluateAsync(svc.Git, worktree, runId, svc.Settings.QualityPolicy!.Thresholds, ct)).Select(QualityLine));
+        string.Join("\n", await QualityLinesAsync(svc.Settings.QualityPolicy!, ct));
+
+    private async Task<List<string>> QualityLinesAsync(QualityPolicy policy, CancellationToken ct) =>
+    [
+        .. (await QualityGate.EvaluateAsync(svc.Git, worktree, runId, policy.Thresholds, ct)).Select(QualityLine),
+        .. (await QualityGate.FitnessAsync(svc.Git, worktree, runId, handover, ct)).Select(FitnessLine),
+    ];
+
+    private static string FitnessLine(FitnessViolation v) =>
+        $"- {v.Edge.Source} references {v.Edge.Target}: {v.FromElement.Value} may not depend on {v.ToElement.Value} (no such relationship in the model)";
 
     private static string QualityLine(QualityViolation v) => $"- {v.Function.File}:{v.Function.Line} {v.Function.Name}: {v.Measure} {v.Value:0.#} "
         + (v.Baseline is { } b ? $"(was {b:0.#}; touched code must not get worse)" : $"(limit {v.Limit:0.#} for new code)");
