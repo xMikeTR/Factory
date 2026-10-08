@@ -1,6 +1,7 @@
 using Factory.Harness;
 using Factory.Harness.Sandbox;
 using Factory.S2.Quality;
+using Factory.S2.Verify;
 using Xunit;
 
 namespace Factory.Integration.Tests.Quality;
@@ -123,5 +124,28 @@ public class StrykerDockerTests
         var rule = new Factory.Core.ForbiddenDependency(Factory.Core.PathPatternModule.createOrFail("L"), Factory.Core.PathPatternModule.createOrFail("L/Inner"), "the facade must not reach inward");
         var found = Assert.Single(NamespaceGate.Judge([rule], baseline: [], current: dlls));
         Assert.Equal(("L", "L/Inner"), (found.Edge.Source, found.Edge.Target));
+    }
+
+    [Fact]
+    public async Task A_registry_p_model_compiles_in_the_sandbox_and_its_test_case_checks()
+    {
+        if (!Enabled) return;
+        var registry = Directory.CreateTempSubdirectory("p-registry").FullName;
+        Directory.CreateDirectory(Path.Combine(registry, "behaviour"));
+        File.WriteAllText(Path.Combine(registry, "behaviour/counter.p"), """
+            event eInc;
+            machine Counter { var n: int; start state Init { on eInc do { n = n + 1; assert n > 0; } } }
+            machine Driver { start state Init { entry { var c: machine; c = new Counter(); send c, eInc; } } }
+            test tcCounter [main = Driver]: { Driver, Counter };
+            """);
+        var scratch = PModel.Prepare(registry, Path.Combine(registry, ".scratch"))!;
+        await using var sandbox = await new DockerSandboxFactory(new DockerSandboxOptions()).ForTeamAsync("p", scratch, default);
+        var none = new Dictionary<string, string>();
+
+        var compiled = await sandbox.RunAsync("p compile", scratch, TimeSpan.FromMinutes(3), none, default);
+        var checkedModel = await sandbox.RunAsync("p check -tc tcCounter", scratch, TimeSpan.FromMinutes(3), none, default);
+
+        Assert.True(compiled.ExitCode == 0, compiled.Output);
+        Assert.True(checkedModel.ExitCode == 0, checkedModel.Output);
     }
 }
