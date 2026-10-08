@@ -250,6 +250,7 @@ module TaskState =
     ///   Ready(p,Implementer)       + ReturnedToTestAuthor  -> Ready(p, TestAuthor)
     ///   Ready(p,Implementer)       + VerifyRequested       -> Failed(VerifyBudgetExhausted []) if p.VerifyAttempts >= Max
     ///                                                         else Verifying({p with VerifyAttempts+1}, ph)
+    ///   Verifying(p,ph)            + NeedsDecisionRaised n -> Blocked(p, ph, n) (a check timed out twice)
     ///   Verifying(p,Implementer r) + VerifyCompleted(g,s)  -> Reviewing(p, ph, ev) if VerifiedEvidence.Create succeeds
     ///                                                      -> Failed(VerifyBudgetExhausted) if attempts used up
     ///                                                      -> Ready(p, TestAuthor) if green but the stash check failed
@@ -336,9 +337,9 @@ module TaskState =
                         Ok(Failed(VerifyBudgetExhausted(if greenOk then stashed else green), p))
                     | Error _ when greenOk -> Ok(Ready(p, TestAuthor))
                     | Error _ -> Ok(Ready(p, ph))
+            | NeedsDecisionRaised n -> Ok(Blocked(p, ph, n)) // a check that could not answer (timed out twice) is not evidence either way
             | TurnStarted _
             | TurnEnded
-            | NeedsDecisionRaised _
             | DecisionBound _
             | VerifyRequested
             | TestsAuthored _

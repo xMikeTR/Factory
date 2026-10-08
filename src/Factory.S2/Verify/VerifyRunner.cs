@@ -117,6 +117,12 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
         string runId, string teamId, PlannedTask task, IReadOnlyList<TestResult> baseline, string command, string worktree, CancellationToken ct)
     {
         var (current, r) = await SuiteAsync(runId, teamId, command, worktree, ct);
+        if (r.TimedOut)
+        {
+            await ledger.AppendAsync(new LedgerEvent(runId, "S2", "regression", LedgerKinds.Verify, TaskId: task.Id.Value, TeamId: teamId,
+                Outcome: "timed_out", Payload: JsonSerializer.Serialize(new { results = false })), ct);
+            return ToOutcome("regression suite", r); // exit 124: no verdict either way
+        }
         var names = Regression.regressions(Core.ToList(baseline), Core.ToList(current ?? [])).ToList();
         await ledger.AppendAsync(new LedgerEvent(runId, "S2", "regression", LedgerKinds.Verify, TaskId: task.Id.Value, TeamId: teamId,
             Outcome: names.Count == 0 ? "passed" : "failed",

@@ -44,7 +44,7 @@ public sealed class TeamHarness : IDisposable
         var state = Path.Combine(root, "state");
         var settings = new FactorySettings(Repo, Path.Combine(root, "registry"), "main", state, 3, limits,
             ["dotnet build", "dotnet test", "ls"], suiteCommand, null, mergePolicy);
-        var sandboxes = new LocalSandboxFactory();
+        var sandboxes = new GatedSandboxFactory(new LocalSandboxFactory(), new HeavyGate(2));
         var git = new GitWorkspace(Repo, state);
         Services = new FactoryServices(settings, Ledger,
             new FactoryAgents(models, new RoleAllowListPolicy(), Ledger),

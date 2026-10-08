@@ -198,3 +198,24 @@ independence is stamped in the ledger and the PR body.
 - Biggest assumption: one `Reviewing` state with a parked flag is enough for the options flow.
 - Old ledgers (verify_completed straight to Passed) no longer replay to Passed: only matters for runs in
   flight across this change (none: live5 is gone).
+
+## Strand 3 — Quality gates C#/F# + CPU semaphore + timeout rule
+
+### Goal
+Contention stops turning passing checks into timeouts, and a timeout is never evidence; then quality
+(complexity, CRAP, fitness) is a ratcheted gate for C# and F#.
+
+### Slices (each committed green)
+- **3.1 CPU gate + timeout rule** ✅ `HeavyGate` (N slots, `FACTORY_HEAVY_SLOTS`, exclusive mode) and
+  `GatedSandboxFactory` (every sandbox command; a timeout is re-run once alone, a second one is reported as 124).
+  Core: `Verifying + NeedsDecisionRaised -> Blocked`. TaskLoop parks (source "environment") on any exit-124
+  outcome in the red run, green verify and stash check; `RegressionAsync` returns a 124 outcome for a timed-out suite.
+  Gap: a baseline timeout still turns P2P off silently.
+- 3.2 Pure `Quality.fs`: neutral per-function metrics (file, name, line, cyclomatic, lines, coverage), CRAP, ratchet.
+- 3.3 C# and F# adapters (F# without mutation) + thresholds in the protected `.factory/policy.yaml`.
+- 3.4 `check_quality` inner-loop tool (static, exempt from the tool-call cap).
+- 3.5 Fitness rules (Designc relationships + hand-written), baseline violations as debt via `asbuilt_edge`.
+- Open: ArchUnitNET vs NetArchTest.
+
+### Interface changes (flagged)
+- `TaskState`: `Verifying` now accepts `NeedsDecisionRaised` (-> `Blocked`). `FactoryServices.Sandboxes` is a gated factory.
