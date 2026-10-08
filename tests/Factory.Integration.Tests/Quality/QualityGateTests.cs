@@ -103,4 +103,19 @@ public class FitnessGateTests
         Assert.Equal("Pricing Platform/Quotes DB", v.FromElement.Value);
         Assert.Equal("Pricing Platform/Rating Engine", v.ToElement.Value);
     }
+
+    [Fact]
+    public async Task A_new_reference_a_hand_written_rule_forbids_is_reported_with_its_reason_and_an_old_one_is_not()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Pricing.Data.csproj"), RefsRating);
+        var rule = new ForbiddenDependency(PathPatternModule.createOrFail("src/Pricing.Data/**"), PathPatternModule.createOrFail("src/Rating.Engine/**"), "data must not call the engine");
+
+        var found = await QualityGate.ForbiddenAsync(h.Services.Git, wt, TeamHarness.RunId, [rule], CancellationToken.None);
+
+        var v = Assert.Single(found);
+        Assert.Equal("data must not call the engine", v.Rule.Why);
+        Assert.Empty(await QualityGate.ForbiddenAsync(h.Services.Git, wt, TeamHarness.RunId, [], CancellationToken.None));
+    }
 }

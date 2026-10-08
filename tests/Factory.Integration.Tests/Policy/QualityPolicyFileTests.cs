@@ -40,6 +40,18 @@ public class QualityPolicyFileTests
     }
 
     [Fact]
+    public void Forbidden_dependencies_are_read_from_the_quality_section_and_a_bad_glob_is_rejected()
+    {
+        Assert.Empty(QualityPolicyFile.Load(RepoWith(null)).Forbid);
+
+        var f = Assert.Single(QualityPolicyFile.Load(RepoWith(
+            "quality:\n  forbid:\n    - from: src/Domain/**\n      to: src/Infra/**\n      why: domain is pure\n")).Forbid);
+        Assert.Equal(("src/Domain/**", "src/Infra/**", "domain is pure"), (f.From.Value, f.To.Value, f.Why));
+
+        Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  forbid:\n    - from: src/Domain/**\n")));
+    }
+
+    [Fact]
     public void Mutation_is_off_unless_the_file_turns_it_on_and_wants_eighty_percent()
     {
         Assert.Equal(QualityMode.Off, QualityPolicyFile.Load(RepoWith(null)).Mutation!.Mode);

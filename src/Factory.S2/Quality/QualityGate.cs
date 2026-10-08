@@ -71,6 +71,23 @@ public static class QualityGate
         return Fitness.newSince(judge(before), judge(current)).ToList();
     }
 
+    /// Project references the diff added or changed that a hand-written rule in the policy forbids, minus those the baseline already had.
+    public static async Task<IReadOnlyList<RuleViolation>> ForbiddenAsync(
+        GitWorkspace git, string worktree, string runId, IReadOnlyList<ForbiddenDependency> rules, CancellationToken ct)
+    {
+        if (rules.Count == 0) return [];
+        var current = new List<CodeEdge>();
+        var before = new List<CodeEdge>();
+        foreach (var p in (await git.TaskPathsAsync(worktree, runId, ct))
+            .Where(p => p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(worktree, p))))
+        {
+            current.AddRange(CsprojEdges.Read(p, await File.ReadAllTextAsync(Path.Combine(worktree, p), ct)));
+            if (await git.BaseFileAsync(worktree, runId, p, ct) is { } old) before.AddRange(CsprojEdges.Read(p, old));
+        }
+        var judge = (IEnumerable<CodeEdge> edges) => Fitness.forbidden(Core.ToList(rules), Core.ToList(edges));
+        return Fitness.newRuleViolationsSince(judge(before), judge(current)).ToList();
+    }
+
     /// C# (Roslyn) and F# (FSharp.Compiler.Service) are measured in-process; TypeScript goes through ESLint in the sandbox.
     private static bool IsMeasured(string path) =>
         path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".fs", StringComparison.OrdinalIgnoreCase);
