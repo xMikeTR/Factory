@@ -460,6 +460,8 @@ internal sealed class TaskLoop(
                 + Briefs.Failures(outcomes.Where(o => unrunnable.checks.Contains(o.Name))),
                 task.Elements, "environment", NoOptions, null)), ct);
         var red = RedEvidence.Create(Core.ToList(outcomes), ((RedReading.Red)kind).Item);
+        if (red.IsError && await KilledMutantsAsync(ct) is { } killed and > 0)
+            red = RedEvidence.CreateAgainstMutant(Core.ToList(outcomes), killed); // the behaviour exists; the tests pin it
         if (red.IsError)
         {
             _lastFailures = $"Your tests pass without the implementation, so they cannot show it works ({red.ErrorValue}). "
@@ -486,6 +488,18 @@ internal sealed class TaskLoop(
             JsonSerializer.Serialize(new { attempt, violations = lines }), _teamId, _taskId, ct);
         return block ? new VerifyOutcome("quality", 1, (long)(DateTime.UtcNow - started).TotalMilliseconds,
             "The change leaves code harder to maintain than the policy allows. Simplify it (extract, flatten, remove branches):\n" + string.Join("\n", lines)) : null;
+    }
+
+    /// Tests that already pass on the existing code are still evidence if they kill a mutant of the code the task
+    /// will change. Null when mutation is off or there is nothing to mutate; a tool that timed out kills nothing.
+    private async Task<int?> KilledMutantsAsync(CancellationToken ct)
+    {
+        if (svc.Mutation is not { } runner || svc.Settings.QualityPolicy?.Mutation is not { Mode: not QualityMode.Off }) return null;
+        var files = (await svc.Git.RepoFilesAsync(worktree, ct))
+            .Where(p => p.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && task.Writes.Any(w => Core.Matches(w, p))).ToList();
+        if (files.Count == 0) return null;
+        var run = await runner.RunAsync(worktree, files, ct);
+        return run.TimedOut ? null : run.Mutants.Count(m => m.Status.IsKilled || m.Status.IsTimeout);
     }
 
     /// Mutation testing of the lines the task changed. Report mode writes the ledger row only; block mode returns the
