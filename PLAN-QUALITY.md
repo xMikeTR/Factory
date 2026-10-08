@@ -349,7 +349,14 @@ Format chosen without a user answer: `quality.forbid: [{from, to, why}]` in the 
 rule as the rest of `quality:`). `Fitness.forbidden` + `newRuleViolationsSince` (ratchet), `QualityGate.ForbiddenAsync` (csproj references
 only, no using-level edges), reported with the rule's `why` in the same brief as the model-derived fitness findings.
 
-### QA author agent (done, with defaults I chose; containers still not started)
+### QA environment containers (done)
+`QaEnvironment.StartAsync` creates `s2-qa-<id>` (`--internal`), runs each qa-env.yaml service on it with `--network-alias <name>`, and returns
+sandboxes (`DockerSandboxOptions.Network`) whose restore window reconnects to that network, plus `QA_<NAME>_HOST`. `AgentQaRunner` takes an optional
+environment provider; the env lives for one QA run and is removed on dispose. Only with the docker sandbox. Defaults: no start-up wait/health check,
+services get no env/ports of their own, QA sandboxes bypass the HeavyGate. Verified in Docker with a stand-in service (name resolves from the sandbox; network removed).
+Still open: the human follow-up QA run.
+
+### QA author agent (done, with defaults I chose)
 `AgentQaRunner` (`IQaRunner`): author on the reviewer pool (`Roles.Qa`, `policies/s2/qa.yaml`, `prompts/qa-author.md`) writes under `tests/qa/**` of
 the integrated checkout and declares tests with `submit_qa_tests` (requirement, new|characterisation, command). Each command runs on a
 `BaselineCheckoutAsync(runId, ct, baseBranch)` (tests copied in) and on the integrated result; any timeout makes the QA a timeout. `Qa.judge` decides.

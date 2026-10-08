@@ -12,7 +12,8 @@ namespace Factory.S2.Quality;
 /// is Core's `Qa.judge`; this only measures. Any run that times out makes the whole QA a timeout: never evidence.
 public sealed class AgentQaRunner(
     FactoryAgents agents, GitWorkspace git, ISandboxFactory sandboxes, string baseBranch,
-    Func<string, IReadOnlyList<string>> requirements, IReadOnlyList<string> commandAllowList, TimeSpan? testTimeout = null) : IQaRunner
+    Func<string, IReadOnlyList<string>> requirements, IReadOnlyList<string> commandAllowList, TimeSpan? testTimeout = null,
+    Func<CancellationToken, Task<QaEnvironment>>? environment = null) : IQaRunner
 {
     public const string TestDir = "tests/qa";
     private static readonly TimeSpan DefaultTestTimeout = TimeSpan.FromMinutes(10);
@@ -22,7 +23,12 @@ public sealed class AgentQaRunner(
         var reqs = requirements(runId);
         if (reqs.Count == 0) return new QaRun(reqs, [], false);
 
-        var declared = await AuthorAsync(runId, integrationPath, reqs, ct);
+        // The sibling services (qa-env.yaml) live as long as the QA run; the author and every test run on their network.
+        await using var env = environment is null ? null : await environment(ct);
+        var boxes = env?.Sandboxes ?? sandboxes;
+        var vars = env?.Env ?? new Dictionary<string, string>();
+
+        var declared = await AuthorAsync(boxes, runId, integrationPath, reqs, ct);
         if (declared.Count == 0) return new QaRun(reqs, [], false);
 
         await using var baseline = await git.BaselineCheckoutAsync(runId, ct, baseBranch);
@@ -31,15 +37,15 @@ public sealed class AgentQaRunner(
         var tests = new List<QaTest>();
         foreach (var t in declared)
         {
-            var onBase = await RunOneAsync("qa-baseline", baseline.Path, t.Command, ct);
-            var onIntegrated = await RunOneAsync("qa-integrated", integrationPath, t.Command, ct);
+            var onBase = await RunOneAsync(boxes, vars, "qa-baseline", baseline.Path, t.Command, ct);
+            var onIntegrated = await RunOneAsync(boxes, vars, "qa-integrated", integrationPath, t.Command, ct);
             if (onBase is null || onIntegrated is null) return new QaRun(reqs, [], true);
             tests.Add(new QaTest(t.Id, t.Requirement, t.IsNew ? QaKind.New : QaKind.Characterisation, onBase, onIntegrated));
         }
         return new QaRun(reqs, tests, false);
     }
 
-    private async Task<IReadOnlyList<QaTestDecl>> AuthorAsync(string runId, string integrationPath, IReadOnlyList<string> reqs, CancellationToken ct)
+    private async Task<IReadOnlyList<QaTestDecl>> AuthorAsync(ISandboxFactory sandboxes, string runId, string integrationPath, IReadOnlyList<string> reqs, CancellationToken ct)
     {
         var signals = new TurnSignals();
         await using var sandbox = await sandboxes.ForTeamAsync("qa", integrationPath, ct);
@@ -51,10 +57,10 @@ public sealed class AgentQaRunner(
     }
 
     /// Passed, failed, or null when the command timed out.
-    private async Task<QaOutcome?> RunOneAsync(string team, string worktree, string command, CancellationToken ct)
+    private async Task<QaOutcome?> RunOneAsync(ISandboxFactory sandboxes, IReadOnlyDictionary<string, string> env, string team, string worktree, string command, CancellationToken ct)
     {
         await using var sandbox = await sandboxes.ForTeamAsync(team, worktree, ct);
-        var r = await sandbox.RunAsync(command, worktree, testTimeout ?? DefaultTestTimeout, new Dictionary<string, string>(), ct);
+        var r = await sandbox.RunAsync(command, worktree, testTimeout ?? DefaultTestTimeout, env, ct);
         return r.TimedOut ? null : r.ExitCode == 0 ? QaOutcome.QaPassed : QaOutcome.QaFailed;
     }
 
