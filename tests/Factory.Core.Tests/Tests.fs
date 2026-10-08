@@ -468,6 +468,31 @@ let tests: (string * (unit -> unit)) list =
           let s = ContextPack.select limits (fun _ -> true) [] noms
           equal [ "src/F1.cs"; "src/F2.cs" ] (s.Entries |> List.map (fun e -> e.Path)) "first two kept"
           equal [ "src/F3.cs"; "src/F4.cs" ] (s.Rejected |> List.map fst) "rest rejected"
+      "context pack withWritten: written files join the pack, the selection does not grow", fun () ->
+          let sel = { Entries = [ { Path = "src/A.cs"; Source = Default }; { Path = "src/B.cs"; Source = Nominated "r" } ]; Rejected = [] }
+          let got = ContextPack.withWritten sel [ "tests/T.cs"; "src/B.cs"; "tests/T.cs" ]
+          equal [ "src/A.cs"; "src/B.cs"; "tests/T.cs" ] (got |> List.map (fun e -> e.Path)) "no duplicates, nothing else added"
+          equal TaskWritten (got |> List.find (fun e -> e.Path = "src/B.cs")).Source "a written nomination is task-written"
+          equal 2 sel.Entries.Length "selection untouched"
+      "context pack fit: within budget nothing is cut; task-written files come first", fun () ->
+          let e path src = { Path = path; Source = src }
+          let got = ContextPack.fit ContextPack.defaultLimits [ e "n.cs" (Nominated "r"), "nn"; e "d.cs" Default, "dd"; e "w.cs" TaskWritten, "ww" ]
+          equal [ "w.cs"; "d.cs"; "n.cs" ] (got |> List.map (fun f -> f.Path)) "order"
+          check (got |> List.forall (fun f -> not f.Truncated)) "none truncated"
+      "context pack fit: over budget cuts the crossing file and drops the rest, task-written whole", fun () ->
+          let e path src = { Path = path; Source = src }
+          let limits = { ContextPack.defaultLimits with MaxChars = 500 }
+          let big = String.replicate 400 "x"
+          let got = ContextPack.fit limits [ e "n.cs" (Nominated "r"), big; e "d.cs" Default, big; e "w.cs" TaskWritten, big ]
+          equal [ "w.cs"; "d.cs" ] (got |> List.map (fun f -> f.Path)) "nomination dropped"
+          check (not got.[0].Truncated && got.[0].Text = big) "task-written kept whole"
+          check got.[1].Truncated "default cut"
+          check ((got |> List.sumBy (fun f -> f.Text.Length)) <= 500) "never over budget"
+      "context pack fit: a task-written file larger than the budget is cut, never dropped", fun () ->
+          let limits = { ContextPack.defaultLimits with MaxChars = 300 }
+          let got = ContextPack.fit limits [ { Path = "w.cs"; Source = TaskWritten }, String.replicate 1000 "x" ]
+          equal 1 got.Length "kept"
+          check (got.[0].Truncated && got.[0].Text.Length <= 300) "cut to budget"
       // ---------- json ----------
       "json: malformed plan reports every problem at once", fun () ->
           let bad = """{ "handover": {"id":"x","digest":"y"}, "tasks": [ {"id":"A"}, {"id":"B","title":"t","instructions":"i","writes":["../x"]} ] }"""

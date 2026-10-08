@@ -17,6 +17,9 @@ type Nomination = { Path: string; Reason: string }
 /// back to the planner; they never fail the turn.
 type Selection = { Entries: ContextEntry list; Rejected: (string * string) list }
 
+/// A file as it goes into a brief: current contents, possibly cut to fit the budget.
+type PackFile = { Path: string; Source: ContextSource; Text: string; Truncated: bool }
+
 module ContextPack =
 
     let defaultLimits = { MaxNominations = 12; MaxChars = 60_000 }
@@ -68,3 +71,31 @@ module ContextPack =
                 | Error why -> entries, rejected @ [ n.Path, why ], taken, accepted)
                 (start |> List.map (fun p -> { Path = p; Source = Default }), [], Set.ofList start, 0)
         { Entries = entries; Rejected = rejected }
+
+    /// The frozen selection plus the files this task has written so far (always in scope: they are
+    /// inside the task's own writes/testWrites). The selection itself never grows.
+    let withWritten (selection: Selection) (written: string list) : ContextEntry list =
+        let taken = selection.Entries |> List.map (fun e -> e.Path) |> Set.ofList
+        let extra = written |> List.distinct |> List.filter (fun p -> not (Set.contains p taken)) |> List.map (fun p -> { Path = p; Source = TaskWritten })
+        let upgraded = selection.Entries |> List.map (fun e -> if List.contains e.Path written then { e with Source = TaskWritten } else e)
+        upgraded @ extra
+
+    let private rank (e: ContextEntry) =
+        match e.Source with
+        | TaskWritten -> 0
+        | Default -> 1
+        | Nominated _ -> 2
+
+    let private truncationMark = "\n…(truncated to fit the context budget)"
+
+    /// Fits contents into MaxChars. Task-written files come first, then defaults, then nominations
+    /// in order. Over budget, the entry that crosses the line is cut and everything after it dropped.
+    let fit (limits: ContextLimits) (contents: (ContextEntry * string) list) : PackFile list =
+        let ordered = contents |> List.sortBy (fun (e, _) -> rank e) // stable
+        let step (acc, left) (e: ContextEntry, text: string) =
+            if left <= 0 then acc, left
+            elif text.Length <= left then { Path = e.Path; Source = e.Source; Text = text; Truncated = false } :: acc, left - text.Length
+            else
+                let keep = max 0 (left - truncationMark.Length)
+                { Path = e.Path; Source = e.Source; Text = text.Substring(0, keep) + truncationMark; Truncated = true } :: acc, 0
+        ordered |> List.fold step ([], limits.MaxChars) |> fst |> List.rev
