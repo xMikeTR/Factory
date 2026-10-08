@@ -482,7 +482,11 @@ internal sealed class TaskLoop(
         if (svc.Settings.QualityPolicy is not { Mode: not QualityMode.Off } policy) return null;
         var started = DateTime.UtcNow;
         var lines = await QualityLinesAsync(policy, ct);
-        if (lines.Count == 0) return null;
+        if (lines.Count == 0)
+        {
+            if (policy.Mode == QualityMode.Report) await svc.LogAsync(runId, "quality", LedgerKinds.Verify, "clean", JsonSerializer.Serialize(new { attempt }), _teamId, _taskId, ct);
+            return null;
+        }
         var block = policy.Mode == QualityMode.Block;
         await svc.LogAsync(runId, "quality", LedgerKinds.Verify, block ? "blocked" : "reported",
             JsonSerializer.Serialize(new { attempt, violations = lines }), _teamId, _taskId, ct);
@@ -514,7 +518,11 @@ internal sealed class TaskLoop(
         var elapsed = (long)(DateTime.UtcNow - started).TotalMilliseconds;
         if (run.TimedOut) return new VerifyOutcome("mutation", 124, elapsed, "the mutation tool did not finish");
         var violations = Mutation.check(policy.Thresholds, MapModule.Empty<string, double>(), SetModule.Empty<string>(), Core.ToList(ranges), Core.ToList(run.Mutants));
-        if (violations.IsEmpty) return null;
+        if (violations.IsEmpty)
+        {
+            if (policy.Mode == QualityMode.Report) await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, "clean", JsonSerializer.Serialize(new { attempt }), _teamId, _taskId, ct);
+            return null;
+        }
         var lines = violations.SelectMany(v => v.Survivors.Select(m => $"- {m.File}:{m.Line} {m.Mutator} (file scored {v.Score:P0}, needs {v.Required:P0})")).ToList();
         var block = policy.Mode == QualityMode.Block;
         await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, block ? "blocked" : "reported",

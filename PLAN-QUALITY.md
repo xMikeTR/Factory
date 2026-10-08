@@ -323,3 +323,5 @@ judge the integrated result against the baseline. A failure merges nothing and r
   skipped install scripts go on the restore ledger row and the PR body ("### Install scripts", `InstallScriptReport`).
 - ESLint: `EslintRunner` (complexity at 0, repo config; baseline over stdin under the same name) feeds `QualityGate` for .ts/.tsx.
   Not covered end to end: the TeamHarness uses a local sandbox, so only the runner and report parsing are unit-tested.
+- Report mode now reaches the PR: quality/mutation rows ledger "reported" or "clean" per attempt; `QualityReport` renders the last row per task
+  and stage as "### Quality findings". The baseline suite timing out is ledgered `timed_out` and re-measured on resume (it no longer reads as "no results").

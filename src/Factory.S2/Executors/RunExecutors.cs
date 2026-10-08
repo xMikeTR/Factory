@@ -215,7 +215,7 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
         if (svc.PullRequests is GhCliPullRequests) await svc.Git.PushAsync(branch, cancellationToken);
 
         var url = await svc.PullRequests.EnsurePullRequestAsync(branch, s.BaseBranch,
-            $"[factory] {handover.Id}: {teams.Sum(t => t.Tasks.Length)} tasks", PullRequestBody(msg.RunId, handover, teams, verdict, lines, await ReviewSectionAsync(msg.RunId, cancellationToken) + await InstallScriptsSectionAsync(msg.RunId, cancellationToken)), cancellationToken);
+            $"[factory] {handover.Id}: {teams.Sum(t => t.Tasks.Length)} tasks", PullRequestBody(msg.RunId, handover, teams, verdict, lines, await ReviewSectionAsync(msg.RunId, cancellationToken) + await InstallScriptsSectionAsync(msg.RunId, cancellationToken) + await QualitySectionAsync(msg.RunId, cancellationToken)), cancellationToken);
 
         // Tiered mode on a PR host: allow-listed comments record manual checks and approvals.
         var github = svc.PullRequests as IApprovalComments;
@@ -264,6 +264,15 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
             payload: JsonSerializer.Serialize(new { msg.ApprovedBy }), ct: cancellationToken);
         await context.SendMessageAsync(new RunFinished(msg.RunId, msg.Merged ? "merged" : "not_merged", msg.ApprovedBy ?? ""),
             cancellationToken: cancellationToken);
+    }
+
+    private async Task<string> QualitySectionAsync(string runId, CancellationToken ct)
+    {
+        var rows = new List<QualityRow>();
+        await foreach (var e in svc.Ledger.ReadAsync(runId, ct))
+            if (e is { Kind: LedgerKinds.Verify, Stage: "quality" or "mutation", TaskId: not null, Outcome: not null, Payload: not null })
+                rows.Add(new QualityRow(e.Stage, e.TaskId, e.Outcome, e.Payload));
+        return QualityReport.Section(rows) is { } section ? "\n" + section : "";
     }
 
     private async Task<string> InstallScriptsSectionAsync(string runId, CancellationToken ct)
