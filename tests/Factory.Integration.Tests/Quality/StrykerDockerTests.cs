@@ -1,0 +1,43 @@
+using Factory.Harness;
+using Factory.Harness.Sandbox;
+using Factory.S2.Quality;
+using Xunit;
+
+namespace Factory.Integration.Tests.Quality;
+
+/// Stryker.NET in the real runner image, offline after the restore window. Opt-in: FACTORY_TEST_DOCKER=1.
+[Trait("needs", "docker")]
+public class StrykerDockerTests
+{
+    private static readonly bool Enabled = Environment.GetEnvironmentVariable("FACTORY_TEST_DOCKER") == "1";
+
+    private static async Task Git(string dir, params string[] args) =>
+        Assert.True((await ProcessRunner.RunAsync("git", args, dir, TimeSpan.FromSeconds(30))).Succeeded);
+
+    [Fact]
+    public async Task Mutates_a_changed_file_and_finds_the_mutant_a_weak_test_misses()
+    {
+        if (!Enabled) return;
+        var root = Directory.CreateTempSubdirectory("stryker-docker").FullName;
+        Directory.CreateDirectory(Path.Combine(root, "src")); Directory.CreateDirectory(Path.Combine(root, "tests"));
+        File.WriteAllText(Path.Combine(root, "src/Lib.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup></Project>");
+        File.WriteAllText(Path.Combine(root, "src/Calc.cs"), "namespace L; public static class Calc { public static int Add(int a, int b) => a + b; }");
+        File.WriteAllText(Path.Combine(root, "tests/T.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net9.0</TargetFramework><IsPackable>false</IsPackable></PropertyGroup>
+            <ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" /><PackageReference Include="xunit" Version="2.9.2" /><PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" /></ItemGroup>
+            <ItemGroup><ProjectReference Include="../src/Lib.csproj" /></ItemGroup></Project>
+            """);
+        File.WriteAllText(Path.Combine(root, "tests/CalcTests.cs"), "using Xunit; public class CalcTests { [Fact] public void Adds() => Assert.Equal(5, L.Calc.Add(2, 3)); }");
+        await ProcessRunner.RunAsync("dotnet", ["new", "sln", "-n", "App"], root, TimeSpan.FromSeconds(60));
+        await ProcessRunner.RunAsync("dotnet", ["sln", "add", "src/Lib.csproj", "tests/T.csproj"], root, TimeSpan.FromSeconds(60));
+        await Git(root, "init", "-q"); await Git(root, "add", "-A");
+        await ProcessRunner.RunAsync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"], root, TimeSpan.FromSeconds(30));
+
+        var run = await new StrykerRunner(new DockerSandboxFactory(new DockerSandboxOptions())).RunAsync(root, ["src/Calc.cs"], default);
+
+        Assert.False(run.TimedOut);
+        Assert.NotEmpty(run.Mutants);
+        Assert.All(run.Mutants, m => Assert.Equal("src/Calc.cs", m.File));
+        Assert.Contains(run.Mutants, m => m.Status.IsKilled);
+    }
+}

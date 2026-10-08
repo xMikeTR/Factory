@@ -4,7 +4,7 @@
 > whenever module boundaries or interfaces change.
 > Source of truth for blast radius assessment, onboarding, and enterprise
 > architecture aggregation.
-> Last updated: 2026-10-08 — QA (strand 6): `Core/Qa.fs` (judge: new vs characterisation, escapes), `QaEnvFile` (protected qa-env.yaml, digest-pinned services,
+> Last updated: 2026-10-08 — Runner image wiring: `StrykerRunner` (real, in the image), npm rebuild after the restore window + `InstallScriptReport` on the PR body, `EslintRunner` into `QualityGate` for .ts/.tsx. Earlier: QA (strand 6): `Core/Qa.fs` (judge: new vs characterisation, escapes), `QaEnvFile` (protected qa-env.yaml, digest-pinned services,
 > fidelity gaps), `IQaRunner` seam + `QaGate` brief, `IntegrationVerifyExecutor` runs QA after the checks (qa_failed / qa_unrunnable end the run unmerged).
 > The QA author agent and the sibling-container environment are not built yet.
 > Previously 2026-10-08 — npm gate + TS quality (strand 5): `Core/PackageJsonChange.fs` (package.json/lockfile/.npmrc allow-list, via `Core.ReviewRestoreInput`),

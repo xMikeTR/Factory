@@ -81,6 +81,21 @@ public static partial class RestoreGate
             .Where(n => !allowed.Contains(n)).ToList();
     }
 
+    /// One offline rebuild per npm directory; none unless the policy names packages.
+    public static IReadOnlyList<string> RebuildCommands(IReadOnlyList<string> directories, IReadOnlyList<string> packages) =>
+        packages.Count == 0 ? [] : directories.Select(d => RebuildCommand(d, packages)).ToList();
+
+    /// "dir: package" for each install script the restore skipped and the policy did not allow, read from the directories' lockfiles.
+    public static async Task<IReadOnlyList<string>> SkippedInstallScriptsAsync(
+        string worktree, IReadOnlyList<string> directories, IReadOnlyList<string> allowed, CancellationToken ct)
+    {
+        var skipped = new List<string>();
+        foreach (var dir in directories)
+            skipped.AddRange(SkippedInstallScripts(await File.ReadAllTextAsync(Path.Combine(worktree, dir, "package-lock.json"), ct), allowed)
+                .Select(p => $"{dir}: {p}"));
+        return skipped;
+    }
+
     /// Every restore the plan needs, as one command for the restore window.
     public static string FullCommand(RestorePlan plan) =>
         string.Join(" && ", new[] { plan.Projects.Count > 0 ? "(" + Command(plan.Projects) + ")" : null, plan.NpmDirs.Count > 0 ? "(" + NpmCommand(plan.NpmDirs) + ")" : null }.OfType<string>());

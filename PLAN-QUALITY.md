@@ -313,3 +313,13 @@ judge the integrated result against the baseline. A failure merges nothing and r
 
 ### Interface changes (flagged)
 - `FactoryServices` ctor gains an optional `IQaRunner`; `IntegrationVerifyExecutor` consults it after the checks pass.
+
+
+## Runner image wiring (after strand 6)
+- Image: Stryker.NET 4.16.0 (5.0.0 needs a newer SDK than .NET 9), node 22, eslint 9, Playwright chromium, `/etc/factory/npmrc`.
+- `StrykerRunner` (IMutationRunner, runs `dotnet-stryker --solution ... --mutate '**/file'` in a team sandbox, JSON report); registered in
+  `Program.cs`. Verified for real in the image (`StrykerDockerTests`, opt-in `FACTORY_TEST_DOCKER=1`).
+- npm: after the restore window (network off again) `RestoreGate.RebuildCommands` runs the policy's `npm.rebuild` packages offline;
+  skipped install scripts go on the restore ledger row and the PR body ("### Install scripts", `InstallScriptReport`).
+- ESLint: `EslintRunner` (complexity at 0, repo config; baseline over stdin under the same name) feeds `QualityGate` for .ts/.tsx.
+  Not covered end to end: the TeamHarness uses a local sandbox, so only the runner and report parsing are unit-tested.

@@ -8,7 +8,8 @@ public sealed record DockerSandboxOptions(
     double Cpus = 2,
     int Pids = 1024,
     string? NuGetCache = null,
-    bool RestoreOnStart = true)
+    bool RestoreOnStart = true,
+    IReadOnlyList<string>? NpmRebuild = null)
 {
     public string NuGetCacheDir => NuGetCache ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "factory-s2", "nuget");
@@ -45,6 +46,12 @@ public sealed class DockerSandbox : ICommandSandbox
     /// The gate's reasons when it refused the window; the network was never attached.
     public IReadOnlyList<string>? RestoreRefusal { get; private set; }
 
+    /// The result of the offline npm rebuild of the policy's packages; null when none was due.
+    public ProcessResult? Rebuild { get; private set; }
+
+    /// "dir: package" for each install script the restore skipped and the policy did not allow.
+    public IReadOnlyList<string> SkippedScripts { get; private set; } = [];
+
     /// The projects the window restored.
     public IReadOnlyList<string> Restored { get; private set; } = [];
 
@@ -72,6 +79,14 @@ public sealed class DockerSandbox : ICommandSandbox
                 {
                     sandbox.Restored = plan.Projects;
                     sandbox.Restore = await sandbox.RestoreWindowAsync(RestoreGate.FullCommand(plan), ct);
+                    if (sandbox.Restore.Succeeded && plan.NpmDirs.Count > 0)
+                    {
+                        var allowed = o.NpmRebuild ?? [];
+                        sandbox.SkippedScripts = await RestoreGate.SkippedInstallScriptsAsync(worktree, plan.NpmDirs, allowed, ct);
+                        // Network is off again: the allow-listed install scripts run offline.
+                        foreach (var cmd in RestoreGate.RebuildCommands(plan.NpmDirs, allowed))
+                            if ((sandbox.Rebuild = await sandbox.RunAsync(cmd, worktree, RestoreTimeout, new Dictionary<string, string>(), ct)).Succeeded is false) break;
+                    }
                 }
             }
             return sandbox;
@@ -169,6 +184,8 @@ public sealed class DockerSandboxFactory(DockerSandboxOptions options, ILedger? 
                 {
                     command = "dotnet restore", projects = sandbox.Restored, ExitCode = r.ExitCode, ms = (long)r.Duration.TotalMilliseconds, sandbox = sandbox.Kind,
                     network = "bridge", tail = r.Tail(2000),
+                    skipped_install_scripts = sandbox.SkippedScripts,
+                    rebuild = sandbox.Rebuild is { } rb ? new { ExitCode = rb.ExitCode, tail = rb.Tail(1000) } : null,
                 })), ct);
         return sandbox;
     }

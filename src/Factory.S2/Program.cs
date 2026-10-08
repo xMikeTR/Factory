@@ -5,6 +5,7 @@ using Factory.Harness.Sandbox;
 using Factory.Harness.Telemetry;
 using Factory.S2;
 using Factory.S2.Git;
+using Factory.S2.Quality;
 using Factory.S2.Teams;
 using Factory.S2.Verify;
 
@@ -127,7 +128,7 @@ static FactoryServices Services(FactorySettings settings, string runId, Dictiona
     ISandboxFactory inner = (Environment.GetEnvironmentVariable("FACTORY_SANDBOX") ?? "docker") switch
     {
         "docker" => new DockerSandboxFactory(new DockerSandboxOptions(
-            Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest"), ledger, runId),
+            Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest", NpmRebuild: settings.Npm?.Rebuild), ledger, runId),
         "local" => new LocalSandboxFactory(),
         var other => throw new ArgumentException($"FACTORY_SANDBOX: '{other}' is not docker|local"),
     };
@@ -162,7 +163,8 @@ static FactoryServices Services(FactorySettings settings, string runId, Dictiona
         new VerifyRunner(ledger, sandboxes, git),
         sandboxes,
         pullRequests,
-        new AgentReviewer(agents, gateways.ReviewerIndependence, settings.CommandAllowList));
+        new AgentReviewer(agents, gateways.ReviewerIndependence, settings.CommandAllowList),
+        mutation: new StrykerRunner(sandboxes));
 }
 
 static PlanValidation Validate(Dictionary<string, string> opts) =>
