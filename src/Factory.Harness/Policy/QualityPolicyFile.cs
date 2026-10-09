@@ -10,9 +10,12 @@ public enum QualityMode { Off, Report, Block }
 /// Mutation testing of the lines a task changed. Mode off by default: it needs the tool in the runner image.
 public sealed record MutationPolicy(QualityMode Mode, MutationThresholds Thresholds);
 
+/// The UI regression guard: where UI source and UI tests live. Empty lists mean the scan's defaults (ts/tsx/js/jsx; *.test|spec.*).
+public sealed record UiPolicy(IReadOnlyList<PathPattern> Globs, IReadOnlyList<PathPattern> TestGlobs);
+
 public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Thresholds, MutationPolicy? Mutation = null, bool Coverage = false,
     IReadOnlyList<ForbiddenDependency>? ForbidRules = null, IReadOnlyList<string>? FlakyCommands = null,
-    IReadOnlyList<ForbiddenDependency>? ForbidNamespaceRules = null)
+    IReadOnlyList<ForbiddenDependency>? ForbidNamespaceRules = null, UiPolicy? Ui = null)
 {
     /// Namespace dependencies this repo forbids, read from the compiled assemblies (ArchUnitNET). Patterns are namespace paths: Pricing/Domain/**.
     public IReadOnlyList<ForbiddenDependency> ForbidNamespaces => ForbidNamespaceRules ?? [];
@@ -38,6 +41,7 @@ public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Threshold
 ///       - { from: "src/Domain/**", to: "src/Infra/**", why: "the domain layer is pure" }
 ///     forbidNamespaces:               # the same, between namespaces (dotted globs), judged on the compiled assemblies
 ///       - { from: "Pricing.Domain.**", to: "Pricing.Infra.**", why: "the domain layer is pure" }
+///     ui: { globs: [...], testGlobs: [...] }  # UI regression guard (on when present; {} = default globs); the contract is .factory/ui-contract.yaml
 ///     flaky: ["dotnet test --filter Slow"]  # commands (substrings) whose failure is re-run once alone
 ///     mutationMinScore: 0.8           # share of mutants on changed lines the tests must kill
 public static class QualityPolicyFile
@@ -58,7 +62,10 @@ public static class QualityPolicyFile
         public List<ForbidEntry>? Forbid { get; set; }
         public List<ForbidEntry>? ForbidNamespaces { get; set; }
         public List<string>? Flaky { get; set; }
+        public UiSection? Ui { get; set; }
     }
+
+    private sealed class UiSection { public List<string>? Globs { get; set; } public List<string>? TestGlobs { get; set; } }
 
     private sealed class ForbidEntry { public string? From { get; set; } public string? To { get; set; } public string? Why { get; set; } }
 
@@ -115,8 +122,20 @@ public static class QualityPolicyFile
         var forbid = Rules("forbid", q.Forbid, namespaces: false);
         var forbidNamespaces = Rules("forbidNamespaces", q.ForbidNamespaces, namespaces: true);
 
+        List<PathPattern> Globs(string name, IEnumerable<string>? globs)
+        {
+            var patterns = new List<PathPattern>();
+            foreach (var g in globs ?? [])
+            {
+                var p = PathPatternModule.create(g ?? "");
+                if (p.IsError) errors.Add($"quality.ui.{name}: {p.ErrorValue}"); else patterns.Add(p.ResultValue);
+            }
+            return patterns;
+        }
+        var ui = q.Ui is null ? null : new UiPolicy(Globs("globs", q.Ui.Globs), Globs("testGlobs", q.Ui.TestGlobs));
+
         if (errors.Count > 0) throw new FactoryRejectedException($"{path} is invalid", errors.ToArray());
         return new QualityPolicy(mode!.Value, new QualityThresholds(q.MaxCyclomatic ?? d.MaxCyclomatic, q.MaxCrap ?? d.MaxCrap, q.MaxLines ?? d.MaxLines),
-            new MutationPolicy(mutation!.Value, new MutationThresholds(q.MutationMinScore ?? 0.8)), q.Coverage ?? false, forbid, (q.Flaky ?? []).Where(f => !string.IsNullOrWhiteSpace(f)).ToList(), forbidNamespaces);
+            new MutationPolicy(mutation!.Value, new MutationThresholds(q.MutationMinScore ?? 0.8)), q.Coverage ?? false, forbid, (q.Flaky ?? []).Where(f => !string.IsNullOrWhiteSpace(f)).ToList(), forbidNamespaces, ui);
     }
 }
