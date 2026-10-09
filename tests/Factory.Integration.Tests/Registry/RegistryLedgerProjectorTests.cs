@@ -39,6 +39,12 @@ public class RegistryLedgerProjectorTests
             Payload: """{"name":"D-0002 [p]","command":"p check -tc tcDedupe","ExitCode":1,"ms":900}""")),
         At(12, new(RunId, "S2", "integration_verify", LedgerKinds.Verify, Outcome: "passed",
             Payload: """{"name":"integration tests","command":"dotnet test","ExitCode":0}""")),
+        At(13, new(RunId, "S2", "quality", LedgerKinds.AsBuiltEdge, TaskId: "T-001", TeamId: "team-1", Outcome: "debt",
+            Payload: """{"from":"api","to":"db"}""")),
+        At(14, new(RunId, "S2", "quality", LedgerKinds.AsBuiltEdge, TaskId: "T-001", TeamId: "team-1", Outcome: "debt",
+            Payload: """{"from":"api","to":"db"}""")),
+        At(15, new(RunId, "S2", "quality", LedgerKinds.AsBuiltEdge, TaskId: "T-001", TeamId: "team-1", Outcome: "debt",
+            Payload: """{"from":"web","to":"db"}""")),
     ];
 
     private static Dictionary<string, JsonElement> Row(RegistryEvent e) =>
@@ -63,6 +69,16 @@ public class RegistryLedgerProjectorTests
             Assert.True(DesigncSchema.KeptByGate(e.Line), e.Line);
             Assert.Equal(DesigncSchema.StreamOf(Row(e)["kind"].GetString()!), e.Stream);
         }
+    }
+
+    [Fact]
+    public void Each_element_pair_the_code_crosses_without_a_relationship_is_one_asbuilt_edge_row_per_run()
+    {
+        var edges = RegistryLedgerProjector.Project(Run(), Handover).Where(e => Row(e)["kind"].GetString() == "asbuilt_edge").ToList();
+
+        Assert.Equal(["api->db", "web->db"], edges.Select(e => Row(e)["from"].GetString() + "->" + Row(e)["to"].GetString()));
+        Assert.All(edges, e => Assert.Equal("pipeline.jsonl", e.Stream));
+        Assert.Equal(T0.AddSeconds(13).ToUnixTimeMilliseconds(), Row(edges[0])["ts"].GetInt64());
     }
 
     [Fact]

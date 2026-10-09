@@ -28,6 +28,7 @@ public static class RegistryLedgerProjector
     {
         var rows = new List<(DateTimeOffset Ts, RegistryEvent Row)>();
         rows.AddRange(Tasks(run, handover));
+        rows.AddRange(AsBuiltEdges(run));
         foreach (var e in run)
         {
             if (e.Kind == LedgerKinds.NeedsDecision && NeedsDecision(e) is { } nd) rows.Add((e.Ts, nd));
@@ -55,6 +56,24 @@ public static class RegistryLedgerProjector
                 w.WriteNumber("tokens_out", turns.Sum(t => t.TokensOut ?? 0));
                 if (turns.LastOrDefault(t => t.Model is not null)?.Model is { } tier) w.WriteString("tier", tier);
                 w.WriteString("handover", handover.Id);
+            }));
+        }
+    }
+
+    /// Debt the fitness ratchet let through: one row per element pair the code crosses with no relationship in the model,
+    /// at its first sighting in the run (every verify attempt logs it again).
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> AsBuiltEdges(IReadOnlyList<LedgerEvent> run)
+    {
+        var seen = new HashSet<(string, string)>();
+        foreach (var e in run.Where(e => e.Kind == LedgerKinds.AsBuiltEdge && e.Payload is not null))
+        {
+            using var doc = JsonDocument.Parse(e.Payload!);
+            if (Prop(doc.RootElement, "from")?.GetString() is not { } from || Prop(doc.RootElement, "to")?.GetString() is not { } to) continue;
+            if (!seen.Add((from, to))) continue;
+            yield return (e.Ts, Row(Pipeline, "asbuilt_edge", e, w =>
+            {
+                w.WriteString("from", from);
+                w.WriteString("to", to);
             }));
         }
     }

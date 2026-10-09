@@ -220,6 +220,30 @@ public class TeamRunnerTests
     }
 
     [Fact]
+    public async Task A_disallowed_reference_the_baseline_already_had_passes_and_is_ledgered_as_an_asbuilt_edge()
+    {
+        const string csproj = "src/Pricing.Data/Pricing.Data.csproj";
+        const string refsRating = "<Project><ItemGroup><ProjectReference Include=\"..\\Rating.Engine\\Rating.Engine.csproj\" /></ItemGroup></Project>\n";
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "tests" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("write_file", new { path = csproj, content = refsRating + "<!-- touched -->\n" }), Call("declare_done", new { summary = "kept the reference" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qualityPolicy: new QualityPolicy(QualityMode.Block, new QualityThresholds(50, 100.0, 500)));
+        var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
+        await File.WriteAllTextAsync(Path.Combine(integration, csproj), refsRating);
+        await h.GitIn(integration, "add", "-A");
+        await h.GitIn(integration, "commit", "-qm", "old reference");
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        var edge = Assert.Single(h.Rows(LedgerKinds.AsBuiltEdge));
+        Assert.Equal(("quality", "debt", "T-001"), (edge.Stage, edge.Outcome, edge.TaskId));
+        Assert.Equal("""{"from":"Pricing Platform/Quotes DB","to":"Pricing Platform/Rating Engine"}""", edge.Payload);
+    }
+
+    [Fact]
     public async Task In_report_mode_the_same_code_passes_and_the_finding_is_in_the_ledger()
     {
         var model = new ScriptedChatClient(

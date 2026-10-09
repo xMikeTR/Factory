@@ -530,6 +530,7 @@ internal sealed class TaskLoop(
     {
         if (svc.Settings.QualityPolicy is not { Mode: not QualityMode.Off } policy) return null;
         var started = DateTime.UtcNow;
+        await LogDebtAsync(ct);
         var lines = await QualityLinesAsync(policy, ct);
         if (lines.Count == 0)
         {
@@ -541,6 +542,18 @@ internal sealed class TaskLoop(
             JsonSerializer.Serialize(new { attempt, violations = lines }), _teamId, _taskId, ct);
         return block ? new VerifyOutcome("quality", 1, (long)(DateTime.UtcNow - started).TotalMilliseconds,
             "The change leaves code harder to maintain than the policy allows. Simplify it (extract, flatten, remove branches):\n" + string.Join("\n", lines)) : null;
+    }
+
+    private readonly HashSet<(ElementId, ElementId)> _debtLogged = [];
+
+    /// Element pairs the code already crossed with no relationship in the model: not the task's doing, so not blocking,
+    /// but ledgered (once per pair) for Designc as `asbuilt_edge` so the model or the code can catch up.
+    private async Task LogDebtAsync(CancellationToken ct)
+    {
+        foreach (var (from, to) in await QualityGate.FitnessDebtAsync(svc.Git, worktree, runId, handover, ct))
+            if (_debtLogged.Add((from, to)))
+                await svc.LogAsync(runId, "quality", LedgerKinds.AsBuiltEdge, "debt",
+                    JsonSerializer.Serialize(new { from = from.Value, to = to.Value }), _teamId, _taskId, ct);
     }
 
     /// Tests that already pass on the existing code are still evidence if they kill a mutant of the code the task

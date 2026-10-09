@@ -36,6 +36,12 @@ module Fitness =
         let known = baseline |> List.map (fun v -> v.FromElement, v.ToElement) |> Set.ofList
         current |> List.filter (fun v -> not (known.Contains(v.FromElement, v.ToElement)))
 
+    /// Debt: element pairs the baseline already crossed without a relationship and the code still crosses. Distinct, in current order.
+    /// Not blocking; alerted to Designc as `asbuilt_edge` so the model or the code can catch up.
+    let debt (baseline: FitnessViolation list) (current: FitnessViolation list) : (ElementId * ElementId) list =
+        let known = baseline |> List.map (fun v -> v.FromElement, v.ToElement) |> Set.ofList
+        current |> List.map (fun v -> v.FromElement, v.ToElement) |> List.filter known.Contains |> List.distinct
+
     /// Edges the hand-written rules forbid.
     let forbidden (rules: ForbiddenDependency list) (edges: CodeEdge list) : RuleViolation list =
         [ for edge in edges do

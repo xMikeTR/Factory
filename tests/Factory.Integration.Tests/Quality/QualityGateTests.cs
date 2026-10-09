@@ -105,6 +105,22 @@ public class FitnessGateTests
     }
 
     [Fact]
+    public async Task A_disallowed_reference_the_baseline_already_had_is_debt_not_a_violation()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Pricing.Data.csproj"), RefsRating);
+        await h.Services.Git.CommitAllAsync(wt, "old reference", CancellationToken.None);
+        await h.GitIn(h.Services.Git.IntegrationPath(TeamHarness.RunId), "merge", "--ff-only", Factory.S2.Git.GitWorkspace.TeamBranch(TeamHarness.RunId, "team-x"));
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Pricing.Data.csproj"), RefsRating + "\n<!-- touched -->\n");
+
+        Assert.Empty(await QualityGate.FitnessAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, CancellationToken.None));
+        var debt = await QualityGate.FitnessDebtAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, CancellationToken.None);
+
+        Assert.Equal([(ElementId.NewElementId("Pricing Platform/Quotes DB"), ElementId.NewElementId("Pricing Platform/Rating Engine"))], debt);
+    }
+
+    [Fact]
     public async Task A_new_reference_a_hand_written_rule_forbids_is_reported_with_its_reason_and_an_old_one_is_not()
     {
         using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));

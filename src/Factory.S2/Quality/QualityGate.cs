@@ -1,6 +1,7 @@
 using Factory.Core;
 using Factory.Harness.Sandbox;
 using Factory.S2.Git;
+using Microsoft.FSharp.Collections;
 
 namespace Factory.S2.Quality;
 
@@ -58,6 +59,22 @@ public static class QualityGate
     public static async Task<IReadOnlyList<FitnessViolation>> FitnessAsync(
         GitWorkspace git, string worktree, string runId, Handover handover, CancellationToken ct)
     {
+        var (before, current) = await FitnessJudgedAsync(git, worktree, runId, handover, ct);
+        return Fitness.newSince(before, current).ToList();
+    }
+
+    /// The debt the ratchet lets through: element pairs the touched projects already crossed on the baseline and still cross.
+    public static async Task<IReadOnlyList<(ElementId From, ElementId To)>> FitnessDebtAsync(
+        GitWorkspace git, string worktree, string runId, Handover handover, CancellationToken ct)
+    {
+        var (before, current) = await FitnessJudgedAsync(git, worktree, runId, handover, ct);
+        return Fitness.debt(before, current).Select(p => (p.Item1, p.Item2)).ToList();
+    }
+
+    /// The model's verdict on the task-touched projects' references, as on the baseline and as in the worktree.
+    private static async Task<(FSharpList<FitnessViolation> Before, FSharpList<FitnessViolation> Current)> FitnessJudgedAsync(
+        GitWorkspace git, string worktree, string runId, Handover handover, CancellationToken ct)
+    {
         var projects = (await git.TaskPathsAsync(worktree, runId, ct))
             .Where(p => p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(worktree, p))).ToList();
         var current = new List<CodeEdge>();
@@ -68,7 +85,7 @@ public static class QualityGate
             if (await git.BaseFileAsync(worktree, runId, p, ct) is { } old) before.AddRange(CsprojEdges.Read(p, old));
         }
         var judge = (IEnumerable<CodeEdge> edges) => Fitness.violations(handover.Elements, handover.Relationships, Core.ToList(edges));
-        return Fitness.newSince(judge(before), judge(current)).ToList();
+        return (judge(before), judge(current));
     }
 
     /// Project references the diff added or changed that a hand-written rule in the policy forbids, minus those the baseline already had.

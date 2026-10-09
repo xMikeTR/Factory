@@ -224,7 +224,7 @@ Contention stops turning passing checks into timeouts, and a timeout is never ev
   quality outcome (block/report) and `check_quality`. Baseline element pairs are excluded (debt).
 - **Deferred from strand 3** (recorded, not forgotten): F# adapter (FCS not in the offline cache; token heuristic vs FCS is a
   decision), coverage collection (coverlet in the task's verify; CRAP is skipped without data), report-mode findings on the PR
-  body, `asbuilt_edge` debt alerts to Designc (format not in this repo), hand-written fitness rules, one isolated re-run of
+  body, `asbuilt_edge` debt alerts to Designc (done 2026-10-09, see the last section), hand-written fitness rules, one isolated re-run of
   flaky-looking failures, a baseline suite timeout still turns P2P off silently.
 - Open: ArchUnitNET vs NetArchTest.
 
@@ -434,3 +434,17 @@ Then TeamRunner: a removal parks with source "ui" and three options; A ledgers a
 - Open: default `globs`/`testGlobs` (proposal: `**/*.{ts,tsx,js,jsx}` minus node_modules; tests `**/*.{test,spec}.{ts,tsx}`). TS namespace rules are queued after this.
 
 `check_quality` also shows the UI guard's findings (and is offered when only `quality.ui` is set), so the Implementer sees a removal before verify parks it.
+
+## Debt alerts (`asbuilt_edge`) and the npm.rebuild default
+
+Decided 2026-10-09 (deferred to me by the user; the Designc DC100 spec is not in this repo, the schema fixture is the contract: `asbuilt_edge` on
+`pipeline.jsonl`, required `from`, `to`).
+- `Fitness.debt baseline current` (pure): element pairs the baseline already crossed with no relationship and the code still crosses, distinct.
+- `QualityGate.FitnessDebtAsync` shares the csproj read with `FitnessAsync` (task-touched projects, worktree vs `BaseFileAsync`).
+- TeamRunner, in the quality outcome (mode not off), ledgers each pair once per task: kind `asbuilt_edge`, stage `quality`, outcome `debt`,
+  payload `{from, to}` (element ids). Never blocking: the ratchet already lets debt through; this only makes it visible.
+- `RegistryLedgerProjector` writes one `asbuilt_edge` row per pair per run (first sighting's ts), schema- and gate-validated in tests.
+- Only csproj edges for now: TS imports and namespace rules judge hand-written rules, not the model, so they carry no element pair.
+
+npm.rebuild: the shipped default is the empty list. pricing-sample has no TS, and every allowed install script runs code from the registry
+inside the sandbox, so packages are added per repo by a human in the protected policy.yaml, when a skipped script is reported on the PR body.
