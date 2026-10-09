@@ -761,6 +761,28 @@ let tests: (string * (unit -> unit)) list =
           match Json.decodeTaskEvent (Json.encodeTaskEvent (TestsAuthored r)) with
           | Ok(TestsAuthored r2) -> equal AgainstMutant r2.Kind "kind"
           | other -> failwithf "%A" other
+      "ui: a baseline test id that is gone is Removed", fun () ->
+          let tid = { Kind = TestId; Id = "export-btn" }
+          equal [ Removed tid ] (UiGuard.check [] [] [ tid ] []) "removed"
+          equal [] (UiGuard.check [] [] [ tid ] [ tid ]) "kept"
+      "ui: an authorised removal is clean", fun () ->
+          let tid = { Kind = TestId; Id = "export-btn" }
+          equal [] (UiGuard.check [] [ tid ] [ tid ] []) "authorised"
+      "ui: a contract item that is missing is ContractMissing even if the baseline never had it", fun () ->
+          let r = { Kind = Route; Id = "/reports" }
+          equal [ ContractMissing r ] (UiGuard.check [ r ] [] [] []) "contract"
+          equal [ ContractMissing r ] (UiGuard.check [ r ] [] [ r ] []) "contract, not also removed"
+          equal [] (UiGuard.check [ r ] [ r ] [ r ] []) "authorised"
+      "ui: a test that became skipped is NowSkipped, not Removed", fun () ->
+          let t = { Kind = UiTest; Id = "exports a report" }
+          let skipped = { Kind = SkippedTest; Id = t.Id }
+          equal [ NowSkipped t ] (UiGuard.check [] [] [ t ] [ skipped ]) "skipped now"
+          equal [] (UiGuard.check [] [] [ skipped ] [ skipped ]) "skipped before is debt"
+          equal [] (UiGuard.check [] [ t ] [ t ] [ skipped ]) "authorised"
+      "ui: new items and baseline skips that vanish are no violation", fun () ->
+          let added = { Kind = TestId; Id = "new" }
+          let skipped = { Kind = SkippedTest; Id = "old" }
+          equal [] (UiGuard.check [] [] [ skipped ] [ added ]) "added; a skipped test deleted is not a lost feature"
       "json: dispatch serialises", fun () ->
           let text = Json.writeDispatch (Dispatcher.dispatch validated.Value)
           check (text.Contains "team-T-001") text ]

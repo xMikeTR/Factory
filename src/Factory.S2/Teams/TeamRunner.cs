@@ -128,6 +128,7 @@ internal sealed class TaskLoop(
 
                 case TaskState.Blocked b when !answerUsed && answers.TryGetValue(_taskId, out var answer):
                     answerUsed = true;
+                    if (b.Item3.Source == "ui") await UiAnswerAsync(answer, ct);
                     if (answer.DecisionId is { } id)
                     {
                         _resolvedDecision = $"{id}: {answer.Note}";
@@ -189,6 +190,13 @@ internal sealed class TaskLoop(
                     if (TimedOut(green) is { } greenTimeout)
                     {
                         state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(greenTimeout), ct);
+                        break;
+                    }
+                    if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await UiViolationsAsync(ct) is { Count: > 0 } uiViolations)
+                    {
+                        await svc.LogAsync(runId, "ui", LedgerKinds.Verify, "parked",
+                            JsonSerializer.Serialize(new { attempt, violations = uiViolations.Select(UiGate.Line) }), _teamId, _taskId, ct);
+                        state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(UiDecision(uiViolations)), ct);
                         break;
                     }
                     var stashed = green.Count > 0 && green.All(o => o.ExitCode == 0)
@@ -475,6 +483,45 @@ internal sealed class TaskLoop(
         await svc.Git.CommitPathsAsync(worktree, tests, $"{_taskId} (tests): {task.Title}\n\nfactory-run: {runId}\nfactory-team: {_teamId}", ct);
         _lastFailures = null;
         return await ApplyAsync(state, TaskEvent.NewTestsAuthored(red.ResultValue), ct);
+    }
+
+    private static readonly FSharpList<DecisionOption> UiOptions = Core.ToList(new[]
+    {
+        new DecisionOption("A", "Accept the removal", "The listed UI items are authorised for this task (ledgered) and the task goes on."),
+        new DecisionOption("B", "Restore it", "The agent is told to put the listed UI items back."),
+        new DecisionOption("C", "Send it back with guidance", "The note is given to the agent together with the list."),
+    });
+
+    private NeedsDecision UiDecision(IEnumerable<UiViolation> violations) => new(
+        $"Task {_taskId} takes UI features away:\n{UiLines(violations)}\nAccept the removal, or have it restored?", task.Elements, "ui", UiOptions, null);
+
+    private static string UiLines(IEnumerable<UiViolation> violations) => string.Join("\n", violations.Select(UiGate.Line));
+
+    /// The UI items a designer accepted the removal of for this task (answer A), from the ledger so a resume keeps them.
+    private async Task<List<UiItem>> UiAcceptedAsync(CancellationToken ct)
+    {
+        var accepted = new List<UiItem>();
+        await foreach (var e in svc.Ledger.ReadAsync(runId, ct))
+            if (e.Kind == LedgerKinds.Verify && e.Stage == "ui" && e.Outcome == "accepted" && e.TaskId == _taskId && e.Payload is not null)
+                accepted.AddRange(UiGate.Decode(e.Payload));
+        return accepted;
+    }
+
+    /// What the worktree takes away from the UI that is neither authorised nor already gone on the integration branch. Empty when the guard is off.
+    private async Task<List<UiViolation>> UiViolationsAsync(CancellationToken ct) =>
+        svc.Settings.QualityPolicy?.Ui is { } ui
+            ? (await UiGate.CheckAsync(svc.Git, worktree, runId, ui, svc.Settings.UiContract ?? [], await UiAcceptedAsync(ct), ct)).ToList()
+            : [];
+
+    /// A designer's answer to a parked UI removal: A authorises exactly what is missing now; anything else sends the task back to restore it.
+    private async Task UiAnswerAsync(DecisionAnswer answer, CancellationToken ct)
+    {
+        var violations = await UiViolationsAsync(ct);
+        if (answer.DecisionId == "A")
+            await svc.LogAsync(runId, "ui", LedgerKinds.Verify, "accepted", UiGate.Encode(violations.Select(UiGate.ItemOf), answer.Note), _teamId, _taskId, ct);
+        else
+            _lastFailures = "A designer read the UI features this change removes and wants them kept. Restore them (the same data-testid, route or test):\n"
+                + UiLines(violations) + (answer.DecisionId == "C" ? $"\nGuidance: {answer.Note}" : "");
     }
 
     /// The quality ratchet over the task's diff. Block mode returns a failing outcome that joins the

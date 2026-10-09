@@ -102,4 +102,24 @@ public class QualityPolicyFileTests
         Assert.Empty(policy.Forbid);
         Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  forbidNamespaces:\n    - from: Pricing.Domain.**\n")));
     }
+
+    [Fact]
+    public void The_ui_guard_is_off_unless_the_file_lists_a_ui_section_and_empty_globs_mean_the_defaults()
+    {
+        Assert.Null(QualityPolicyFile.Load(RepoWith("quality:\n  mode: report\n")).Ui);
+
+        var defaults = QualityPolicyFile.Load(RepoWith("quality:\n  ui: {}\n")).Ui!;
+        Assert.Empty(defaults.Globs);
+        Assert.Empty(defaults.TestGlobs);
+
+        var set = QualityPolicyFile.Load(RepoWith("quality:\n  ui:\n    globs: [\"web/src/**/*.tsx\"]\n    testGlobs: [\"web/e2e/**/*.ts\"]\n")).Ui!;
+        Assert.Equal(["web/src/**/*.tsx"], set.Globs.Select(g => g.Value));
+        Assert.Equal(["web/e2e/**/*.ts"], set.TestGlobs.Select(g => g.Value));
+    }
+
+    [Fact]
+    public void A_bad_ui_glob_is_rejected()
+    {
+        Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  ui:\n    globs: [\"../x\"]\n")));
+    }
 }

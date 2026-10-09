@@ -386,3 +386,46 @@ the policy lists namespace rules (no cache yet). A failing build yields no verdi
 live9 (real Sonnet) reached QA for the first time. The QA author made 15 read calls (8 files, then 5 of them again) and never wrote a test:
 the 5-result history trim evicted what it had just read, it re-read, and the 15-call cap ended the turn. QA then failed closed ("no passing new test").
 Fix: `FactoryAgents.Create(..., keepRecentResults)`; the QA author keeps every result in view and has a 30-call budget (warn at 24).
+
+## UI regression guard (done 2026-10-09; interface approved by the user)
+**Goal.** A task that removes a working UI feature is caught in its own verify gate, parked for a human, and attributable to the task.
+**Why.** Existing gates catch a removal only if a pass-to-pass test covered it and the agent did not delete the test with it.
+
+**Module impact.** New `Core/UiGuard.fs` (after Fitness.fs in the fsproj; pure, no dependents until the gate). New `S2/Quality/UiInventory.cs` (scan) and `UiGate.cs`
+(worktree + baseline checkout, like `NamespaceGate`). New `Harness/Policy/UiContractFile.cs`; `QualityPolicyFile` gains `quality.ui`. `TeamRunner` gains a gate in
+verify and the "ui" answer handling. `.factory/**` is already a default protected path, so `.factory/ui-contract.yaml` needs no new protection.
+No high-centrality file is touched. `TaskState.fs` is deliberately untouched (see Risks).
+
+**Interface (approved).**
+```fsharp
+type UiItemKind = TestId | Route | UiTest | SkippedTest
+type UiItem = { Kind: UiItemKind; Id: string }
+type UiViolation = Removed of UiItem | NowSkipped of UiItem | ContractMissing of UiItem
+module UiGuard = val check : contract:UiItem list -> authorised:UiItem list -> baseline:UiItem list -> current:UiItem list -> UiViolation list
+```
+Policy: `quality.ui: { globs: [...], testGlobs: [...] }` (scan globs) in the protected policy.yaml. Contract `.factory/ui-contract.yaml`: flat lists `testIds`, `routes`, `uiTests`.
+Routes: React Router only (`path="..."` on `<Route>`, `path:` in route objects). No `removesUi` plan field: answer A is the only authorisation route.
+
+**Rules.** Contract item absent in current and not authorised -> `ContractMissing`. Baseline item absent in current and not authorised -> `Removed`. A baseline `UiTest`
+that became skipped (`.skip/.fixme`, `xit`) -> `NowSkipped`. `.only` counts as skipping every other test in the file (report as `NowSkipped`). Authorised items are never violations.
+
+**Test strategy (TDD).** Core tests on `UiGuard.check`: (1) removal of a baseline testid is `Removed`; (2) the same removal, authorised, is clean; (3) a contract item missing is
+`ContractMissing` even if the baseline never had it. Then `UiInventory` on fixture trees (testid, route, test titles, skip). Then `UiGate` with a real git baseline checkout.
+Then TeamRunner: a removal parks with source "ui" and three options; A ledgers and authorises; B/C send the task back with the removed items listed.
+
+**Steps.**
+1. `UiGuard.check` + Core tests (pure; one module).
+2. `UiInventory.Scan(path, globs, testGlobs)` + tests on fixture trees.
+3. `UiContractFile.Load` + `quality.ui` in `QualityPolicyFile` (invalid -> `FactoryRejectedException`, like the rest) + policy tests.
+4. `UiGate.CheckAsync` (scan worktree and `git.BaselineCheckoutAsync`, call `UiGuard.check`) + tests with a temp git repo.
+5. TeamRunner wiring (vertical slice, touches one module): in Verifying after the green outcomes, a violation raises `NeedsDecisionRaised` with source "ui", options A/B/C.
+   Authorised items are rebuilt from `ui_accepted` ledger rows for the task, so a resume keeps them. Blocked branch: source "ui" and answer A ledgers `ui_accepted`
+   with the items; B/C set `_lastFailures` (items to restore, plus the note for C). Test: scripted agent removes a testid, run parks, answer A passes, answer B returns to the Implementer.
+6. ARCHITECTURE.md (module map, rules table, Last updated), delete the scope file.
+
+**Risks.**
+- Blocked answers go through `DecisionBound`; A/B/C for "ui" are interpreted in TeamRunner by source. If binding with an option id breaks `Blocked -> Ready`, the fallback is a parked `Verifying` variant in `TaskState.fs` (5 dependents): stop and re-plan, do not do it silently.
+- Heuristic scan: a feature rewritten under the same testid, or logic broken without touching testid/route, is invisible. Needs journey or screenshot tests (later layer).
+- Baseline scan cost is small (file reads, no build), unlike NamespaceGate.
+- Renames look like a removal plus an addition: A (accept) is the cost, once per rename.
+- Open: default `globs`/`testGlobs` (proposal: `**/*.{ts,tsx,js,jsx}` minus node_modules; tests `**/*.{test,spec}.{ts,tsx}`). TS namespace rules are queued after this.

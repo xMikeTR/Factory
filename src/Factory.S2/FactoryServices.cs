@@ -29,7 +29,9 @@ public sealed record FactorySettings(
     /// From the same file's `quality:` section; null is off (no measuring).
     QualityPolicy? QualityPolicy = null,
     /// From the same file's `npm:` section.
-    NpmPolicy? Npm = null)
+    NpmPolicy? Npm = null,
+    /// .factory/ui-contract.yaml: the UI items a human says must keep working (used when `quality.ui` is on).
+    IReadOnlyList<UiItem>? UiContract = null)
 {
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
         RepoPath: Path.GetFullPath(repo),
@@ -46,7 +48,8 @@ public sealed record FactorySettings(
         PObserveCommand: Environment.GetEnvironmentVariable("FACTORY_POBSERVE_CMD"),
         MergePolicy: MergePolicyFile.FromEnvironment(Path.GetFullPath(repo)),
         QualityPolicy: QualityPolicyFile.Load(Path.GetFullPath(repo)),
-        Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)));
+        Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)),
+        UiContract: UiContractFile.Load(Path.GetFullPath(repo)));
 
     public string RunDir(string runId) => Path.Combine(StateDir, "runs", runId);
     public string PlanPath(string runId) => Path.Combine(RunDir(runId), "plan.json");
