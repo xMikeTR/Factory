@@ -730,11 +730,16 @@ internal sealed class TaskLoop(
 
     private ScopedWorkspace Workspace(TurnSignals signals, Factory.Harness.Sandbox.ICommandSandbox? sandbox, IEnumerable<PathPattern> writable) =>
         new(worktree, writable.ToList(), handover.ProtectedPaths.ToList(), svc.Settings.CommandAllowList, signals, sandbox,
-            svc.Settings.QualityPolicy is { Mode: not QualityMode.Off } ? QualityFindingsAsync : null);
+            svc.Settings.QualityPolicy is { Mode: not QualityMode.Off } or { Ui: not null } ? QualityFindingsAsync : null);
 
-    /// What `check_quality` shows the Implementer: the same ratchet verify applies, so nothing surprises it there.
-    private async Task<string> QualityFindingsAsync(CancellationToken ct) =>
-        string.Join("\n", await QualityLinesAsync(svc.Settings.QualityPolicy!, ct));
+    /// What `check_quality` shows the Implementer: the same ratchet verify applies (and the UI guard's findings), so nothing surprises it there.
+    private async Task<string> QualityFindingsAsync(CancellationToken ct)
+    {
+        var policy = svc.Settings.QualityPolicy!;
+        var lines = policy.Mode == QualityMode.Off ? [] : await QualityLinesAsync(policy, ct);
+        lines.AddRange((await UiViolationsAsync(ct)).Select(UiGate.Line));
+        return string.Join("\n", lines);
+    }
 
     private async Task<List<string>> QualityLinesAsync(QualityPolicy policy, CancellationToken ct) =>
     [

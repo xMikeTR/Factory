@@ -383,7 +383,7 @@ Assemblies are read through `MetadataLoadContext`, so no target code is loaded o
 the policy lists namespace rules (no cache yet). A failing build yields no verdict (the compile check reports it). Verified in Docker on a two-namespace sample.
 TS equivalent (done 2026-10-09): the existing `quality.forbid` path-glob rules also judge TS/JS imports. `TsImportEdges` runs `depcruise` (dependency-cruiser@16 + typescript@5, added to the
 runner image) on the worktree and a baseline checkout and keeps edges between repo files (packages, built-ins, unresolved imports dropped); `TsGate` ratchets with `Fitness.newRuleViolationsSince`
-and runs only when the task touched a ts/js file. The command output was checked against the real tool in a container off the existing image; the image itself has not been rebuilt with it.
+and runs only when the task touched a ts/js file. Verified in the rebuilt runner image (`TsImportEdgesDockerTests`, opt-in `FACTORY_TEST_DOCKER=1`): repo imports found, packages and built-ins ignored.
 
 ## live9 finding: QA author starved by history trimming (2026-10-08)
 live9 (real Sonnet) reached QA for the first time. The QA author made 15 read calls (8 files, then 5 of them again) and never wrote a test:
@@ -432,3 +432,5 @@ Then TeamRunner: a removal parks with source "ui" and three options; A ledgers a
 - Baseline scan cost is small (file reads, no build), unlike NamespaceGate.
 - Renames look like a removal plus an addition: A (accept) is the cost, once per rename.
 - Open: default `globs`/`testGlobs` (proposal: `**/*.{ts,tsx,js,jsx}` minus node_modules; tests `**/*.{test,spec}.{ts,tsx}`). TS namespace rules are queued after this.
+
+`check_quality` also shows the UI guard's findings (and is offered when only `quality.ui` is set), so the Implementer sees a removal before verify parks it.

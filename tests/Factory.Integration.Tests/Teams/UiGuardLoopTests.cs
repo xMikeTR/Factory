@@ -99,4 +99,21 @@ public class UiGuardLoopTests
 
         Assert.Equal(TeamStatus.Passed, (await RunAsync(h)).Status);
     }
+
+    [Fact]
+    public async Task check_quality_shows_the_implementer_the_removal_before_verify_does()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("write_file", new { path = Page, content = WithoutButton }),
+            Call("check_quality", new { }),
+            Call("declare_done", new { summary = "added" }), Say("done"));
+        using var h = await HarnessAsync(model);
+
+        await RunAsync(h);
+
+        Assert.Contains(model.Requests.SelectMany(r => r).SelectMany(m => m.Contents).OfType<Microsoft.Extensions.AI.FunctionResultContent>(),
+            r => r.Result?.ToString()!.Contains("data-testid \"export-btn\" existed and is gone") == true);
+    }
 }
