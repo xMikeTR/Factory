@@ -55,12 +55,12 @@ RUN mkdir -p /etc/factory && printf '%s\n' '<?xml version="1.0" encoding="utf-8"
  && chmod a+r /etc/factory/nuget.config
 
 # Node for TypeScript targets (strand 5): `npm ci --ignore-scripts` runs in the restore window only, against
-# the registry fixed below (RestoreGate passes --userconfig); eslint measures complexity; Playwright's browsers
+# the registry fixed below (RestoreGate passes --userconfig); eslint measures complexity; dependency-cruiser reads TS imports for quality.forbid; Playwright's browsers
 # are baked in at one version, so QA runs offline and a repo's @playwright/test must match it.
 COPY --from=node:22-bookworm-slim /usr/local/ /usr/local/
 ARG PLAYWRIGHT_VERSION=1.49.1
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
-RUN npm install -g eslint@9 playwright@${PLAYWRIGHT_VERSION} \
+RUN npm install -g eslint@9 dependency-cruiser@16 typescript@5 playwright@${PLAYWRIGHT_VERSION} \
  && npx --no-install playwright install --with-deps chromium \
  && chmod -R a+rX /opt/playwright \
  && rm -rf /var/lib/apt/lists/*
