@@ -249,6 +249,11 @@ something that works on its own.
 - **`handover.json`** (`schemas/handover.schema.json`):
   - each element needs `codeAreas` and `risk`, which means `d.code` and `d.risk` on the elements
     in the model;
+  - `d.code` patterns mean what `PathPattern` means, and designc checks them before the freeze
+    (DC000 for a pattern `create` rejects or a missing `d.risk`, DC009 for areas that `mayOverlap`
+    or nest). designc owns the cases in its `docs/path-patterns.json`; the copy in
+    `tests/Factory.Integration.Tests/Fixtures/designc/` runs against `PathPattern` here
+    (`DesigncPathPatternContractTests`). Change the meaning on both sides and the fixture together;
   - decisions carry their `checks`;
   - `protectedPaths` must include the verify scripts, so the agents can run them but never edit
     them.
