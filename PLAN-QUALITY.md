@@ -380,7 +380,10 @@ machine to itself; the second answer stands; each retry is a `flaky_retry` ledge
 `quality.forbidNamespaces: [{from: "Pricing.Domain.**", to: "Pricing.Infra.**", why}]`. Only the dependency graph comes from ArchUnitNET (types in the built assemblies of
 every project on disk; edges between namespaces of those assemblies), not its rule DSL, so the same Core `Fitness.forbidden` + ratchet judge csproj and namespace rules alike.
 Assemblies are read through `MetadataLoadContext`, so no target code is loaded or run. Cost: one build of the worktree and one of a baseline checkout per quality check when
-the policy lists namespace rules (no cache yet). A failing build yields no verdict (the compile check reports it). Verified in Docker on a two-namespace sample. Not done: TS equivalent.
+the policy lists namespace rules (no cache yet). A failing build yields no verdict (the compile check reports it). Verified in Docker on a two-namespace sample.
+TS equivalent (done 2026-10-09): the existing `quality.forbid` path-glob rules also judge TS/JS imports. `TsImportEdges` runs `depcruise` (dependency-cruiser@16 + typescript@5, added to the
+runner image) on the worktree and a baseline checkout and keeps edges between repo files (packages, built-ins, unresolved imports dropped); `TsGate` ratchets with `Fitness.newRuleViolationsSince`
+and runs only when the task touched a ts/js file. The command output was checked against the real tool in a container off the existing image; the image itself has not been rebuilt with it.
 
 ## live9 finding: QA author starved by history trimming (2026-10-08)
 live9 (real Sonnet) reached QA for the first time. The QA author made 15 read calls (8 files, then 5 of them again) and never wrote a test:
