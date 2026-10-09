@@ -44,6 +44,7 @@ public static class LedgerKinds
     public const string ScopeViolation = "scope_violation";
     public const string Review = "review";          // one review round: outcome, findings kept and dropped, independence
     public const string Merge = "merge";
+    public const string AsBuiltEdge = "asbuilt_edge"; // payload {from, to}: an element pair the code crosses with no relationship in the model (debt)
     public const string Run = "run";
 }
 

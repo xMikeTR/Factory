@@ -408,6 +408,10 @@ let tests: (string * (unit -> unit)) list =
           let v a b = { Edge = { Source = "x"; Target = "y" }; FromElement = ElementId a; ToElement = ElementId b }
           let isNew = Fitness.newSince [ v "api" "db" ] [ v "api" "db"; v "rating" "db" ] |> List.map (fun x -> x.FromElement.Value)
           equal [ "rating" ] isNew "api->db is debt, rating->db is new"
+      "fitness: debt is each element pair the baseline crossed that the code still crosses, once", fun () ->
+          let v a b src = { Edge = { Source = src; Target = "y" }; FromElement = ElementId a; ToElement = ElementId b }
+          let pairs = Fitness.debt [ v "api" "db" "a"; v "web" "db" "w" ] [ v "api" "db" "a"; v "api" "db" "b"; v "rating" "db" "r" ]
+          equal [ ElementId "api", ElementId "db" ] pairs "web->db was removed, rating->db is new, api->db once"
 
       "fitness: a hand-written rule forbids edges by path and only new crossings are the task's", fun () ->
           let rule = { From = PathPattern.createOrFail "src/Domain/**"; To = PathPattern.createOrFail "src/Infra/**"; Why = "domain must not know infrastructure" }
