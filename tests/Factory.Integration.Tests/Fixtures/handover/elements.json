@@ -1,0 +1,114 @@
+{
+  "schema": "designc.handover.elements/1",
+  "elements": [
+    {
+      "id": "Underwriter",
+      "name": "Underwriter",
+      "kind": "person"
+    },
+    {
+      "id": "Cat Model Vendor",
+      "name": "Cat Model Vendor",
+      "kind": "softwareSystem"
+    },
+    {
+      "id": "Pricing Platform",
+      "name": "Pricing Platform",
+      "kind": "softwareSystem"
+    },
+    {
+      "id": "Pricing Platform/Pricing Portal",
+      "name": "Pricing Portal",
+      "kind": "container",
+      "code": [
+        "src/Pricing.Portal/**"
+      ],
+      "risk": "low"
+    },
+    {
+      "id": "Pricing Platform/Pricing API",
+      "name": "Pricing API",
+      "kind": "container",
+      "code": [
+        "src/Pricing.Api/**",
+        "tests/Pricing.Api.Tests/**"
+      ],
+      "risk": "medium"
+    },
+    {
+      "id": "Pricing Platform/Rating Engine",
+      "name": "Rating Engine",
+      "kind": "container",
+      "code": [
+        "src/Rating.Engine/**"
+      ],
+      "risk": "medium"
+    },
+    {
+      "id": "Pricing Platform/Cat Model Adapter",
+      "name": "Cat Model Adapter",
+      "kind": "container",
+      "code": [
+        "src/CatModel.Adapter/**"
+      ],
+      "risk": "medium"
+    },
+    {
+      "id": "Pricing Platform/Referral Worker",
+      "name": "Referral Worker",
+      "kind": "container",
+      "code": [
+        "src/Referral.Worker/**"
+      ],
+      "risk": "medium"
+    },
+    {
+      "id": "Pricing Platform/Quotes DB",
+      "name": "Quotes DB",
+      "kind": "container",
+      "code": [
+        "src/Pricing.Data/**",
+        "db/migrations/**",
+        "tests/Pricing.Data.Tests/**"
+      ],
+      "risk": "high"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Underwriter",
+      "to": "Pricing Platform/Pricing Portal"
+    },
+    {
+      "from": "Pricing Platform/Pricing Portal",
+      "to": "Pricing Platform/Pricing API"
+    },
+    {
+      "from": "Pricing Platform/Pricing API",
+      "to": "Pricing Platform/Rating Engine"
+    },
+    {
+      "from": "Pricing Platform/Pricing API",
+      "to": "Pricing Platform/Quotes DB"
+    },
+    {
+      "from": "Pricing Platform/Pricing API",
+      "to": "Pricing Platform/Referral Worker"
+    },
+    {
+      "from": "Pricing Platform/Rating Engine",
+      "to": "Pricing Platform/Cat Model Adapter"
+    },
+    {
+      "from": "Pricing Platform/Cat Model Adapter",
+      "to": "Cat Model Vendor"
+    },
+    {
+      "from": "Pricing Platform/Referral Worker",
+      "to": "Pricing Platform/Quotes DB"
+    }
+  ],
+  "events": [
+    "eCommitted"
+  ]
+}
