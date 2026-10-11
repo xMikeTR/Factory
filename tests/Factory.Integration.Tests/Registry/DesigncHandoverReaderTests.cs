@@ -86,6 +86,17 @@ public class DesigncHandoverReaderTests
         Assert.Contains(ex.Errors, e => e.StartsWith("model/workspace.dsl does not match its frozen hash"));
     }
 
+    [Fact]
+    public async Task A_handover_without_elements_is_rejected()
+    {
+        var dir = FixtureCopy();
+        var manifest = Path.Combine(dir, "handover.yaml");
+        File.WriteAllLines(manifest, File.ReadAllLines(manifest).Where(l => !l.StartsWith("elements:")));
+
+        var ex = await Assert.ThrowsAsync<FactoryRejectedException>(() => Load(dir));
+        Assert.Contains("handover.yaml names no elements file; re-freeze it with a designc that writes elements.json", ex.Errors);
+    }
+
     [Theory]
     [InlineData("p check -tc tcOptimistic", "p")]
     [InlineData("designc check --only DC002", "lint")]

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Factory.Core;
 using YamlDotNet.Serialization;
@@ -8,9 +9,10 @@ namespace Factory.Harness.Registry;
 
 using Core = Factory.Core.Core; // "Core" alone binds to the namespace Factory.Core from inside Factory.*
 
-/// A handover frozen by Designc (handovers/&lt;id&gt;/): handover.yaml lists the model, the bound
-/// decisions and every file with its hash16. Elements come from the model's d.code / d.risk
-/// properties; only elements that declare d.code are code-backed and appear in the Handover.
+/// A handover frozen by Designc (handovers/&lt;id&gt;/): handover.yaml names elements.json and the bound
+/// decisions and lists every file with its hash16. elements.json is Designc's resolved model (its
+/// docs/handover-elements.schema.json), so the DSL is never parsed here; only elements that declare
+/// code are code-backed and appear in the Handover.
 public sealed class DesigncHandoverReader : IHandoverSource
 {
     public async Task<Handover> LoadAsync(string handoverDir, S2Config config, CancellationToken ct)
@@ -39,14 +41,14 @@ public sealed class DesigncHandoverReader : IHandoverSource
             files[rel] = text;
         }
 
-        var modelPath = Str(manifest, "model");
-        var model = modelPath is not null && files.TryGetValue(modelPath, out var dsl)
-            ? DslModel.Parse(dsl, errors)
-            : null;
-        if (model is null) errors.Add($"handover.yaml: model '{modelPath}' is not among the frozen files");
+        var elementsPath = Str(manifest, "elements");
+        var resolved = elementsPath is null
+            ? Fail("handover.yaml names no elements file; re-freeze it with a designc that writes elements.json")
+            : files.TryGetValue(elementsPath, out var json) ? ParseElements(json, errors)
+            : Fail($"handover.yaml: elements '{elementsPath}' is not among the frozen files");
 
-        var elements = model is null ? [] : Elements(model, errors);
-        var byName = model?.Elements.GroupBy(e => e.Name).ToDictionary(g => g.Key, g => g.First()) ?? [];
+        var elements = resolved is null ? [] : Elements(resolved.Value, errors);
+        var byName = resolved?.Elements.GroupBy(e => e.Name).ToDictionary(g => g.Key, g => g.First().Id) ?? [];
 
         var decisions = new List<BoundDecision>();
         foreach (var did in List(manifest, "decisions").Select(d => d?.ToString()).OfType<string>())
@@ -56,9 +58,7 @@ public sealed class DesigncHandoverReader : IHandoverSource
             decisions.Add(Decision(did, Yaml.Deserialize<Dictionary<string, object?>>(files[rel]) ?? [], byName, errors));
         }
 
-        var vocabulary = files.Where(f => f.Key.StartsWith("behaviour/") && f.Key.EndsWith(".p")).OrderBy(f => f.Key)
-            .SelectMany(f => Regex.Matches(f.Value, @"\bannounce\s+(\w+)").Select(m => m.Groups[1].Value))
-            .Distinct().ToList();
+        var vocabulary = resolved?.Events ?? [];
 
         var protectedPaths = Patterns(config.ProtectedPaths, "S2Config.ProtectedPaths", errors);
 
@@ -70,7 +70,9 @@ public sealed class DesigncHandoverReader : IHandoverSource
             Core.ToList(decisions),
             Core.ToList(protectedPaths),
             Core.ToList(vocabulary),
-            Core.ToList(Relationships(model!, elements)));
+            Core.ToList(Relationships(resolved!.Value, elements)));
+
+        ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
 
     /// How a decision's check runs, from its command: `p check` is the P checker, `designc check`
@@ -93,47 +95,62 @@ public sealed class DesigncHandoverReader : IHandoverSource
         return h.ToString("x8");
     }
 
-    /// The model's relationships between elements that own code (the others cannot be crossed by a task).
-    private static List<Relationship> Relationships(DslModel model, List<ElementSpec> owners)
+    private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk);
+    private sealed record RelationshipJson(string From, string To);
+    private sealed record ElementsJson(string? Schema, List<ElementJson>? Elements, List<RelationshipJson>? Relationships, List<string>? Events);
+    private readonly record struct ResolvedModel(List<ElementJson> Elements, List<RelationshipJson> Relationships, List<string> Events);
+
+    private const string ElementsSchema = "designc.handover.elements/1";
+
+    private static ResolvedModel? ParseElements(string json, List<string> errors)
     {
-        var byVariable = model.Elements.Where(e => e.Variable is not null).ToDictionary(e => e.Variable!, e => ElementId.NewElementId(e.Path));
-        var ids = owners.Select(o => o.Id).ToHashSet();
+        ElementsJson? doc;
+        try { doc = JsonSerializer.Deserialize<ElementsJson>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web)); }
+        catch (JsonException ex) { errors.Add($"elements.json: {ex.Message}"); return null; }
+        if (doc?.Schema != ElementsSchema) { errors.Add($"elements.json: schema '{doc?.Schema}' is not {ElementsSchema}"); return null; }
+        return new ResolvedModel(doc.Elements ?? [], doc.Relationships ?? [], doc.Events ?? []);
+    }
+
+    /// The model's relationships between elements that own code (the others cannot be crossed by a task).
+    private static List<Relationship> Relationships(ResolvedModel model, List<ElementSpec> owners)
+    {
+        var ids = owners.Select(o => o.Id.Value).ToHashSet();
         return model.Relationships
-            .Where(r => byVariable.TryGetValue(r.Source, out var from) && byVariable.TryGetValue(r.Destination, out var to) && ids.Contains(from) && ids.Contains(to))
-            .Select(r => new Relationship(byVariable[r.Source], byVariable[r.Destination]))
+            .Where(r => ids.Contains(r.From) && ids.Contains(r.To))
+            .Select(r => new Relationship(ElementId.NewElementId(r.From), ElementId.NewElementId(r.To)))
             .Distinct().ToList();
     }
 
-    private static List<ElementSpec> Elements(DslModel model, List<string> errors)
+    private static List<ElementSpec> Elements(ResolvedModel model, List<string> errors)
     {
         var specs = new List<ElementSpec>();
         foreach (var e in model.Elements)
         {
-            if (!e.Properties.TryGetValue("d.code", out var code)) continue;
-            var risk = e.Properties.GetValueOrDefault("d.risk") switch
+            if (e.Code is null) continue;
+            var risk = e.Risk switch
             {
                 "low" => RiskLevel.Low,
                 "medium" => RiskLevel.Medium,
                 "high" => RiskLevel.High,
-                null => Fail<RiskLevel>($"element '{e.Name}' declares d.code but no d.risk"),
-                var other => Fail<RiskLevel>($"element '{e.Name}': d.risk '{other}' is not low, medium or high"),
+                null => Fail<RiskLevel>($"element '{e.Name}' declares code but no risk"),
+                var other => Fail<RiskLevel>($"element '{e.Name}': risk '{other}' is not low, medium or high"),
             };
-            var areas = Patterns(code.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), $"element '{e.Name}' d.code", errors);
-            if (risk is not null) specs.Add(new ElementSpec(ElementId.NewElementId(e.Path), e.Name, Core.ToList(areas), risk));
+            var areas = Patterns(e.Code, $"element '{e.Name}' code", errors);
+            if (risk is not null) specs.Add(new ElementSpec(ElementId.NewElementId(e.Id), e.Name, Core.ToList(areas), risk));
         }
         return specs;
 
         T? Fail<T>(string error) where T : class { errors.Add(error); return null; }
     }
 
-    private static BoundDecision Decision(string id, Dictionary<string, object?> yaml, Dictionary<string, DslElement> byName, List<string> errors)
+    private static BoundDecision Decision(string id, Dictionary<string, object?> yaml, Dictionary<string, string> byName, List<string> errors)
     {
         if (Str(yaml, "id") != id) errors.Add($"decision {id}: file says id '{Str(yaml, "id")}'");
         if (Str(yaml, "status") != "bound") errors.Add($"decision {id} is listed in the handover but is not bound");
         var binds = new List<ElementId>();
         foreach (var name in List(yaml, "binds").Select(b => b?.ToString()).OfType<string>())
         {
-            if (byName.TryGetValue(name, out var el)) binds.Add(ElementId.NewElementId(el.Path));
+            if (byName.TryGetValue(name, out var el)) binds.Add(ElementId.NewElementId(el));
             else errors.Add($"{id} binds '{name}', which is not an element in the model");
         }
         var checks = List(yaml, "checks").Select(c => c?.ToString()).OfType<string>()

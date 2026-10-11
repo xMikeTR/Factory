@@ -3,11 +3,13 @@ revision: r-f1998966
 created: "2026-10-07T13:30:32.328Z"
 by: "mike"
 model: "model/workspace.dsl"
+elements: "elements.json"
 requirements: ["HRE-1234"]
 decisions: ["D-0001"]
 evals: {}
 files:
   - { path: "behaviour/quotes-writes.p", hash: fe75e3c3e91819f7 }
   - { path: "decisions/D-0001.yaml", hash: 83d766859d21cb09 }
+  - { path: "elements.json", hash: b936dd6967ec28d5 }
   - { path: "model/workspace.dsl", hash: f1998966d886f52a }
   - { path: "requirements/HRE-1234.yaml", hash: 71e2effac008f12e }

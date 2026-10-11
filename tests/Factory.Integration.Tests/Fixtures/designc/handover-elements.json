@@ -1,0 +1,54 @@
+{
+  "schema": "designc.handover.elements/1",
+  "elements": [
+    {
+      "id": "Underwriter",
+      "name": "Underwriter",
+      "kind": "person"
+    },
+    {
+      "id": "Quotes",
+      "name": "Quotes",
+      "kind": "softwareSystem"
+    },
+    {
+      "id": "Quotes/Quotes API",
+      "name": "Quotes API",
+      "kind": "container",
+      "code": [
+        "src/Api/**",
+        "src/Shared"
+      ],
+      "risk": "medium"
+    },
+    {
+      "id": "Quotes/Quotes API/Pricing",
+      "name": "Pricing",
+      "kind": "component",
+      "code": [
+        "src/Api/Pricing/**"
+      ],
+      "risk": "high"
+    },
+    {
+      "id": "Quotes/Quotes DB",
+      "name": "Quotes DB",
+      "kind": "container"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Underwriter",
+      "to": "Quotes/Quotes API"
+    },
+    {
+      "from": "Quotes/Quotes API",
+      "to": "Quotes/Quotes DB"
+    }
+  ],
+  "events": [
+    "QuoteRequested",
+    "QuoteSaved",
+    "QuotePriced"
+  ]
+}
