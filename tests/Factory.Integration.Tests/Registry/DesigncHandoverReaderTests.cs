@@ -24,6 +24,27 @@ public class DesigncHandoverReaderTests
 
     private static Task<Handover> Load(string dir) => new DesigncHandoverReader().LoadAsync(dir, Config, CancellationToken.None);
 
+    /// Designc copies scenarios/*.yaml into a handover (files: entry plus a `scenarios:` id list, `TODO` fitness entries included).
+    /// The reader hashes it like any frozen file and ignores the list.
+    [Fact]
+    public async Task A_handover_with_scenarios_loads_and_a_changed_scenario_is_rejected()
+    {
+        var dir = FixtureCopy();
+        const string scenario = "id: QAS-1\ntitle: Repo never written\nattribute: integrity\nfitness:\n  - \"TODO policy test\"\n";
+        Directory.CreateDirectory(Path.Combine(dir, "scenarios"));
+        await File.WriteAllTextAsync(Path.Combine(dir, "scenarios", "QAS-1.yaml"), scenario);
+        var manifest = Path.Combine(dir, "handover.yaml");
+        var text = await File.ReadAllTextAsync(manifest);
+        text = text.Replace("evals: {}\n", "evals: {}\nscenarios: [\"QAS-1\"]\n")
+            + $"  - {{ path: \"scenarios/QAS-1.yaml\", hash: {DesigncHandoverReader.Hash16(scenario)} }}\n";
+        await File.WriteAllTextAsync(manifest, text);
+
+        Assert.Equal("20261007-c4d072ba", (await Load(dir)).Id);
+
+        await File.WriteAllTextAsync(Path.Combine(dir, "scenarios", "QAS-1.yaml"), scenario.Replace("TODO ", ""));
+        await Assert.ThrowsAnyAsync<Exception>(() => Load(dir));
+    }
+
     [Fact]
     public async Task Fixture_maps_to_the_expected_handover()
     {
