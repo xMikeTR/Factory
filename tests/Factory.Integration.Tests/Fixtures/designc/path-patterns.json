@@ -1,5 +1,5 @@
 {
-  "about": "The meaning of a d.code path pattern, shared by designc (renderer/pathpattern.js, python/designc/pathpattern.py) and System 2 (Factory.Core PathPattern). designc owns this file; System 2 keeps a copy in tests/Factory.Integration.Tests/Fixtures/designc/. `value` is the normalised pattern; `valid: false` means it is rejected. `mayOverlap` is symmetric and over-approximates: two wild segments are assumed compatible. `matches` takes a concrete repo-relative file path; matching is ordinal and case-sensitive.",
+  "about": "The meaning of a d.code path pattern. designc owns it (renderer/pathpattern.js, python/designc/pathpattern.py); a coding agent that reads d.code from a handover runs these cases against its own implementation. `value` is the normalised pattern; `valid: false` means it is rejected. `mayOverlap` is symmetric and over-approximates: two wild segments are assumed compatible. `matches` takes a concrete repo-relative file path; matching is ordinal and case-sensitive.",
   "create": [
     { "input": "src/Pricing.Api/**", "value": "src/Pricing.Api/**" },
     { "input": "./src\\Quotes/", "value": "src/Quotes" },
