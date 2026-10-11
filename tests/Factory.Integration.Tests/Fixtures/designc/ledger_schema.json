@@ -21,8 +21,17 @@
     "S1-lint",
     "S1-p",
     "S1-grill",
-    "S2-runtime",
-    "S2-config"
+    "pipeline"
+  ],
+  "pipeline_stream": "pipeline.jsonl",
+  "pipeline_kinds": [
+    "task",
+    "check",
+    "needs_decision",
+    "asbuilt_edge",
+    "escape",
+    "false_positive",
+    "handover_closed"
   ],
   "rules": [
     "fail_needs_evidence",

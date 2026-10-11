@@ -51,6 +51,8 @@ public static class RegistryLedgerProjector
             {
                 w.WriteString("task", task.Key);
                 w.WriteString("status", Status(last.Outcome));
+                // The elements.json id (System/Container/Component) of the task's first element: designc's cost forecast keys on it.
+                if (task.LastOrDefault(e => e.Kind == LedgerKinds.TaskEvent && e.Element is not null)?.Element is { } element) w.WriteString("element", element);
                 w.WriteNumber("turns", turns.Count);
                 w.WriteNumber("tokens_in", turns.Sum(t => t.TokensIn ?? 0));
                 w.WriteNumber("tokens_out", turns.Sum(t => t.TokensOut ?? 0));

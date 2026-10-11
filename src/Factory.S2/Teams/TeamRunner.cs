@@ -775,7 +775,8 @@ internal sealed class TaskLoop(
     {
         var next = Core.Transition(_limits, state, ev); // throws on an illegal transition: a runner bug, not an agent error
         await svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "task", LedgerKinds.TaskEvent,
-            TaskId: _taskId, TeamId: _teamId, Outcome: next.GetType().Name, Payload: Core.EncodeEvent(ev)), ct);
+            TaskId: _taskId, TeamId: _teamId, Element: task.Elements.Select(e => e.Value).FirstOrDefault(),
+            Outcome: next.GetType().Name, Payload: Core.EncodeEvent(ev)), ct);
         return next;
     }
 
