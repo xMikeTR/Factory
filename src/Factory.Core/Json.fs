@@ -114,7 +114,8 @@ module Json =
               AcceptanceSpecs =
                 collect (arr "$" o "acceptanceSpecs") (fun p n ->
                     let so = obj p n
-                    { Path = str p so "path"; Hash = str p so "hash" }) })
+                    { Path = str p so "path"; Hash = str p so "hash" })
+              WorkItem = optStr o "workItem" })
 
     // ---------- plan ----------
 
@@ -213,7 +214,8 @@ module Json =
                    "protectedPaths", strArr (h.ProtectedPaths |> List.map (fun p -> p.Value))
                    "eventVocabulary", strArr h.EventVocabulary
                    "relationships", JsonArray(h.Relationships |> List.map (fun r -> node [ "from", JsonValue.Create r.From.Value; "to", JsonValue.Create r.To.Value ]) |> Array.ofList)
-                   "acceptanceSpecs", JsonArray(h.AcceptanceSpecs |> List.map (fun a -> node [ "path", JsonValue.Create a.Path; "hash", JsonValue.Create a.Hash ]) |> Array.ofList) ]
+                   "acceptanceSpecs", JsonArray(h.AcceptanceSpecs |> List.map (fun a -> node [ "path", JsonValue.Create a.Path; "hash", JsonValue.Create a.Hash ]) |> Array.ofList)
+                   if h.WorkItem.IsSome then "workItem", JsonValue.Create h.WorkItem.Value ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     // ---------- task events (the ledger payload a runner replays on resume) ----------

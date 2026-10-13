@@ -45,6 +45,7 @@ public static class LedgerKinds
     public const string Review = "review";          // one review round: outcome, findings kept and dropped, independence
     public const string Merge = "merge";
     public const string AsBuiltEdge = "asbuilt_edge"; // payload {from, to}: an element pair the code crosses with no relationship in the model (debt)
+    public const string UiAcceptanceFailed = "ui_acceptance_failed"; // element + payload {ac, spec, commit, trace}: a frozen Playwright spec failed on this task's element
     public const string Run = "run";
 }
 

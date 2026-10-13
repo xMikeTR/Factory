@@ -7,9 +7,10 @@ using Microsoft.FSharp.Collections;
 namespace Factory.Harness.Registry;
 
 /// The handover a run's registry rows belong to, and the decisions whose checks decide how it closes.
-public sealed record HandoverRef(string Id, IReadOnlyList<BoundDecision> Decisions)
+public sealed record HandoverRef(string Id, IReadOnlyList<BoundDecision> Decisions, string? WorkItem = null)
 {
-    public static HandoverRef From(Handover h) => new(h.Id, h.Decisions.ToList());
+    public static HandoverRef From(Handover h) =>
+        new(h.Id, h.Decisions.ToList(), Microsoft.FSharp.Core.FSharpOption<string>.get_IsSome(h.WorkItem) ? h.WorkItem.Value : null);
 }
 
 /// One designc ledger row. Line is the canonical compact JSON written to {registry}/ledger/{Stream}.
@@ -34,6 +35,7 @@ public static class RegistryLedgerProjector
             if (e.Kind == LedgerKinds.NeedsDecision && NeedsDecision(e) is { } nd) rows.Add((e.Ts, nd));
             else if (e.Kind == LedgerKinds.Verify && e.Decision is not null && Check(e) is { } check) rows.Add((e.Ts, check));
         }
+        rows.AddRange(AcceptanceFailures(run, handover));
         if (HandoverClosed(run, handover) is { } closed) rows.Add(closed);
         // Stable: ties keep source order.
         return rows.OrderBy(r => r.Ts).Select(r => r.Row).ToList();
@@ -76,6 +78,27 @@ public static class RegistryLedgerProjector
             {
                 w.WriteString("from", from);
                 w.WriteString("to", to);
+            }));
+        }
+    }
+
+    /// A failing acceptance spec, one row per (ac, element, commit). designc keys it on the work item, so a
+    /// run whose handover names none projects nothing: the failure stays in S2's own ledger.
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> AcceptanceFailures(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    {
+        if (handover.WorkItem is not { } item) yield break;
+        var seen = new HashSet<(string, string, string)>();
+        foreach (var e in run.Where(e => e.Kind == LedgerKinds.UiAcceptanceFailed && e.Payload is not null && e.Element is not null))
+        {
+            using var doc = JsonDocument.Parse(e.Payload!);
+            if (Prop(doc.RootElement, "ac")?.GetString() is not { } ac || Prop(doc.RootElement, "commit")?.GetString() is not { } commit) continue;
+            if (!seen.Add((ac, e.Element!, commit))) continue;
+            yield return (e.Ts, Row(Pipeline, "ui_acceptance_failed", e, w =>
+            {
+                w.WriteString("ac", ac);
+                w.WriteString("element", e.Element);
+                w.WriteString("task", item);
+                w.WriteString("commit", commit);
             }));
         }
     }

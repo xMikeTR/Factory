@@ -88,6 +88,46 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
         return outcome;
     }
 
+    /// Where the acceptance command writes Playwright's JSON report, relative to the worktree.
+    public const string AcceptanceReportPath = ".factory-results/acceptance.json";
+
+    /// Runs the frozen specs once. The outcome is the command's; the failures are the spec files the
+    /// report says failed, each resolved to a frozen path. A non-zero exit with no readable report is
+    /// itself a failure (the specs could not run), never a pass.
+    public async Task<(VerifyOutcome Outcome, IReadOnlyList<Factory.Harness.Verify.PlaywrightReport.Failure> Failures)> AcceptanceAsync(
+        string runId, string command, string worktree, IReadOnlyCollection<string> frozenPaths, CancellationToken ct)
+    {
+        var report = Path.Combine(worktree, AcceptanceReportPath);
+        var dir = Path.GetDirectoryName(report)!;
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        try
+        {
+            await using var sandbox = await sandboxes.ForTeamAsync("integration", worktree, ct);
+            var r = await sandbox.RunAsync(command, worktree, SuiteTimeout, new Dictionary<string, string>
+            {
+                ["FACTORY_RUN_ID"] = runId,
+                ["PLAYWRIGHT_JSON_OUTPUT_NAME"] = AcceptanceReportPath,
+            }, ct);
+            var failures = new List<Factory.Harness.Verify.PlaywrightReport.Failure>();
+            if (File.Exists(report))
+            {
+                try { failures.AddRange(Factory.Harness.Verify.PlaywrightReport.Failures(await File.ReadAllTextAsync(report, ct), frozenPaths)); }
+                catch (JsonException) { }
+            }
+            var outcome = ToOutcome("acceptance", r);
+            if (outcome.ExitCode == 0 && failures.Count > 0) outcome = new VerifyOutcome(outcome.Name, 1, outcome.DurationMs, outcome.OutputTail);
+            await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.Verify,
+                Outcome: outcome.ExitCode == 0 ? "passed" : "failed",
+                Payload: JsonSerializer.Serialize(new { name = "acceptance", command, ExitCode = outcome.ExitCode, ms = outcome.DurationMs,
+                    failing = failures.Select(f => f.File), tail = r.Tail(2000) })), ct);
+            return (outcome, failures);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
     /// Where a suite command writes JUnit XML, relative to its working directory. Passed to it as
     /// FACTORY_TEST_RESULTS; removed after reading so it never shows up as a change.
     public const string ResultsPath = ".factory-results/junit.xml";

@@ -31,7 +31,10 @@ public sealed record FactorySettings(
     /// From the same file's `npm:` section.
     NpmPolicy? Npm = null,
     /// .factory/ui-contract.yaml: the UI items a human says must keep working (used when `quality.ui` is on).
-    IReadOnlyList<UiItem>? UiContract = null)
+    IReadOnlyList<UiItem>? UiContract = null,
+    /// Runs the frozen acceptance specs in integration verify (when the handover has any); writes
+    /// Playwright's JSON report to $PLAYWRIGHT_JSON_OUTPUT_NAME. The gate has no model in the loop.
+    string AcceptanceCommand = "npx playwright test --reporter=json")
 {
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
         RepoPath: Path.GetFullPath(repo),
@@ -49,7 +52,8 @@ public sealed record FactorySettings(
         MergePolicy: MergePolicyFile.FromEnvironment(Path.GetFullPath(repo)),
         QualityPolicy: QualityPolicyFile.Load(Path.GetFullPath(repo)),
         Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)),
-        UiContract: UiContractFile.Load(Path.GetFullPath(repo)));
+        UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
+        AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"));
 
     public string RunDir(string runId) => Path.Combine(StateDir, "runs", runId);
     public string PlanPath(string runId) => Path.Combine(RunDir(runId), "plan.json");
