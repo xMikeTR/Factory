@@ -111,6 +111,33 @@ try
             return digest.Failed.IsEmpty && problems.Count == 0 ? 0 : 1;
         }
 
+        case "ux-review":
+        {
+            // factory-s2 ux-review --repo . --handover <h> [--judge] [--run-id id]: freeze-time screenshots for one human
+            // review; --judge also scores them with the model (a paid call, a gradient, never a gate).
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
+            if (settings.ScreenshotCommand is not { } shotCommand)
+            {
+                Console.Error.WriteLine("FACTORY_SCREENSHOT_CMD is not set: the command that writes <element>__<state>__<breakpoint>.png files to $FACTORY_SCREENSHOT_DIR");
+                return 1;
+            }
+            var runId = opts.GetValueOrDefault("run-id") ?? $"ux-{DateTime.UtcNow:yyyyMMdd-HHmmss}";
+            Directory.CreateDirectory(settings.StateDir);
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+            var handover = Core.ParseHandover(await File.ReadAllTextAsync(
+                await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token), cts.Token));
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            using var tracing = FactoryTelemetry.CreateTracerProvider(env);
+            var services = Services(settings, runId, env, new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+            var result = await Factory.S2.Quality.UxReviewRunner.RunAsync(
+                services, handover, runId, shotCommand, settings.RepoPath, opts.ContainsKey("judge"), cts.Token);
+            Console.Write(Factory.S2.Quality.UxReviewRunner.Render(result));
+            Console.WriteLine($"screenshots kept in {Path.Combine(settings.RunDir(runId), "ux-screenshots")}");
+            return result.Shots.Count > 0 ? 0 : 1;
+        }
+
         case "compare-browser":
         {
             // factory-s2 compare-browser --repo . --runs id1,id2,...   (each run's acting turns say which browser tool it had)

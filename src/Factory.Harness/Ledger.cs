@@ -47,6 +47,8 @@ public static class LedgerKinds
     public const string AsBuiltEdge = "asbuilt_edge"; // payload {from, to}: an element pair the code crosses with no relationship in the model (debt)
     public const string TokenLintViolation = "token_lint_violation"; // task + payload {file, line, rule, text}: a raw value where a design token belongs
     public const string UiAcceptanceFailed = "ui_acceptance_failed"; // element + payload {ac, spec, commit, trace}: a frozen Playwright spec failed on this task's element
+    public const string UxScreenshots = "ux_screenshots"; // payload {command, shots:[{element,state,breakpoint,path}]}: freeze-time screenshots taken for one human review
+    public const string UxJudge = "ux_judge";       // element + payload {state, breakpoint, hierarchy, clarity, consistency, note}: a gradient; outcome is always "gradient", never a gate
     public const string Run = "run";
 }
 

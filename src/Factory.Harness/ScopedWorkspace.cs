@@ -28,6 +28,8 @@ public sealed class TurnSignals
     /// The repro agent's steps (submit_reproduction) and the diagnosis agent's finding (submit_diagnosis); null if never called.
     public string? Reproduction { get; set; }
     public string? Diagnosis { get; set; }
+    /// The UX judge's scores for the screenshot it was shown (submit_ux_scores); null if never recorded.
+    public UxScore? UxScore { get; set; }
     public List<string> FilesWritten { get; } = [];
     /// The QA author's tests (submit_qa_tests); null if it never called the tool.
     public IReadOnlyList<QaTestDecl>? QaTests { get; set; }
@@ -228,6 +230,22 @@ public sealed class ScopedWorkspace(
                 signals.Reproduction = steps;
                 return "Recorded. Stop now.";
             }, "submit_reproduction", "Call once, last: the reproduction steps. Ends your turn."),
+    ];
+
+    /// The UX judge's only tool: its scores for the one screenshot in the message.
+    public IList<AITool> UxJudgeTools() =>
+    [
+        AIFunctionFactory.Create(
+            ([Description("1 to 5: does the eye land on the primary content and action first")] int hierarchy,
+             [Description("1 to 5: does every control and message say what it does")] int clarity,
+             [Description("1 to 5: does it match the rest of the design's spacing, type and controls")] int consistency,
+             [Description("one sentence naming the single biggest issue, or 'none'")] string note) =>
+            {
+                var parsed = UxReview.parseScore(hierarchy, clarity, consistency, note);
+                if (parsed.IsError) return "Not recorded: " + parsed.ErrorValue + ". Call again.";
+                signals.UxScore = parsed.ResultValue;
+                return "Recorded. Stop now.";
+            }, "submit_ux_scores", "Call once, last: your scores for this screenshot. Ends your turn."),
     ];
 
     /// The diagnosis agent's tools: read-only, and the finding goes to the ledger through submit_diagnosis.

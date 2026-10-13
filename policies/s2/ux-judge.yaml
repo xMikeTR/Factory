@@ -1,0 +1,15 @@
+# source: hand-authored
+# Tool policy for s2-ux-judge. Loaded by Factory.Harness.Governance.AcsToolPolicy (AGT PolicyEngine).
+# Paths are enforced by ScopedWorkspace whatever this file says; this file decides which tools the role may call.
+# When mlang compiles these, the header becomes '# source: mlang@<version>'.
+apiVersion: governance.toolkit/v1
+version: "1"
+name: s2-ux-judge
+description: "Scores one freeze-time screenshot against the design intent; a gradient that never blocks."
+scope: agent
+default_action: deny
+rules:
+  - name: allow-submit-ux-scores
+    condition: "tool_name == 'submit_ux_scores'"
+    action: allow
+    priority: 10

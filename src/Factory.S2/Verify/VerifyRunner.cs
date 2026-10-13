@@ -131,6 +131,40 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
     /// Where the token lint command writes stylelint's JSON report, relative to the worktree.
     public const string TokenLintReportPath = ".factory-results/token-lint.json";
 
+    private const string ScreenshotDir = ".factory-results/ux";
+
+    /// Runs the repo's screenshot command once; it writes `<element-slug>__<state>__<breakpoint>.png` files into
+    /// $FACTORY_SCREENSHOT_DIR (relative to the worktree). Returns the outcome and the shots it left, copied to `keepDir`.
+    public async Task<(VerifyOutcome Outcome, IReadOnlyList<Factory.Core.UxShot> Shots)> ScreenshotsAsync(
+        string runId, string command, string worktree, string keepDir, CancellationToken ct)
+    {
+        var dir = Path.Combine(worktree, ScreenshotDir);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            await using var sandbox = await sandboxes.ForTeamAsync("ux-review", worktree, ct);
+            var r = await sandbox.RunAsync(command, worktree, TimeSpan.FromMinutes(15), new Dictionary<string, string>
+            {
+                ["FACTORY_RUN_ID"] = runId,
+                ["FACTORY_SCREENSHOT_DIR"] = ScreenshotDir,
+            }, ct);
+            Directory.CreateDirectory(keepDir);
+            var shots = new List<Factory.Core.UxShot>();
+            foreach (var file in Directory.EnumerateFiles(dir, "*.png", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
+            {
+                var kept = Path.Combine(keepDir, Path.GetFileName(file));
+                File.Copy(file, kept, overwrite: true);
+                if (Factory.Core.UxReview.parseShot(kept) is { } some) shots.Add(some.Value);
+            }
+            return (ToOutcome("ux screenshots", r), shots);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
     /// Runs the token lint once (deterministic, no browser). The report path is passed as $FACTORY_LINT_REPORT
     /// so the command can aim `--output-file` at it. A non-zero exit with no readable report is a failure.
     public async Task<(VerifyOutcome Outcome, IReadOnlyList<Factory.Core.LintViolation> Violations)> TokenLintAsync(
