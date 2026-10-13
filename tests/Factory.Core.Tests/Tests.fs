@@ -7,10 +7,7 @@ open Factory.Core
 // A tiny dependency-free runner so the core can be tested anywhere `dotnet` runs.
 // Swap to xUnit/Expecto when the repo has a package feed; the test bodies port unchanged.
 // These tests are the spec for every TODO(you) in Factory.Core. Work order: RESOURCES.md.
-exception AssertFailed of string
-
-let check cond msg = if not cond then raise (AssertFailed msg)
-let equal expected actual msg = if expected <> actual then raise (AssertFailed $"{msg}: expected %A{expected}, got %A{actual}")
+open Factory.Core.Tests.Support
 
 let p = PathPattern.createOrFail
 let examples = Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "examples", "pricing-v3")
@@ -803,6 +800,7 @@ let tests: (string * (unit -> unit)) list =
       "json: dispatch serialises", fun () ->
           let text = Json.writeDispatch (Dispatcher.dispatch validated.Value)
           check (text.Contains "team-T-001") text ]
+    @ Factory.Core.Tests.WorkTests.tests
 
 [<EntryPoint>]
 let main _ =
