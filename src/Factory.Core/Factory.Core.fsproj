@@ -34,6 +34,7 @@
     <Compile Include="Metrics.fs" />
     <Compile Include="UiAcceptance.fs" />
     <Compile Include="DesignTokens.fs" />
+    <Compile Include="UxReview.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="Interop.fs" />
   </ItemGroup>

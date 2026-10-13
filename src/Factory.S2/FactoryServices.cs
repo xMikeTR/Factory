@@ -40,7 +40,10 @@ public sealed record FactorySettings(
     string? TokenLintCommand = null,
     /// Give the implementer `playwright_cli` to poke its own UI before the gate (FACTORY_PLAYWRIGHT_CLI=1; the image must
     /// carry @playwright/cli and the task's dev server must be reachable on localhost). Off by default: it is measured, not assumed.
-    bool PlaywrightCli = false)
+    bool PlaywrightCli = false,
+    /// Renders each element in each state and breakpoint and writes PNGs to $FACTORY_SCREENSHOT_DIR for one human
+    /// review at freeze (FACTORY_SCREENSHOT_CMD); null is off. Never a gate.
+    string? ScreenshotCommand = null)
 {
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
         RepoPath: Path.GetFullPath(repo),
@@ -61,7 +64,8 @@ public sealed record FactorySettings(
         UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
         AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),
         TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"),
-        PlaywrightCli: Environment.GetEnvironmentVariable("FACTORY_PLAYWRIGHT_CLI") == "1");
+        PlaywrightCli: Environment.GetEnvironmentVariable("FACTORY_PLAYWRIGHT_CLI") == "1",
+        ScreenshotCommand: Environment.GetEnvironmentVariable("FACTORY_SCREENSHOT_CMD"));
 
     /// Which browser tool the implementer had, for the CLI-vs-MCP comparison: FACTORY_BROWSER_TOOL (cli | mcp), else cli when
     /// the CLI self-check is on, else none. Logged with every acting turn.
