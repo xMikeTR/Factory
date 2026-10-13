@@ -49,6 +49,10 @@ type BoundDecision =
 /// code areas is a fitness violation. Directed.
 type Relationship = { From: ElementId; To: ElementId }
 
+/// A generated acceptance spec frozen into the handover (`tests/acceptance/<element>/<AC-id>.spec.ts`),
+/// with the hash Designc recorded for its text.
+type AcceptanceSpec = { Path: string; Hash: string }
+
 type Handover =
     { Id: string
       Digest: string
@@ -59,7 +63,9 @@ type Handover =
       /// P event names that code must log (the logging contract PObserve checks).
       EventVocabulary: string list
       /// The model's relationships between elements; empty for a handover frozen before they were carried.
-      Relationships: Relationship list }
+      Relationships: Relationship list
+      /// The frozen acceptance specs; empty for a handover frozen before specs were generated.
+      AcceptanceSpecs: AcceptanceSpec list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 
