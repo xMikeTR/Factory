@@ -148,6 +148,9 @@ public static class WorkRegistryReader
                 "ui_acceptance_failed" when S("task") is { } k && S("ac") is { } ac =>
                     LedgerFact.NewAcceptanceFailed(k, ac, S("element") ?? "", S("commit") ?? ""),
                 "item_conflict_deferred" when S("item") is { } i => LedgerFact.NewConflictDeferred(i, O("reason")),
+                "item_recheck" when S("item") is { } i =>
+                    LedgerFact.NewItemRecheck(i, r.TryGetProperty("stale", out var st) && st.ValueKind == JsonValueKind.True),
+                "escape" when S("id") is { } e => LedgerFact.NewEscapeRecorded(e, O("origin")),
                 "wip_limit_changed" when r.TryGetProperty("limit", out var l) && l.TryGetInt32(out var n) => LedgerFact.NewWipLimitChanged(n),
                 _ => null,
             };

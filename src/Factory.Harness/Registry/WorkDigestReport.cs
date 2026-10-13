@@ -28,6 +28,34 @@ public static class WorkDigestReport
         return (digest, registry.Problems);
     }
 
+    /// S4's work metrics over the whole ledger (every Done, not only since a last look).
+    public static async Task<WorkMetrics> MetricsAsync(
+        string registryPath, string? repoPath, string baseBranch, CancellationToken ct)
+    {
+        var registry = await WorkRegistryReader.ReadAsync(registryPath, ct);
+        var (digest, _) = await BuildAsync(registryPath, repoPath, baseBranch, 0, 3, ct);
+        return Metrics.compute(
+            ListModule.OfSeq(registry.Items),
+            ListModule.OfSeq(registry.Facts.Select(f => Tuple.Create(f.Ts, f.Fact))),
+            digest);
+    }
+
+    public static string RenderMetrics(WorkMetrics m)
+    {
+        static string Days(long ms) => $"{ms / 86_400_000.0:0.#}d";
+        static string T(FSharpOption<WorkTiming> t) =>
+            FSharpOption<WorkTiming>.get_IsSome(t) ? $"median {Days(t.Value.Median)}, p90 {Days(t.Value.P90)} (n={t.Value.Samples})" : "no data";
+        var sb = new StringBuilder();
+        sb.AppendLine("Throughput (done per week, by target kind)");
+        foreach (var ((week, kind), n) in m.Throughput.Select(x => (x.Item1, x.Item2))) sb.AppendLine($"  {week} {kind}: {n}");
+        sb.AppendLine($"Lead time (pull to done): {T(m.LeadTime)}");
+        sb.AppendLine($"Human wait: {T(m.HumanWait)}; open now: {m.OpenWaits}");
+        sb.AppendLine($"Conflict deferrals: {m.ConflictDeferrals}");
+        sb.AppendLine("Re-check rate: " + (FSharpOption<double>.get_IsSome(m.RecheckRate) ? $"{m.RecheckRate.Value:P0}" : "no re-checks"));
+        sb.AppendLine("Escapes by origin: " + (m.EscapesByOrigin.IsEmpty ? "none" : string.Join(", ", m.EscapesByOrigin.Select(e => $"{e.Item1} {e.Item2}"))));
+        return sb.ToString();
+    }
+
     public static string Render(Digest d, IReadOnlyList<string> problems)
     {
         var sb = new StringBuilder();
