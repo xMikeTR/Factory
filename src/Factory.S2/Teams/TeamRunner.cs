@@ -439,7 +439,7 @@ internal sealed class TaskLoop(
         var workspace = Workspace(signals, sandbox, writable);
         var budget = new TurnBudget(exempt: ExemptFromCap);
         var agent = svc.Agents.Create(new AgentScope(runId, role, _teamId, _taskId), tier,
-            Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools() : role == Roles.TestAuthor ? workspace.TestAuthorTools() : workspace.ExecutorTools(), budget);
+            Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools(svc.Settings.PlaywrightCli) : role == Roles.TestAuthor ? workspace.TestAuthorTools() : workspace.ExecutorTools(), budget);
         var response = await agent.RunAsync(Brief(writable, await ContextPackAsync(ct)), cancellationToken: ct);
         foreach (var (id, reason) in signals.DeclaredEquivalents)
             if (_lastMutants.TryGetValue(id, out var claimed)) _claims[MutantKey(claimed)] = reason; // a mutant of the last run only

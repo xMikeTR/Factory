@@ -25,6 +25,9 @@ public sealed class TurnSignals
     public IReadOnlyList<Finding>? Review { get; set; }
     /// The last plan the planner passed to submit_plan, as JSON, whatever the validator said about it.
     public string? SubmittedPlan { get; set; }
+    /// The repro agent's steps (submit_reproduction) and the diagnosis agent's finding (submit_diagnosis); null if never called.
+    public string? Reproduction { get; set; }
+    public string? Diagnosis { get; set; }
     public List<string> FilesWritten { get; } = [];
     /// The QA author's tests (submit_qa_tests); null if it never called the tool.
     public IReadOnlyList<QaTestDecl>? QaTests { get; set; }
@@ -212,10 +215,41 @@ public sealed class ScopedWorkspace(
         AIFunctionFactory.Create(RaiseNeedsDecision, "raise_needs_decision"),
     ];
 
-    /// The Implementer's tools: the executor's, plus handing broken tests back to the TestAuthor.
-    public IList<AITool> ImplementerTools() =>
+    /// The repro agent's tools: read the repo, drive a browser, submit the steps that reproduce the escape.
+    /// It writes no file: the failing spec reaches `tests/acceptance/**` only through intake.
+    public IList<AITool> ReproTools() =>
+    [
+        AIFunctionFactory.Create(ReadFile, "read_file"),
+        AIFunctionFactory.Create(ListFiles, "list_files"),
+        AIFunctionFactory.Create(PlaywrightCli, "playwright_cli"),
+        AIFunctionFactory.Create(
+            ([Description("the steps, in order, that reproduce the reported behaviour, with what you saw")] string steps) =>
+            {
+                signals.Reproduction = steps;
+                return "Recorded. Stop now.";
+            }, "submit_reproduction", "Call once, last: the reproduction steps. Ends your turn."),
+    ];
+
+    /// The diagnosis agent's tools: read-only, and the finding goes to the ledger through submit_diagnosis.
+    public IList<AITool> DiagnosisTools() =>
+    [
+        AIFunctionFactory.Create(ReadFile, "read_file"),
+        AIFunctionFactory.Create(ListFiles, "list_files"),
+        AIFunctionFactory.Create(PlaywrightCli, "playwright_cli"),
+        AIFunctionFactory.Create(
+            ([Description("why the frozen spec failed on this element, in a few sentences, citing what you saw")] string finding) =>
+            {
+                signals.Diagnosis = finding;
+                return "Recorded. Stop now.";
+            }, "submit_diagnosis", "Call once, last: your finding. Ends your turn."),
+    ];
+
+    /// The Implementer's tools: the executor's, plus handing broken tests back to the TestAuthor
+    /// and, when the run has a browser CLI (`selfCheck`), a way to poke its own UI before the gate.
+    public IList<AITool> ImplementerTools(bool selfCheck = false) =>
     [
         .. ExecutorTools(),
+        .. selfCheck ? new[] { AIFunctionFactory.Create(PlaywrightCli, "playwright_cli") } : [],
         AIFunctionFactory.Create(ReturnToTestAuthor, "return_to_test_author"),
         .. qualityCheck is null ? [] : new[] { AIFunctionFactory.Create(CheckQuality, "check_quality") },
     ];
@@ -284,6 +318,34 @@ public sealed class ScopedWorkspace(
             return "DENIED: no sandbox is attached to this workspace, so commands cannot run.";
 
         var result = await sandbox.RunAsync(cmd, _root, TimeSpan.FromMinutes(10), new Dictionary<string, string>(), ct);
+        return $"exit {result.ExitCode}{(result.TimedOut ? " (timed out)" : "")}\n{result.Tail(6000)}";
+    }
+
+    /// Subcommands of `playwright-cli` an agent may run: drive and observe a page, nothing that installs, runs
+    /// arbitrary code or writes outside the snapshot directory.
+    public static readonly IReadOnlySet<string> PlaywrightSubcommands = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "open", "goto", "snapshot", "click", "dblclick", "fill", "type", "press", "check", "uncheck", "select",
+        "hover", "screenshot", "resize", "console", "network", "tab-list", "close",
+    };
+
+    [Description("Drive the task's own dev server in a browser with the Playwright CLI, e.g. 'open http://localhost:3000', 'snapshot', "
+        + "'click e21'. Only localhost addresses; snapshots land under .playwright-cli/. Returns exit code and the output tail.")]
+    public async Task<string> PlaywrightCli([Description("the playwright-cli arguments, without the program name")] string command, CancellationToken ct = default)
+    {
+        var args = command.Trim();
+        if (args.IndexOfAny([';', '&', '|', '`', '$', '>', '<', '\n']) >= 0)
+            return "DENIED: shell operators are not allowed; run one command at a time.";
+        var words = args.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0 || !PlaywrightSubcommands.Contains(words[0]))
+            return $"DENIED: only these subcommands are allowed: {string.Join(", ", PlaywrightSubcommands.Order(StringComparer.Ordinal))}";
+        foreach (var w in words.Skip(1).Where(w => w.Contains("://", StringComparison.Ordinal)))
+            if (!Uri.TryCreate(w, UriKind.Absolute, out var uri) || uri.Host is not ("localhost" or "127.0.0.1" or "[::1]" or "::1"))
+                return $"DENIED: {w} is not a localhost address; browser sessions run against this worktree's dev server only.";
+        if (sandbox is null)
+            return "DENIED: no sandbox is attached to this workspace, so commands cannot run.";
+
+        var result = await sandbox.RunAsync("playwright-cli " + args, _root, TimeSpan.FromMinutes(2), new Dictionary<string, string>(), ct);
         return $"exit {result.ExitCode}{(result.TimedOut ? " (timed out)" : "")}\n{result.Tail(6000)}";
     }
 

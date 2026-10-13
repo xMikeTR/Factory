@@ -19,18 +19,21 @@ public abstract class ToolPolicyContract
         [Roles.TaskPlanner] = ["read_file", "list_files", "raise_needs_decision", "submit_approach"],
         [Roles.Reviewer] = ["read_file", "list_files", "submit_review"],
         [Roles.TestAuthor] = Tools[..^1],
-        [Roles.Implementer] = [.. Tools, "check_quality"],
+        [Roles.Implementer] = [.. Tools, "check_quality", "playwright_cli"],
+        [Roles.Repro] = ["read_file", "list_files", "playwright_cli", "submit_reproduction"],
+        [Roles.Diagnosis] = ["read_file", "list_files", "playwright_cli", "submit_diagnosis"],
     };
 
     private static readonly Dictionary<string, object?> Args = new() { ["path"] = "src/x.cs" };
 
-    public static TheoryData<string> AllRoles() => [Roles.Planner, Roles.TaskPlanner, Roles.Reviewer, Roles.TestAuthor, Roles.Implementer];
+    public static TheoryData<string> AllRoles() =>
+        [Roles.Planner, Roles.TaskPlanner, Roles.Reviewer, Roles.TestAuthor, Roles.Implementer, Roles.Repro, Roles.Diagnosis];
 
     [Theory]
     [MemberData(nameof(AllRoles))]
     public void A_role_may_call_exactly_its_tools(string role)
     {
-        var allowed = Tools.Append("submit_plan").Append("submit_approach").Append("submit_review").Append("check_quality").Where(t => Policy.Evaluate(role, t, Args).Allowed);
+        var allowed = Tools.Append("submit_plan").Append("submit_approach").Append("submit_review").Append("check_quality").Append("playwright_cli").Append("submit_reproduction").Append("submit_diagnosis").Where(t => Policy.Evaluate(role, t, Args).Allowed);
 
         Assert.Equal(MayCall[role], allowed);
     }
@@ -100,7 +103,7 @@ public class AcsToolPolicyTests
     {
         var policy = AcsToolPolicy.Load(AcsToolPolicy.DefaultDirectory);
 
-        Assert.Equal([Roles.Implementer, Roles.Planner, Roles.Qa, Roles.Reviewer, Roles.TaskPlanner, Roles.TestAuthor], policy.Roles.Order());
+        Assert.Equal([Roles.Diagnosis, Roles.Implementer, Roles.Planner, Roles.Qa, Roles.Repro, Roles.Reviewer, Roles.TaskPlanner, Roles.TestAuthor], policy.Roles.Order());
     }
 
     [Theory]
