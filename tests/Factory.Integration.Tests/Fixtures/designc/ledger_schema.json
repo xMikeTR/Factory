@@ -42,10 +42,13 @@
     "item_awaiting_human",
     "ui_acceptance_failed",
     "item_conflict_deferred",
-    "wip_limit_changed"
+    "wip_limit_changed",
+    "item_budget",
+    "item_judge"
   ],
   "rules": [
     "fail_needs_evidence",
+    "budget_shape",
     "suite_run_shape",
     "hash_not_blank",
     "aborted_needs_reason",
@@ -477,6 +480,35 @@
       },
       "rules": []
     },
+    "item_budget": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "item",
+        "status"
+      ],
+      "optional": [
+        "limit_tokens",
+        "spent_tokens",
+        "reason"
+      ],
+      "enums": {
+        "status": [
+          "within",
+          "exceeded",
+          "waiting"
+        ]
+      },
+      "types": {
+        "item": "string",
+        "status": "string",
+        "limit_tokens": "number",
+        "spent_tokens": "number",
+        "reason": "string"
+      },
+      "rules": [
+        "budget_shape"
+      ]
+    },
     "item_conflict_deferred": {
       "stream": "pipeline.jsonl",
       "required": [
@@ -544,6 +576,40 @@
       "rules": [
         "fail_needs_evidence"
       ]
+    },
+    "item_judge": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "item",
+        "judge",
+        "score",
+        "threshold",
+        "outcome",
+        "commit"
+      ],
+      "optional": [
+        "judge_version",
+        "rubric_hash",
+        "trace_id"
+      ],
+      "enums": {
+        "outcome": [
+          "pass",
+          "fail"
+        ]
+      },
+      "types": {
+        "item": "string",
+        "judge": "string",
+        "score": "number",
+        "threshold": "number",
+        "outcome": "string",
+        "commit": "string|null",
+        "judge_version": "string",
+        "rubric_hash": "string",
+        "trace_id": "string"
+      },
+      "rules": []
     },
     "item_pulled": {
       "stream": "designc.jsonl",
