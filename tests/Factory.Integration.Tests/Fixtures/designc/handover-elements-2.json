@@ -1,0 +1,47 @@
+{
+  "schema": "designc.handover.elements/2",
+  "elements": [
+    {
+      "id": "Quotes",
+      "name": "Quotes",
+      "kind": "softwareSystem",
+      "in_scope": false
+    },
+    {
+      "id": "Quotes/Quotes API",
+      "name": "Quotes API",
+      "kind": "container",
+      "code": [
+        "src/Api/**"
+      ],
+      "risk": "medium",
+      "in_scope": true
+    },
+    {
+      "id": "Quotes/Quotes DB",
+      "name": "Quotes DB",
+      "kind": "container",
+      "in_scope": false
+    },
+    {
+      "id": "Quotes/Mail",
+      "name": "Mail",
+      "kind": "container",
+      "code": [
+        "src/Mail/**"
+      ],
+      "risk": "low",
+      "in_scope": false
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Quotes/Quotes API",
+      "to": "Quotes/Quotes DB"
+    }
+  ],
+  "events": [],
+  "reserved": [
+    "tests/acceptance/**"
+  ]
+}
