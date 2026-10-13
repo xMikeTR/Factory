@@ -36,6 +36,7 @@
     <Compile Include="DesignTokens.fs" />
     <Compile Include="UxReview.fs" />
     <Compile Include="JiraMirror.fs" />
+    <Compile Include="ItemBudget.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="Interop.fs" />
   </ItemGroup>
