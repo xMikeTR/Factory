@@ -17,7 +17,7 @@ using Factory.S2.Verify;
 // factory-s2 digest --registry ../registry [--repo .] [--base main] [--last-look <epoch ms>] [--wip 3] [--notify-state <file>: print NOTIFY for new Needs/Failed rows only]   Needs decision / Failed a gate / Done / Waiting
 // factory-s2 pull-plan --registry ../registry [--repo .] [--base main] [--wip 3]   what the scheduler would pull now and why the rest waits (nothing is pulled)
 // factory-s2 metrics --registry ../registry [--repo .] [--base main]   S4 work metrics: throughput, lead time, human wait, deferrals, re-check rate, escapes
-// factory-s2 jira-mirror --registry ../registry --snapshot jira.json [--state f] [--applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
+// factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
 // factory-s2 rerun --handover <h.json | dir> --plan plan.json --task T-001 [--k 3] --repo . [--base main]   k fresh attempts, no merge
 
@@ -190,7 +190,30 @@ try
             // snapshot = { "HRE-7": "In Progress" }, the issues' current statuses. Prints the transitions the ledger implies;
             // S2 writes nothing to Jira. Drift (a status the mirror did not write) is never overwritten and is flagged to a
             // person (item_awaiting_human) unless --no-flag. --applied records the planned transitions as mirrored.
-            var snapshot = await Factory.Harness.Registry.JiraMirrorReport.ReadMapAsync(Required(opts, "snapshot"), CancellationToken.None);
+            // With JIRA_URL + JIRA_TOKEN (+ JIRA_USER for Cloud) set, statuses are read over REST and --apply moves the
+            // issues; without them --snapshot is required and nothing is written to Jira (a person or a browser does it).
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            var rest = Factory.Harness.Registry.JiraRestClient.FromEnvironment(env);
+            if (opts.ContainsKey("apply") && rest is null)
+            {
+                Console.Error.WriteLine("--apply needs JIRA_URL and JIRA_TOKEN (and JIRA_USER for Jira Cloud) in the environment");
+                return 1;
+            }
+            Dictionary<string, string> snapshot;
+            if (opts.TryGetValue("snapshot", out var snapshotPath))
+                snapshot = await Factory.Harness.Registry.JiraMirrorReport.ReadMapAsync(snapshotPath, CancellationToken.None);
+            else if (rest is not null)
+            {
+                snapshot = [];
+                foreach (var k in await Factory.Harness.Registry.JiraMirrorReport.KeysAsync(Required(opts, "registry"), CancellationToken.None))
+                    if (await rest.StatusAsync(k, CancellationToken.None) is { } s) snapshot[k] = s;
+            }
+            else
+            {
+                Console.Error.WriteLine("give --snapshot jira.json, or set JIRA_URL and JIRA_TOKEN to read statuses over REST");
+                return 1;
+            }
             var statePath = opts.GetValueOrDefault("state") ?? Path.Combine(Required(opts, "registry"), "ledger", "jira-mirrored.json");
             var mirrored = await Factory.Harness.Registry.JiraMirrorReport.ReadMapAsync(statePath, CancellationToken.None);
             var plan = await Factory.Harness.Registry.JiraMirrorReport.PlanAsync(
@@ -199,6 +222,14 @@ try
             var drift = plan.OfType<Factory.Core.MirrorAction.Drift>().Count();
             if (drift > 0 && !opts.ContainsKey("no-flag"))
                 await Factory.Harness.Registry.JiraMirrorReport.FlagDriftAsync(Required(opts, "registry"), plan, DateTimeOffset.UtcNow, CancellationToken.None);
+            if (opts.ContainsKey("apply") && rest is not null)
+            {
+                var (moved, failed) = await Factory.Harness.Registry.JiraMirrorReport.ApplyAsync(rest, plan, CancellationToken.None);
+                foreach (var (k, s) in moved) { mirrored[k] = s; Console.WriteLine($"  moved  {k} -> {s}"); }
+                foreach (var f in failed) Console.Error.WriteLine("  FAILED " + f);
+                await File.WriteAllTextAsync(statePath, System.Text.Json.JsonSerializer.Serialize(mirrored));
+                if (failed.Count > 0 && drift == 0) return 1;
+            }
             if (opts.ContainsKey("applied"))
             {
                 foreach (var t in plan.OfType<Factory.Core.MirrorAction.Transition>()) mirrored[t.key] = t.target;
