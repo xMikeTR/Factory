@@ -23,6 +23,12 @@
     "S1-grill",
     "pipeline"
   ],
+  "origins": [
+    "spec_gap",
+    "design_error",
+    "translation_error",
+    "gate_gap"
+  ],
   "pipeline_stream": "pipeline.jsonl",
   "pipeline_kinds": [
     "task",
@@ -31,14 +37,20 @@
     "asbuilt_edge",
     "escape",
     "false_positive",
-    "handover_closed"
+    "handover_closed",
+    "item_gate",
+    "item_awaiting_human",
+    "ui_acceptance_failed",
+    "item_conflict_deferred",
+    "wip_limit_changed"
   ],
   "rules": [
     "fail_needs_evidence",
     "suite_run_shape",
     "hash_not_blank",
     "aborted_needs_reason",
-    "caught_by_member"
+    "caught_by_member",
+    "origin_member"
   ],
   "kinds": {
     "agent_approval": {
@@ -199,12 +211,14 @@
         "code",
         "caught_by",
         "source",
-        "traces"
+        "traces",
+        "origin"
       ],
       "enums": {},
       "types": {},
       "rules": [
-        "caught_by_member"
+        "caught_by_member",
+        "origin_member"
       ]
     },
     "escape_classified": {
@@ -213,11 +227,14 @@
         "escape",
         "caught_by"
       ],
-      "optional": [],
+      "optional": [
+        "origin"
+      ],
       "enums": {},
       "types": {},
       "rules": [
-        "caught_by_member"
+        "caught_by_member",
+        "origin_member"
       ]
     },
     "eval": {
@@ -418,12 +435,14 @@
       ],
       "optional": [
         "commit",
-        "dirty"
+        "dirty",
+        "item"
       ],
       "enums": {},
       "types": {
         "commit": "string|null",
-        "dirty": "boolean"
+        "dirty": "boolean",
+        "item": "string"
       },
       "rules": []
     },
@@ -441,6 +460,119 @@
         ]
       },
       "types": {},
+      "rules": []
+    },
+    "item_awaiting_human": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "item"
+      ],
+      "optional": [
+        "reason"
+      ],
+      "enums": {},
+      "types": {
+        "item": "string",
+        "reason": "string"
+      },
+      "rules": []
+    },
+    "item_conflict_deferred": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "item"
+      ],
+      "optional": [
+        "reason",
+        "with"
+      ],
+      "enums": {},
+      "types": {
+        "item": "string",
+        "reason": "string",
+        "with": "string"
+      },
+      "rules": []
+    },
+    "item_done": {
+      "stream": "designc.jsonl",
+      "required": [
+        "item",
+        "commit",
+        "evidence"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "item": "string",
+        "commit": "string|null",
+        "evidence": "array"
+      },
+      "rules": []
+    },
+    "item_gate": {
+      "stream": "checks.jsonl",
+      "required": [
+        "item",
+        "gate",
+        "outcome",
+        "source",
+        "commit",
+        "dirty"
+      ],
+      "optional": [
+        "ms",
+        "exit_code",
+        "reason"
+      ],
+      "enums": {
+        "outcome": [
+          "pass",
+          "fail"
+        ],
+        "source": [
+          "local",
+          "pipeline"
+        ]
+      },
+      "types": {
+        "item": "string",
+        "gate": "string",
+        "commit": "string|null",
+        "dirty": "boolean"
+      },
+      "rules": [
+        "fail_needs_evidence"
+      ]
+    },
+    "item_pulled": {
+      "stream": "designc.jsonl",
+      "required": [
+        "item"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "item": "string"
+      },
+      "rules": []
+    },
+    "item_recheck": {
+      "stream": "designc.jsonl",
+      "required": [
+        "item",
+        "handover",
+        "stale",
+        "reasons"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "item": "string",
+        "handover": "string",
+        "stale": "boolean",
+        "reasons": "array"
+      },
       "rules": []
     },
     "needs_decision": {
@@ -553,6 +685,27 @@
       "types": {},
       "rules": []
     },
+    "ui_acceptance_failed": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "ac",
+        "element",
+        "task",
+        "commit"
+      ],
+      "optional": [
+        "trace_id"
+      ],
+      "enums": {},
+      "types": {
+        "ac": "string",
+        "element": "string",
+        "task": "string",
+        "commit": "string",
+        "trace_id": "string"
+      },
+      "rules": []
+    },
     "unapproved_change": {
       "stream": "agents.jsonl",
       "required": [
@@ -569,6 +722,18 @@
         ]
       },
       "types": {},
+      "rules": []
+    },
+    "wip_limit_changed": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "limit"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "limit": "number"
+      },
       "rules": []
     }
   }
