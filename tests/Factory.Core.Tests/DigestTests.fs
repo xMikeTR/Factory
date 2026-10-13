@@ -58,4 +58,11 @@ let tests: (string * (unit -> unit)) list =
       "digest: the latest wip_limit_changed wins and a full limit is reported", fun () ->
           let d = compute [ 1L, WipLimitChanged 1; 2L, ItemPulled "W-A" ]
           equal 1 d.WipLimit "limit"
-          check (d.Waiting |> List.exists (fun w -> w.Item.IsNone && w.Text.Contains "WIP limit of 1")) "wip row" ]
+          check (d.Waiting |> List.exists (fun w -> w.Item.IsNone && w.Text.Contains "WIP limit of 1")) "wip row"
+      "digest: an alert is announced once and clearing it never pings", fun () ->
+          let need = 1L, NeedsDecisionOpened("ND-1", Some "W-A", None, "Dedupe?")
+          let first = Digest.newAlerts Set.empty (compute [ need ])
+          equal 1 first.Length "new"
+          let seen = Set.ofList first
+          equal [] (Digest.newAlerts seen (compute [ need ])) "already announced"
+          equal [] (Digest.newAlerts seen (compute [ need; 2L, NeedsDecisionResolved "ND-1" ])) "cleared" ]
