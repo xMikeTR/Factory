@@ -805,6 +805,7 @@ let tests: (string * (unit -> unit)) list =
     @ Factory.Core.Tests.UiAcceptanceTests.tests
     @ Factory.Core.Tests.DesignTokenTests.tests
     @ Factory.Core.Tests.MetricsTests.tests
+    @ Factory.Core.Tests.BoardTests.tests
 
 [<EntryPoint>]
 let main _ =

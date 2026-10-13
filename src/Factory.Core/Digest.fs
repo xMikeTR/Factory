@@ -13,7 +13,9 @@ type LedgerFact =
     | ConflictDeferred of item: string * reason: string option
     | WipLimitChanged of limit: int
     /// A design-version re-check of a frozen item; stale = its elements moved since the freeze.
-    | ItemRecheck of item: string * stale: bool
+    | ItemRecheck of item: string * stale: bool * reasons: string list
+    /// A handover that names the item: the item was frozen into it at this design revision.
+    | ItemFrozen of item: string * handover: string * revision: string
     /// A bug closed at intake, with designc's origin (spec_gap | design_error | translation_error | gate_gap).
     | EscapeRecorded of id: string * origin: string option
 

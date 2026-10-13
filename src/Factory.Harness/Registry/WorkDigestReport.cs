@@ -14,10 +14,7 @@ public static class WorkDigestReport
         string registryPath, string? repoPath, string baseBranch, long lastLook, int defaultWip, CancellationToken ct)
     {
         var registry = await WorkRegistryReader.ReadAsync(registryPath, ct);
-        var commits = registry.Facts.Select(f => f.Fact).OfType<LedgerFact.ItemDone>()
-            .Select(d => d.commit).Where(c => FSharpOption<string>.get_IsSome(c)).Select(c => c.Value).Distinct().ToList();
-        var onMain = new Dictionary<string, bool?>();
-        foreach (var c in commits) onMain[c] = repoPath is null ? null : await IsOnAsync(repoPath, baseBranch, c, ct);
+        var onMain = await OnMainAsync(registry, repoPath, baseBranch, ct);
 
         var digest = DigestModule.compute(
             ListModule.OfSeq(registry.Items),
@@ -27,6 +24,53 @@ public static class WorkDigestReport
             defaultWip, lastLook);
         return (digest, registry.Problems);
     }
+
+    private static async Task<Dictionary<string, bool?>> OnMainAsync(
+        WorkRegistry registry, string? repoPath, string baseBranch, CancellationToken ct)
+    {
+        var commits = registry.Facts.Select(f => f.Fact).OfType<LedgerFact.ItemDone>()
+            .Select(d => d.commit).Where(c => FSharpOption<string>.get_IsSome(c)).Select(c => c.Value).Distinct().ToList();
+        var onMain = new Dictionary<string, bool?>();
+        foreach (var c in commits) onMain[c] = repoPath is null ? null : await IsOnAsync(repoPath, baseBranch, c, ct);
+        return onMain;
+    }
+
+    /// What the scheduler would pull now: Ready items filtered by stale re-check, dependency, conflict and the
+    /// WIP limit. Nothing is pulled; a person still pulls (item_pulled is human-only in designc).
+    public static async Task<PullPlan> PullPlanAsync(
+        string registryPath, string? repoPath, string baseBranch, int defaultWip, CancellationToken ct)
+    {
+        var registry = await WorkRegistryReader.ReadAsync(registryPath, ct);
+        var onMain = await OnMainAsync(registry, repoPath, baseBranch, ct);
+        var items = ListModule.OfSeq(registry.Items);
+        var facts = ListModule.OfSeq(registry.Facts.Select(f => Tuple.Create(f.Ts, f.Fact)));
+        var input = new SchedulerInput(
+            Board.candidates(items, facts, FuncConvert.FromFunc<string, FSharpOption<bool>>(c =>
+                onMain.GetValueOrDefault(c) is { } b ? FSharpOption<bool>.Some(b) : FSharpOption<bool>.None)),
+            Board.wipLimit(facts, defaultWip), FSharpOption<Budget>.None, Board.stale(facts));
+        return Scheduler.plan(input);
+    }
+
+    public static string RenderPullPlan(PullPlan plan)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Pull now ({plan.Pull.Length})");
+        foreach (var i in plan.Pull) sb.AppendLine("  - " + i.Id.Value);
+        sb.AppendLine($"Deferred ({plan.Deferred.Length})");
+        foreach (var (id, why) in plan.Deferred.Select(d => (d.Item1, d.Item2)))
+            sb.AppendLine($"  - {id.Value}: {Why(why)}");
+        return sb.ToString();
+    }
+
+    private static string Why(Deferral d) => d switch
+    {
+        Deferral.WaitsOnDependency w => "waits on " + string.Join(", ", w.Item.Select(x => x.Value)),
+        Deferral.ConflictsWith c => "conflicts with " + string.Join(", ", c.Item.Select(x => x.With.Value)),
+        Deferral.OverBudget o => $"needs {o.needed} tokens, {o.remaining} left",
+        Deferral.WipFull w => $"WIP full ({w.inFlight}/{w.limit})",
+        Deferral.NeedsRecheck r => "needs a re-check: " + string.Join("; ", r.reasons),
+        _ => d.ToString()!,
+    };
 
     /// S4's work metrics over the whole ledger (every Done, not only since a last look).
     public static async Task<WorkMetrics> MetricsAsync(

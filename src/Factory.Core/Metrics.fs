@@ -67,7 +67,7 @@ module Metrics =
                 ts, ended)
         let closed = waits |> List.choose (fun (s, e) -> e |> Option.map (fun e -> e - s))
 
-        let rechecks = ev |> List.choose (function _, ItemRecheck(_, stale) -> Some stale | _ -> None)
+        let rechecks = ev |> List.choose (function _, ItemRecheck(_, stale, _) -> Some stale | _ -> None)
 
         { Throughput = throughput
           LeadTime = timing lead

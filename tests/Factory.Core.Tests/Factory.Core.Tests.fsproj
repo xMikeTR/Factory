@@ -13,6 +13,7 @@
     <Compile Include="UiAcceptanceTests.fs" />
     <Compile Include="DesignTokenTests.fs" />
     <Compile Include="MetricsTests.fs" />
+    <Compile Include="BoardTests.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
 
