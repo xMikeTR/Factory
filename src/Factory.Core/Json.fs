@@ -29,6 +29,12 @@ module Json =
         | null -> None
         | v -> (try Some(v.GetValue<string>()) with _ -> None) |> Option.filter (String.IsNullOrWhiteSpace >> not)
 
+    /// A handover frozen before item handovers has no `inScope`: every element is in scope.
+    let private inScope (o: JsonObject) =
+        match o.["inScope"] with
+        | null -> true
+        | v -> (try v.GetValue<bool>() with _ -> true)
+
     let private int (path: string) (o: JsonObject) (key: string) (fallback: int) =
         match o.[key] with
         | null -> fallback
@@ -79,7 +85,8 @@ module Json =
         { Id = ElementId(str path o "id")
           Name = str path o "name"
           CodeAreas = strs path o "codeAreas" |> List.map (pattern $"{path}.codeAreas")
-          Risk = risk $"{path}.risk" (str path o "risk") }
+          Risk = risk $"{path}.risk" (str path o "risk")
+          InScope = inScope o }
 
     let private decodeDecision path n =
         let o = obj path n
@@ -187,7 +194,8 @@ module Json =
             node [ "id", JsonValue.Create e.Id.Value
                    "name", JsonValue.Create e.Name
                    "codeAreas", strArr (e.CodeAreas |> List.map (fun p -> p.Value))
-                   "risk", JsonValue.Create(riskName e.Risk) ]
+                   "risk", JsonValue.Create(riskName e.Risk)
+                   "inScope", JsonValue.Create e.InScope ]
         let decision (d: BoundDecision) =
             node [ "id", JsonValue.Create d.Id.Value
                    "statement", JsonValue.Create d.Statement

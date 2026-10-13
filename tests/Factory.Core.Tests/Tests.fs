@@ -81,6 +81,19 @@ let tests: (string * (unit -> unit)) list =
       "validator: protected write", fun () ->
           let es = errorsOf (withTask "T-001" (fun t -> { t with Writes = p "registry/decisions/**" :: t.Writes }))
           check (es |> List.exists (function ProtectedWrite _ -> true | _ -> false)) $"%A{es}"
+      "validator: an element out of scope may not be linked or written", fun () ->
+          let e = (task "T-002").Elements |> List.head
+          let h = { handover with Elements = handover.Elements |> List.map (fun x -> if x.Id = e then { x with InScope = false } else x) }
+          let es = match PlanValidator.validate h plan with Ok _ -> [] | Error es -> es
+          check (List.contains (OutOfScopeElement(TaskId "T-002", e)) es) $"%A{es}"
+          check (not (es |> List.exists (function WriteOutsideElement _ -> true | _ -> false))) "reported once, as out of scope, not also as a stray write"
+      "json: inScope round-trips, and a handover frozen without it reads as in scope", fun () ->
+          let e = handover.Elements |> List.head
+          let out = { handover with Elements = { e with InScope = false } :: List.tail handover.Elements }
+          match Json.parseHandover (Json.writeHandover out) with
+          | Ok back -> equal [ false ] (back.Elements |> List.truncate 1 |> List.map (fun x -> x.InScope)) "kept"
+          | Error es -> failwithf "%A" es
+          check (handover.Elements |> List.forall (fun x -> x.InScope)) "example handover has no inScope: in scope"
       "validator: every bound decision covered", fun () ->
           let es = errorsOf (withTask "T-001" (fun t -> { t with Covers = [] }))
           check (List.contains (UncoveredDecision(DecisionId "D-0042")) es) $"%A{es}"
@@ -394,7 +407,7 @@ let tests: (string * (unit -> unit)) list =
 
       // ---------- fitness ----------
       "fitness: a code edge between two elements must be a modelled relationship, in that direction", fun () ->
-          let el id area = { Id = ElementId id; Name = id; CodeAreas = [ PathPattern.createOrFail area ]; Risk = Low }
+          let el id area = { Id = ElementId id; Name = id; CodeAreas = [ PathPattern.createOrFail area ]; Risk = Low; InScope = true }
           let elements = [ el "api" "src/Api/**"; el "rating" "src/Rating/**"; el "db" "src/Db/**" ]
           let rels = [ { From = ElementId "api"; To = ElementId "rating" } ]
           let edge a b = { Source = a; Target = b }

@@ -32,7 +32,10 @@ type ElementSpec =
     { Id: ElementId
       Name: string
       CodeAreas: PathPattern list
-      Risk: RiskLevel }
+      Risk: RiskLevel
+      /// False for an element the item handover carries as context only: known to drift and relationships,
+      /// never linked by a task and never written. True for every element of a design handover.
+      InScope: bool }
 
 type DecisionCheck = { Kind: string; Run: string }
 
