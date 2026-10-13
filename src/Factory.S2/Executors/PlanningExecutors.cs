@@ -164,6 +164,16 @@ internal sealed class DispatchExecutor(FactoryServices svc) : Executor("Dispatch
         if (!File.Exists(s.SincePath(runId)) || File.Exists(s.RegenerationPath(runId))) return;
         var since = (await File.ReadAllTextAsync(s.SincePath(runId), ct)).Trim();
         var plan = svc.LoadValidatedPlan(runId);
+        if (File.Exists(s.RepairPath(runId))) // a repair re-runs the blamed tasks, whatever the decisions did
+        {
+            var repair = JsonSerializer.Deserialize<RepairFile>(await File.ReadAllTextAsync(s.RepairPath(runId), ct))!;
+            var rerun = repair.Feedback.Keys.ToArray();
+            var repairJson = JsonSerializer.Serialize(new RegenerationFile(since, [], rerun));
+            await File.WriteAllTextAsync(s.RegenerationPath(runId), repairJson, ct);
+            await svc.LogAsync(runId, "regenerate", LedgerKinds.Plan,
+                outcome: $"repair of {repair.Of}: {rerun.Length} of {plan.Plan.Tasks.Length} tasks re-run", payload: repairJson, ct: ct);
+            return;
+        }
         var r = Core.Regenerate(svc.LoadHandover(since), plan);
         var json = JsonSerializer.Serialize(new RegenerationFile(since,
             r.Changed.Select(d => d.Value).ToArray(), r.Rerun.Select(t => t.Value).ToArray()));

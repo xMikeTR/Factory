@@ -76,6 +76,7 @@ internal sealed class TaskLoop(
     private int _turnsWithoutChange;
 
     private string? _reverted;
+    private readonly string? _repair = Repair.Feedback(svc.Settings, runId, task.Id.Value); // what the failed integration said about this task
 
     /// Drive the task from whatever state the ledger says it is in to Passed (return null),
     /// Blocked or Failed (return a TeamResult). Every state change goes through ApplyAsync, which
@@ -710,6 +711,7 @@ internal sealed class TaskLoop(
         var failures = _reverted is null
             ? _lastFailures
             : $"These changes were outside your writes and were reverted: {_reverted}\n\n{_lastFailures}".TrimEnd();
+        if (_repair is not null) failures = $"{_repair}\n\n{failures}".TrimEnd();
         return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context);
     }
 

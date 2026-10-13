@@ -89,4 +89,46 @@ public class RegenerationTests
         Assert.DoesNotContain(h.Rows(LedgerKinds.Turn), e => e.TaskId == "T-002");
         Assert.Single(h.Rows(LedgerKinds.Dispatch), e => e.TaskId == "T-002" && e.Outcome == "carried");
     }
+
+    [Fact]
+    public async Task A_repair_run_re_runs_only_the_tasks_the_failed_integration_blames()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var previousDir = Directory.CreateDirectory(Path.Combine(h.StateDir, "runs", PreviousRun)).FullName;
+        await File.WriteAllTextAsync(Path.Combine(previousDir, "handover.json"), Core.HandoverJson(h.Handover));
+        await File.WriteAllTextAsync(Path.Combine(previousDir, "plan.json"), PlanFor(h.Handover));
+
+        // The failed run's integration verify blamed T-001 for a frozen spec; T-002 is not named.
+        await h.Services.Ledger.AppendAsync(new LedgerEvent(PreviousRun, "S2", "integration_verify", LedgerKinds.UiAcceptanceFailed,
+            TaskId: "T-001", Element: "Pricing Platform/Quotes DB", Outcome: "failed",
+            Payload: JsonSerializer.Serialize(new { ac = "AC-1", spec = "tests/acceptance/quotes.spec.ts", commit = "abc1234", trace = "expected Draft" })));
+
+        var repair = await Repair.FromFailedRunAsync(h.Services, PreviousRun, default);
+        Assert.NotNull(repair);
+        Assert.Equal(["T-001"], repair.Feedback.Keys);
+        Assert.Contains("tests/acceptance/quotes.spec.ts", repair.Feedback["T-001"]);
+        Assert.Contains("expected Draft", repair.Feedback["T-001"]);
+        Directory.CreateDirectory(h.Services.Settings.RunDir(TeamHarness.RunId));
+        await File.WriteAllTextAsync(h.Services.Settings.RepairPath(TeamHarness.RunId), JsonSerializer.Serialize(repair));
+
+        model.Enqueue(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = "src/Pricing.Data/QuoteStatus.cs", content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Say("done"));
+
+        var handoverPath = Path.Combine(h.StateDir, "same.json");
+        await File.WriteAllTextAsync(handoverPath, Core.HandoverJson(h.Handover));
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
+            new StartRun(TeamHarness.RunId, handoverPath, Since: PreviousRun), new ApprovingHuman(), default);
+
+        Assert.True(result?.Status == "auto_merge_enabled", $"{result?.Status}: {result?.Detail}");
+        var regeneration = Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Stage == "regenerate");
+        Assert.Equal($"repair of {PreviousRun}: 1 of 2 tasks re-run", regeneration.Outcome);
+        Assert.DoesNotContain(h.Rows(LedgerKinds.TaskEvent), e => e.TaskId == "T-002");
+        Assert.Single(h.Rows(LedgerKinds.Dispatch), e => e.TaskId == "T-002" && e.Outcome == "carried");
+    }
 }
