@@ -446,7 +446,7 @@ internal sealed class TaskLoop(
         // At the cap the turn counts as done: verify (or the red run) judges whatever is on the worktree.
         if (budget.Exhausted) signals.Capped = true;
         await LogTurnAsync("act", tier, response.Usage,
-            new { role, files = signals.FilesWritten, done = signals.DoneSummary, capped = signals.Capped, needs_decision = signals.NeedsDecision?.Question, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
+            new { role, tool_calls = budget.Calls, browser = svc.Settings.BrowserVariant, files = signals.FilesWritten, done = signals.DoneSummary, capped = signals.Capped, needs_decision = signals.NeedsDecision?.Question, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
     }
 
     /// The TestAuthor declared done: run its tests without the implementation. They must fail;
