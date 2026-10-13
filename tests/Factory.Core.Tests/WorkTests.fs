@@ -3,6 +3,7 @@ module Factory.Core.Tests.WorkTests
 open Factory.Core
 open Factory.Core.Tests.Support
 
+let p = PathPattern.createOrFail
 let draft =
     { Id = "W-1"; Requirement = Some "REQ-031"; Elements = [ "Pricing/Quote Form" ]; Repo = None; Target = None
       DependsOn = []; Writes = [ "src/Quotes/**" ]; DoneWhen = [ "gate", "dotnet test" ] }
@@ -107,4 +108,75 @@ let tests: (string * (unit -> unit)) list =
       "state: a recheck sends a frozen item back to the backlog, a done item stays done", fun () ->
           equal (Ok WorkState.Backlog) (WorkState.apply (WorkState.Ready at) (WorkEvent.Rechecked "element moved")) "ready"
           let ev = match Evidence.create repoItem facts with Ok e -> e | Error es -> failwithf "%A" es
-          check (Result.isError (WorkState.apply (WorkState.Done ev) (WorkEvent.Rechecked "x"))) "done" ]
+          check (Result.isError (WorkState.apply (WorkState.Done ev) (WorkEvent.Rechecked "x"))) "done"
+      // ---------- conflicts, pull scheduler, re-check ----------
+      "conflict: shared writes, shared element, same target; unrelated items do not", fun () ->
+          let w id elements writes = created { draft with Id = id; Elements = elements; Writes = writes }
+          let a = w "A" [ "UI" ] [ "src/Quotes/**" ]
+          equal [ SharedWrites(p "src/Quotes/**", p "src/Quotes/Data/**") ] (Scheduler.conflict a (w "B" [ "Api" ] [ "src/Quotes/Data/**" ]) |> Option.toList) "writes"
+          equal [ SharedElement(ElementId "UI") ] (Scheduler.conflict a (w "C" [ "UI" ] [ "src/Other/**" ]) |> Option.toList) "element"
+          equal [] (Scheduler.conflict a (w "D" [ "Api" ] [ "src/Api/**" ]) |> Option.toList) "none"
+          let d1 = created { docDraft with Id = "P" }
+          equal [ SameTarget "document Q3 pricing write-up" ] (Scheduler.conflict d1 (created { docDraft with Id = "Q" }) |> Option.toList) "same document"
+          equal [] (Scheduler.conflict d1 (created { docDraft with Id = "R"; Target = Some("document", "other") }) |> Option.toList) "another document"
+      "scheduler: pulls ready items in priority then age order, up to the free slots", fun () ->
+          let item id = created { docDraft with Id = id; Target = Some("document", id) }
+          let ready id prio day = { Item = item id; State = WorkState.Ready at; Priority = prio; ReadyAt = System.DateTimeOffset(2026, 10, day, 0, 0, 0, System.TimeSpan.Zero) }
+          let plan = Scheduler.plan { Candidates = [ ready "old" 0 1; ready "urgent" 5 3; ready "new" 0 2 ]; WipLimit = 2; Budget = None; Stale = Map.empty }
+          equal [ "urgent"; "old" ] (plan.Pull |> List.map (fun i -> i.Id.Value)) "order"
+          equal [ WorkItemId "new", WipFull(0, 2) ] plan.Deferred "the rest wait for a slot"
+      "scheduler: awaiting a human holds a slot", fun () ->
+          let item id = created { docDraft with Id = id; Target = Some("document", id) }
+          let c id st = { Item = item id; State = st; Priority = 0; ReadyAt = System.DateTimeOffset.UnixEpoch }
+          let plan = Scheduler.plan { Candidates = [ c "a" (WorkState.AwaitingHuman(run "r1", "q")); c "b" (WorkState.Active(run "r2")); c "c" (WorkState.Ready at) ]; WipLimit = 2; Budget = None; Stale = Map.empty }
+          equal [] plan.Pull "full"
+          equal [ WorkItemId "c", WipFull(2, 2) ] plan.Deferred "why"
+      "scheduler: a conflicting item stays ready and the next non-conflicting one is pulled", fun () ->
+          let w id el = created { draft with Id = id; Elements = [ el ]; Writes = [ $"src/{el}/**" ] }
+          let c it st prio = { Item = it; State = st; Priority = prio; ReadyAt = System.DateTimeOffset.UnixEpoch }
+          let active = w "active" "UI"
+          let plan = Scheduler.plan { Candidates = [ c active (WorkState.Active(run "r1")) 0; c (w "clash" "UI") (WorkState.Ready at) 9; c (w "free" "Api") (WorkState.Ready at) 0 ]; WipLimit = 3; Budget = None; Stale = Map.empty }
+          equal [ "free" ] (plan.Pull |> List.map (fun i -> i.Id.Value)) "pulled"
+          check (match plan.Deferred with [ id, ConflictsWith [ { With = WorkItemId "active" } ] ] -> id = WorkItemId "clash" | _ -> false) $"%A{plan.Deferred}"
+      "scheduler: two ready items that overlap are not both pulled", fun () ->
+          let w id = created { draft with Id = id }
+          let c it = { Item = it; State = WorkState.Ready at; Priority = 0; ReadyAt = System.DateTimeOffset.UnixEpoch }
+          let plan = Scheduler.plan { Candidates = [ c (w "one"); c (w "two") ]; WipLimit = 3; Budget = None; Stale = Map.empty }
+          equal 1 plan.Pull.Length "one"
+      "scheduler: an unmet dependency, a stale freeze and an exhausted budget each defer with their reason", fun () ->
+          let c it st = { Item = it; State = st; Priority = 0; ReadyAt = System.DateTimeOffset.UnixEpoch }
+          let doc id deps = created { docDraft with Id = id; Target = Some("document", id); DependsOn = deps }
+          let prereq = doc "pre" []
+          let plan =
+              Scheduler.plan
+                  { Candidates = [ c prereq (WorkState.Backlog); c (doc "needs-pre" [ "pre" ]) (WorkState.Ready at); c (doc "stale" []) (WorkState.Ready at); c (doc "dear" []) (WorkState.Ready at) ]
+                    WipLimit = 5
+                    Budget = Some { Remaining = 100L; Estimate = fun i -> if i.Id.Value = "dear" then 500L else 1L }
+                    Stale = Map.ofList [ WorkItemId "stale", [ "Quote Form changed" ] ] }
+          equal [] plan.Pull "nothing"
+          let why id = plan.Deferred |> List.find (fun (i, _) -> i.Value = id) |> snd
+          equal (WaitsOnDependency [ WorkItemId "pre" ]) (why "needs-pre") "dependency"
+          equal (NeedsRecheck [ "Quote Form changed" ]) (why "stale") "recheck"
+          equal (OverBudget(500L, 100L)) (why "dear") "budget"
+      "scheduler: a done dependency is satisfied, and budget is spent as items are pulled", fun () ->
+          let ev = match Evidence.create docItem { facts with Ticks = [ "checklist:audience named" ]; Commit = None; OnMain = None; GateRuns = [] } with Ok e -> e | Error es -> failwithf "%A" es
+          let c it st = { Item = it; State = st; Priority = 0; ReadyAt = System.DateTimeOffset.UnixEpoch }
+          let doc id deps = created { docDraft with Id = id; Target = Some("document", id); DependsOn = deps }
+          let plan =
+              Scheduler.plan
+                  { Candidates = [ c (doc "pre" []) (WorkState.Done ev); c (doc "a" [ "pre" ]) (WorkState.Ready at); c (doc "b" [ "pre" ]) (WorkState.Ready at) ]
+                    WipLimit = 5
+                    Budget = Some { Remaining = 15L; Estimate = fun _ -> 10L }
+                    Stale = Map.empty }
+          equal 1 plan.Pull.Length "the second does not fit what is left"
+          check (plan.Deferred |> List.exists (function _, OverBudget(10L, 5L) -> true | _ -> false)) $"%A{plan.Deferred}"
+      "recheck: only the item's own elements count, and what moved is said", fun () ->
+          let el id code risk = { Id = ElementId id; Name = id; CodeAreas = [ p code ]; Risk = risk; InScope = true }
+          let frozen = [ el "UI" "src/UI/**" Low; el "Api" "src/Api/**" Low ]
+          let item = [ ElementId "UI" ]
+          equal [] (Recheck.reasons item frozen frozen) "same"
+          equal [] (Recheck.reasons item frozen [ el "UI" "src/UI/**" Low; el "Api" "src/Api2/**" High ]) "other element moved"
+          check (Recheck.reasons item frozen [ el "UI" "src/UI/**" High; el "Api" "src/Api/**" Low ] |> List.contains (RiskChanged(ElementId "UI", Low, High))) "risk"
+          check (Recheck.reasons item frozen [ el "UI" "src/Web/**" Low ] |> List.exists (function CodeAreasChanged(e, _, _) -> e.Value = "UI" | _ -> false)) "code"
+          check (Recheck.reasons item frozen [ el "Api" "src/Api/**" Low ] |> List.contains (ElementGone(ElementId "UI"))) "gone"
+          check (Recheck.describe (ElementGone(ElementId "UI")) <> "") "described" ]
