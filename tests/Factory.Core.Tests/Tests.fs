@@ -801,6 +801,7 @@ let tests: (string * (unit -> unit)) list =
           let text = Json.writeDispatch (Dispatcher.dispatch validated.Value)
           check (text.Contains "team-T-001") text ]
     @ Factory.Core.Tests.WorkTests.tests
+    @ Factory.Core.Tests.DigestTests.tests
 
 [<EntryPoint>]
 let main _ =
