@@ -60,7 +60,9 @@ public sealed class DesigncHandoverReader : IHandoverSource
 
         var vocabulary = resolved?.Events ?? [];
 
-        var protectedPaths = Patterns(config.ProtectedPaths, "S2Config.ProtectedPaths", errors);
+        var protectedPaths = Patterns(config.ProtectedPaths, "S2Config.ProtectedPaths", errors)
+            .Concat(Patterns(resolved?.Reserved ?? [], "elements.json reserved", errors))
+            .DistinctBy(p => p.Value).ToList();
 
         if (errors.Count > 0) Reject(handoverDir, errors);
         return new Handover(
@@ -97,18 +99,19 @@ public sealed class DesigncHandoverReader : IHandoverSource
 
     private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk);
     private sealed record RelationshipJson(string From, string To);
-    private sealed record ElementsJson(string? Schema, List<ElementJson>? Elements, List<RelationshipJson>? Relationships, List<string>? Events);
-    private readonly record struct ResolvedModel(List<ElementJson> Elements, List<RelationshipJson> Relationships, List<string> Events);
+    private sealed record ElementsJson(string? Schema, List<ElementJson>? Elements, List<RelationshipJson>? Relationships, List<string>? Events, List<string>? Reserved);
+    private readonly record struct ResolvedModel(List<ElementJson> Elements, List<RelationshipJson> Relationships, List<string> Events, List<string> Reserved);
 
-    private const string ElementsSchema = "designc.handover.elements/1";
+    /// /1 is the design handover; /2 is an item handover (adds `in_scope` per element and `reserved` paths).
+    private static readonly string[] ElementsSchemas = ["designc.handover.elements/1", "designc.handover.elements/2"];
 
     private static ResolvedModel? ParseElements(string json, List<string> errors)
     {
         ElementsJson? doc;
         try { doc = JsonSerializer.Deserialize<ElementsJson>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web)); }
         catch (JsonException ex) { errors.Add($"elements.json: {ex.Message}"); return null; }
-        if (doc?.Schema != ElementsSchema) { errors.Add($"elements.json: schema '{doc?.Schema}' is not {ElementsSchema}"); return null; }
-        return new ResolvedModel(doc.Elements ?? [], doc.Relationships ?? [], doc.Events ?? []);
+        if (doc?.Schema is null || !ElementsSchemas.Contains(doc.Schema)) { errors.Add($"elements.json: schema '{doc?.Schema}' is not {string.Join(" or ", ElementsSchemas)}"); return null; }
+        return new ResolvedModel(doc.Elements ?? [], doc.Relationships ?? [], doc.Events ?? [], doc.Reserved ?? []);
     }
 
     /// The model's relationships between elements that own code (the others cannot be crossed by a task).
