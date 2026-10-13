@@ -38,8 +38,9 @@ public sealed record FactorySettings(
     /// Raw-value ban over generated UI (stylelint writing JSON to $FACTORY_LINT_REPORT). Runs in integration
     /// verify only when the handover froze design tokens; null is off.
     string? TokenLintCommand = null,
-    /// Give the implementer `playwright_cli` to poke its own UI before the gate (FACTORY_PLAYWRIGHT_CLI=1; the image must
-    /// carry @playwright/cli and the task's dev server must be reachable on localhost). Off by default: it is measured, not assumed.
+    /// Give the implementer `playwright_cli` to poke its own UI before the gate (on unless FACTORY_PLAYWRIGHT_CLI=0; the runner
+    /// image carries @playwright/cli and the task's dev server must be reachable on localhost). Turn it off to run the
+    /// no-browser arm of `compare-browser`.
     bool PlaywrightCli = false,
     /// Renders each element in each state and breakpoint and writes PNGs to $FACTORY_SCREENSHOT_DIR for one human
     /// review at freeze (FACTORY_SCREENSHOT_CMD); null is off. Never a gate.
@@ -64,7 +65,7 @@ public sealed record FactorySettings(
         UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
         AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),
         TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"),
-        PlaywrightCli: Environment.GetEnvironmentVariable("FACTORY_PLAYWRIGHT_CLI") == "1",
+        PlaywrightCli: Environment.GetEnvironmentVariable("FACTORY_PLAYWRIGHT_CLI") != "0",
         ScreenshotCommand: Environment.GetEnvironmentVariable("FACTORY_SCREENSHOT_CMD"));
 
     /// Which browser tool the implementer had, for the CLI-vs-MCP comparison: FACTORY_BROWSER_TOOL (cli | mcp), else cli when
