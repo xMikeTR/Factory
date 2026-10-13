@@ -16,6 +16,8 @@ public static class RegistryStreams
         ["item_conflict_deferred"] = "pipeline.jsonl",
         ["wip_limit_changed"] = "pipeline.jsonl",
         ["ui_acceptance_failed"] = "pipeline.jsonl",
+        ["item_budget"] = "pipeline.jsonl",
+        ["item_judge"] = "pipeline.jsonl",
         ["check"] = "checks.jsonl",
         ["item_gate"] = "checks.jsonl",
         ["handover_closed"] = "designc.jsonl",
