@@ -18,6 +18,7 @@ using Factory.S2.Verify;
 // factory-s2 pull-plan --registry ../registry [--repo .] [--base main] [--wip 3]   what the scheduler would pull now and why the rest waits (nothing is pulled)
 // factory-s2 metrics --registry ../registry [--repo .] [--base main]   S4 work metrics: throughput, lead time, human wait, deferrals, re-check rate, escapes
 // factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
+// factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
 // factory-s2 rerun --handover <h.json | dir> --plan plan.json --task T-001 [--k 3] --repo . [--base main]   k fresh attempts, no merge
 
@@ -244,6 +245,22 @@ try
                 Required(opts, "registry"), opts.GetValueOrDefault("repo"), opts.GetValueOrDefault("base") ?? "main", CancellationToken.None);
             Console.Write(Factory.Harness.Registry.WorkDigestReport.RenderMetrics(m));
             return 0;
+        }
+
+        case "budget":
+        {
+            // Per-item token spend (every run whose handover names the item) against .factory/policy.yaml `budget:`.
+            var settings = FactorySettings.FromEnvironment(
+                Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
+            var policy = Factory.Harness.Policy.BudgetPolicyFile.Load(Path.GetFullPath(Required(opts, "repo")));
+            var spend = await Factory.Harness.Registry.ItemBudgetReport.SpendAsync(
+                settings.StateDir, new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")), CancellationToken.None);
+            var readings = Factory.Harness.Registry.ItemBudgetReport.Readings(policy, spend);
+            Console.Write(readings.Count == 0 ? "no item has a budget limit (set budget: in .factory/policy.yaml)\n"
+                : Factory.Harness.Registry.ItemBudgetReport.Render(readings));
+            if (opts.TryGetValue("registry", out var registry) && !opts.ContainsKey("no-report"))
+                await Factory.Harness.Registry.ItemBudgetReport.WriteAsync(registry, readings, DateTimeOffset.UtcNow, CancellationToken.None);
+            return readings.Any(r => r.Status.IsExceeded) ? 2 : 0;
         }
 
         case "intake":
