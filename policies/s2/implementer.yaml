@@ -45,3 +45,7 @@ rules:
     condition: "tool_name == 'check_quality'"
     action: allow
     priority: 10
+  - name: allow-playwright-cli
+    condition: "tool_name == 'playwright_cli'"
+    action: allow
+    priority: 10

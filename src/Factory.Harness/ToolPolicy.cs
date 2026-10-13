@@ -25,6 +25,8 @@ public static class Roles
     public const string Implementer = "s2-implementer";     // writes code inside `writes`; the tests are fixed by then
     public const string Reviewer = "s2-reviewer";           // judges one task's green diff, read-only; on the reviewer pool
     public const string Qa = "s2-qa";                       // black-box tests of a run's requirements; on the reviewer pool
+    public const string Repro = "s2-repro";                 // drives a browser to reproduce a reported escape; the spec itself goes in via intake
+    public const string Diagnosis = "s2-diagnosis";         // read-only: explains a TranslationError from the trace before the task re-runs
 }
 
 public sealed class RoleAllowListPolicy : IToolPolicy
@@ -36,7 +38,10 @@ public sealed class RoleAllowListPolicy : IToolPolicy
         [Roles.Reviewer] = ["read_file", "list_files", "submit_review", "confirm_equivalents"],
         [Roles.TestAuthor] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "declare_equivalent"],
         [Roles.Qa] = ["read_file", "list_files", "write_file", "run_command", "submit_qa_tests"],
-        [Roles.Implementer] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "return_to_test_author", "check_quality"],
+        [Roles.Implementer] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "return_to_test_author", "check_quality", "playwright_cli"],
+        // The browser CLI is for roles that drive a page; never the planner, task planner, reviewer, test author or QA (nor the merge stage, which has no agent).
+        [Roles.Repro] = ["read_file", "list_files", "playwright_cli", "submit_reproduction"],
+        [Roles.Diagnosis] = ["read_file", "list_files", "playwright_cli", "submit_diagnosis"],
     };
 
     public PolicyDecision Evaluate(string role, string toolName, IReadOnlyDictionary<string, object?> args) =>

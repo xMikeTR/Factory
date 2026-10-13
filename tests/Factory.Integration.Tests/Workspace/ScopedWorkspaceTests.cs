@@ -43,6 +43,56 @@ public class ScopedWorkspaceTests : IDisposable
         Assert.DoesNotContain("check_quality", new ScopedWorkspace(_root, [], [], [], new TurnSignals(), qualityCheck: _ => Task.FromResult("")).ExecutorTools().Select(t => t.Name));
     }
 
+    private sealed class RecordingSandbox : ICommandSandbox
+    {
+        public List<string> Commands { get; } = [];
+        public string Kind => "fake";
+        public Task<ProcessResult> RunAsync(string command, string workdir, TimeSpan timeout, IReadOnlyDictionary<string, string> env, CancellationToken ct)
+        {
+            Commands.Add(command);
+            return Task.FromResult(new ProcessResult(0, "page: Quotes", TimeSpan.Zero, false));
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    [Fact]
+    public async Task The_implementer_gets_playwright_cli_only_for_a_self_check_run()
+    {
+        var ws = new ScopedWorkspace(_root, [], [], [], new TurnSignals());
+        Assert.DoesNotContain("playwright_cli", ws.ImplementerTools().Select(t => t.Name));
+        Assert.Contains("playwright_cli", ws.ImplementerTools(selfCheck: true).Select(t => t.Name));
+        Assert.DoesNotContain("playwright_cli", ws.ReviewerTools().Concat(ws.ReadOnlyTools()).Select(t => t.Name));
+    }
+
+    [Fact]
+    public async Task Playwright_cli_runs_allow_listed_subcommands_against_localhost_only()
+    {
+        var sandbox = new RecordingSandbox();
+        var ws = new ScopedWorkspace(_root, [], [], [], new TurnSignals(), sandbox);
+
+        Assert.StartsWith("exit 0", await ws.PlaywrightCli("open http://localhost:3000/quotes"));
+        Assert.StartsWith("exit 0", await ws.PlaywrightCli("snapshot"));
+        Assert.Equal(["playwright-cli open http://localhost:3000/quotes", "playwright-cli snapshot"], sandbox.Commands);
+
+        Assert.StartsWith("DENIED", await ws.PlaywrightCli("open https://prod.example.com"));
+        Assert.StartsWith("DENIED", await ws.PlaywrightCli("install --skills"));
+        Assert.StartsWith("DENIED", await ws.PlaywrightCli("snapshot; rm -rf /"));
+        Assert.StartsWith("DENIED", await new ScopedWorkspace(_root, [], [], [], new TurnSignals()).PlaywrightCli("snapshot"));
+        Assert.Equal(2, sandbox.Commands.Count);
+    }
+
+    [Fact]
+    public void Repro_and_diagnosis_cannot_write_and_report_through_their_own_tool()
+    {
+        var signals = new TurnSignals();
+        var ws = new ScopedWorkspace(_root, [], [], [], signals);
+        foreach (var tools in new[] { ws.ReproTools(), ws.DiagnosisTools() })
+            Assert.DoesNotContain(tools.Select(t => t.Name), n => n is "write_file" or "delete_file" or "run_command");
+        var diagnose = ws.DiagnosisTools().OfType<Microsoft.Extensions.AI.AIFunction>().Single(t => t.Name == "submit_diagnosis");
+        diagnose.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments { ["finding"] = "button is outside the form" }).AsTask().Wait();
+        Assert.Equal("button is outside the form", signals.Diagnosis);
+    }
+
     [Fact]
     public async Task The_reviewer_can_read_and_submit_findings_but_not_write_run_or_park()
     {

@@ -37,7 +37,10 @@ public sealed record FactorySettings(
     string AcceptanceCommand = "npx playwright test --reporter=json",
     /// Raw-value ban over generated UI (stylelint writing JSON to $FACTORY_LINT_REPORT). Runs in integration
     /// verify only when the handover froze design tokens; null is off.
-    string? TokenLintCommand = null)
+    string? TokenLintCommand = null,
+    /// Give the implementer `playwright_cli` to poke its own UI before the gate (FACTORY_PLAYWRIGHT_CLI=1; the image must
+    /// carry @playwright/cli and the task's dev server must be reachable on localhost). Off by default: it is measured, not assumed.
+    bool PlaywrightCli = false)
 {
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
         RepoPath: Path.GetFullPath(repo),
@@ -57,7 +60,8 @@ public sealed record FactorySettings(
         Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)),
         UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
         AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),
-        TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"));
+        TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"),
+        PlaywrightCli: Environment.GetEnvironmentVariable("FACTORY_PLAYWRIGHT_CLI") == "1");
 
     public string RunDir(string runId) => Path.Combine(StateDir, "runs", runId);
     public string PlanPath(string runId) => Path.Combine(RunDir(runId), "plan.json");

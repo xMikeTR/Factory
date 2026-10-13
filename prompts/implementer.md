@@ -18,6 +18,9 @@ How to work:
 - Where code emits events from the logging contract, use the exact event names given.
 - If you have a check_quality tool, call it before declare_done: verify refuses new code over the complexity or
   length thresholds, and touched code that gets worse. It is free (not counted in your tool-call limit).
+- If you have a playwright_cli tool, use it to poke the UI you changed against this worktree's dev server on
+  localhost before declare_done (snapshots land in .playwright-cli/; read one only when you need it). The
+  acceptance specs in the brief are the gate and are not yours to edit; the CLI only helps you pass them first time.
 - When you believe every verify check will pass, call declare_done with a one-paragraph summary,
   then stop.
 - If you need a design decision the brief does not contain (a retry limit, which component owns
