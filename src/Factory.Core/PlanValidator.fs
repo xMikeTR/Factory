@@ -11,6 +11,7 @@ type PlanError =
     | NoElements of TaskId
     | NoAutomatedVerify of TaskId
     | UnknownElement of TaskId * ElementId
+    | OutOfScopeElement of TaskId * ElementId
     | UnknownDependency of TaskId * TaskId
     | DependencyCycle of TaskId list
     | WriteOutsideElement of TaskId * PathPattern
@@ -42,6 +43,7 @@ module PlanError =
         | NoElements t -> $"Task {t.Value} is not linked to any C4 element."
         | NoAutomatedVerify t -> $"Task {t.Value} has no automated verify entry; manual checks alone cannot pass a task."
         | UnknownElement(t, e) -> $"Task {t.Value} references element '{e.Value}', which is not in the handover package."
+        | OutOfScopeElement(t, e) -> $"Task {t.Value} references element '{e.Value}', which is context only in this work item. Link only the elements in scope."
         | UnknownDependency(t, d) -> $"Task {t.Value} depends on {d.Value}, which does not exist."
         | DependencyCycle ids -> "Tasks depend on each other in a cycle: " + String.Join(" -> ", ids |> List.map (fun (TaskId v) -> v))
         | WriteOutsideElement(t, p) -> $"Task {t.Value} writes '{p.Value}', which is outside the code areas of its elements. Link the right element or narrow the path."
@@ -175,12 +177,16 @@ module PlanValidator =
 
         let taskLevel (t: PlannedTask) =
             let known = t.Elements |> List.choose (fun e -> Map.tryFind e elements)
+            // An out-of-scope element is rejected at the link (OutOfScopeElement), so its code areas
+            // count here and a write into them is not reported a second time.
             let codeAreas = known |> List.collect (fun e -> e.CodeAreas)
             [ if t.Writes.IsEmpty then NoWrites t.Id
               if t.Elements.IsEmpty then NoElements t.Id
               if not (t.Verify |> List.exists (function Automated _ -> true | Manual _ -> false)) then NoAutomatedVerify t.Id
               for e in t.Elements do
-                  if not (elements.ContainsKey e) then UnknownElement(t.Id, e)
+                  match Map.tryFind e elements with
+                  | None -> UnknownElement(t.Id, e)
+                  | Some el -> if not el.InScope then OutOfScopeElement(t.Id, e)
               for w in t.Writes do
                   if handover.ProtectedPaths |> List.exists (PathPattern.mayOverlap w) then ProtectedWrite(t.Id, w)
                   elif not (codeAreas |> List.exists (PathPattern.isWithin w)) then WriteOutsideElement(t.Id, w)

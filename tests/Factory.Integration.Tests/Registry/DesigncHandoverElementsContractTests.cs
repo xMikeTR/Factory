@@ -48,4 +48,14 @@ public class DesigncHandoverElementsContractTests
         var h = await LoadExample("handover-elements-2.json");
         Assert.Contains("tests/acceptance/**", h.ProtectedPaths.Select(p => p.Value));
     }
+
+    [Fact]
+    public async Task Item_handover_carries_out_of_scope_elements_as_context_and_design_handovers_are_all_in_scope()
+    {
+        var item = await LoadExample("handover-elements-2.json");
+        Assert.Equal(
+            [("Quotes/Quotes API", true), ("Quotes/Mail", false)],
+            item.Elements.Select(e => (e.Id.Value, e.InScope)));
+        Assert.All((await LoadExample()).Elements, e => Assert.True(e.InScope));
+    }
 }

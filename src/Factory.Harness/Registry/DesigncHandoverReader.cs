@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Factory.Core;
 using YamlDotNet.Serialization;
@@ -97,7 +98,7 @@ public sealed class DesigncHandoverReader : IHandoverSource
         return h.ToString("x8");
     }
 
-    private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk);
+    private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk, [property: JsonPropertyName("in_scope")] bool? InScope);
     private sealed record RelationshipJson(string From, string To);
     private sealed record ElementsJson(string? Schema, List<ElementJson>? Elements, List<RelationshipJson>? Relationships, List<string>? Events, List<string>? Reserved);
     private readonly record struct ResolvedModel(List<ElementJson> Elements, List<RelationshipJson> Relationships, List<string> Events, List<string> Reserved);
@@ -139,7 +140,7 @@ public sealed class DesigncHandoverReader : IHandoverSource
                 var other => Fail<RiskLevel>($"element '{e.Name}': risk '{other}' is not low, medium or high"),
             };
             var areas = Patterns(e.Code, $"element '{e.Name}' code", errors);
-            if (risk is not null) specs.Add(new ElementSpec(ElementId.NewElementId(e.Id), e.Name, Core.ToList(areas), risk));
+            if (risk is not null) specs.Add(new ElementSpec(ElementId.NewElementId(e.Id), e.Name, Core.ToList(areas), risk, e.InScope ?? true));
         }
         return specs;
 
