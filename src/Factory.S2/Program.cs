@@ -15,6 +15,7 @@ using Factory.S2.Verify;
 // factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github] [--since <previous run id>]
 // factory-s2 qa --repo . --run-id <id> [--base main]   follow-up QA: the run's protected tests, measured again, no author
 // factory-s2 digest --registry ../registry [--repo .] [--base main] [--last-look <epoch ms>] [--wip 3]   Needs decision / Failed a gate / Done / Waiting
+// factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
 // factory-s2 rerun --handover <h.json | dir> --plan plan.json --task T-001 [--k 3] --repo . [--base main]   k fresh attempts, no merge
 
 var cmd = args.FirstOrDefault() ?? "help";
@@ -83,6 +84,19 @@ try
                 long.Parse(opts.GetValueOrDefault("last-look") ?? "0"), int.Parse(opts.GetValueOrDefault("wip") ?? "3"), CancellationToken.None);
             Console.Write(Factory.Harness.Registry.WorkDigestReport.Render(digest, problems));
             return digest.Failed.IsEmpty && problems.Count == 0 ? 0 : 1;
+        }
+
+        case "intake":
+        {
+            var why = await Factory.Harness.Registry.BugIntake.RecordAsync(
+                Required(opts, "registry"),
+                new Factory.Harness.Registry.BugIntakeRequest(
+                    Required(opts, "id"), Required(opts, "summary"), Required(opts, "spec"), Required(opts, "origin"),
+                    Required(opts, "ref"), opts.GetValueOrDefault("gate") ?? "", opts.GetValueOrDefault("strengthens"),
+                    opts.GetValueOrDefault("caught-by")),
+                DateTimeOffset.UtcNow, CancellationToken.None);
+            Console.WriteLine(why is null ? $"escape {opts["id"]} recorded" : $"not closed: {why}");
+            return why is null ? 0 : 1;
         }
 
         case "rerun":
