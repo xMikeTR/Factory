@@ -25,7 +25,7 @@ public static class WorkDigestReport
         return (digest, registry.Problems);
     }
 
-    private static async Task<Dictionary<string, bool?>> OnMainAsync(
+    internal static async Task<Dictionary<string, bool?>> OnMainAsync(
         WorkRegistry registry, string? repoPath, string baseBranch, CancellationToken ct)
     {
         var commits = registry.Facts.Select(f => f.Fact).OfType<LedgerFact.ItemDone>()
