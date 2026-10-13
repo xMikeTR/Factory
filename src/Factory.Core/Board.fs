@@ -8,7 +8,8 @@ open System
 module Board =
     /// Backlog until a handover freezes the item; Done only through `Evidence.create` from the recorded gate runs
     /// (a done claim that fails it leaves the item Active, so it stays in flight and out of the next pull).
-    /// Ticks are not in the ledger yet, so an item with a checklist or review never reaches Done here.
+    /// A person's ticks are the `checklist:` / `review:` entries of the item_done row's evidence (designc records them there),
+    /// so a checklist or review item reaches Done only with its tick named on that row.
     let candidates (items: WorkItem list) (facts: (int64 * LedgerFact) list) (onMain: string -> bool option) : Candidate list =
         let ev = facts |> List.sortBy fst
         items
@@ -25,8 +26,9 @@ module Board =
                 | ItemPulled x when x = id -> apply (WorkEvent.Pulled(RunId id)), readyAt, runs
                 | ItemAwaitingHuman(x, why) when x = id -> apply (WorkEvent.AwaitedHuman(defaultArg why "")), readyAt, runs
                 | ItemGate(x, g, passed, commit) when x = id -> state, readyAt, runs @ [ { Gate = g; Commit = commit; Passed = passed; Dirty = false } ]
-                | ItemDone(x, commit, _) when x = id ->
-                    let facts' = { Commit = commit; OnMain = commit |> Option.bind onMain; GateRuns = runs; Ticks = [] }
+                | ItemDone(x, commit, evidence) when x = id ->
+                    let ticks = evidence |> List.filter (fun e -> e.StartsWith "checklist:" || e.StartsWith "review:")
+                    let facts' = { Commit = commit; OnMain = commit |> Option.bind onMain; GateRuns = runs; Ticks = ticks }
                     match Evidence.create i facts' with
                     | Ok evidence -> apply (WorkEvent.Finished evidence), readyAt, runs
                     | Error _ -> state, readyAt, runs

@@ -35,9 +35,23 @@ let tests: (string * (unit -> unit)) list =
           equal [] (plan [] ).Pull "nothing"
       "board: a dependency is satisfied only by a done item with evidence on main", fun () ->
           let started = [ frozen "W-A" 1L; frozen "W-B" 1L; 2L, ItemPulled "W-A" ]
-          let finished = started @ [ 3L, ItemGate("W-A", "dotnet test", true, Some "abc1234"); 4L, ItemDone("W-A", Some "abc1234", 1) ]
+          let finished = started @ [ 3L, ItemGate("W-A", "dotnet test", true, Some "abc1234"); 4L, ItemDone("W-A", Some "abc1234", [ "gate:dotnet test@abc1234" ]) ]
           check ((plan started).Deferred |> List.exists (fun (id, d) -> id.Value = "W-B" && d = WaitsOnDependency [ WorkItemId "W-A" ])) "b waits while a is active"
           equal [ "W-B" ] ((plan finished).Pull |> List.map (fun i -> i.Id.Value)) "b after a is done"
+      "board: a checklist item is Done only when its tick is named in the item_done evidence", fun () ->
+          let reviewed =
+              match
+                  WorkItem.create
+                      { Id = "W-R"; Requirement = None; Elements = []; Repo = None; Target = Some("document", "treaty summary")
+                        DependsOn = []; Writes = []; DoneWhen = [ "checklist", "numbers match the treaty" ] }
+              with
+              | Ok i -> i
+              | Error es -> failwithf "%A" es
+          let state evidence =
+              let facts = [ 1L, ItemFrozen("W-R", "h-R", "r1"); 2L, ItemPulled "W-R"; 3L, ItemDone("W-R", None, evidence) ]
+              (Board.candidates [ reviewed ] facts onMain |> List.exactlyOne).State
+          check (match state [] with WorkState.Done _ -> false | _ -> true) "no tick"
+          check (match state [ "checklist:numbers match the treaty" ] with WorkState.Done _ -> true | _ -> false) "ticked"
       "board: a stale re-check defers the item with its reasons until it is frozen again", fun () ->
           let facts = [ frozen "W-C" 1L; 2L, ItemRecheck("W-C", true, [ "Pricing moved" ]) ]
           match (plan facts).Deferred with

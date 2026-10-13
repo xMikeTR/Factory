@@ -23,11 +23,11 @@ let private t0 = 1_700_000_000_000L // 2023-11-14, ISO week 46
 let tests: (string * (unit -> unit)) list =
     [ "metrics: throughput counts done items per ISO week and target kind, lead time is pull to done", fun () ->
           let m =
-              metrics [ t0, ItemPulled "W-A"; t0 + 2L * day, ItemDone("W-A", Some "abc1234", 1) ]
+              metrics [ t0, ItemPulled "W-A"; t0 + 2L * day, ItemDone("W-A", Some "abc1234", [ "gate:dotnet test@abc1234" ]) ]
           equal [ ("2023-W46", "repo"), 1 ] m.Throughput "throughput"
           equal (Some 2L) (m.LeadTime |> Option.map (fun t -> t.Median / day)) "lead"
       "metrics: a done claim without evidence is not throughput", fun () ->
-          let m = metrics [ t0, ItemPulled "W-A"; t0 + day, ItemDone("W-A", Some "abc1234", 0) ]
+          let m = metrics [ t0, ItemPulled "W-A"; t0 + day, ItemDone("W-A", Some "abc1234", []) ]
           equal [] m.Throughput "none"
       "metrics: human wait closes at the pull; an unanswered wait is open", fun () ->
           let m =

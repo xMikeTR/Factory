@@ -8,7 +8,8 @@ type LedgerFact =
     | ItemAwaitingHuman of item: string * reason: string option
     | ItemPulled of item: string
     | ItemGate of item: string * gate: string * passed: bool * commit: string option
-    | ItemDone of item: string * commit: string option * evidence: int
+    /// `evidence` is the row's evidence entries: `gate:<cmd>@<commit>`, and the person's ticks `checklist:<text>` / `review:<name>`.
+    | ItemDone of item: string * commit: string option * evidence: string list
     | AcceptanceFailed of task: string * ac: string * element: string * commit: string
     | ConflictDeferred of item: string * reason: string option
     | WipLimitChanged of limit: int
@@ -129,7 +130,7 @@ module Digest =
                     match f with
                     | ItemDone(_, Some c, _) when onMain c = Some false ->
                         Some { Item = i.Id.Value; Kind = NotOnMain; Text = $"{i.Id.Value}: Claimed merged, not on main ({c7 c})"; Ts = ts }
-                    | ItemDone(_, _, 0) -> Some { Item = i.Id.Value; Kind = NoEvidence; Text = $"{i.Id.Value}: Claimed done without evidence"; Ts = ts }
+                    | ItemDone(_, _, []) -> Some { Item = i.Id.Value; Kind = NoEvidence; Text = $"{i.Id.Value}: Claimed done without evidence"; Ts = ts }
                     | _ -> None))
 
         // A pipeline's UI acceptance failure stands until the same item later passes a gate or is done.
