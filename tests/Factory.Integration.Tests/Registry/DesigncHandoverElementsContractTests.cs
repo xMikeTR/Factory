@@ -101,4 +101,38 @@ public class DesigncHandoverElementsContractTests
         Assert.Equal((specPath, DesigncHandoverReader.Hash16("// GENERATED\n")), (spec.Path, spec.Hash));
         Assert.Empty((await LoadExample()).AcceptanceSpecs);
     }
+
+    [Fact]
+    public async Task Design_version_acceptance_criteria_and_loop_specs_are_carried_and_a_loop_spec_must_be_frozen()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "s2-loop-" + Guid.NewGuid().ToString("N"));
+        var spec = "tests/acceptance/quotes-api/AC-1.spec.ts";
+        Directory.CreateDirectory(Path.Combine(dir, "tests", "acceptance", "quotes-api"));
+        Directory.CreateDirectory(Path.Combine(dir, "acceptance"));
+        var elements = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "handover-elements-2.json"));
+        const string criterion = "id: AC-1\nrequirement: HRE-1\nelement: \"Quotes/Quotes API\"\nstates: [ready]\n";
+        await File.WriteAllTextAsync(Path.Combine(dir, "elements.json"), elements);
+        await File.WriteAllTextAsync(Path.Combine(dir, "acceptance", "AC-1.yaml"), criterion);
+        await File.WriteAllTextAsync(Path.Combine(dir, spec), "// GENERATED\n");
+        string Manifest(string loop) =>
+            "id: 20261013-loop\nelements: \"elements.json\"\ndesign_version: r-abc123\nacceptance: [\"AC-1\"]\n" +
+            $"specs: [\"{spec}\"]\nloop_specs: [{loop}]\nfiles:\n  - {{ path: \"elements.json\", hash: {DesigncHandoverReader.Hash16(elements)} }}\n" +
+            $"  - {{ path: \"acceptance/AC-1.yaml\", hash: {DesigncHandoverReader.Hash16(criterion)} }}\n" +
+            $"  - {{ path: \"{spec}\", hash: {DesigncHandoverReader.Hash16("// GENERATED\n")} }}\n";
+        await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"), Manifest($"\"{spec}\""));
+
+        var h = await new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None);
+
+        Assert.Equal("r-abc123", h.DesignVersion.Value);
+        var c = Assert.Single(h.AcceptanceCriteria);
+        Assert.Equal(("AC-1", "Quotes/Quotes API", criterion), (c.Id, c.Element, c.Text));
+        Assert.Equal([spec], h.LoopSpecs);
+        var back = FactoryCore.ParseHandover(FactoryCore.HandoverJson(h));
+        Assert.Equal("r-abc123", back.DesignVersion.Value);
+        Assert.Equal([spec], back.LoopSpecs);
+        Assert.Equal("AC-1", back.AcceptanceCriteria.Single().Id);
+
+        await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"), Manifest("\"tests/acceptance/other.spec.ts\""));
+        await Assert.ThrowsAnyAsync<Exception>(() => new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None));
+    }
 }

@@ -53,6 +53,10 @@ type Relationship = { From: ElementId; To: ElementId }
 /// with the hash Designc recorded for its text.
 type AcceptanceSpec = { Path: string; Hash: string }
 
+/// A frozen acceptance criterion (handover `acceptance/<id>.yaml`): `Element` is the element it is about,
+/// as Designc wrote it (a name or a `System/Container` path); `Text` is the frozen file.
+type AcceptanceCriterion = { Id: string; Element: string; Text: string }
+
 type Handover =
     { Id: string
       Digest: string
@@ -69,7 +73,14 @@ type Handover =
       /// The work item an item handover was frozen for (handover.yaml `work_item`); None for a design handover.
       WorkItem: string option
       /// The frozen design-tokens/tokens.json text (handover.yaml `tokens`); None when the design has none.
-      DesignTokens: string option }
+      DesignTokens: string option
+      /// The design revision (`r-...`) an item handover was frozen at (handover.yaml `design_version`).
+      DesignVersion: string option
+      /// The frozen acceptance criteria (handover.yaml `acceptance`); empty when the handover lists none.
+      AcceptanceCriteria: AcceptanceCriterion list
+      /// The acceptance specs the agent's own loop runs (handover.yaml `loop_specs`): a subset of AcceptanceSpecs;
+      /// the full suite runs at merge. Empty when the handover names none.
+      LoopSpecs: string list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 
