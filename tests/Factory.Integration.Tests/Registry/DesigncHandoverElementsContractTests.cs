@@ -58,4 +58,25 @@ public class DesigncHandoverElementsContractTests
             item.Elements.Select(e => (e.Id.Value, e.InScope)));
         Assert.All((await LoadExample()).Elements, e => Assert.True(e.InScope));
     }
+
+    [Fact]
+    public async Task Frozen_acceptance_specs_are_read_with_their_hash_and_a_handover_without_specs_has_none()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "s2-specs-" + Guid.NewGuid().ToString("N"));
+        var specPath = "tests/acceptance/quotes-api/AC-1.spec.ts";
+        Directory.CreateDirectory(Path.Combine(dir, "tests", "acceptance", "quotes-api"));
+        var elements = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "handover-elements-2.json"));
+        await File.WriteAllTextAsync(Path.Combine(dir, "elements.json"), elements);
+        await File.WriteAllTextAsync(Path.Combine(dir, specPath), "// GENERATED\n");
+        await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"),
+            "id: 20261013-specs\nelements: \"elements.json\"\n" +
+            $"specs: [\"{specPath}\"]\nfiles:\n  - {{ path: \"elements.json\", hash: {DesigncHandoverReader.Hash16(elements)} }}\n" +
+            $"  - {{ path: \"{specPath}\", hash: {DesigncHandoverReader.Hash16("// GENERATED\n")} }}\n");
+
+        var h = await new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None);
+
+        var spec = Assert.Single(h.AcceptanceSpecs);
+        Assert.Equal((specPath, DesigncHandoverReader.Hash16("// GENERATED\n")), (spec.Path, spec.Hash));
+        Assert.Empty((await LoadExample()).AcceptanceSpecs);
+    }
 }

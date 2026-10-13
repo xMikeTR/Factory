@@ -73,9 +73,25 @@ public sealed class DesigncHandoverReader : IHandoverSource
             Core.ToList(decisions),
             Core.ToList(protectedPaths),
             Core.ToList(vocabulary),
-            Core.ToList(Relationships(resolved!.Value, elements)));
+            Core.ToList(Relationships(resolved!.Value, elements)),
+            Core.ToList(AcceptanceSpecs(manifest, errors)));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
+    }
+
+    /// The `specs` paths with the hash `files` records for each (the integrity loop above already proved the text).
+    private static List<AcceptanceSpec> AcceptanceSpecs(Dictionary<string, object?> manifest, List<string> errors)
+    {
+        var hashes = List(manifest, "files").OfType<Dictionary<object, object?>>()
+            .Where(f => f.GetValueOrDefault("path") is string && f.GetValueOrDefault("hash") is not null)
+            .ToDictionary(f => (string)f["path"]!, f => f["hash"]!.ToString()!, StringComparer.Ordinal);
+        var specs = new List<AcceptanceSpec>();
+        foreach (var path in List(manifest, "specs").OfType<string>())
+        {
+            if (hashes.TryGetValue(path, out var hash)) specs.Add(new AcceptanceSpec(path, hash));
+            else errors.Add($"handover.yaml: spec '{path}' is not among the frozen files");
+        }
+        return specs;
     }
 
     /// How a decision's check runs, from its command: `p check` is the P checker, `designc check`

@@ -802,6 +802,7 @@ let tests: (string * (unit -> unit)) list =
           check (text.Contains "team-T-001") text ]
     @ Factory.Core.Tests.WorkTests.tests
     @ Factory.Core.Tests.DigestTests.tests
+    @ Factory.Core.Tests.UiAcceptanceTests.tests
 
 [<EntryPoint>]
 let main _ =
