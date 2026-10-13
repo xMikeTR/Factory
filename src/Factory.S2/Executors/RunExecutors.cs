@@ -178,7 +178,7 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         if (!frozen.IsEmpty)
             outcomes.Add(await AcceptanceAsync(msg.RunId, integration, cancellationToken));
 
-        if (s.TokenLintCommand is not null && File.Exists(TokensPath(s.RegistryPath)))
+        if (s.TokenLintCommand is not null && FSharpOption<string>.get_IsSome(svc.LoadHandover(msg.RunId).DesignTokens))
             outcomes.Add(await TokenLintAsync(msg.RunId, integration, cancellationToken));
 
         if (Directory.Exists(s.RegistryPath))
@@ -209,14 +209,12 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         await context.SendMessageAsync(next, cancellationToken: cancellationToken);
     }
 
-    private static string TokensPath(string registry) => Path.Combine(registry, "design-tokens", "tokens.json");
-
-    /// The registry's design tokens must be well formed and keep text at or above the minimum; then the
+    /// The handover's frozen design tokens must be well formed and keep text at or above the minimum; then the
     /// raw-value lint runs over the integrated worktree. Each violation is a TranslationError on the
     /// tasks whose `writes` cover the file, ledgered as token_lint_violation per task.
     private async Task<VerifyOutcome> TokenLintAsync(string runId, string integration, CancellationToken ct)
     {
-        var tokens = DesignTokens.parse(await File.ReadAllTextAsync(TokensPath(svc.Settings.RegistryPath), ct));
+        var tokens = DesignTokens.parse(svc.LoadHandover(runId).DesignTokens.Value);
         var problems = new List<string>();
         if (tokens.IsError) problems.AddRange(tokens.ErrorValue);
         else problems.AddRange(DesignTokens.belowMinimumText(tokens.ResultValue)

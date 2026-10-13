@@ -36,7 +36,7 @@ public sealed record FactorySettings(
     /// Playwright's JSON report to $PLAYWRIGHT_JSON_OUTPUT_NAME. The gate has no model in the loop.
     string AcceptanceCommand = "npx playwright test --reporter=json",
     /// Raw-value ban over generated UI (stylelint writing JSON to $FACTORY_LINT_REPORT). Runs in integration
-    /// verify only when the registry has design-tokens/tokens.json; null is off.
+    /// verify only when the handover froze design tokens; null is off.
     string? TokenLintCommand = null)
 {
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
