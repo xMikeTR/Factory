@@ -29,6 +29,7 @@
     <Compile Include="Merge.fs" />
     <Compile Include="Work.fs" />
     <Compile Include="Scheduler.fs" />
+    <Compile Include="Digest.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="Interop.fs" />
   </ItemGroup>
