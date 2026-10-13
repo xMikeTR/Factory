@@ -27,6 +27,7 @@
     <Compile Include="HandoverClosure.fs" />
     <Compile Include="Regeneration.fs" />
     <Compile Include="Merge.fs" />
+    <Compile Include="Work.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="Interop.fs" />
   </ItemGroup>
