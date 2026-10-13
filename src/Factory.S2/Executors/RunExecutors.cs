@@ -148,6 +148,25 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         var s = svc.Settings;
         var integration = svc.Git.IntegrationPath(msg.RunId);
         var timeout = TimeSpan.FromMinutes(30);
+
+        // The frozen acceptance specs are not the coding agent's to touch: any difference from the
+        // handover's hashes is a hard fail, ledgered, before anything else runs.
+        var frozen = svc.LoadHandover(msg.RunId).AcceptanceSpecs;
+        if (!frozen.IsEmpty)
+        {
+            var drift = AcceptanceSpecs.drift(frozen, ListModule.OfSeq(AcceptanceFiles.Hashes(integration).Select(h => Tuple.Create(h.Path, h.Hash))));
+            if (!drift.IsEmpty)
+            {
+                var lines = drift.Select(AcceptanceSpecs.describe).ToList();
+                await svc.LogAsync(msg.RunId, "integration_verify", LedgerKinds.Verify, outcome: "acceptance_specs_modified",
+                    payload: JsonSerializer.Serialize(new { drift = lines }), ct: cancellationToken);
+                await context.SendMessageAsync(new RunFinished(msg.RunId, "integration_failed",
+                    "The frozen acceptance specs changed after the handover was frozen:\n" + string.Join("\n", lines.Select(l => "- " + l))),
+                    cancellationToken: cancellationToken);
+                return;
+            }
+        }
+
         var outcomes = new List<VerifyOutcome>
         {
             await svc.Verify.RunCommandAsync(msg.RunId, "integration tests", s.IntegrationTestCommand, integration, timeout, cancellationToken),
@@ -155,6 +174,9 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
 
         if (s.PObserveCommand is { } pobserve)
             outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, "PObserve", pobserve, integration, timeout, cancellationToken));
+
+        if (!frozen.IsEmpty)
+            outcomes.Add(await AcceptanceAsync(msg.RunId, integration, cancellationToken));
 
         if (Directory.Exists(s.RegistryPath))
         {
@@ -182,6 +204,35 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             ? new RunFinished(msg.RunId, "integration_failed", Briefs.Failures(failed))
             : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);
         await context.SendMessageAsync(next, cancellationToken: cancellationToken);
+    }
+
+    /// Runs the frozen specs and maps each failing one to the tasks that change its element
+    /// (TranslationError of TaskId), ledgered as ui_acceptance_failed per task.
+    private async Task<VerifyOutcome> AcceptanceAsync(string runId, string integration, CancellationToken ct)
+    {
+        var handover = svc.LoadHandover(runId);
+        var (outcome, failures) = await svc.Verify.AcceptanceAsync(runId, svc.Settings.AcceptanceCommand, integration,
+            handover.AcceptanceSpecs.Select(a => a.Path).ToList(), ct);
+        if (failures.Count == 0) return outcome;
+
+        var commit = await svc.Git.HeadAsync(integration, ct);
+        var tasks = svc.LoadValidatedPlan(runId).Plan.Tasks;
+        var lines = new List<string>();
+        foreach (var f in failures)
+        {
+            var failure = AcceptanceSpecs.failure(handover.Elements, f.File);
+            if (failure is null || !FSharpOption<SpecFailure>.get_IsSome(failure)) { lines.Add($"{f.File} failed (not an acceptance spec path)"); continue; }
+            var spec = failure.Value;
+            var element = FSharpOption<ElementSpec>.get_IsSome(spec.Element) ? spec.Element.Value.Id.Value : null;
+            var blamed = AcceptanceSpecs.translationErrors(tasks, spec).Select(e => e.Item.Value).ToList();
+            lines.Add($"{f.File} (acceptance {spec.Ac}{(element is null ? "" : $" on {element}")}) failed; " +
+                      (blamed.Count == 0 ? "no task changes its element" : "tasks: " + string.Join(", ", blamed)));
+            foreach (var task in blamed)
+                await svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.UiAcceptanceFailed,
+                    TaskId: task, Element: element, Outcome: "failed",
+                    Payload: JsonSerializer.Serialize(new { ac = spec.Ac, spec = f.File, commit, trace = f.Trace })), ct);
+        }
+        return new VerifyOutcome(outcome.Name, outcome.ExitCode, outcome.DurationMs, string.Join("\n", lines) + "\n\n" + outcome.OutputTail);
     }
 
     /// Black-box QA over the integrated result. Null means it may merge (no QA configured, or nothing found). A QA

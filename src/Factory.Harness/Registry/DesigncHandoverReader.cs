@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Factory.Core;
+using Microsoft.FSharp.Core;
 using YamlDotNet.Serialization;
 
 namespace Factory.Harness.Registry;
@@ -74,7 +75,8 @@ public sealed class DesigncHandoverReader : IHandoverSource
             Core.ToList(protectedPaths),
             Core.ToList(vocabulary),
             Core.ToList(Relationships(resolved!.Value, elements)),
-            Core.ToList(AcceptanceSpecs(manifest, errors)));
+            Core.ToList(AcceptanceSpecs(manifest, errors)),
+            Str(manifest, "work_item") is { } workItem ? FSharpOption<string>.Some(workItem) : FSharpOption<string>.None);
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }

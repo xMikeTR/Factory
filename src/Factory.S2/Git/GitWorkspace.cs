@@ -106,6 +106,10 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         return r.Succeeded ? r.Output : null;
     }
 
+    /// The commit a worktree is at.
+    public async Task<string> HeadAsync(string worktree, CancellationToken ct) =>
+        (await GitAsync(worktree, ct, "rev-parse", "HEAD")).Output.Trim();
+
     /// The worktree as a git tree (what `commit -a` would record), so a later review can ask what the
     /// fix changed since this one. Written into the object store only; no commit, no ref.
     public async Task<string> SnapshotAsync(string worktree, CancellationToken ct)

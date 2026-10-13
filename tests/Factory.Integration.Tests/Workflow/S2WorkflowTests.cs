@@ -77,6 +77,35 @@ public class S2WorkflowTests
     }
 
     [Fact]
+    public async Task A_frozen_acceptance_spec_missing_from_the_worktree_fails_the_run_before_any_check_runs()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        var frozen = new Handover(h.Handover.Id, h.Handover.Digest, h.Handover.Elements, h.Handover.Decisions, h.Handover.ProtectedPaths,
+            h.Handover.EventVocabulary, h.Handover.Relationships,
+            Microsoft.FSharp.Collections.ListModule.OfSeq([new AcceptanceSpec("tests/acceptance/quotes-db/AC-1.spec.ts", "deadbeefdeadbeef")]),
+            h.Handover.WorkItem);
+        var path = Path.Combine(h.StateDir, "frozen-handover.json");
+        Directory.CreateDirectory(h.StateDir);
+        await File.WriteAllTextAsync(path, Core.HandoverJson(frozen));
+        model.Enqueue(
+            SubmitPlan(PlanFor(frozen)), Say("submitted"),
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Say("done"));
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
+            new StartRun(TeamHarness.RunId, path), new ApprovingHuman(), default);
+
+        Assert.Equal("integration_failed", result!.Status);
+        Assert.Contains("tests/acceptance/quotes-db/AC-1.spec.ts is frozen in the handover but missing", result.Detail);
+        Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Outcome == "acceptance_specs_modified");
+        Assert.DoesNotContain(h.Rows(LedgerKinds.Verify), e => e.Stage == "integration_verify" && e.Outcome is "passed" or "failed");
+    }
+
+    [Fact]
     public async Task The_pull_request_says_who_reviewed_and_carries_the_advice()
     {
         var model = new ScriptedChatClient();
