@@ -12,7 +12,7 @@ using Factory.S2.Verify;
 
 // factory-s2 validate --handover h.json --plan plan.json      deterministic, no agents, no git
 // factory-s2 dispatch --handover h.json --plan plan.json      prints teams and waves
-// factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github] [--since <previous run id>]
+// factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github] [--since <previous run id>] [--repair <integration_failed run id>]
 // factory-s2 qa --repo . --run-id <id> [--base main]   follow-up QA: the run's protected tests, measured again, no author
 // factory-s2 digest --registry ../registry [--repo .] [--base main] [--last-look <epoch ms>] [--wip 3] [--notify-state <file>: print NOTIFY for new Needs/Failed rows only]   Needs decision / Failed a gate / Done / Waiting
 // factory-s2 pull-plan --registry ../registry [--repo .] [--base main] [--wip 3]   what the scheduler would pull now and why the rest waits (nothing is pulled)
@@ -50,9 +50,12 @@ try
 
         case "run":
         {
+            // --repair <failed run id>: cut from that run's integration branch, re-run only the tasks its failures blame.
+            var repairOf = opts.GetValueOrDefault("repair");
             var settings = FactorySettings.FromEnvironment(
-                Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
-            var runId = opts.GetValueOrDefault("run-id") ?? $"{DateTime.UtcNow:yyyyMMdd-HHmmss}";
+                Required(opts, "repo"), opts.GetValueOrDefault("registry"),
+                repairOf is null ? opts.GetValueOrDefault("base") : GitWorkspace.IntegrationBranch(repairOf));
+            var runId = opts.GetValueOrDefault("run-id") ?? (repairOf is null ? $"{DateTime.UtcNow:yyyyMMdd-HHmmss}" : $"{repairOf}-r1");
             Directory.CreateDirectory(settings.StateDir);
 
             var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
@@ -67,11 +70,24 @@ try
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
+            if (repairOf is not null && !File.Exists(settings.RepairPath(runId)))
+            {
+                var repair = await Repair.FromFailedRunAsync(services, repairOf, cts.Token);
+                if (repair is null)
+                {
+                    Console.Error.WriteLine($"run {repairOf} recorded no acceptance or token-lint failure that names a task: nothing to repair");
+                    return 1;
+                }
+                Directory.CreateDirectory(settings.RunDir(runId));
+                await File.WriteAllTextAsync(settings.RepairPath(runId), System.Text.Json.JsonSerializer.Serialize(repair), cts.Token);
+                Console.WriteLine($"repairing {repairOf}: re-running {string.Join(", ", repair.Feedback.Keys)}");
+            }
+
             Console.WriteLine($"run {runId}: re-run with --run-id {runId} to resume");
             var result = await WorkflowHost.RunAsync(
                 S2Workflow.Build(services),
                 new StartRun(runId, Path.GetFullPath(await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token)),
-                    opts.GetValueOrDefault("since")),
+                    repairOf ?? opts.GetValueOrDefault("since")),
                 new ConsoleHumanChannel(),
                 cts.Token);
 

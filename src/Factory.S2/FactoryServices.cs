@@ -66,6 +66,8 @@ public sealed record FactorySettings(
     /// Regeneration: the previous run's id, then (once the plan is accepted) which tasks re-run.
     public string SincePath(string runId) => Path.Combine(RunDir(runId), "since");
     public string RegenerationPath(string runId) => Path.Combine(RunDir(runId), "regeneration.json");
+    /// Repair: which failed run this one repairs, and the failures each re-run task must fix.
+    public string RepairPath(string runId) => Path.Combine(RunDir(runId), "repair.json");
 
     private static string Env(string name, string fallback) => Environment.GetEnvironmentVariable(name) ?? fallback;
 }
