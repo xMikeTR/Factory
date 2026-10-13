@@ -33,6 +33,31 @@ public static class JiraMirrorReport
         return plan.ToList();
     }
 
+    /// The Jira keys the registry's items mirror to (what a REST read must fetch).
+    public static async Task<IReadOnlyList<string>> KeysAsync(string registryPath, CancellationToken ct)
+    {
+        var registry = await WorkRegistryReader.ReadAsync(registryPath, ct);
+        return registry.Items.Select(i => JiraMirror.key(i)).Where(k => FSharpOption<string>.get_IsSome(k)).Select(k => k.Value).Distinct().Order().ToList();
+    }
+
+    /// Applies the transitions through REST. Returns what was moved (key -> status) and what could not be (messages, no secrets).
+    public static async Task<(Dictionary<string, string> Moved, List<string> Failed)> ApplyAsync(
+        JiraRestClient client, IEnumerable<MirrorAction> plan, CancellationToken ct)
+    {
+        var moved = new Dictionary<string, string>();
+        var failed = new List<string>();
+        foreach (var t in plan.OfType<MirrorAction.Transition>())
+        {
+            try
+            {
+                if (await client.TransitionAsync(t.key, t.target, ct) is { } why) failed.Add(why);
+                else moved[t.key] = t.target;
+            }
+            catch (HttpRequestException e) { failed.Add($"{t.key}: Jira answered {(int?)e.StatusCode}"); }
+        }
+        return (moved, failed);
+    }
+
     /// Writes one `item_awaiting_human` row per drifted issue (same drift, same event id: flagged once).
     public static async Task<int> FlagDriftAsync(
         string registryPath, IEnumerable<MirrorAction> plan, DateTimeOffset now, CancellationToken ct)
