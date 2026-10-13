@@ -84,7 +84,7 @@ public class S2WorkflowTests
         var frozen = new Handover(h.Handover.Id, h.Handover.Digest, h.Handover.Elements, h.Handover.Decisions, h.Handover.ProtectedPaths,
             h.Handover.EventVocabulary, h.Handover.Relationships,
             Microsoft.FSharp.Collections.ListModule.OfSeq([new AcceptanceSpec("tests/acceptance/quotes-db/AC-1.spec.ts", "deadbeefdeadbeef")]),
-            h.Handover.WorkItem);
+            h.Handover.WorkItem, h.Handover.DesignTokens);
         var path = Path.Combine(h.StateDir, "frozen-handover.json");
         Directory.CreateDirectory(h.StateDir);
         await File.WriteAllTextAsync(path, Core.HandoverJson(frozen));

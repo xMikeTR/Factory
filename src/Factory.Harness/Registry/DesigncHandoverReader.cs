@@ -76,9 +76,19 @@ public sealed class DesigncHandoverReader : IHandoverSource
             Core.ToList(vocabulary),
             Core.ToList(Relationships(resolved!.Value, elements)),
             Core.ToList(AcceptanceSpecs(manifest, errors)),
-            Str(manifest, "work_item") is { } workItem ? FSharpOption<string>.Some(workItem) : FSharpOption<string>.None);
+            Str(manifest, "work_item") is { } workItem ? FSharpOption<string>.Some(workItem) : FSharpOption<string>.None,
+            Tokens(manifest, files, errors));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
+    }
+
+    /// The frozen token file named by `tokens`, as text; absent when the handover names none.
+    private static FSharpOption<string> Tokens(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
+    {
+        if (Str(manifest, "tokens") is not { } path) return FSharpOption<string>.None;
+        if (files.TryGetValue(path, out var text)) return FSharpOption<string>.Some(text);
+        errors.Add($"handover.yaml: tokens '{path}' is not among the frozen files");
+        return FSharpOption<string>.None;
     }
 
     /// The `specs` paths with the hash `files` records for each (the integrity loop above already proved the text).

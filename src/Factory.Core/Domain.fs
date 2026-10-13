@@ -67,7 +67,9 @@ type Handover =
       /// The frozen acceptance specs; empty for a handover frozen before specs were generated.
       AcceptanceSpecs: AcceptanceSpec list
       /// The work item an item handover was frozen for (handover.yaml `work_item`); None for a design handover.
-      WorkItem: string option }
+      WorkItem: string option
+      /// The frozen design-tokens/tokens.json text (handover.yaml `tokens`); None when the design has none.
+      DesignTokens: string option }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

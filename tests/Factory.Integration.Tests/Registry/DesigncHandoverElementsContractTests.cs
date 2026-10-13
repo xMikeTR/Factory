@@ -1,6 +1,7 @@
 using Factory.Core;
 using Factory.Harness.Registry;
 using Xunit;
+using FactoryCore = global::Factory.Core.Core;
 
 namespace Factory.Integration.Tests.Registry;
 
@@ -57,6 +58,27 @@ public class DesigncHandoverElementsContractTests
             [("Quotes/Quotes API", true), ("Quotes/Mail", false)],
             item.Elements.Select(e => (e.Id.Value, e.InScope)));
         Assert.All((await LoadExample()).Elements, e => Assert.True(e.InScope));
+    }
+
+    [Fact]
+    public async Task Frozen_design_tokens_are_carried_as_text_and_a_handover_without_them_has_none()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "s2-tokens-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(dir, "design-tokens"));
+        var elements = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "handover-elements.json"));
+        const string tokens = "{ \"font\": { \"size\": { \"body\": { \"$value\": \"16px\", \"$type\": \"dimension\" } } } }";
+        await File.WriteAllTextAsync(Path.Combine(dir, "elements.json"), elements);
+        await File.WriteAllTextAsync(Path.Combine(dir, "design-tokens", "tokens.json"), tokens);
+        await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"),
+            "id: 20261013-tokens\nelements: \"elements.json\"\ntokens: \"design-tokens/tokens.json\"\nfiles:\n" +
+            $"  - {{ path: \"elements.json\", hash: {DesigncHandoverReader.Hash16(elements)} }}\n" +
+            $"  - {{ path: \"design-tokens/tokens.json\", hash: {DesigncHandoverReader.Hash16(tokens)} }}\n");
+
+        var h = await new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None);
+
+        Assert.Equal(tokens, h.DesignTokens.Value);
+        Assert.Equal(tokens, FactoryCore.ParseHandover(FactoryCore.HandoverJson(h)).DesignTokens.Value); // survives the run-dir copy
+        Assert.True(Microsoft.FSharp.Core.FSharpOption<string>.get_IsNone((await LoadExample()).DesignTokens));
     }
 
     [Fact]
