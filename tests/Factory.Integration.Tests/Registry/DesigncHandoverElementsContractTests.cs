@@ -8,11 +8,11 @@ namespace Factory.Integration.Tests.Registry;
 /// copy of its example. If this fails, designc changed the contract: conform here and refresh the copy.
 public class DesigncHandoverElementsContractTests
 {
-    private static async Task<Handover> LoadExample()
+    private static async Task<Handover> LoadExample(string fixture = "handover-elements.json")
     {
         var dir = Path.Combine(Path.GetTempPath(), "s2-elements-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var text = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "handover-elements.json"));
+        var text = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", fixture));
         await File.WriteAllTextAsync(Path.Combine(dir, "elements.json"), text);
         await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"),
             $"id: 20261011-contract\nelements: \"elements.json\"\nfiles:\n  - {{ path: \"elements.json\", hash: {DesigncHandoverReader.Hash16(text)} }}\n");
@@ -40,5 +40,12 @@ public class DesigncHandoverElementsContractTests
     public async Task Events_are_the_event_vocabulary()
     {
         Assert.Equal(["QuoteRequested", "QuoteSaved", "QuotePriced"], (await LoadExample()).EventVocabulary);
+    }
+
+    [Fact]
+    public async Task Item_handover_reserved_paths_are_protected_paths()
+    {
+        var h = await LoadExample("handover-elements-2.json");
+        Assert.Contains("tests/acceptance/**", h.ProtectedPaths.Select(p => p.Value));
     }
 }
