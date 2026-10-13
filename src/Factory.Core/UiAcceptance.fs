@@ -100,6 +100,27 @@ type DefectOrigin =
     | TranslationOrigin of TaskId
     | GateGap of gate: string
 
+[<RequireQualifiedAccess>]
+module DefectOrigin =
+    /// designc's `origin` vocabulary for an escape row.
+    let toLedger =
+        function
+        | SpecGap _ -> "spec_gap"
+        | DesignError _ -> "design_error"
+        | TranslationOrigin _ -> "translation_error"
+        | GateGap _ -> "gate_gap"
+
+    /// The ledger origin plus the one reference that origin needs (requirement, decision, task or gate).
+    let parse (origin: string) (reference: string) : Result<DefectOrigin, string> =
+        if String.IsNullOrWhiteSpace reference then Error $"Origin '{origin}' needs a reference."
+        else
+            match origin with
+            | "spec_gap" -> Ok(SpecGap reference)
+            | "design_error" -> Ok(DesignError(DecisionId reference))
+            | "translation_error" -> Ok(TranslationOrigin(TaskId reference))
+            | "gate_gap" -> Ok(GateGap reference)
+            | other -> Error $"Unknown origin '{other}': expected spec_gap, design_error, translation_error or gate_gap."
+
 /// The countermeasure: a new or strengthened gate. A bug is not closed without one.
 type NewGate = { Gate: string; Strengthens: string option }
 
