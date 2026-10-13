@@ -64,6 +64,11 @@ RUN npm install -g eslint@9 dependency-cruiser@16 typescript@5 playwright@${PLAY
  && npx --no-install playwright install --with-deps chromium \
  && chmod -R a+rX /opt/playwright \
  && rm -rf /var/lib/apt/lists/*
+# The implementer's browser self-check tool (ScopedWorkspace.PlaywrightCli runs `playwright-cli <subcommand>`).
+RUN npm install -g @playwright/cli@0.1.22
+# The CLI wants the 'chrome' channel by default; point it at the image's own chromium, headless, no sandbox (the container is the sandbox).
+RUN ln -s "$(ls -d /opt/playwright/chromium-*/chrome-linux/chrome)" /opt/playwright/chromium-bin
+ENV PLAYWRIGHT_MCP_EXECUTABLE_PATH=/opt/playwright/chromium-bin PLAYWRIGHT_MCP_BROWSER=chromium PLAYWRIGHT_MCP_NO_SANDBOX=1 PLAYWRIGHT_MCP_HEADLESS=1 PLAYWRIGHT_MCP_OUTPUT_DIR=/tmp/playwright-cli
 COPY eslint/eslint.config.mjs /opt/factory/eslint/eslint.config.mjs
 RUN cd /opt/factory/eslint && npm install --no-save --ignore-scripts typescript-eslint@8 typescript@5 eslint@9 \
  && chmod -R a+rX /opt/factory
