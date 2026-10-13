@@ -41,8 +41,8 @@ let tests: (string * (unit -> unit)) list =
           let m =
               metrics
                   [ 1L, ConflictDeferred("W-B", None)
-                    2L, ItemRecheck("W-A", true)
-                    3L, ItemRecheck("W-B", false)
+                    2L, ItemRecheck("W-A", true, [ "moved" ])
+                    3L, ItemRecheck("W-B", false, [])
                     4L, EscapeRecorded("BUG-1", Some "spec_gap")
                     5L, EscapeRecorded("BUG-2", Some "spec_gap")
                     6L, EscapeRecorded("BUG-3", None) ]

@@ -30,6 +30,7 @@
     <Compile Include="Work.fs" />
     <Compile Include="Scheduler.fs" />
     <Compile Include="Digest.fs" />
+    <Compile Include="Board.fs" />
     <Compile Include="Metrics.fs" />
     <Compile Include="UiAcceptance.fs" />
     <Compile Include="DesignTokens.fs" />

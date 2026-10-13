@@ -94,4 +94,22 @@ public class WorkRegistryReaderTests
         Assert.Equal(1.0, m.RecheckRate.Value);
         Assert.Equal([("spec_gap", 1)], m.EscapesByOrigin.Select(e => (e.Item1, e.Item2)));
     }
+
+    [Fact]
+    public async Task A_frozen_item_is_pulled_until_a_stale_recheck_defers_it()
+    {
+        var frozen = """{"kind":"handover","handover":"h1","revision":"r1","item":"W-1","ts":1,"by":"mike"}""" + "\n";
+        var stale = """{"kind":"item_recheck","item":"W-1","handover":"h1","stale":true,"reasons":["Pricing moved"],"ts":2,"by":"mike"}""" + "\n";
+
+        var ready = await WorkDigestReport.PullPlanAsync(
+            Registry(new() { ["requirements/REQ-1.yaml"] = Requirement, ["work/W-1.yaml"] = Work, ["ledger/designc.jsonl"] = frozen }),
+            null, "main", 3, CancellationToken.None);
+        Assert.Equal(["W-1"], ready.Pull.Select(i => i.Id.Value));
+
+        var deferred = await WorkDigestReport.PullPlanAsync(
+            Registry(new() { ["requirements/REQ-1.yaml"] = Requirement, ["work/W-1.yaml"] = Work, ["ledger/designc.jsonl"] = frozen + stale }),
+            null, "main", 3, CancellationToken.None);
+        Assert.Empty(deferred.Pull);
+        Assert.Contains("needs a re-check: Pricing moved", WorkDigestReport.RenderPullPlan(deferred));
+    }
 }

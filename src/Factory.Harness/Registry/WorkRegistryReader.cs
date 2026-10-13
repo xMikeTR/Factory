@@ -149,7 +149,11 @@ public static class WorkRegistryReader
                     LedgerFact.NewAcceptanceFailed(k, ac, S("element") ?? "", S("commit") ?? ""),
                 "item_conflict_deferred" when S("item") is { } i => LedgerFact.NewConflictDeferred(i, O("reason")),
                 "item_recheck" when S("item") is { } i =>
-                    LedgerFact.NewItemRecheck(i, r.TryGetProperty("stale", out var st) && st.ValueKind == JsonValueKind.True),
+                    LedgerFact.NewItemRecheck(i, r.TryGetProperty("stale", out var st) && st.ValueKind == JsonValueKind.True,
+                        ListModule.OfSeq(r.TryGetProperty("reasons", out var rs) && rs.ValueKind == JsonValueKind.Array
+                            ? rs.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString()! : x.ToString()).ToList()
+                            : new List<string>())),
+                "handover" when S("item") is { } i && S("handover") is { } h => LedgerFact.NewItemFrozen(i, h, S("revision") ?? ""),
                 "escape" when S("id") is { } e => LedgerFact.NewEscapeRecorded(e, O("origin")),
                 "wip_limit_changed" when r.TryGetProperty("limit", out var l) && l.TryGetInt32(out var n) => LedgerFact.NewWipLimitChanged(n),
                 _ => null,
