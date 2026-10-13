@@ -12,7 +12,7 @@ using Factory.S2.Verify;
 
 // factory-s2 validate --handover h.json --plan plan.json      deterministic, no agents, no git
 // factory-s2 dispatch --handover h.json --plan plan.json      prints teams and waves
-// factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github] [--since <previous run id>] [--repair <integration_failed run id>]
+// factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github] [--since <previous run id>] [--repair <integration_failed run id> [--diagnose]]
 // factory-s2 qa --repo . --run-id <id> [--base main]   follow-up QA: the run's protected tests, measured again, no author
 // factory-s2 digest --registry ../registry [--repo .] [--base main] [--last-look <epoch ms>] [--wip 3] [--notify-state <file>: print NOTIFY for new Needs/Failed rows only]   Needs decision / Failed a gate / Done / Waiting
 // factory-s2 pull-plan --registry ../registry [--repo .] [--base main] [--wip 3]   what the scheduler would pull now and why the rest waits (nothing is pulled)
@@ -79,6 +79,12 @@ try
                     Console.Error.WriteLine($"run {repairOf} recorded no acceptance or token-lint failure that names a task: nothing to repair");
                     return 1;
                 }
+                if (opts.ContainsKey("diagnose"))
+                {
+                    // A read-only agent explains each blamed task's failure from its trace (a paid call, so opt-in).
+                    await using var checkout = await services.Git.BaselineCheckoutAsync(runId, cts.Token, GitWorkspace.IntegrationBranch(repairOf));
+                    repair = await Factory.S2.Quality.InvestigationRunner.DiagnoseAsync(services, repair, checkout.Path, cts.Token);
+                }
                 Directory.CreateDirectory(settings.RunDir(runId));
                 await File.WriteAllTextAsync(settings.RepairPath(runId), System.Text.Json.JsonSerializer.Serialize(repair), cts.Token);
                 Console.WriteLine($"repairing {repairOf}: re-running {string.Join(", ", repair.Feedback.Keys)}");
@@ -110,6 +116,26 @@ try
                 File.AppendAllLines(statePath, fresh);
             }
             return digest.Failed.IsEmpty && problems.Count == 0 ? 0 : 1;
+        }
+
+        case "repro":
+        {
+            // factory-s2 repro --repo . --summary "<report>" [--run-id id] [--branch main]: a read-only agent reproduces a
+            // reported escape and the steps are ledgered (`reproduction`). Intake still needs the failing spec. A paid call.
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
+            var runId = opts.GetValueOrDefault("run-id") ?? $"repro-{DateTime.UtcNow:yyyyMMdd-HHmmss}";
+            Directory.CreateDirectory(settings.StateDir);
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            using var tracing = FactoryTelemetry.CreateTracerProvider(env);
+            var services = Services(settings, runId, env, new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+            await using var checkout = await services.Git.BaselineCheckoutAsync(runId, cts.Token, opts.GetValueOrDefault("branch") ?? settings.BaseBranch);
+            var steps = await Factory.S2.Quality.InvestigationRunner.ReproduceAsync(
+                services, runId, Required(opts, "summary"), checkout.Path, cts.Token);
+            Console.WriteLine(steps ?? "not reproduced: the agent recorded no steps");
+            return steps is null ? 1 : 0;
         }
 
         case "ux-review":
