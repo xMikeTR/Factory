@@ -14,6 +14,7 @@ using Factory.S2.Verify;
 // factory-s2 dispatch --handover h.json --plan plan.json      prints teams and waves
 // factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github] [--since <previous run id>]
 // factory-s2 qa --repo . --run-id <id> [--base main]   follow-up QA: the run's protected tests, measured again, no author
+// factory-s2 digest --registry ../registry [--repo .] [--base main] [--last-look <epoch ms>] [--wip 3]   Needs decision / Failed a gate / Done / Waiting
 // factory-s2 rerun --handover <h.json | dir> --plan plan.json --task T-001 [--k 3] --repo . [--base main]   k fresh attempts, no merge
 
 var cmd = args.FirstOrDefault() ?? "help";
@@ -73,6 +74,15 @@ try
 
             Console.WriteLine(result is null ? "run ended without a result" : RunReport.Line(result));
             return result?.Status switch { "merged" or "auto_merge_enabled" => 0, "parked" => 3, _ => 1 };
+        }
+
+        case "digest":
+        {
+            var (digest, problems) = await Factory.Harness.Registry.WorkDigestReport.BuildAsync(
+                Required(opts, "registry"), opts.GetValueOrDefault("repo"), opts.GetValueOrDefault("base") ?? "main",
+                long.Parse(opts.GetValueOrDefault("last-look") ?? "0"), int.Parse(opts.GetValueOrDefault("wip") ?? "3"), CancellationToken.None);
+            Console.Write(Factory.Harness.Registry.WorkDigestReport.Render(digest, problems));
+            return digest.Failed.IsEmpty && problems.Count == 0 ? 0 : 1;
         }
 
         case "rerun":
