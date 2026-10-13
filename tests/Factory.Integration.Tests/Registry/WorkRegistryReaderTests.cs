@@ -74,4 +74,24 @@ public class WorkRegistryReaderTests
         Assert.Empty(problems);
         Assert.Contains("W-1: gate \"dotnet test\" failed at abcdef1", WorkDigestReport.Render(digest, problems));
     }
+
+    [Fact]
+    public async Task Recheck_and_escape_rows_reach_the_metrics()
+    {
+        var root = Registry(new()
+        {
+            ["requirements/REQ-1.yaml"] = Requirement,
+            ["work/W-1.yaml"] = Work,
+            ["ledger/designc.jsonl"] =
+                """{"kind":"item_recheck","item":"W-1","handover":"h","stale":true,"reasons":["moved"],"ts":1,"by":"mike"}""" + "\n" +
+                """{"kind":"escape","id":"BUG-1","description":"x","origin":"spec_gap","ts":2,"by":"s2"}""" + "\n" +
+                """{"kind":"item_conflict_deferred","item":"W-1","ts":3,"by":"s2"}""" + "\n",
+        });
+
+        var m = await WorkDigestReport.MetricsAsync(root, null, "main", CancellationToken.None);
+
+        Assert.Equal(1, m.ConflictDeferrals);
+        Assert.Equal(1.0, m.RecheckRate.Value);
+        Assert.Equal([("spec_gap", 1)], m.EscapesByOrigin.Select(e => (e.Item1, e.Item2)));
+    }
 }

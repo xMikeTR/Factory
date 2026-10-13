@@ -12,6 +12,10 @@ type LedgerFact =
     | AcceptanceFailed of task: string * ac: string * element: string * commit: string
     | ConflictDeferred of item: string * reason: string option
     | WipLimitChanged of limit: int
+    /// A design-version re-check of a frozen item; stale = its elements moved since the freeze.
+    | ItemRecheck of item: string * stale: bool
+    /// A bug closed at intake, with designc's origin (spec_gap | design_error | translation_error | gate_gap).
+    | EscapeRecorded of id: string * origin: string option
 
 type DigestState =
     | InBacklog
