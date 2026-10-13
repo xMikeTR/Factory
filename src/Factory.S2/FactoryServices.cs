@@ -34,7 +34,10 @@ public sealed record FactorySettings(
     IReadOnlyList<UiItem>? UiContract = null,
     /// Runs the frozen acceptance specs in integration verify (when the handover has any); writes
     /// Playwright's JSON report to $PLAYWRIGHT_JSON_OUTPUT_NAME. The gate has no model in the loop.
-    string AcceptanceCommand = "npx playwright test --reporter=json")
+    string AcceptanceCommand = "npx playwright test --reporter=json",
+    /// Raw-value ban over generated UI (stylelint writing JSON to $FACTORY_LINT_REPORT). Runs in integration
+    /// verify only when the registry has design-tokens/tokens.json; null is off.
+    string? TokenLintCommand = null)
 {
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
         RepoPath: Path.GetFullPath(repo),
@@ -53,7 +56,8 @@ public sealed record FactorySettings(
         QualityPolicy: QualityPolicyFile.Load(Path.GetFullPath(repo)),
         Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)),
         UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
-        AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"));
+        AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),
+        TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"));
 
     public string RunDir(string runId) => Path.Combine(StateDir, "runs", runId);
     public string PlanPath(string runId) => Path.Combine(RunDir(runId), "plan.json");

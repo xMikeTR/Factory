@@ -128,6 +128,45 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
         }
     }
 
+    /// Where the token lint command writes stylelint's JSON report, relative to the worktree.
+    public const string TokenLintReportPath = ".factory-results/token-lint.json";
+
+    /// Runs the token lint once (deterministic, no browser). The report path is passed as $FACTORY_LINT_REPORT
+    /// so the command can aim `--output-file` at it. A non-zero exit with no readable report is a failure.
+    public async Task<(VerifyOutcome Outcome, IReadOnlyList<Factory.Core.LintViolation> Violations)> TokenLintAsync(
+        string runId, string command, string worktree, CancellationToken ct)
+    {
+        var report = Path.Combine(worktree, TokenLintReportPath);
+        var dir = Path.GetDirectoryName(report)!;
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        try
+        {
+            await using var sandbox = await sandboxes.ForTeamAsync("integration", worktree, ct);
+            var r = await sandbox.RunAsync(command, worktree, TimeSpan.FromMinutes(10), new Dictionary<string, string>
+            {
+                ["FACTORY_RUN_ID"] = runId,
+                ["FACTORY_LINT_REPORT"] = TokenLintReportPath,
+            }, ct);
+            var violations = new List<Factory.Core.LintViolation>();
+            if (File.Exists(report))
+            {
+                try { violations.AddRange(Factory.Harness.Verify.StylelintReport.Violations(await File.ReadAllTextAsync(report, ct), worktree)); }
+                catch (JsonException) { }
+            }
+            var outcome = ToOutcome("token lint", r);
+            if (outcome.ExitCode == 0 && violations.Count > 0) outcome = new VerifyOutcome(outcome.Name, 1, outcome.DurationMs, outcome.OutputTail);
+            await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.Verify,
+                Outcome: outcome.ExitCode == 0 ? "passed" : "failed",
+                Payload: JsonSerializer.Serialize(new { name = "token lint", command, ExitCode = outcome.ExitCode, ms = outcome.DurationMs,
+                    violations = violations.Count, tail = r.Tail(2000) })), ct);
+            return (outcome, violations);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
     /// Where a suite command writes JUnit XML, relative to its working directory. Passed to it as
     /// FACTORY_TEST_RESULTS; removed after reading so it never shows up as a change.
     public const string ResultsPath = ".factory-results/junit.xml";

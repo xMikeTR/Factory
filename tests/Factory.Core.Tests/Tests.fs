@@ -803,6 +803,7 @@ let tests: (string * (unit -> unit)) list =
     @ Factory.Core.Tests.WorkTests.tests
     @ Factory.Core.Tests.DigestTests.tests
     @ Factory.Core.Tests.UiAcceptanceTests.tests
+    @ Factory.Core.Tests.DesignTokenTests.tests
 
 [<EntryPoint>]
 let main _ =

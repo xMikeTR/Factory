@@ -178,6 +178,9 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         if (!frozen.IsEmpty)
             outcomes.Add(await AcceptanceAsync(msg.RunId, integration, cancellationToken));
 
+        if (s.TokenLintCommand is not null && File.Exists(TokensPath(s.RegistryPath)))
+            outcomes.Add(await TokenLintAsync(msg.RunId, integration, cancellationToken));
+
         if (Directory.Exists(s.RegistryPath))
         {
             var decisions = svc.LoadHandover(msg.RunId).Decisions;
@@ -204,6 +207,42 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             ? new RunFinished(msg.RunId, "integration_failed", Briefs.Failures(failed))
             : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);
         await context.SendMessageAsync(next, cancellationToken: cancellationToken);
+    }
+
+    private static string TokensPath(string registry) => Path.Combine(registry, "design-tokens", "tokens.json");
+
+    /// The registry's design tokens must be well formed and keep text at or above the minimum; then the
+    /// raw-value lint runs over the integrated worktree. Each violation is a TranslationError on the
+    /// tasks whose `writes` cover the file, ledgered as token_lint_violation per task.
+    private async Task<VerifyOutcome> TokenLintAsync(string runId, string integration, CancellationToken ct)
+    {
+        var tokens = DesignTokens.parse(await File.ReadAllTextAsync(TokensPath(svc.Settings.RegistryPath), ct));
+        var problems = new List<string>();
+        if (tokens.IsError) problems.AddRange(tokens.ErrorValue);
+        else problems.AddRange(DesignTokens.belowMinimumText(tokens.ResultValue)
+            .Select(t => $"{t.Name} is {t.Value}, below the {DesignTokens.minimumTextPx}px minimum text size"));
+        if (problems.Count > 0)
+        {
+            await svc.LogAsync(runId, "integration_verify", LedgerKinds.Verify, outcome: "design_tokens_invalid",
+                payload: JsonSerializer.Serialize(new { problems }), ct: ct);
+            return new VerifyOutcome("design tokens", 1, 0, string.Join("\n", problems));
+        }
+
+        var (outcome, violations) = await svc.Verify.TokenLintAsync(runId, svc.Settings.TokenLintCommand!, integration, ct);
+        if (violations.Count == 0) return outcome;
+
+        var tasks = svc.LoadValidatedPlan(runId).Plan.Tasks;
+        var (errors, orphans) = TokenLint.translationErrors(tasks, ListModule.OfSeq(violations));
+        var lines = new List<string>();
+        foreach (var e in errors) lines.Add($"raw values in files written by task {e.Item.Value}");
+        foreach (var o in orphans) lines.Add($"{o} has raw values but no task writes it");
+        foreach (var v in violations)
+            foreach (var task in tasks.Where(t => t.Writes.Any(w => PathPatternModule.matches(w, v.File))))
+                await svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.TokenLintViolation,
+                    TaskId: task.Id.Value, Outcome: "failed",
+                    Payload: JsonSerializer.Serialize(new { file = v.File, line = v.Line, rule = v.Rule, text = v.Text })), ct);
+        return new VerifyOutcome(outcome.Name, outcome.ExitCode, outcome.DurationMs,
+            string.Join("\n", lines) + "\n\n" + string.Join("\n", violations.Select(v => $"{v.File}:{v.Line} {v.Rule}: {v.Text}")));
     }
 
     /// Runs the frozen specs and maps each failing one to the tasks that change its element
