@@ -184,3 +184,13 @@ module Digest =
         let n = d.Needs |> List.map (fun e -> e.Item, e.Text, e.Ts)
         let f = d.Failed |> List.map (fun e -> e.Item, e.Kind, e.Ts)
         sprintf "%A|%A" n f
+
+    /// One stable key per Needs and Failed row; Done and Waiting never alert.
+    let alertKeys (d: Digest) : string list =
+        [ for n in d.Needs -> "needs|" + defaultArg n.Item "" + "|" + string n.Ts + "|" + n.Text
+          for f in d.Failed -> $"failed|{f.Item}|{f.Kind}|{f.Ts}" ]
+
+    /// The alerts a notification may carry: rows not in `seen`. A row that clears never pings,
+    /// and a row that was already announced never pings again.
+    let newAlerts (seen: Set<string>) (d: Digest) : string list =
+        alertKeys d |> List.filter (fun k -> not (Set.contains k seen))
