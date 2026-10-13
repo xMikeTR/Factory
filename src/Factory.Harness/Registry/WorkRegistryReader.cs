@@ -144,7 +144,9 @@ public static class WorkRegistryReader
                     LedgerFact.NewItemGate(i, g, S("outcome") == "pass", O("commit")),
                 "item_done" when S("item") is { } i =>
                     LedgerFact.NewItemDone(i, O("commit"),
-                        r.TryGetProperty("evidence", out var ev) && ev.ValueKind == JsonValueKind.Array ? ev.GetArrayLength() : 0),
+                        ListModule.OfSeq(r.TryGetProperty("evidence", out var ev) && ev.ValueKind == JsonValueKind.Array
+                            ? ev.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString()! : x.ToString()).ToList()
+                            : new List<string>())),
                 "ui_acceptance_failed" when S("task") is { } k && S("ac") is { } ac =>
                     LedgerFact.NewAcceptanceFailed(k, ac, S("element") ?? "", S("commit") ?? ""),
                 "item_conflict_deferred" when S("item") is { } i => LedgerFact.NewConflictDeferred(i, O("reason")),

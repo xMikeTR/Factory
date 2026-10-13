@@ -40,9 +40,9 @@ let tests: (string * (unit -> unit)) list =
           equal 0 (compute [ pulled; fail; 3L, ItemGate("W-A", "dotnet test", true, Some "abcdef123") ]).Failed.Length "pass"
       "digest: done off main or without evidence is Failed, never Done", fun () ->
           let finished ev = [ 1L, ItemPulled "W-A"; 2L, ItemDone("W-A", Some "abc1234", ev) ]
-          equal 1 (compute (finished 1)).Done.Length "done"
-          equal [ NoEvidence ] ((compute (finished 0)).Failed |> List.map (fun f -> f.Kind)) "no evidence"
-          let d = Digest.compute items (finished 1) (fun _ -> Some false) 3 0L
+          equal 1 (compute (finished [ "gate:dotnet test@abc1234" ])).Done.Length "done"
+          equal [ NoEvidence ] ((compute (finished [])).Failed |> List.map (fun f -> f.Kind)) "no evidence"
+          let d = Digest.compute items (finished [ "gate:dotnet test@abc1234" ]) (fun _ -> Some false) 3 0L
           equal [ NotOnMain ] (d.Failed |> List.map (fun f -> f.Kind)) "not on main"
           equal 0 d.Done.Length "not done"
       "digest: an acceptance failure stands until the item passes a gate", fun () ->
@@ -51,7 +51,7 @@ let tests: (string * (unit -> unit)) list =
           equal 0 (compute [ 1L, ItemPulled "W-A"; f; 3L, ItemGate("W-A", "dotnet test", true, None) ]).Failed.Length "cleared"
       "digest: only Needs and Failed change the notification signature", fun () ->
           let base' = [ 1L, ItemPulled "W-A" ]
-          let withDone = base' @ [ 2L, ItemDone("W-A", Some "abc1234", 1) ]
+          let withDone = base' @ [ 2L, ItemDone("W-A", Some "abc1234", [ "gate:dotnet test@abc1234" ]) ]
           equal (Digest.signature (compute base')) (Digest.signature (compute withDone)) "done does not ping"
           let withNeed = base' @ [ 3L, NeedsDecisionOpened("ND-2", None, None, "q") ]
           check (Digest.signature (compute base') <> Digest.signature (compute withNeed)) "need pings"
