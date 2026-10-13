@@ -64,5 +64,5 @@ public sealed record ModelGateways(GatewayOptions Implementer, GatewayOptions Re
         : gateway.Provider == ModelProvider.Anthropic ? "anthropic" : null;
 
     public IChatClient ChatClientFor(string role, ModelTier tier) =>
-        (role is Roles.Reviewer or Roles.Qa or Roles.UxJudge ? Reviewer : Implementer).ChatClientFor(tier);
+        (role is Roles.Reviewer or Roles.Qa or Roles.UxJudge or Roles.Repro or Roles.Diagnosis ? Reviewer : Implementer).ChatClientFor(tier);
 }
