@@ -111,6 +111,16 @@ try
             return digest.Failed.IsEmpty && problems.Count == 0 ? 0 : 1;
         }
 
+        case "compare-browser":
+        {
+            // factory-s2 compare-browser --repo . --runs id1,id2,...   (each run's acting turns say which browser tool it had)
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), null, null);
+            var ledger = new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl"));
+            var stats = await Factory.Harness.Registry.BrowserToolComparison.CompareAsync(ledger, Required(opts, "runs").Split(',', StringSplitOptions.RemoveEmptyEntries), CancellationToken.None);
+            Console.Write(Factory.Harness.Registry.BrowserToolComparison.Render(stats));
+            return 0;
+        }
+
         case "pull-plan":
         {
             var plan = await Factory.Harness.Registry.WorkDigestReport.PullPlanAsync(

@@ -63,6 +63,10 @@ public sealed record FactorySettings(
         TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"),
         PlaywrightCli: Environment.GetEnvironmentVariable("FACTORY_PLAYWRIGHT_CLI") == "1");
 
+    /// Which browser tool the implementer had, for the CLI-vs-MCP comparison: FACTORY_BROWSER_TOOL (cli | mcp), else cli when
+    /// the CLI self-check is on, else none. Logged with every acting turn.
+    public string BrowserVariant => Environment.GetEnvironmentVariable("FACTORY_BROWSER_TOOL") ?? (PlaywrightCli ? "cli" : "none");
+
     public string RunDir(string runId) => Path.Combine(StateDir, "runs", runId);
     public string PlanPath(string runId) => Path.Combine(RunDir(runId), "plan.json");
     public string DispatchPath(string runId) => Path.Combine(RunDir(runId), "dispatch.json");
