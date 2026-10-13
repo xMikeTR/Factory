@@ -30,6 +30,16 @@ public static class Briefs
         sb.AppendLine("## Elements");
         foreach (var e in elements) sb.AppendLine($"- {e.Name} (`{e.Id.Value}`), risk {e.Risk}");
 
+        // The criteria about this task's elements; the frozen specs that judge them are not yours to change.
+        var criteria = handover.AcceptanceCriteria
+            .Where(c => elements.Any(e => c.Element == e.Name || c.Element.EndsWith("/" + e.Name, StringComparison.Ordinal)))
+            .ToList();
+        if (criteria.Count > 0)
+        {
+            sb.AppendLine().AppendLine("## Acceptance criteria for these elements (frozen; the specs generated from them judge your work and are not yours to edit)");
+            foreach (var c in criteria) sb.AppendLine($"### {c.Id}").AppendLine(c.Text.TrimEnd());
+        }
+
         sb.AppendLine().AppendLine("## You may write only these paths");
         foreach (var w in writable) sb.AppendLine($"- `{w.Value}`");
 

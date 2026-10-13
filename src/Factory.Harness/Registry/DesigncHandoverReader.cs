@@ -66,6 +66,11 @@ public sealed class DesigncHandoverReader : IHandoverSource
             .Concat(Patterns(resolved?.Reserved ?? [], "elements.json reserved", errors))
             .DistinctBy(p => p.Value).ToList();
 
+        var acceptanceSpecs = AcceptanceSpecs(manifest, errors);
+        var tokens = Tokens(manifest, files, errors);
+        var criteria = Criteria(manifest, files, errors);
+        var loopSpecs = LoopSpecs(manifest, errors);
+
         if (errors.Count > 0) Reject(handoverDir, errors);
         return new Handover(
             id!,
@@ -75,11 +80,38 @@ public sealed class DesigncHandoverReader : IHandoverSource
             Core.ToList(protectedPaths),
             Core.ToList(vocabulary),
             Core.ToList(Relationships(resolved!.Value, elements)),
-            Core.ToList(AcceptanceSpecs(manifest, errors)),
+            Core.ToList(acceptanceSpecs),
             Str(manifest, "work_item") is { } workItem ? FSharpOption<string>.Some(workItem) : FSharpOption<string>.None,
-            Tokens(manifest, files, errors));
+            tokens,
+            Str(manifest, "design_version") is { } version ? FSharpOption<string>.Some(version) : FSharpOption<string>.None,
+            Core.ToList(criteria),
+            Core.ToList(loopSpecs));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
+    }
+
+    /// The criteria `acceptance` lists, each from its frozen `acceptance/<id>.yaml` (its `element` key says what it is about).
+    private static List<AcceptanceCriterion> Criteria(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
+    {
+        var criteria = new List<AcceptanceCriterion>();
+        foreach (var id in List(manifest, "acceptance").Select(a => a?.ToString()).OfType<string>())
+        {
+            var rel = files.Keys.FirstOrDefault(k => Regex.IsMatch(k, $@"^acceptance/{Regex.Escape(id)}\.ya?ml$"));
+            if (rel is null) { errors.Add($"acceptance criterion {id} is listed but its file is not frozen"); continue; }
+            var element = Yaml.Deserialize<Dictionary<string, object?>>(files[rel])?.GetValueOrDefault("element")?.ToString();
+            if (element is null) { errors.Add($"{rel}: element is required"); continue; }
+            criteria.Add(new AcceptanceCriterion(id, element, files[rel]));
+        }
+        return criteria;
+    }
+
+    /// `loop_specs`: each must be one of the frozen `specs`, so the agent's loop never runs a file the gate did not freeze.
+    private static List<string> LoopSpecs(Dictionary<string, object?> manifest, List<string> errors)
+    {
+        var specs = List(manifest, "specs").OfType<string>().ToHashSet();
+        var loop = List(manifest, "loop_specs").OfType<string>().ToList();
+        foreach (var l in loop.Where(l => !specs.Contains(l))) errors.Add($"handover.yaml: loop spec '{l}' is not among the frozen specs");
+        return loop;
     }
 
     /// The frozen token file named by `tokens`, as text; absent when the handover names none.

@@ -116,7 +116,13 @@ module Json =
                     let so = obj p n
                     { Path = str p so "path"; Hash = str p so "hash" })
               WorkItem = optStr o "workItem"
-              DesignTokens = optStr o "designTokens" })
+              DesignTokens = optStr o "designTokens"
+              DesignVersion = optStr o "designVersion"
+              AcceptanceCriteria =
+                collect (arr "$" o "acceptanceCriteria") (fun p n ->
+                    let co = obj p n
+                    { Id = str p co "id"; Element = str p co "element"; Text = str p co "text" })
+              LoopSpecs = strs "$" o "loopSpecs" })
 
     // ---------- plan ----------
 
@@ -217,7 +223,12 @@ module Json =
                    "relationships", JsonArray(h.Relationships |> List.map (fun r -> node [ "from", JsonValue.Create r.From.Value; "to", JsonValue.Create r.To.Value ]) |> Array.ofList)
                    "acceptanceSpecs", JsonArray(h.AcceptanceSpecs |> List.map (fun a -> node [ "path", JsonValue.Create a.Path; "hash", JsonValue.Create a.Hash ]) |> Array.ofList)
                    if h.WorkItem.IsSome then "workItem", JsonValue.Create h.WorkItem.Value
-                   if h.DesignTokens.IsSome then "designTokens", JsonValue.Create h.DesignTokens.Value ]
+                   if h.DesignTokens.IsSome then "designTokens", JsonValue.Create h.DesignTokens.Value
+                   if h.DesignVersion.IsSome then "designVersion", JsonValue.Create h.DesignVersion.Value
+                   if not h.AcceptanceCriteria.IsEmpty then
+                       "acceptanceCriteria",
+                       JsonArray(h.AcceptanceCriteria |> List.map (fun c -> node [ "id", JsonValue.Create c.Id; "element", JsonValue.Create c.Element; "text", JsonValue.Create c.Text ]) |> Array.ofList)
+                   if not h.LoopSpecs.IsEmpty then "loopSpecs", strArr h.LoopSpecs ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     // ---------- task events (the ledger payload a runner replays on resume) ----------
