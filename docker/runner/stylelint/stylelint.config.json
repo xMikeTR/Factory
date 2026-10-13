@@ -1,0 +1,10 @@
+{
+  "customSyntax": "postcss-scss",
+  "plugins": ["stylelint-declaration-strict-value"],
+  "rules": {
+    "scale-unlimited/declaration-strict-value": [
+      ["/color$/", "background", "fill", "stroke", "font-size", "font-family", "line-height", "border-radius", "/^margin/", "/^padding/", "gap"],
+      { "ignoreValues": ["0", "100%", "auto", "inherit", "transparent", "currentColor", "none"], "ignoreFunctions": true, "disableFix": true }
+    ]
+  }
+}

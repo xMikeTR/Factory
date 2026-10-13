@@ -67,6 +67,10 @@ RUN npm install -g eslint@9 dependency-cruiser@16 typescript@5 playwright@${PLAY
 COPY eslint/eslint.config.mjs /opt/factory/eslint/eslint.config.mjs
 RUN cd /opt/factory/eslint && npm install --no-save --ignore-scripts typescript-eslint@8 typescript@5 eslint@9 \
  && chmod -R a+rX /opt/factory
+# Token lint: raw values are banned where a design token belongs (FACTORY_TOKEN_LINT_CMD points stylelint at this config).
+COPY stylelint/stylelint.config.json /opt/factory/stylelint/stylelint.config.json
+RUN cd /opt/factory/stylelint && npm install --no-save --ignore-scripts stylelint@16 postcss-scss@4 stylelint-declaration-strict-value@1 \
+ && chmod -R a+rX /opt/factory
 RUN printf '%s\n' 'registry=https://registry.npmjs.org/' 'ignore-scripts=true' 'audit=false' 'fund=false' > /etc/factory/npmrc \
  && chmod a+r /etc/factory/npmrc
 

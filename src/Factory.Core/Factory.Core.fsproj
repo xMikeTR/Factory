@@ -31,6 +31,7 @@
     <Compile Include="Scheduler.fs" />
     <Compile Include="Digest.fs" />
     <Compile Include="UiAcceptance.fs" />
+    <Compile Include="DesignTokens.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="Interop.fs" />
   </ItemGroup>
