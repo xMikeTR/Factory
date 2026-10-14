@@ -54,6 +54,12 @@ try
         {
             // --repair <failed run id>: cut from that run's integration branch, re-run only the tasks its failures blame.
             var repairOf = opts.GetValueOrDefault("repair");
+            // A brand-new project has no repository yet: create it with an empty baseline before anything reads it.
+            if (repairOf is null
+                && await GitWorkspace.EnsureRepoAsync(Required(opts, "repo"),
+                    opts.GetValueOrDefault("base") ?? Environment.GetEnvironmentVariable("FACTORY_BASE_BRANCH") ?? "main",
+                    CancellationToken.None) is { } created)
+                Console.WriteLine(created);
             var settings = FactorySettings.FromEnvironment(
                 Required(opts, "repo"), opts.GetValueOrDefault("registry"),
                 repairOf is null ? opts.GetValueOrDefault("base") : GitWorkspace.IntegrationBranch(repairOf));
