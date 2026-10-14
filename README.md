@@ -1,10 +1,9 @@
 # factory-s2: System 2 (coding pipeline), workbook edition
 
-> **This copy has 12 `TODO(you)` stubs across nine areas** in the parts worth writing yourself. Start with
-> [RESOURCES.md](RESOURCES.md): it gives the work order, the spec for each stub and what to read.
-> The core tests start at 5 passed / 25 failed and are your acceptance criteria.
-> The status table below describes the reference implementation (the original factory-s2.zip).
-
+> **Where to look:** [ARCHITECTURE.md](ARCHITECTURE.md) is the living map (container and module diagrams,
+> high-centrality modules, dated change log). [SESSION_HANDOFF.md](SESSION_HANDOFF.md) is the current state and
+> open decisions. [RESOURCES.md](RESOURCES.md) is the original workbook order. [PLAN.md](PLAN.md) and
+> [PLAN-QUALITY.md](PLAN-QUALITY.md) are the plans. Eval method and contract: [docs/evals/](docs/evals/).
 
 A head start on System 2 of the design-to-code factory. System 2 takes a frozen handover package
 from System 1 and turns it into merged code, recording everything it does in the ledger so that
@@ -20,17 +19,47 @@ Agents propose and deterministic code decides. Only two places call a model: the
 the turn loop inside each team. Everything else is plain code, and the parts that must be
 correct are written in F#.
 
-## What is verified and what is not
+## Status
 
-| Part | Status |
-|---|---|
-| `Factory.Core` (F#): paths, validator, dispatcher, task state machine, merge tiers, JSON codecs | Compiles; **30 tests pass** against the Quote example |
-| C# code that uses the F# types from `Factory.Core` (DU cases, records, options) | Compile-checked against the real `Factory.Core` |
-| `examples/pricing-v3/*.json` | Valid against `schemas/*.json` and accepted by the validator |
-| C# code that calls MAF (agents, middleware, executors, workflow, host) | Written against MAF 1.15 docs; **not compiled** (no NuGet access where it was written). Every call that depends on the MAF API version is marked `// VERIFY` |
+`main` is clean, no git remote. Tests: Core 191/0 (`dotnet run --project tests/Factory.Core.Tests`),
+Integration 380/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse,
+GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set.
+Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run
+has been made yet.
 
-The code that uses MAF is confined to `FactoryAgents.cs`, `Executors/*.cs` and `Workflow.cs`.
-Getting those to compile is part of the Phase 0 spike.
+| Area | Where | State |
+|---|---|---|
+| Rules: paths, plan validation, dispatch, task state, merge tiers, regeneration | `Factory.Core` (F#) | Built, tested |
+| MAF workflow, teams, sandbox, verify, quality gates (mutation, coverage, fitness, UI guard) | `Factory.S2`, `Factory.Harness`, `Factory.Quality.*` | Built, tested; run live on real models |
+| Work intake: work items, WIP/dependency/conflict/budget scheduler, digest, S4 metrics | `Core/Work.fs`, `Scheduler.fs`, `Board.fs`, `Digest.fs`, `Metrics.fs` | Built; a person still pulls (`item_pulled` is human-only) |
+| Per-run registry streams and single-writer fold | `Harness/Registry/RunLedgerStream`, `LedgerFold` | Built |
+| UI acceptance: frozen spec hash check, Playwright run, `ui_acceptance_failed`, repair runs, bug intake, token lint | `Core/UiAcceptance.fs`, `VerifyRunner`, `S2/Repair.cs`, `BugIntake` | Built |
+| Item budget: measure, report, and refuse a new run when exceeded | `Core/ItemBudget.fs`, `ItemBudgetReport` | Built |
+| Freeze-time UX review and `item_judge` (gradient, never decides Done) | `Core/UxReview.fs`, `UxReviewRunner`, `ItemJudgeReport` | Built; paid, opt-in |
+| Jira mirror (one-way, drift flagged not overwritten; REST and snapshot) | `Core/JiraMirror.fs`, `JiraMirrorReport`, `JiraRestClient` | Built; stub-tested only |
+| Factory evals | `docs/evals/` | Reference copies only; the suite lives on the work VM |
+
+## CLI
+
+```
+factory-s2 validate|dispatch   --handover h.json --plan plan.json         deterministic, no agents
+factory-s2 run                 --handover <h|dir> --repo . [--registry r] [--base main] [--run-id id] [--github]
+                               [--since <run>] [--repair <integration_failed run> [--diagnose]]
+factory-s2 rerun               --handover <h|dir> --plan p.json --task T-001 [--k 3] --repo .
+factory-s2 qa                  --repo . --run-id <id>                      follow-up QA, no author
+factory-s2 digest              --registry r [--last-look ms] [--wip 3] [--notify-state f]
+factory-s2 pull-plan | metrics --registry r                                read-only reports
+factory-s2 budget              --repo . [--registry r] [--no-report]       exit 2 when exceeded; `run` then exits 4
+factory-s2 intake              --registry r --id BUG-1 --spec ... --origin ... --ref ...
+factory-s2 jira-mirror         --registry r [--snapshot jira.json | JIRA_URL/JIRA_TOKEN] [--apply]
+factory-s2 ux-review           --repo . --handover h [--judge [--item W-1 --registry r --threshold 3.5]]
+factory-s2 repro               --repo . --summary "..."                    paid, opt-in
+factory-s2 compare-browser     --repo . --runs a,b                         CLI vs MCP browser tool
+```
+
+Per-command flags are the header comment of `src/Factory.S2/Program.cs`. S2 conforms to Designc's published
+contracts (`ledger_schema.json`, `elements.json` /1 and /2, the work-file format) and never edits them; the copies
+under `tests/Factory.Integration.Tests/Fixtures/designc/` are contract-tested.
 
 ## Layout
 
@@ -71,7 +100,7 @@ examples/pricing-v3/     Quote lost-update handover and a valid plan
 
 ```bash
 # 1. The core, no agents or network needed
-dotnet run --project tests/Factory.Core.Tests            # 30 passed, 0 failed
+dotnet run --project tests/Factory.Core.Tests            # all passed
 
 # 2. Deterministic CLI against the example (after the S2 project compiles)
 dotnet run --project src/Factory.S2 -- validate --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
