@@ -59,6 +59,16 @@ let tests: (string * (unit -> unit)) list =
           let d = compute [ 1L, WipLimitChanged 1; 2L, ItemPulled "W-A" ]
           equal 1 d.WipLimit "limit"
           check (d.Waiting |> List.exists (fun w -> w.Item.IsNone && w.Text.Contains "WIP limit of 1")) "wip row"
+      "digest: an exceeded budget is Waiting until within or a later pull, never Needs or Failed", fun () ->
+          let over = 2L, ItemBudgetReading("W-A", "exceeded", Some 200000L, Some 260000L, None)
+          let d = compute [ 1L, ItemPulled "W-A"; over ]
+          check (d.Waiting |> List.exists (fun w -> w.Text = "W-A budget exceeded (260000 of 200000 tokens)")) $"%A{d.Waiting}"
+          equal 0 d.Needs.Length "needs"
+          equal 0 d.Failed.Length "failed"
+          let within = 3L, ItemBudgetReading("W-A", "within", Some 400000L, Some 260000L, None)
+          check ((compute [ over; within ]).Waiting |> List.forall (fun w -> not (w.Text.Contains "budget"))) "within clears"
+          check ((compute [ over; 3L, ItemPulled "W-A" ]).Waiting |> List.forall (fun w -> not (w.Text.Contains "budget"))) "pull clears"
+          equal (Digest.signature (compute [ 1L, ItemPulled "W-A" ])) (Digest.signature (compute [ 1L, ItemPulled "W-A"; over ])) "no ping"
       "digest: an alert is announced once and clearing it never pings", fun () ->
           let need = 1L, NeedsDecisionOpened("ND-1", Some "W-A", None, "Dedupe?")
           let first = Digest.newAlerts Set.empty (compute [ need ])

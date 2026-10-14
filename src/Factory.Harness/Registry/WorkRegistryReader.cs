@@ -156,6 +156,11 @@ public static class WorkRegistryReader
                             ? rs.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString()! : x.ToString()).ToList()
                             : new List<string>())),
                 "handover" when S("item") is { } i && S("handover") is { } h => LedgerFact.NewItemFrozen(i, h, S("revision") ?? ""),
+                "item_budget" when S("item") is { } i && S("status") is { } bs =>
+                    LedgerFact.NewItemBudgetReading(i, bs,
+                        r.TryGetProperty("limit_tokens", out var lt) && lt.TryGetInt64(out var lv) ? FSharpOption<long>.Some(lv) : FSharpOption<long>.None,
+                        r.TryGetProperty("spent_tokens", out var st2) && st2.TryGetInt64(out var sv) ? FSharpOption<long>.Some(sv) : FSharpOption<long>.None,
+                        O("reason")),
                 "escape" when S("id") is { } e => LedgerFact.NewEscapeRecorded(e, O("origin")),
                 "wip_limit_changed" when r.TryGetProperty("limit", out var l) && l.TryGetInt32(out var n) => LedgerFact.NewWipLimitChanged(n),
                 _ => null,

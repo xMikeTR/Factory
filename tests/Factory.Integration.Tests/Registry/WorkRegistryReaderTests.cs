@@ -76,6 +76,24 @@ public class WorkRegistryReaderTests
     }
 
     [Fact]
+    public async Task An_exceeded_budget_row_is_listed_as_waiting()
+    {
+        var root = Registry(new()
+        {
+            ["requirements/REQ-1.yaml"] = Requirement,
+            ["work/W-1.yaml"] = Work,
+            ["ledger/designc.jsonl"] = """{"kind":"item_pulled","item":"W-1","ts":1,"by":"mike"}""" + "\n",
+            ["ledger/pipeline.jsonl"] =
+                """{"kind":"item_budget","item":"W-1","status":"exceeded","limit_tokens":200000,"spent_tokens":260000,"ts":2,"by":"factory-s2"}""" + "\n",
+        });
+
+        var (digest, problems) = await WorkDigestReport.BuildAsync(root, null, "main", 0, 3, CancellationToken.None);
+
+        Assert.Empty(problems);
+        Assert.Contains("W-1 budget exceeded (260000 of 200000 tokens)", WorkDigestReport.Render(digest, problems));
+    }
+
+    [Fact]
     public async Task Recheck_and_escape_rows_reach_the_metrics()
     {
         var root = Registry(new()
