@@ -122,6 +122,11 @@ dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/prici
     --repo <target repo> --registry <registry repo> [--base main] [--github] [--run-id <id to resume>]
 ```
 
+A brand-new project needs no repository first: when `--repo` is missing or an empty folder, `run`
+creates it as a git repository with one empty baseline commit on the base branch (a repository
+with no commit gets the same baseline). A folder that holds files but is not a git repository is
+refused and left untouched.
+
 The key never reaches a sandbox, a ledger row or a printed `GatewayOptions` (its `ToString`
 redacts it). Opt-in live check on real Claude models (Sonnet plans, Haiku acts; usage tokens are
 ledgered and the key is absent from the ledger and the state dir):
