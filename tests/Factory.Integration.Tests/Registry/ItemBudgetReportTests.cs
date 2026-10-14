@@ -64,4 +64,32 @@ public class ItemBudgetReportTests
             (r.GetProperty("kind").GetString(), r.GetProperty("item").GetString(), r.GetProperty("status").GetString(),
              r.GetProperty("limit_tokens").GetInt32(), r.GetProperty("spent_tokens").GetInt32()));
     }
+
+    [Fact]
+    public async Task An_exceeded_item_refuses_a_new_task_and_asks_for_a_person_once()
+    {
+        var (state, ledger) = await State(("r1", "W-1", 100, 50));
+        var registry = Path.Combine(Path.GetTempPath(), "s2-budget-gate-" + Guid.NewGuid().ToString("N"));
+
+        var refusal = await ItemBudgetReport.GateAsync(state, ledger, Policy(100), "W-1", registry, DateTimeOffset.UnixEpoch, default);
+        await ItemBudgetReport.GateAsync(state, ledger, Policy(100), "W-1", registry, DateTimeOffset.UnixEpoch.AddMinutes(5), default);
+
+        Assert.Equal("W-1 has spent 150 of 100 tokens: raise budget: in .factory/policy.yaml or decide in the digest", refusal);
+        var line = Assert.Single(await File.ReadAllLinesAsync(Path.Combine(registry, "ledger", "pipeline.jsonl")));
+        Assert.Empty(Factory.Integration.Tests.Support.DesigncSchema.Validate(line));
+        using var row = JsonDocument.Parse(line);
+        Assert.Equal(("item_awaiting_human", "W-1"),
+            (row.RootElement.GetProperty("kind").GetString(), row.RootElement.GetProperty("item").GetString()));
+    }
+
+    [Fact]
+    public async Task A_within_or_unlimited_item_may_start_and_writes_nothing()
+    {
+        var (state, ledger) = await State(("r1", "W-1", 10, 5));
+        var registry = Path.Combine(Path.GetTempPath(), "s2-budget-gate-" + Guid.NewGuid().ToString("N"));
+
+        Assert.Null(await ItemBudgetReport.GateAsync(state, ledger, Policy(100), "W-1", registry, DateTimeOffset.UnixEpoch, default));
+        Assert.Null(await ItemBudgetReport.GateAsync(state, ledger, Policy(null), "W-1", registry, DateTimeOffset.UnixEpoch, default));
+        Assert.False(File.Exists(Path.Combine(registry, "ledger", "pipeline.jsonl")));
+    }
 }

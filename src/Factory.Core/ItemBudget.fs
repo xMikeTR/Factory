@@ -28,3 +28,9 @@ module ItemBudget =
         limitFor policy item
         |> Option.map (fun limit ->
             { Item = item; Status = (if spent > limit then Exceeded else Within); Limit = limit; Spent = spent })
+
+    /// A new task for the item may start unless its spend already exceeds the limit. An item with no limit always may.
+    let mayStart (policy: BudgetPolicy) (item: string) (spent: int64) : bool =
+        match read policy item spent with
+        | Some { Status = Exceeded } -> false
+        | Some { Status = Within } | None -> true
