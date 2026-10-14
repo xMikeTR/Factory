@@ -15,6 +15,28 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     public static string IntegrationBranch(string runId) => $"factory/{runId}/integration";
     public static string TeamBranch(string runId, string teamId) => $"factory/{runId}/{teamId}";
 
+    /// A brand-new project has no repository yet. A missing or empty folder becomes one, and a repository with no
+    /// commit gets one: an empty baseline commit on the base branch, so a run can branch from it. Returns what was
+    /// done, or null when the repository already has commits. A folder holding files that is not a repository is
+    /// refused and left untouched.
+    public static async Task<string?> EnsureRepoAsync(string repoPath, string baseBranch, CancellationToken ct)
+    {
+        var path = Path.GetFullPath(repoPath);
+        var isRepo = Directory.Exists(Path.Combine(path, ".git")) || File.Exists(Path.Combine(path, ".git"));
+        if (isRepo && (await GitAsync(path, ct, check: false, "rev-parse", "--verify", "--quiet", "HEAD")).ExitCode == 0) return null;
+        if (!isRepo && Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any())
+            throw new Factory.Core.FactoryRejectedException($"cannot use {path} as the repository",
+                [$"{path} holds files but is not a git repository: run git init and commit them, or point --repo at an empty or new folder"]);
+
+        Directory.CreateDirectory(path);
+        if (isRepo) await GitAsync(path, ct, "symbolic-ref", "HEAD", $"refs/heads/{baseBranch}");
+        else await GitAsync(path, ct, "init", "-q", "-b", baseBranch);
+        await GitAsync(path, ct, "-c", "user.name=factory-s2", "-c", "user.email=factory-s2@localhost.invalid",
+            "commit", "-q", "--allow-empty", "-m", "Empty baseline for a new project (factory-s2)");
+        return isRepo ? $"{path} had no commit: added an empty baseline on {baseBranch}"
+            : $"created {path} as a git repository with an empty baseline on {baseBranch}";
+    }
+
     public string IntegrationPath(string runId) => Path.Combine(stateDir, "worktrees", runId, "integration");
     public string TeamPath(string runId, string teamId) => Path.Combine(stateDir, "worktrees", runId, teamId);
 
