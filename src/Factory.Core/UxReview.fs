@@ -54,6 +54,15 @@ Add one sentence in `note` naming the single biggest issue (or "none"). This is 
 
     let mean (s: UxScore) = float (s.Hierarchy + s.Clarity + s.Consistency) / 3.0
 
+    /// The one number `item_judge` carries: mean over every scored shot and whether it reaches the threshold.
+    /// None when nothing was scored (no row is written then).
+    let itemJudgement (threshold: float) (scored: (UxShot * UxScore) list) : (float * bool) option =
+        match scored with
+        | [] -> None
+        | _ ->
+            let score = scored |> List.averageBy (snd >> mean)
+            Some(score, score >= threshold)
+
     /// Mean score per element over every shot, for tracking an element across regenerations.
     let perElement (scored: (UxShot * UxScore) list) : (string * float) list =
         scored
