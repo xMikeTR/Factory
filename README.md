@@ -31,7 +31,7 @@ has been made yet.
 |---|---|---|
 | Rules: paths, plan validation, dispatch, task state, merge tiers, regeneration | `Factory.Core` (F#) | Built, tested |
 | MAF workflow, teams, sandbox, verify, quality gates (mutation, coverage, fitness, UI guard) | `Factory.S2`, `Factory.Harness`, `Factory.Quality.*` | Built, tested; run live on real models |
-| Work intake: work items, WIP/dependency/conflict/budget scheduler, digest, S4 metrics | `Core/Work.fs`, `Scheduler.fs`, `Board.fs`, `Digest.fs`, `Metrics.fs` | Built; a person still pulls (`item_pulled` is human-only) |
+| Work intake: work items, WIP/dependency/conflict/budget scheduler, digest, S4 metrics | `Core/Work.fs`, `Scheduler.fs`, `Board.fs`, `Digest.fs`, `Metrics.fs` | Built; a person still pulls (`item_pulled` is human-only). The digest lists `item_budget` rows under Waiting, as designc does |
 | Per-run registry streams and single-writer fold | `Harness/Registry/RunLedgerStream`, `LedgerFold` | Built |
 | UI acceptance: frozen spec hash check, Playwright run, `ui_acceptance_failed`, repair runs, bug intake, token lint | `Core/UiAcceptance.fs`, `VerifyRunner`, `S2/Repair.cs`, `BugIntake` | Built |
 | Item budget: measure, report, and refuse a new run when exceeded | `Core/ItemBudget.fs`, `ItemBudgetReport` | Built |

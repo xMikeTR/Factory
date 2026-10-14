@@ -17,6 +17,8 @@ type LedgerFact =
     | ItemRecheck of item: string * stale: bool * reasons: string list
     /// A handover that names the item: the item was frozen into it at this design revision.
     | ItemFrozen of item: string * handover: string * revision: string
+    /// A pipeline's token budget reading for an item (`item_budget`): status is within | exceeded | waiting.
+    | ItemBudgetReading of item: string * status: string * limitTokens: int64 option * spentTokens: int64 option * reason: string option
     /// A bug closed at intake, with designc's origin (spec_gap | design_error | translation_error | gate_gap).
     | EscapeRecorded of id: string * origin: string option
 
@@ -176,6 +178,20 @@ module Digest =
                       let why = reason |> Option.map (fun r -> ": " + r) |> Option.defaultValue ""
                       yield { Item = Some id; Text = $"{id} was deferred{why}"; Ts = ts }
                   | _ -> ()
+              // designc's rule: the latest budget row per item decides; `within` or a later pull clears it.
+              // Never Needs or Failed.
+              let latestBudget =
+                  ev
+                  |> List.choose (fun (ts, f) -> match f with ItemBudgetReading(i, s, l, sp, r) -> Some(i, (ts, s, l, sp, r)) | _ -> None)
+                  |> List.fold (fun m (i, v) -> Map.add i v m) Map.empty
+              for KeyValue(i, (ts, status, limitT, spentT, reason)) in latestBudget do
+                  if status <> "within" && not (after (function ItemPulled x -> x = i | _ -> false) ts) then
+                      let amount =
+                          match spentT, limitT with
+                          | Some s, Some l -> $" ({s} of {l} tokens)"
+                          | _ -> ""
+                      let why = reason |> Option.map (fun r -> ": " + r) |> Option.defaultValue ""
+                      yield { Item = Some i; Text = $"{i} budget {status}{amount}{why}"; Ts = ts }
               if not backlog.IsEmpty && active.Length >= limit then
                   let noun = if backlog.Length = 1 then "item waits" else "items wait"
                   yield { Item = None; Text = $"{active.Length} active against a WIP limit of {limit}: {backlog.Length} {noun}"; Ts = 0L } ]
