@@ -18,7 +18,7 @@ using Factory.S2.Verify;
 // factory-s2 pull-plan --registry ../registry [--repo .] [--base main] [--wip 3]   what the scheduler would pull now and why the rest waits (nothing is pulled)
 // factory-s2 metrics --registry ../registry [--repo .] [--base main]   S4 work metrics: throughput, lead time, human wait, deferrals, re-check rate, escapes
 // factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
-// factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded
+// factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
 // factory-s2 rerun --handover <h.json | dir> --plan plan.json --task T-001 [--k 3] --repo . [--base main]   k fresh attempts, no merge
 
@@ -72,6 +72,26 @@ try
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
+            var handoverPath = Path.GetFullPath(await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token));
+
+            // A new run for an item already over its token budget is refused (a resume of a started run is not new).
+            if (!Directory.Exists(settings.RunDir(runId)) && File.Exists(handoverPath))
+            {
+                using var handoverDoc = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(handoverPath, cts.Token));
+                if (handoverDoc.RootElement.TryGetProperty("workItem", out var wi) && wi.GetString() is { Length: > 0 } workItem)
+                {
+                    var refusal = await Factory.Harness.Registry.ItemBudgetReport.GateAsync(
+                        settings.StateDir, new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")),
+                        Factory.Harness.Policy.BudgetPolicyFile.Load(settings.RepoPath), workItem,
+                        opts.GetValueOrDefault("registry"), DateTimeOffset.UtcNow, cts.Token);
+                    if (refusal is not null)
+                    {
+                        Console.Error.WriteLine("refused: " + refusal);
+                        return 4;
+                    }
+                }
+            }
+
             if (repairOf is not null && !File.Exists(settings.RepairPath(runId)))
             {
                 var repair = await Repair.FromFailedRunAsync(services, repairOf, cts.Token);
@@ -94,7 +114,7 @@ try
             Console.WriteLine($"run {runId}: re-run with --run-id {runId} to resume");
             var result = await WorkflowHost.RunAsync(
                 S2Workflow.Build(services),
-                new StartRun(runId, Path.GetFullPath(await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token)),
+                new StartRun(runId, handoverPath,
                     repairOf ?? opts.GetValueOrDefault("since")),
                 new ConsoleHumanChannel(),
                 cts.Token);

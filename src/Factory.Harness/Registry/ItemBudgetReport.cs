@@ -8,7 +8,7 @@ namespace Factory.Harness.Registry;
 /// Per-work-item token spend against the limit in `.factory/policy.yaml` (`budget:`), reported to the registry as
 /// Designc's `item_budget` rows. Spend is the tokens of every S2 ledger row in every run whose handover names the item
 /// (a repair run carries the same item, so its tokens count). Designc only displays the reading; it never sets or
-/// enforces the limit, and this report does not stop a run either.
+/// enforces the limit, and this report does not stop a run; `GateAsync` is what refuses a new task.
 public static class ItemBudgetReport
 {
     public const string RunStream = "budget";
@@ -29,6 +29,43 @@ public static class ItemBudgetReport
             spend[item] = spend.GetValueOrDefault(item) + tokens;
         }
         return spend;
+    }
+
+    /// Refuses a new task for an item already over its limit: returns the reason (and asks a person via one
+    /// `item_awaiting_human` row, same reason = flagged once), or null when the task may start.
+    public static async Task<string?> GateAsync(
+        string stateDir, ILedger ledger, BudgetPolicy policy, string item, string? registryPath, DateTimeOffset now, CancellationToken ct)
+    {
+        var spent = (await SpendAsync(stateDir, ledger, ct)).GetValueOrDefault(item);
+        if (ItemBudget.mayStart(policy, item, spent)) return null;
+        var limit = ItemBudget.limitFor(policy, item).Value;
+        var reason = $"{item} has spent {spent} of {limit} tokens: raise budget: in .factory/policy.yaml or decide in the digest";
+        if (registryPath is not null)
+        {
+            await RunLedgerStream.AppendAsync(registryPath, RunStream, [AwaitingHumanRow(item, reason, now)], ct);
+            await LedgerFold.RunAsync(registryPath, ct);
+        }
+        return reason;
+    }
+
+    private static RegistryEvent AwaitingHumanRow(string item, string reason, DateTimeOffset now)
+    {
+        var id = "s2-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"budget\n{item}\n{reason}")))[..32];
+        using var buffer = new MemoryStream();
+        using (var w = new Utf8JsonWriter(buffer))
+        {
+            w.WriteStartObject();
+            w.WriteString("kind", "item_awaiting_human");
+            w.WriteString("item", item);
+            w.WriteString("reason", reason);
+            w.WriteString("by", RegistryLedgerProjector.By);
+            w.WriteString("system", "S2");
+            w.WriteNumber("schema_version", 1);
+            w.WriteNumber("ts", now.ToUnixTimeMilliseconds());
+            w.WriteString("event_id", id);
+            w.WriteEndObject();
+        }
+        return new RegistryEvent("pipeline.jsonl", id, Encoding.UTF8.GetString(buffer.ToArray()));
     }
 
     /// One reading per item that has a limit; items without one are not reported.

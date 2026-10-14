@@ -14,4 +14,8 @@ let tests: (string * (unit -> unit)) list =
           equal (Some { Item = "W-1"; Status = Within; Limit = 1000L; Spent = 1000L }) (ItemBudget.read policy "W-1" 1000L) "at limit"
           equal (Some { Item = "W-1"; Status = Exceeded; Limit = 1000L; Spent = 1001L }) (ItemBudget.read policy "W-1" 1001L) "over"
       "item budget: no limit configured means no reading", fun () ->
-          equal None (ItemBudget.read { Default = None; Overrides = Map.empty } "W-1" 99999L) "unlimited" ]
+          equal None (ItemBudget.read { Default = None; Overrides = Map.empty } "W-1" 99999L) "unlimited"
+      "item budget: a new task may start unless the item is exceeded", fun () ->
+          equal true (ItemBudget.mayStart policy "W-1" 1000L) "at limit"
+          equal false (ItemBudget.mayStart policy "W-1" 1001L) "over"
+          equal true (ItemBudget.mayStart { Default = None; Overrides = Map.empty } "W-1" 99999L) "unlimited" ]
