@@ -162,7 +162,8 @@ try
         case "ux-review":
         {
             // factory-s2 ux-review --repo . --handover <h> [--judge] [--run-id id]: freeze-time screenshots for one human
-            // review; --judge also scores them with the model (a paid call, a gradient, never a gate).
+            // review; --judge also scores them with the model (a paid call, a gradient, never a gate). With --judge --item <id>
+            // --registry <path> [--judge-name ux] [--threshold 3.5] the mean is also written as that item's `item_judge` row.
             var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
             if (settings.ScreenshotCommand is not { } shotCommand)
             {
@@ -182,6 +183,19 @@ try
             var result = await Factory.S2.Quality.UxReviewRunner.RunAsync(
                 services, handover, runId, shotCommand, settings.RepoPath, opts.ContainsKey("judge"), cts.Token);
             Console.Write(Factory.S2.Quality.UxReviewRunner.Render(result));
+            if (opts.GetValueOrDefault("item") is { } judgedItem && opts.GetValueOrDefault("registry") is { } judgeRegistry && result.Scores.Count > 0)
+            {
+                // The judge's mean score for the item at HEAD, as an `item_judge` row (a gradient: never decides Done).
+                var threshold = double.Parse(opts.GetValueOrDefault("threshold") ?? "3.5", System.Globalization.CultureInfo.InvariantCulture);
+                var (score, pass) = UxReview.itemJudgement(threshold, Microsoft.FSharp.Collections.ListModule.OfSeq(result.Scores.Select(x => Tuple.Create(x.Shot, x.Score)))).Value;
+                var commit = await services.Git.HeadAsync(settings.RepoPath, cts.Token);
+                var rubricHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(UxReview.rubric)))[..16];
+                await Factory.Harness.Registry.ItemJudgeReport.WriteAsync(judgeRegistry,
+                    new Factory.Harness.Registry.ItemJudgement(judgedItem, opts.GetValueOrDefault("judge-name") ?? "ux", score, threshold,
+                        commit, Roles.UxJudge, rubricHash), DateTimeOffset.UtcNow, cts.Token);
+                Console.WriteLine($"item_judge {judgedItem}: {score:0.0} vs {threshold:0.0} ({(pass ? "pass" : "fail")}) at {commit[..Math.Min(8, commit.Length)]}");
+            }
             Console.WriteLine($"screenshots kept in {Path.Combine(settings.RunDir(runId), "ux-screenshots")}");
             return result.Shots.Count > 0 ? 0 : 1;
         }

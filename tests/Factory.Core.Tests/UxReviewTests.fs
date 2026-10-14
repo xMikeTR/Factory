@@ -17,4 +17,11 @@ let tests: (string * (unit -> unit)) list =
       "ux: element scores average over every state and breakpoint", fun () ->
           let shot st = { ElementSlug = "a"; State = st; Breakpoint = "mobile"; Path = "" }
           let score h = { Hierarchy = h; Clarity = h; Consistency = h; Note = "" }
-          equal [ "a", 3.0 ] (UxReview.perElement [ shot "ready", score 2; shot "empty", score 4 ]) "avg" ]
+          equal [ "a", 3.0 ] (UxReview.perElement [ shot "ready", score 2; shot "empty", score 4 ]) "avg"
+      "ux: an item's judgement is the mean over every shot, pass at or above the threshold, none when nothing was scored", fun () ->
+          let shot st = { ElementSlug = "a"; State = st; Breakpoint = "mobile"; Path = "" }
+          let score h = { Hierarchy = h; Clarity = h; Consistency = h; Note = "" }
+          let scored = [ shot "ready", score 2; shot "empty", score 5 ]
+          equal (Some(3.5, true)) (UxReview.itemJudgement 3.5 scored) "at threshold"
+          equal (Some(3.5, false)) (UxReview.itemJudgement 4.0 scored) "below"
+          equal None (UxReview.itemJudgement 3.5 []) "nothing scored" ]
