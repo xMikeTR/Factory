@@ -110,6 +110,33 @@ public class TeamRunnerTests
         Assert.Equal(0, model.Remaining);
     }
 
+    /// A stall is pipeline trouble, not a design question: the task fails with a reason that says what the
+    /// harness saw (here: the same out-of-scope change reverted every turn, so done never counted), and no
+    /// needs-decision reaches the registry's gate.
+    [Fact]
+    public async Task A_stalled_task_fails_with_the_cause_and_raises_no_needs_decision()
+    {
+        const string stray = "Stray.cs";
+        TeamHarness? harness = null;
+        void Touch() => File.WriteAllText(Path.Combine(harness!.Services.Git.TeamPath(TeamHarness.RunId, "team-T-001"), stray), "// stray\n");
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            After(Call("declare_done", new { summary = "added QuoteStatus" }), Touch), Say("done"),
+            After(Call("declare_done", new { summary = "done again" }), Touch), Say("done"),
+            After(Call("declare_done", new { summary = "done again" }), Touch), Say("done"));
+        using var h = harness = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Failed, result.Status);
+        Assert.Null(result.Blocked);
+        Assert.Contains("not making progress", result.Failure);
+        Assert.Contains($"reverted changes outside its writes every turn ({stray})", result.Failure);
+        Assert.Equal(0, model.Remaining);
+    }
+
     [Fact]
     public async Task A_check_never_sees_the_files_an_earlier_check_generated()
     {

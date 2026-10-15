@@ -255,7 +255,7 @@ Start with the bold rows; add others only when a decision depends on them.
 | **First-pass rate** | Tasks passing `VerifyRunner` on the first attempt ÷ tasks started | S2 quality trend | Ledger `task`, `gate` |
 | **Tokens per passing task** | All tokens in a handover ÷ tasks that passed | Headline efficiency | Langfuse usage, ledger |
 | **Escape rate per stage** | Problems caught later than the stage that should have caught them, by stage | System 4's headline | Ledger `escape` |
-| **Stall rate** | Tasks escalated because they stalled ÷ tasks | Where agents get stuck; entry to behavioural evals | Ledger `needs_decision`, `Stalled` |
+| **Stall rate** | Tasks escalated because they stalled ÷ tasks | Where agents get stuck; entry to behavioural evals | Ledger `task_event` Abandon whose reason starts "not making progress" (a stall fails the task; it is not a `needs_decision`) |
 | **Spend per user** | £ per user per month against the £750 budget | Budget and alerts | APIM v2 |
 | Reruns per task | Verify failures before pass | Main cost lever | Ledger `task.reruns` |
 | Turns per task | Agent turns until done or escalated | Prompt and routing changes | Langfuse spans |

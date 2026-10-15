@@ -74,6 +74,7 @@ internal sealed class TaskLoop(
     private bool _doneDeclared;
     private bool _lastVerifyFailed;
     private int _turnsWithoutChange;
+    private int _turnsReverted; // consecutive acting turns in which scope enforcement reverted something
 
     private string? _reverted;
     private readonly string? _repair = Repair.Feedback(svc.Settings, runId, task.Id.Value); // what the failed integration said about this task
@@ -344,8 +345,9 @@ internal sealed class TaskLoop(
 
         return decision.Kind switch
         {
-            TurnKind.Escalate => await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(new NeedsDecision(
-                $"Task {_taskId} is not making progress ({decision.Reason}). How should it proceed?", task.Elements, "configurator", NoOptions, null)), ct),
+            // A stall is pipeline trouble, not a question about the design: the task fails with what the harness saw,
+            // so no needs-decision reaches the registry's gate. A fresh run follows the fix.
+            TurnKind.Escalate => await ApplyAsync(state, TaskEvent.NewAbandon(StallReason(decision.Reason)), ct),
             TurnKind.Plan => await PlanTurnAsync(state, decision.Tier, ct),
             TurnKind.Act => await ActTurnAsync(state, decision.Tier, phase, ct),
             _ => throw new InvalidOperationException($"unknown turn kind {decision.Kind}"),
@@ -408,6 +410,7 @@ internal sealed class TaskLoop(
         }
 
         _reverted = reverted.Count > 0 ? string.Join(", ", reverted) : null;
+        _turnsReverted = reverted.Count > 0 ? _turnsReverted + 1 : 0;
         _turnsWithoutChange = await svc.Git.WorkFingerprintAsync(worktree, ct) == before ? _turnsWithoutChange + 1 : 0;
 
         if (signals.NeedsDecision is { } raised)
@@ -427,6 +430,11 @@ internal sealed class TaskLoop(
 
     /// Feedback tools do not count against a turn's tool-call cap.
     private static readonly IReadOnlySet<string> ExemptFromCap = new HashSet<string> { "check_quality" };
+
+    private string StallReason(string why) =>
+        _reverted is not null && _turnsReverted >= Math.Max(_turnsWithoutChange, 1)
+            ? $"not making progress ({why}): the harness reverted changes outside its writes every turn ({_reverted}), so done never counted; look at what the build or tests write there"
+            : $"not making progress ({why})";
 
     private static readonly FSharpList<DecisionOption> NoOptions = FSharpList<DecisionOption>.Empty;
 
