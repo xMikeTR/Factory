@@ -127,6 +127,12 @@ creates it as a git repository with one empty baseline commit on the base branch
 with no commit gets the same baseline). A folder that holds files but is not a git repository is
 refused and left untouched.
 
+Every run leaves `.factory/runs/<id>/result.json` (`run`, `status`, `reason`, `exitCode`, `at`) saying
+how the last attempt ended, on every exit path: the workflow's own status (`merged`, `parked`,
+`failed`, `integration_failed`, `error`, ...), `refused` (budget, nothing to repair), `no_result`,
+or, with `exitCode` null, `rejected` (a deterministic check), `cancelled` (Ctrl+C) and `failed` (a
+crash, with the exception type). A resume replaces it.
+
 The key never reaches a sandbox, a ledger row or a printed `GatewayOptions` (its `ToString`
 redacts it). Opt-in live check on real Claude models (Sonnet plans, Haiku acts; usage tokens are
 ledgered and the key is absent from the ledger and the state dir):

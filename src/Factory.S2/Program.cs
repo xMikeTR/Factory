@@ -66,6 +66,9 @@ try
             var runId = opts.GetValueOrDefault("run-id") ?? (repairOf is null ? $"{DateTime.UtcNow:yyyyMMdd-HHmmss}" : $"{repairOf}-r1");
             Directory.CreateDirectory(settings.StateDir);
 
+            // result.json in the run folder says how this attempt ended and why, whatever the exit path.
+            return await RunOutcomeFile.RecordAsync(settings.RunDir(runId), runId, async () =>
+            {
             var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
                 .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
             // Traces leave the process only when OTEL_EXPORTER_OTLP_ENDPOINT is set (Langfuse or any
@@ -80,8 +83,9 @@ try
 
             var handoverPath = Path.GetFullPath(await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token));
 
-            // A new run for an item already over its token budget is refused (a resume of a started run is not new).
-            if (!Directory.Exists(settings.RunDir(runId)) && File.Exists(handoverPath))
+            // A new run for an item already over its token budget is refused (a resume of a started run is not new;
+            // started means the workflow copied the handover, so a refused attempt's result.json does not count).
+            if (!File.Exists(settings.HandoverCopyPath(runId)) && File.Exists(handoverPath))
             {
                 using var handoverDoc = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(handoverPath, cts.Token));
                 if (handoverDoc.RootElement.TryGetProperty("workItem", out var wi) && wi.GetString() is { Length: > 0 } workItem)
@@ -93,7 +97,7 @@ try
                     if (refusal is not null)
                     {
                         Console.Error.WriteLine("refused: " + refusal);
-                        return 4;
+                        return new RunOutcome("refused", refusal, 4);
                     }
                 }
             }
@@ -103,8 +107,9 @@ try
                 var repair = await Repair.FromFailedRunAsync(services, repairOf, cts.Token);
                 if (repair is null)
                 {
-                    Console.Error.WriteLine($"run {repairOf} recorded no acceptance or token-lint failure that names a task: nothing to repair");
-                    return 1;
+                    var nothing = $"run {repairOf} recorded no acceptance or token-lint failure that names a task: nothing to repair";
+                    Console.Error.WriteLine(nothing);
+                    return new RunOutcome("refused", nothing, 1);
                 }
                 if (opts.ContainsKey("diagnose"))
                 {
@@ -126,7 +131,10 @@ try
                 cts.Token);
 
             Console.WriteLine(result is null ? "run ended without a result" : RunReport.Line(result));
-            return result?.Status switch { "merged" or "auto_merge_enabled" => 0, "parked" => 3, _ => 1 };
+            return result is null
+                ? new RunOutcome("no_result", "run ended without a result", 1)
+                : new RunOutcome(result.Status, result.Detail, result.Status switch { "merged" or "auto_merge_enabled" => 0, "parked" => 3, _ => 1 });
+            });
         }
 
         case "digest":
