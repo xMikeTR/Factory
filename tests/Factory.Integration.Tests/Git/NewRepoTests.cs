@@ -18,10 +18,13 @@ public class NewRepoTests : IDisposable
         return r.Output.Trim();
     }
 
-    private static async Task AssertEmptyBaseline(string repo, string branch)
+    private static async Task AssertBaseline(string repo, string branch)
     {
         Assert.Equal("1", await Git(repo, "rev-list", "--count", branch));
-        Assert.Equal("", await Git(repo, "ls-tree", "-r", "--name-only", branch));
+        // The baseline ignores build output, so a first build never commits bin/ or obj/ (live run 20261015-161547).
+        Assert.Equal(".gitignore", (await Git(repo, "ls-tree", "-r", "--name-only", branch)).Trim());
+        var ignore = await Git(repo, "show", $"{branch}:.gitignore");
+        foreach (var d in new[] { "bin/", "obj/", "node_modules/" }) Assert.Contains(d, ignore);
     }
 
     [Fact]
@@ -32,7 +35,7 @@ public class NewRepoTests : IDisposable
         var note = await GitWorkspace.EnsureRepoAsync(repo, "main", CancellationToken.None);
 
         Assert.Contains("created", note);
-        await AssertEmptyBaseline(repo, "main");
+        await AssertBaseline(repo, "main");
         var integration = await new GitWorkspace(repo, Path.Combine(_root, "state")).EnsureIntegrationAsync("r1", "main", CancellationToken.None);
         Assert.True(Directory.Exists(integration), "a run can branch from the new baseline");
     }
@@ -44,7 +47,7 @@ public class NewRepoTests : IDisposable
 
         Assert.NotNull(await GitWorkspace.EnsureRepoAsync(repo, "trunk", CancellationToken.None));
 
-        await AssertEmptyBaseline(repo, "trunk");
+        await AssertBaseline(repo, "trunk");
     }
 
     [Fact]
@@ -55,7 +58,7 @@ public class NewRepoTests : IDisposable
 
         Assert.NotNull(await GitWorkspace.EnsureRepoAsync(repo, "main", CancellationToken.None));
 
-        await AssertEmptyBaseline(repo, "main");
+        await AssertBaseline(repo, "main");
     }
 
     [Fact]

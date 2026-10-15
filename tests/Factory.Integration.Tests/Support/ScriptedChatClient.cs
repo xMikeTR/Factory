@@ -36,6 +36,13 @@ public sealed class ScriptedChatClient(params ChatResponse[] script) : IChatClie
     /// A step that simulates the process being killed: cancels the run and throws, mid-turn.
     public static ChatResponse Kill(CancellationTokenSource run) => new(new ChatMessage(ChatRole.Assistant, "<kill>")) { AdditionalProperties = new() { ["kill"] = run } };
 
+    /// A step that does something to the disk first, as a build the agent ran would (touching obj/, say).
+    public static ChatResponse After(ChatResponse r, Action effect)
+    {
+        (r.AdditionalProperties ??= new())["effect"] = effect;
+        return r;
+    }
+
     public static ChatResponse Say(string text) => WithUsage(new ChatMessage(ChatRole.Assistant, text));
 
     private static ChatResponse WithUsage(ChatMessage m) =>
@@ -52,6 +59,7 @@ public sealed class ScriptedChatClient(params ChatResponse[] script) : IChatClie
                 run.Cancel();
                 throw new OperationCanceledException(run.Token);
             }
+            if (r.AdditionalProperties?.TryGetValue("effect", out var f) == true && f is Action effect) effect();
             return Task.FromResult(r);
         }
     }

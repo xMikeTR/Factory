@@ -101,4 +101,59 @@ public class GitWorkspaceTests
         var paths = await git.TaskPathsAsync(wt, TeamHarness.RunId, CancellationToken.None);
         Assert.Equal(["src/Pricing.Data/Quote.cs", "tests/Pricing.Data.Tests/new_test.sh"], paths.Order(StringComparer.Ordinal));
     }
+
+    /// live run 20261015-161547: the tests commit held obj/ (the new repo had no .gitignore), every
+    /// `dotnet test` then changed those tracked files, scope enforcement reverted them and done never counted.
+    /// Build output (bin, obj, node_modules) is never a changed path, never committed and never work.
+    [Fact]
+    public async Task Build_output_is_never_a_changed_path_or_committed_even_when_already_tracked()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var git = h.Services.Git;
+        var wt = await git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        var trackedObj = Path.Combine(wt, "tests/Pricing.Data.Tests/obj/project.assets.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(trackedObj)!);
+        await File.WriteAllTextAsync(trackedObj, "{}\n");
+        await h.GitIn(wt, "add", "-f", "tests/Pricing.Data.Tests/obj/project.assets.json");
+        await h.GitIn(wt, "commit", "-q", "-m", "obj committed by mistake");
+        var fingerprint = await git.WorkFingerprintAsync(wt, CancellationToken.None);
+
+        await File.WriteAllTextAsync(trackedObj, "{\"changed\": true}\n");
+        Directory.CreateDirectory(Path.Combine(wt, "src/Pricing.Data/obj"));
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/obj/Quote.dll"), "new\n");
+        Directory.CreateDirectory(Path.Combine(wt, "web/node_modules/x"));
+        await File.WriteAllTextAsync(Path.Combine(wt, "web/node_modules/x/index.js"), "new\n");
+
+        Assert.Empty(await git.ChangedPathsAsync(wt, CancellationToken.None));
+        Assert.Equal(fingerprint, await git.WorkFingerprintAsync(wt, CancellationToken.None));
+        Assert.False(await git.CommitAllAsync(wt, "nothing to commit", CancellationToken.None));
+
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs"), "// changed\n");
+        Assert.Equal(["src/Pricing.Data/Quote.cs"], await git.ChangedPathsAsync(wt, CancellationToken.None));
+        Assert.True(await git.CommitAllAsync(wt, "work", CancellationToken.None));
+        var committed = (await h.GitIn(wt, "show", "--name-only", "--format=", "HEAD")).Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(["src/Pricing.Data/Quote.cs"], committed);
+    }
+
+    [Fact]
+    public async Task Build_output_is_not_in_a_task_s_paths_or_diff()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var git = h.Services.Git;
+        var wt = await git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        Directory.CreateDirectory(Path.Combine(wt, "tests/Pricing.Data.Tests/obj"));
+        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Pricing.Data.Tests/obj/a.cache"), "x\n");
+        await h.GitIn(wt, "add", "-f", "tests/Pricing.Data.Tests/obj/a.cache");
+        await h.GitIn(wt, "commit", "-q", "-m", "tests with obj");
+        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Pricing.Data.Tests/obj/a.cache"), "y\n");
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs"), "// changed\n");
+
+        Assert.Equal(["src/Pricing.Data/Quote.cs"], await git.TaskPathsAsync(wt, TeamHarness.RunId, CancellationToken.None));
+        var diff = await git.TaskDiffAsync(wt, TeamHarness.RunId, CancellationToken.None);
+        Assert.Contains("Quote.cs", diff);
+        Assert.DoesNotContain("a.cache", diff);
+        var tree = await git.SnapshotAsync(wt, CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Pricing.Data.Tests/obj/a.cache"), "z\n");
+        Assert.Equal("", await git.DiffSinceAsync(wt, tree, CancellationToken.None));
+    }
 }
