@@ -16,7 +16,8 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     public static string TeamBranch(string runId, string teamId) => $"factory/{runId}/{teamId}";
 
     /// A brand-new project has no repository yet. A missing or empty folder becomes one, and a repository with no
-    /// commit gets one: an empty baseline commit on the base branch, so a run can branch from it. Returns what was
+    /// commit gets one: a baseline commit on the base branch holding only a .gitignore for build output (unless the
+    /// folder has its own), so a run can branch from it and a first build never commits bin/ or obj/. Returns what was
     /// done, or null when the repository already has commits. A folder holding files that is not a repository is
     /// refused and left untouched.
     public static async Task<string?> EnsureRepoAsync(string repoPath, string baseBranch, CancellationToken ct)
@@ -31,6 +32,12 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         Directory.CreateDirectory(path);
         if (isRepo) await GitAsync(path, ct, "symbolic-ref", "HEAD", $"refs/heads/{baseBranch}");
         else await GitAsync(path, ct, "init", "-q", "-b", baseBranch);
+        var ignore = Path.Combine(path, ".gitignore");
+        if (!File.Exists(ignore))
+        {
+            await File.WriteAllTextAsync(ignore, string.Concat(BuildCaches.Order(StringComparer.Ordinal).Select(d => d + "/\n")), ct);
+            await GitAsync(path, ct, "add", "--", ".gitignore");
+        }
         await GitAsync(path, ct, "-c", "user.name=factory-s2", "-c", "user.email=factory-s2@localhost.invalid",
             "commit", "-q", "--allow-empty", "-m", "Empty baseline for a new project (factory-s2)");
         return isRepo ? $"{path} had no commit: added an empty baseline on {baseBranch}"
@@ -77,7 +84,16 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         });
     }
 
-    /// Paths changed in the worktree since its last commit, tracked and untracked.
+    /// Build output: never a changed path, never committed, never work, even when a commit already tracks it.
+    /// A fixed list; nothing an agent writes widens it.
+    public static bool IsBuildCache(string path) => path.Split('/').Any(BuildCaches.Contains);
+
+    private static readonly HashSet<string> BuildCaches = ["bin", "obj", "node_modules"];
+
+    /// Pathspecs for the whole worktree minus build output.
+    private static readonly string[] Work = [".", .. BuildCaches.Select(d => $":(exclude,glob)**/{d}/**")];
+
+    /// Paths changed in the worktree since its last commit, tracked and untracked, build output left out.
     public async Task<List<string>> ChangedPathsAsync(string worktree, CancellationToken ct)
     {
         var r = await GitAsync(worktree, ct, "status", "--porcelain=v1", "-uall", "-z");
@@ -88,7 +104,7 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         {
             var e = entries[i];
             if (e.Length < 4) continue;
-            paths.Add(e[3..]);
+            if (!IsBuildCache(e[3..])) paths.Add(e[3..]);
             if (e[0] is 'R' or 'C') i++; // skip the rename source
         }
         return paths;
@@ -106,7 +122,7 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     public async Task<List<string>> TaskPathsAsync(string worktree, string runId, CancellationToken ct)
     {
         var committed = await GitAsync(worktree, ct, "diff", "--name-only", $"{IntegrationBranch(runId)}...HEAD");
-        return committed.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+        return committed.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Where(p => !IsBuildCache(p))
             .Concat(await ChangedPathsAsync(worktree, ct))
             .Distinct().ToList();
     }
@@ -115,8 +131,8 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     /// included (staged as intent-to-add for git to see them, then unstaged). Factory state is left out.
     public async Task<string> TaskDiffAsync(string worktree, string runId, CancellationToken ct)
     {
-        await GitAsync(worktree, ct, "add", "-A", "-N");
-        var r = await GitAsync(worktree, ct, "diff", IntegrationBranch(runId), "--", ".", ":(exclude).factory");
+        await GitAsync(worktree, ct, ["add", "-A", "-N", "--", .. Work]);
+        var r = await GitAsync(worktree, ct, ["diff", IntegrationBranch(runId), "--", .. Work, ":(exclude).factory"]);
         await GitAsync(worktree, ct, "reset", "-q"); // an index entry would make RevertPathsAsync think a new file is tracked
         return r.Output;
     }
@@ -136,7 +152,7 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     /// fix changed since this one. Written into the object store only; no commit, no ref.
     public async Task<string> SnapshotAsync(string worktree, CancellationToken ct)
     {
-        await GitAsync(worktree, ct, "add", "-A");
+        await GitAsync(worktree, ct, ["add", "-A", "--", .. Work]);
         var tree = (await GitAsync(worktree, ct, "write-tree")).Output.Trim();
         await GitAsync(worktree, ct, "reset", "-q");
         return tree;
@@ -145,8 +161,8 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     /// What changed in the worktree since `tree` (a SnapshotAsync result), new files included.
     public async Task<string> DiffSinceAsync(string worktree, string tree, CancellationToken ct)
     {
-        await GitAsync(worktree, ct, "add", "-A");
-        var diff = (await GitAsync(worktree, ct, "diff", "--cached", tree, "--", ".", ":(exclude).factory")).Output;
+        await GitAsync(worktree, ct, ["add", "-A", "--", .. Work]);
+        var diff = (await GitAsync(worktree, ct, ["diff", "--cached", tree, "--", .. Work, ":(exclude).factory"])).Output;
         await GitAsync(worktree, ct, "reset", "-q");
         return diff;
     }
@@ -185,7 +201,6 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         });
     }
 
-    private static readonly HashSet<string> BuildCaches = ["bin", "obj", "node_modules"];
 
     /// Every directory in the worktree, not descending into .git or build caches. A directory
     /// is only yielded after its parent, so a created tree is removed from its top.
@@ -264,15 +279,15 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     /// Fingerprint of uncommitted work, used to detect turns that changed nothing.
     public async Task<string> WorkFingerprintAsync(string worktree, CancellationToken ct)
     {
-        var diff = await GitAsync(worktree, ct, "diff", "HEAD");
-        var status = await GitAsync(worktree, ct, "status", "--porcelain=v1", "-uall");
+        var diff = await GitAsync(worktree, ct, ["diff", "HEAD", "--", .. Work]);
+        var status = await GitAsync(worktree, ct, ["status", "--porcelain=v1", "-uall", "--", .. Work]);
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(diff.Output + "\n" + status.Output)));
     }
 
     public async Task<bool> CommitAllAsync(string worktree, string message, CancellationToken ct)
     {
-        await GitAsync(worktree, ct, "add", "-A");
+        await GitAsync(worktree, ct, ["add", "-A", "--", .. Work]);
         var staged = await GitAsync(worktree, ct, check: false, "diff", "--cached", "--quiet");
         if (staged.ExitCode == 0) return false;
         await GitAsync(worktree, ct, "commit", "-m", message);
@@ -283,7 +298,9 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     public async Task<bool> CommitPathsAsync(string worktree, IReadOnlyCollection<string> paths, string message, CancellationToken ct)
     {
         if (paths.Count == 0) return false;
-        await GitAsync(worktree, ct, ["add", "-A", "--", .. paths]);
+        var work = paths.Where(p => !IsBuildCache(p)).ToList();
+        if (work.Count == 0) return false;
+        await GitAsync(worktree, ct, ["add", "-A", "--", .. work]);
         var staged = await GitAsync(worktree, ct, check: false, "diff", "--cached", "--quiet");
         if (staged.ExitCode == 0) return false;
         await GitAsync(worktree, ct, "commit", "-m", message);

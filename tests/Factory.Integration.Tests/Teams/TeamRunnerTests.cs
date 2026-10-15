@@ -82,6 +82,34 @@ public class TeamRunnerTests
 
     /// live2: the P check's `p compile` left generated C# inside the test project, and every later
     /// dotnet check in the same run compiled it and failed. Each check starts from the tree as found.
+    /// live run 20261015-161547: obj/ was committed (the new repo had no .gitignore), the Implementer's build
+    /// changed it, scope enforcement reverted it as outside its writes and that cancelled done every turn until the
+    /// stall rule parked the task. A build touching tracked build output is not a scope violation.
+    [Fact]
+    public async Task A_build_that_changes_tracked_build_output_outside_the_writes_still_lets_done_count()
+    {
+        const string obj = "tests/Pricing.Data.Tests/obj/project.assets.json";
+        TeamHarness? harness = null;
+        void Build() => File.WriteAllText(Path.Combine(harness!.Services.Git.TeamPath(TeamHarness.RunId, "team-T-001"), obj), "{\"restored\": 2}\n");
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            After(Call("declare_done", new { summary = "added QuoteStatus" }), Build), Say("done"));
+        using var h = harness = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
+        Directory.CreateDirectory(Path.Combine(integration, "tests/Pricing.Data.Tests/obj"));
+        await File.WriteAllTextAsync(Path.Combine(integration, obj), "{}\n");
+        await h.GitIn(integration, "add", "-f", obj);
+        await h.GitIn(integration, "commit", "-q", "-m", "obj committed by mistake");
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Empty(h.Rows(LedgerKinds.ScopeViolation));
+        Assert.Equal(0, model.Remaining);
+    }
+
     [Fact]
     public async Task A_check_never_sees_the_files_an_earlier_check_generated()
     {
