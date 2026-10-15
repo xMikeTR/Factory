@@ -42,7 +42,8 @@ public class TaskRerunTests
         Assert.Equal("T-001", report.TaskId);
         Assert.Equal(["rerun-test-k1", "rerun-test-k2", "rerun-test-k3"], report.Attempts.Select(a => a.RunId));
         // The third attempt passes again: it starts from base, not from the first attempt's work.
-        Assert.Equal(["passed", "blocked", "passed"], report.Attempts.Select(a => a.Outcome));
+        // The stalling attempt fails: a stall is pipeline trouble, not a needs-decision.
+        Assert.Equal(["passed", "failed", "passed"], report.Attempts.Select(a => a.Outcome));
         Assert.Equal([3, 3, 3], report.Attempts.Select(a => a.Turns));
         Assert.Equal([600L, 300L, 600L], report.Attempts.Select(a => a.TokensIn));   // 100 per call
         Assert.Equal([120L, 60L, 120L], report.Attempts.Select(a => a.TokensOut));   // 20 per call
