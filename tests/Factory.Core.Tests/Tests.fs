@@ -452,6 +452,16 @@ let tests: (string * (unit -> unit)) list =
           let h = { handover with ProtectedPaths = [ p ".github/**" ] }
           let v = Merge.decide Merge.defaultPolicy { Teams = [ team ]; Handover = h; ChangedLines = 5; ChangedFiles = [ ".github/workflows/ci.yml" ] }
           equal [ ProtectedPathChanged ".github/workflows/ci.yml" ] v.Blocks "blocks"
+      "merge: a recorded manual check clears its block; tiered counts approvers only, auto anyone; the latest record wins", fun () ->
+          let v = { Tier = OneApproval; Reasons = []; Blocks = [ ManualVerifyPending "T-001: playtest"; ManualVerifyPending "T-002: look"; ScopeLeak "x" ] }
+          let r check by outcome = { Check = check; By = by; Outcome = outcome }
+          let records = [ r "T-001: playtest" "mallory" Verified; r "T-002: look" "Alice" (Deferred "no device yet") ]
+          equal [ ManualVerifyPending "T-001: playtest"; ScopeLeak "x" ] (Merge.recordManual (Tiered [ "alice" ]) records v).Blocks "tiered"
+          equal [ ScopeLeak "x" ] (Merge.recordManual Auto records v).Blocks "auto"
+          equal [ "T-002: look" ] (Merge.countedManual (Tiered [ "alice" ]) records |> List.map (fun x -> x.Check)) "counted"
+          let later = records @ [ r "T-002: look" "alice" Verified ]
+          equal [ Verified ] (Merge.countedManual (Tiered [ "alice" ]) later |> List.map (fun x -> x.Outcome)) "latest wins"
+          equal [] (Merge.countedManual Auto [ r "T-001: playtest" "" Verified ]) "a record names a person"
       "merge: small low-risk change auto-merges", fun () ->
           let h = { handover with Elements = handover.Elements |> List.map (fun e -> { e with Risk = Low }) }
           let team = { Id = TeamId "t"; Tasks = [ task "T-002" ]; Writes = [ p "src/PricingApi/**" ]; Elements = [ ElementId "Pricing Platform/Pricing API" ] }

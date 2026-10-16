@@ -54,6 +54,15 @@ type Approval =
       SingleOperator: bool
       Missing: int }
 
+/// What a person recorded for a manual check (`factory-s2 verify`). Deferred still clears the
+/// block, and the note travels to the PR and the merge row.
+type ManualOutcome =
+    | Verified
+    | Deferred of note: string
+
+/// `Check` is the block's own text, "<task>: <check name>".
+type ManualRecord = { Check: string; By: string; Outcome: ManualOutcome }
+
 [<RequireQualifiedAccess>]
 module Merge =
 
@@ -168,3 +177,17 @@ module Merge =
     let recordVerified (approvers: string list) (comments: PrComment list) (verdict: MergeVerdict) : MergeVerdict =
         let verified = comments |> List.choose (fun c -> if allowed approvers c.Author then argument "/verified" c.Body else None) |> Set.ofList
         { verdict with Blocks = verdict.Blocks |> List.filter (function ManualVerifyPending c -> not (verified.Contains c) | _ -> true) }
+
+    /// The manual records that count, the latest per check: in Tiered mode only an approver's,
+    /// in Auto mode anyone's who gave a name.
+    let countedManual (enforcement: MergeEnforcement) (records: ManualRecord list) : ManualRecord list =
+        let may (by: string) =
+            match enforcement with
+            | Auto -> by.Trim() <> ""
+            | Tiered approvers -> allowed approvers by
+        records |> List.filter (fun r -> may r.By) |> List.groupBy (fun r -> r.Check) |> List.map (snd >> List.last)
+
+    /// Drops ManualVerifyPending blocks a counted manual record covers, whether verified or deferred.
+    let recordManual (enforcement: MergeEnforcement) (records: ManualRecord list) (verdict: MergeVerdict) : MergeVerdict =
+        let recorded = countedManual enforcement records |> List.map (fun r -> r.Check) |> Set.ofList
+        { verdict with Blocks = verdict.Blocks |> List.filter (function ManualVerifyPending c -> not (recorded.Contains c) | _ -> true) }

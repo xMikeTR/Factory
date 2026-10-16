@@ -44,6 +44,7 @@ public static class LedgerKinds
     public const string ScopeViolation = "scope_violation";
     public const string Review = "review";          // one review round: outcome, findings kept and dropped, independence
     public const string Merge = "merge";
+    public const string ManualCheck = "manual_check"; // task + payload {check, by, outcome: done|deferred, note}: a person recorded a manual check (factory-s2 verify)
     public const string AsBuiltEdge = "asbuilt_edge"; // payload {from, to}: an element pair the code crosses with no relationship in the model (debt)
     public const string TokenLintViolation = "token_lint_violation"; // task + payload {file, line, rule, text}: a raw value where a design token belongs
     public const string UiAcceptanceFailed = "ui_acceptance_failed"; // element + payload {ac, spec, commit, trace}: a frozen Playwright spec failed on this task's element

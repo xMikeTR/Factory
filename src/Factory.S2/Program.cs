@@ -20,6 +20,7 @@ using Factory.S2.Verify;
 // factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
 // factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
+// factory-s2 verify --repo . --run-id <id> --check "T-001: <check name>" --by <you> [--outcome done|deferred] [--note "why"]   records a manual check; run again with --run-id <id> to reach the merge (Tiered: --by must be an approver; deferred needs --note)
 // factory-s2 rerun --handover <h.json | dir> --plan plan.json --task T-001 [--k 3] --repo . [--base main]   k fresh attempts, no merge
 
 var cmd = args.FirstOrDefault() ?? "help";
@@ -323,6 +324,21 @@ try
                     opts.GetValueOrDefault("caught-by")),
                 DateTimeOffset.UtcNow, CancellationToken.None);
             Console.WriteLine(why is null ? $"escape {opts["id"]} recorded" : $"not closed: {why}");
+            return why is null ? 0 : 1;
+        }
+
+        case "verify":
+        {
+            // A manual check a person did (or deferred) for a parked run; the next attempt of the same run id reads it at the merge.
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), null, opts.GetValueOrDefault("base"));
+            var runId = Required(opts, "run-id");
+            if (!File.Exists(settings.PlanPath(runId))) { Console.Error.WriteLine($"no run {runId} with a plan in {settings.StateDir}"); return 1; }
+            var plan = Core.ValidatePlan(Core.ParseHandover(File.ReadAllText(settings.HandoverCopyPath(runId))), File.ReadAllText(settings.PlanPath(runId)));
+            if (!plan.IsValid) { Console.Error.WriteLine($"run {runId}: its stored plan no longer validates"); return 1; }
+            var why = await ManualChecks.RecordAsync(new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")), runId, Core.Dispatch(plan.Plan),
+                (settings.MergePolicy ?? Core.DefaultMergePolicy).Enforcement, Required(opts, "check"), Required(opts, "by"),
+                opts.GetValueOrDefault("outcome") ?? "done", opts.GetValueOrDefault("note"), CancellationToken.None);
+            Console.WriteLine(why is null ? $"recorded; run again with --run-id {runId} to reach the merge" : $"not recorded: {why}");
             return why is null ? 0 : 1;
         }
 

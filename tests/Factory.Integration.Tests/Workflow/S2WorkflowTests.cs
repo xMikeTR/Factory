@@ -286,6 +286,39 @@ public class S2WorkflowTests
         Assert.Contains("Merge blocked", prBody);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_manual_check_recorded_with_verify_lets_the_resumed_run_merge_and_a_deferral_reaches_the_PR(bool auto)
+    {
+        var model = new ScriptedChatClient();
+        var enforcement = auto ? MergeEnforcement.Auto : MergeEnforcement.NewTiered(Microsoft.FSharp.Collections.ListModule.OfSeq(["alice"]));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(enforcement));
+        var human = new ApprovingHuman();
+        var parked = await RunT001(h, model, human, WithManualCheck);
+        Assert.Equal("parked", parked?.Status);
+        const string check = "T-001: eyeball the enum";
+
+        Assert.Equal($"no manual check 'T-001: nope' in run {TeamHarness.RunId} (T-001: eyeball the enum)",
+            await ManualChecks.RecordAsync(h.Ledger, TeamHarness.RunId, h.Services.LoadDispatch(TeamHarness.RunId), enforcement, "T-001: nope", "alice", "done", null, default));
+        Assert.Equal("a deferred check needs --note saying why",
+            await ManualChecks.RecordAsync(h.Ledger, TeamHarness.RunId, h.Services.LoadDispatch(TeamHarness.RunId), enforcement, check, "alice", "deferred", " ", default));
+        if (!auto)
+            Assert.Equal("mallory is not a merge approver (alice)",
+                await ManualChecks.RecordAsync(h.Ledger, TeamHarness.RunId, h.Services.LoadDispatch(TeamHarness.RunId), enforcement, check, "mallory", "done", null, default));
+        Assert.Null(await ManualChecks.RecordAsync(h.Ledger, TeamHarness.RunId, h.Services.LoadDispatch(TeamHarness.RunId), enforcement,
+            check, "alice", "deferred", "no Godot project yet", default));
+
+        var resumed = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), human, default);
+
+        Assert.Equal(auto ? "auto_merge_enabled" : "merged", resumed?.Status);
+        Assert.Equal(0, model.Remaining); // nothing ran again but the merge
+        var prBody = await File.ReadAllTextAsync(Path.Combine(h.StateDir, "runs", TeamHarness.RunId, $"factory_{TeamHarness.RunId}_integration.pr.md"));
+        Assert.Contains("Manual checks deferred", prBody);
+        Assert.Contains("- T-001: eyeball the enum, deferred by alice: no Godot project yet", prBody);
+        Assert.Contains("\"deferred\":[\"T-001: eyeball the enum, deferred by alice: no Godot project yet\"]", h.Rows(LedgerKinds.Merge).Last(e => e.Payload!.Contains("\"tier\"")).Payload);
+    }
+
     /// A GitHub stand-in: PR comments are whatever the test posts; merges are counted.
     private sealed class FakeGitHub : IPullRequests, IApprovalComments
     {
