@@ -52,6 +52,17 @@ public class RegistryProgressTests : IDisposable
     }
 
     [Fact]
+    public async Task Every_task_state_projects_so_a_task_in_review_does_not_stop_the_progress()
+    {
+        var ledger = Ledger();
+        foreach (var state in Microsoft.FSharp.Reflection.FSharpType.GetUnionCases(typeof(Factory.Core.TaskState), null).Select(c => c.Name))
+            await ledger.AppendAsync(Task(state));
+
+        Assert.Equal(["running", "running", "blocked", "running", "running", "passed", "failed"],
+            Pipeline("task").Select(r => r.GetProperty("status").GetString()));
+    }
+
+    [Fact]
     public async Task With_no_registry_folder_or_no_handover_yet_the_event_is_still_logged_and_nothing_is_projected()
     {
         Directory.Delete(Registry, recursive: true);
