@@ -93,27 +93,36 @@ public class AnthropicWireTests
         return list;
     }
 
-    /// Tools, instructions and the brief never change within a turn, so every call after the first reads them from cache.
+    /// The brief is a breakpoint (tools, instructions and the brief never change within a turn), and so is the end:
+    /// results are elided in batches, so the next call starts with this whole request and reads it from cache.
     [Fact]
-    public async Task The_brief_is_a_cache_breakpoint_and_nothing_else_is_while_no_result_is_elided()
+    public async Task The_brief_and_the_end_of_the_request_are_cache_breakpoints()
     {
         using var fake = new FakeAnthropic(Ok);
         var messages = Turn(2);
         await Client(fake.Url).GetResponseAsync(messages, new ChatOptions { Instructions = "role instructions" });
-        Assert.Equal(["user:text"], Marked(fake.Bodies.Single()));
+        Assert.Equal(["user:text", "user:tool_result:c2"], Marked(fake.Bodies.Single()));
         Assert.All(messages.SelectMany(m => m.Contents), c => Assert.Null(c.AdditionalProperties));
     }
 
-    /// A stub never changes once made, so the newest stub is a breakpoint: the next call reads everything before it.
-    /// A breakpoint at the end would be rewritten on every call, because each call elides one more result.
+    /// Between elisions each request extends the one before, so its end breakpoint is the next call's cache hit.
+    /// Stubs carry no breakpoint of their own: the end breakpoint after them already covers them.
     [Fact]
-    public async Task The_newest_elided_tool_result_is_a_cache_breakpoint()
+    public async Task After_an_elision_only_the_brief_and_the_end_are_breakpoints()
     {
         using var fake = new FakeAnthropic(Ok);
-        var client = new TrimmingChatClient(Client(fake.Url), keepRecent: 5);
-        await client.GetResponseAsync(Turn(7));
-        await client.GetResponseAsync(Turn(8));
-        Assert.Equal(["user:text", "user:tool_result:c2"], Marked(fake.Bodies[0]));
-        Assert.Equal(["user:text", "user:tool_result:c3"], Marked(fake.Bodies[1]));
+        var client = new TrimmingChatClient(Client(fake.Url), keepRecent: 5, batch: 5);
+        await client.GetResponseAsync(Turn(10));
+        await client.GetResponseAsync(Turn(11));
+        Assert.Equal(["user:text", "user:tool_result:c10"], Marked(fake.Bodies[0]));
+        Assert.Equal(["user:text", "user:tool_result:c11"], Marked(fake.Bodies[1]));
+    }
+
+    [Fact]
+    public async Task A_request_with_only_the_brief_marks_it_once()
+    {
+        using var fake = new FakeAnthropic(Ok);
+        await Client(fake.Url).GetResponseAsync([new ChatMessage(ChatRole.User, "the brief")]);
+        Assert.Equal(["user:text"], Marked(fake.Bodies.Single()));
     }
 }

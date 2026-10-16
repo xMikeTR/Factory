@@ -3,10 +3,10 @@ using Microsoft.Extensions.AI;
 
 namespace Factory.Harness;
 
-/// Anthropic prompt cache breakpoints, at the two places a turn's prompt stops changing: the brief (tools,
-/// instructions and the first user message come before it) and the newest elided tool result (a stub never
-/// changes, and each call elides one more). Not at the end: ToolResultTrimmer rewrites the middle on every call,
-/// so a breakpoint there would be written each time and never read. The input list is not mutated.
+/// Anthropic prompt cache breakpoints: the brief (tools, instructions and the first user message come before it,
+/// and none of them changes within a turn) and the end of the request. ToolResultTrimmer elides in batches, so
+/// between elisions each request extends the one before and the next call reads this one from cache; a call that
+/// elides falls back to the brief. The input list is not mutated.
 public static class PromptCache
 {
     public const string ControlKey = "anthropic:cache_control";
@@ -14,14 +14,16 @@ public static class PromptCache
     public static IList<ChatMessage> Mark(IList<ChatMessage> messages)
     {
         var brief = IndexOf(messages, m => m.Role == ChatRole.User && m.Contents.Count > 0 && m.Contents[^1] is TextContent);
-        var stub = LastIndexOf(messages, m => m.Contents.Any(ToolResultTrimmer.IsElided));
-        if (brief < 0 && stub < 0) return messages;
+        var end = LastIndexOf(messages, m => m.Contents.Any(Markable));
+        if (brief < 0 && end < 0) return messages;
 
         var result = messages.ToList();
         if (brief >= 0) result[brief] = WithControl(result[brief], c => c is TextContent);
-        if (stub >= 0) result[stub] = WithControl(result[stub], ToolResultTrimmer.IsElided);
+        if (end > brief) result[end] = WithControl(result[end], Markable);
         return result;
     }
+
+    private static bool Markable(AIContent c) => c is TextContent or FunctionResultContent;
 
     private static int IndexOf(IList<ChatMessage> list, Func<ChatMessage, bool> p)
     {
