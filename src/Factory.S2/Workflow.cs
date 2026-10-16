@@ -63,6 +63,9 @@ public static class WorkflowHost
         using var span = FactoryTelemetry.StartRun(start.RunId);
         await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, start, cancellationToken: ct);
 
+        // An executor that throws may end the stream with a workflow error or with nothing at all: either
+        // way its exception is the reason, so result.json and the registry say why, not only stderr.
+        string? failure = null;
         await foreach (WorkflowEvent evt in run.WatchStreamAsync(ct))
         {
             switch (evt)
@@ -77,13 +80,22 @@ public static class WorkflowHost
 
                 case ExecutorFailedEvent failed:
                     Console.Error.WriteLine($"[{failed.ExecutorId}] failed: {failed.Data}");
+                    failure ??= $"{failed.ExecutorId} failed: {Describe(failed.Data)}";
                     break;
 
                 case WorkflowErrorEvent error:
                     Console.Error.WriteLine($"workflow error: {error.Data}");
-                    return new RunFinished(start.RunId, "error", error.Data?.ToString() ?? "unknown");
+                    return new RunFinished(start.RunId, "error", failure ?? Describe(error.Data));
             }
         }
-        return null;
+        return failure is null ? null : new RunFinished(start.RunId, "error", failure);
+    }
+
+    /// "Type: message" of the innermost exception (handlers are invoked by reflection), else the data as text.
+    private static string Describe(object? data)
+    {
+        if (data is not Exception x) return data?.ToString() ?? "unknown";
+        while (x.InnerException is { } inner) x = inner;
+        return $"{x.GetType().Name}: {x.Message}";
     }
 }

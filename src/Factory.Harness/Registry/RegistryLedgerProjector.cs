@@ -179,7 +179,7 @@ public static class RegistryLedgerProjector
         "Passed" => "passed",
         "Failed" => "failed",
         "Blocked" => "blocked",
-        "Ready" or "Running" or "Verifying" => "running",
+        "Ready" or "Running" or "Verifying" or "Reviewing" => "running",
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, "not a TaskState case"),
     };
 
