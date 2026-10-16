@@ -361,6 +361,11 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
                 await context.SendMessageAsync(new MergeApprovalRequest(msg.RunId, url, approval.tier.ToString(), verdict.Reasons.ToArray()),
                     cancellationToken: cancellationToken);
                 break;
+            case { IsMergeNow: true } when github is null:
+                // No PR host can merge: a person merges the branch and says so, so the run never claims a merge that did not happen.
+                await context.SendMessageAsync(new MergeApprovalRequest(msg.RunId, url, verdict.Tier.ToString(),
+                    [$"no pull request host: merge {branch} into {s.BaseBranch} yourself", .. verdict.Reasons]), cancellationToken: cancellationToken);
+                break;
             default: // MergeNow
                 await svc.PullRequests.EnableAutoMergeAsync(url, cancellationToken);
                 await context.SendMessageAsync(new RunFinished(msg.RunId, "auto_merge_enabled", url), cancellationToken: cancellationToken);
