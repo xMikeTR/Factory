@@ -333,6 +333,10 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
 
         switch (action)
         {
+            case MergeAction.Blocked when verdict.Blocks.All(b => b.IsManualVerifyPending):
+                // Nothing failed: the run waits on a person doing a check, so it parks and says how to record it.
+                await context.SendMessageAsync(new RunFinished(msg.RunId, "parked", ManualWait(msg.RunId, teams, verdict.Blocks)), cancellationToken: cancellationToken);
+                break;
             case MergeAction.Blocked:
                 await context.SendMessageAsync(new RunFinished(msg.RunId, "merge_blocked", string.Join("\n", blocks)), cancellationToken: cancellationToken);
                 break;
@@ -358,6 +362,17 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
                 await context.SendMessageAsync(new RunFinished(msg.RunId, "auto_merge_enabled", url), cancellationToken: cancellationToken);
                 break;
         }
+    }
+
+    /// "waiting on a manual check: T-001: name (instructions)" per pending check, then the command that records one.
+    private string ManualWait(string runId, IEnumerable<Team> teams, IEnumerable<MergeBlock> pending)
+    {
+        var instructions = teams.SelectMany(t => t.Tasks).SelectMany(t => t.Verify.OfType<VerifyEntry.Manual>()
+            .Select(m => ($"{t.Id.Value}: {m.Item.Name}", m.Item.Instructions))).ToDictionary(x => x.Item1, x => x.Instructions);
+        var checks = pending.OfType<MergeBlock.ManualVerifyPending>().Select(b => b.check).ToList();
+        var lines = checks.Select(c => $"waiting on a manual check: {c} ({instructions.GetValueOrDefault(c, "no instructions")})");
+        return string.Join("\n", lines) +
+            $"\nRecord it with: factory-s2 verify --repo {svc.Settings.RepoPath} --run-id {runId} --check \"{checks[0]}\" --by <you> [--outcome deferred --note \"why\"], then run again with --run-id {runId}";
     }
 
     private async ValueTask HandleApprovalAsync(MergeApprovalResponse msg, IWorkflowContext context, CancellationToken cancellationToken = default)
