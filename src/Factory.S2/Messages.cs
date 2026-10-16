@@ -28,7 +28,7 @@ public sealed record IntegrationReady(string RunId);
 /// Integration verify -> merge.
 public sealed record IntegrationVerified(string RunId);
 
-/// Terminal message for Finalize, from any stage. Status "parked": Detail is the open ND ids.
+/// Terminal message for Finalize, from any stage. Status "parked": Detail is the open ND ids, the approvals awaited, or the manual checks waited on and how to record them.
 public sealed record RunFinished(string RunId, string Status, string Detail);
 
 /// What the CLI prints when a run ends.

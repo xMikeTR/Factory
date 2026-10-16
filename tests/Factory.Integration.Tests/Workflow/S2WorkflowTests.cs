@@ -268,7 +268,7 @@ public class S2WorkflowTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task A_pending_manual_check_blocks_the_merge_in_both_modes(bool auto)
+    public async Task A_pending_manual_check_blocks_the_merge_and_parks_the_run_in_both_modes(bool auto)
     {
         var model = new ScriptedChatClient();
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy:
@@ -277,8 +277,9 @@ public class S2WorkflowTests
 
         var result = await RunT001(h, model, human, WithManualCheck);
 
-        Assert.Equal("merge_blocked", result?.Status);
-        Assert.Contains("manual check pending: T-001: eyeball the enum", result?.Detail);
+        Assert.Equal("parked", result?.Status); // it did not fail: it waits on a person
+        Assert.StartsWith("waiting on a manual check: T-001: eyeball the enum (Check the names read well.)", result?.Detail);
+        Assert.Contains("factory-s2 verify", result?.Detail);
         Assert.Empty(human.Approvals);
         Assert.Single(h.Rows(LedgerKinds.Merge), e => e.Outcome == "blocked");
         var prBody = await File.ReadAllTextAsync(Path.Combine(h.StateDir, "runs", TeamHarness.RunId, $"factory_{TeamHarness.RunId}_integration.pr.md"));
