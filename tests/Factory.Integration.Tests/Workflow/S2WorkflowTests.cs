@@ -441,10 +441,7 @@ public class S2WorkflowTests
         Assert.Equal("p check -tc tcOptimistic", check.GetProperty("check").GetString());
         Assert.Equal("fail", check.GetProperty("outcome").GetString());
         Assert.NotEqual(0, check.GetProperty("exit_code").GetInt32());
-        var closed = JsonDocument.Parse(Assert.Single(await File.ReadAllLinesAsync(Path.Combine(ledger, "designc.jsonl")))).RootElement;
-        Assert.Equal("handover_closed", closed.GetProperty("kind").GetString());
-        Assert.Equal(h.Handover.Id, closed.GetProperty("handover").GetString());
-        Assert.Equal("abandoned", closed.GetProperty("outcome").GetString()); // D-0001's check failed
+        Assert.False(File.Exists(Path.Combine(ledger, "designc.jsonl"))); // not merged: the handover stays open for a resume
     }
 
     [Fact]

@@ -167,18 +167,18 @@ public class RegistryLedgerProjectorTests
     }
 
     [Fact]
-    public void Any_decision_check_not_passing_closes_the_handover_abandoned()
+    public void A_merged_run_with_a_decision_check_not_passing_closes_the_handover_abandoned()
     {
         Assert.Equal("abandoned", Closed([.. Run(), Finished(14, "merged")]));                    // D-0002 failed
-        Assert.Equal("abandoned", Closed([.. Run(), D2Passes(13), Finished(14, "failed")]));      // never merged
     }
 
+    /// A run that did not merge can be resumed with --run-id, so only a person abandons its handover (designc Build).
     [Fact]
-    public void A_parked_or_unfinished_run_leaves_the_handover_open()
+    public void A_run_that_did_not_merge_leaves_the_handover_open()
     {
         Assert.Null(Closed(Run()));
-        Assert.Null(Closed([.. Run(), Finished(14, "parked")]));
-        Assert.Null(Closed([.. Run(), Finished(14, "error")]));
+        foreach (var status in new[] { "parked", "error", "failed", "merge_blocked", "integration_failed", "refused" })
+            Assert.Null(Closed([.. Run(), D2Passes(13), Finished(14, status)]));
     }
 
     private static LedgerEvent Started(int second) => At(second, new(RunId, "S2", "start", LedgerKinds.RunStarted));
