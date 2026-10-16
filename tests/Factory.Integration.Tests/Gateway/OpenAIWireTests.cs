@@ -56,4 +56,25 @@ public class OpenAIWireTests
         Assert.DoesNotContain("prompt_cache_key", fake.Bodies.Single());
         Assert.DoesNotContain("factory:", fake.Bodies.Single());
     }
+
+    /// Gemini caches implicitly; behind LiteLLM or Gemini's OpenAI endpoint a cache read comes back as
+    /// prompt_tokens_details.cached_tokens, inside prompt_tokens. It reaches the turn row as cache_read.
+    [Fact]
+    public async Task A_cache_read_reported_the_OpenAI_way_reaches_the_turn_usage()
+    {
+        const string gemini = """
+            {"id":"c1","object":"chat.completion","created":1,"model":"gemini-2.5-pro",
+             "choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
+             "usage":{"prompt_tokens":1200,"completion_tokens":5,"total_tokens":1205,"prompt_tokens_details":{"cached_tokens":1024}}}
+            """;
+        using var fake = new FakeModelServer(gemini);
+        var gateway = new GatewayOptions(ModelProvider.OpenAICompatible, fake.Url, "test-key", "f", "gemini-2.5-pro", "s");
+        var u = (await gateway.ChatClientFor(ModelTier.Standard).GetResponseAsync("hi")).Usage!;
+
+        Assert.Equal(1200, u.InputTokenCount);
+        Assert.Equal((1024L, 0L), TurnUsage.Cache(u));
+        var payload = new JsonObject();
+        TurnUsage.AddCache(payload, u);
+        Assert.Equal(1024, (long)payload["cache_read"]!);
+    }
 }
