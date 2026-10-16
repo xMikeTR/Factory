@@ -95,8 +95,17 @@ public sealed class JsonlLedger(string path) : ILedger
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
             var e = JsonSerializer.Deserialize<LedgerEvent>(line, Json);
-            if (e is not null && e.RunId == runId) yield return e;
+            if (e is null || e.RunId != runId) continue;
+            // TraceId defaults to the current trace, which is the writer's and never the reader's: a row with none keeps none.
+            if (e.TraceId is not null && !HasTraceId(line)) e = e with { TraceId = null };
+            yield return e;
         }
+    }
+
+    private static bool HasTraceId(string line)
+    {
+        using var doc = JsonDocument.Parse(line);
+        return doc.RootElement.TryGetProperty("trace_id", out var t) && t.ValueKind == JsonValueKind.String;
     }
 }
 

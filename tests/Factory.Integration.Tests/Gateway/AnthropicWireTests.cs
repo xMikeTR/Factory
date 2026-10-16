@@ -20,16 +20,23 @@ public class AnthropicWireTests
     /// A one-shot fake: answers every POST with `reply` and keeps each request body.
     internal sealed class FakeAnthropic : IDisposable
     {
-        private readonly HttpListener _listener = new();
+        private readonly HttpListener _listener;
         public List<string> Bodies { get; } = [];
         public Uri Url { get; }
 
         public FakeAnthropic(string reply)
         {
-            var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var port = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop();
-            Url = new Uri($"http://127.0.0.1:{port}/");
-            _listener.Prefixes.Add(Url.ToString());
-            _listener.Start();
+            // A free port can be taken by a parallel test between the probe and the bind, so a failed bind tries another.
+            for (var attempt = 1; ; attempt++)
+            {
+                var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var port = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop();
+                var listener = new HttpListener();
+                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                try { listener.Start(); }
+                catch (HttpListenerException) when (attempt < 5) { listener.Close(); continue; }
+                (_listener, Url) = (listener, new Uri($"http://127.0.0.1:{port}/"));
+                break;
+            }
             _ = Task.Run(async () =>
             {
                 while (_listener.IsListening)
