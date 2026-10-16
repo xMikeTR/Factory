@@ -122,6 +122,28 @@ public class TelemetryContractTests
         var text = string.Join('\n', chat.TagObjects.Select(t => $"{t.Key}={t.Value}").Concat(chat.Events.SelectMany(e => e.Tags.Select(t => $"{t.Key}={t.Value}"))));
         Assert.Equal(capture, text.Contains(Brief));
         Assert.Equal(capture, text.Contains("reply-text-0042"));
+        Assert.Equal(capture, (chat.GetTagItem("gen_ai.input.messages") as string ?? "").Contains(Brief));
+        Assert.Equal(capture, (chat.GetTagItem("gen_ai.output.messages") as string ?? "").Contains("reply-text-0042"));
+    }
+
+    /// Error analysis reads what each tool was asked and what it answered, so with capture on both are on its span.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Tool_arguments_and_results_reach_the_tool_span_only_when_capture_is_on(bool capture)
+    {
+        using var spans = new SpanCollector();
+        var model = new ScriptedChatClient(Call("read_file", new { path = "args-path-0042" }), Say("done"));
+        IList<AITool> tools = [AIFunctionFactory.Create((string path) => $"result-text-0042 of {path}", "read_file")];
+        var agent = new FactoryAgents(_ => model, new RoleAllowListPolicy(), new MemoryLedger(), capture)
+            .Create(new AgentScope("run-1", Roles.Implementer), ModelTier.Standard, "code", tools);
+
+        await agent.RunAsync(Brief);
+
+        var tool = Assert.Single(spans.Spans, s => s.GetTagItem("gen_ai.operation.name") is "execute_tool");
+        // designc's trace viewer reads these two OpenTelemetry GenAI attributes by name.
+        Assert.Equal(capture, (tool.GetTagItem("gen_ai.tool.call.arguments") as string ?? "").Contains("args-path-0042"));
+        Assert.Equal(capture, (tool.GetTagItem("gen_ai.tool.call.result") as string ?? "").Contains("result-text-0042"));
     }
 
     [Fact]
