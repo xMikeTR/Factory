@@ -1,8 +1,6 @@
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
 using System.Text.Json.Nodes;
 using Factory.Harness;
+using Factory.Integration.Tests.Support;
 using Microsoft.Extensions.AI;
 using Xunit;
 
@@ -17,44 +15,6 @@ public class AnthropicWireTests
          "usage":{"input_tokens":10,"cache_read_input_tokens":100,"cache_creation_input_tokens":50,"output_tokens":5}}
         """;
 
-    /// A one-shot fake: answers every POST with `reply` and keeps each request body.
-    internal sealed class FakeAnthropic : IDisposable
-    {
-        private readonly HttpListener _listener;
-        public List<string> Bodies { get; } = [];
-        public Uri Url { get; }
-
-        public FakeAnthropic(string reply)
-        {
-            // A free port can be taken by a parallel test between the probe and the bind, so a failed bind tries another.
-            for (var attempt = 1; ; attempt++)
-            {
-                var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var port = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop();
-                var listener = new HttpListener();
-                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-                try { listener.Start(); }
-                catch (HttpListenerException) when (attempt < 5) { listener.Close(); continue; }
-                (_listener, Url) = (listener, new Uri($"http://127.0.0.1:{port}/"));
-                break;
-            }
-            _ = Task.Run(async () =>
-            {
-                while (_listener.IsListening)
-                {
-                    HttpListenerContext ctx;
-                    try { ctx = await _listener.GetContextAsync(); } catch { return; }
-                    using (var r = new StreamReader(ctx.Request.InputStream)) Bodies.Add(await r.ReadToEndAsync());
-                    var bytes = Encoding.UTF8.GetBytes(reply);
-                    ctx.Response.ContentType = "application/json";
-                    await ctx.Response.OutputStream.WriteAsync(bytes);
-                    ctx.Response.Close();
-                }
-            });
-        }
-
-        public void Dispose() => _listener.Close();
-    }
-
     internal static IChatClient Client(Uri url) =>
         new GatewayOptions(ModelProvider.Anthropic, url, "test-key", "f", "s", "m").ChatClientFor(Factory.Core.ModelTier.Standard);
 
@@ -62,7 +22,7 @@ public class AnthropicWireTests
     [Fact]
     public async Task Input_counts_cached_tokens_with_reads_and_writes_reported_apart()
     {
-        using var fake = new FakeAnthropic(Reply);
+        using var fake = new FakeModelServer(Reply);
         var u = (await Client(fake.Url).GetResponseAsync("hi")).Usage!;
         Assert.Equal(160, u.InputTokenCount);
         Assert.Equal(100, u.CachedInputTokenCount);
@@ -98,7 +58,7 @@ public class AnthropicWireTests
     [Fact]
     public async Task The_brief_and_the_end_of_the_request_are_cache_breakpoints()
     {
-        using var fake = new FakeAnthropic(Ok);
+        using var fake = new FakeModelServer(Ok);
         var messages = Turn(2);
         await Client(fake.Url).GetResponseAsync(messages, new ChatOptions { Instructions = "role instructions" });
         Assert.Equal(["user:text", "user:tool_result:c2"], Marked(fake.Bodies.Single()));
@@ -110,7 +70,7 @@ public class AnthropicWireTests
     [Fact]
     public async Task After_an_elision_only_the_brief_and_the_end_are_breakpoints()
     {
-        using var fake = new FakeAnthropic(Ok);
+        using var fake = new FakeModelServer(Ok);
         var client = new TrimmingChatClient(Client(fake.Url), keepRecent: 5, batch: 5);
         await client.GetResponseAsync(Turn(10));
         await client.GetResponseAsync(Turn(11));
@@ -121,7 +81,7 @@ public class AnthropicWireTests
     [Fact]
     public async Task A_request_with_only_the_brief_marks_it_once()
     {
-        using var fake = new FakeAnthropic(Ok);
+        using var fake = new FakeModelServer(Ok);
         await Client(fake.Url).GetResponseAsync([new ChatMessage(ChatRole.User, "the brief")]);
         Assert.Equal(["user:text"], Marked(fake.Bodies.Single()));
     }
