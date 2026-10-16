@@ -54,7 +54,7 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
         {
             ApiKey = ApiKey,
             BaseUrl = Endpoint?.ToString() ?? "https://api.anthropic.com",
-        }.AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens),
+        }.AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens).AsBuilder().Use(inner => new PromptCachingChatClient(inner)).Build(),
         ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey),
                 new OpenAIClientOptions { Endpoint = Endpoint ?? new Uri("http://localhost:4000/v1") })
             .GetChatClient(ModelFor(tier)).AsIChatClient(),

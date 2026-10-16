@@ -7,6 +7,12 @@ namespace Factory.Harness;
 /// is not mutated (the function-invoking client keeps the full history for the turn).
 public static class ToolResultTrimmer
 {
+    /// Marks a stub, so PromptCache can find the newest one without reading its text.
+    public const string ElidedKey = "factory:elided";
+
+    public static bool IsElided(AIContent c) =>
+        c is FunctionResultContent { AdditionalProperties: { } p } && p.ContainsKey(ElidedKey);
+
     public static IList<ChatMessage> Trim(IList<ChatMessage> messages, int keepRecent)
     {
         var total = messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Count();
@@ -25,7 +31,8 @@ public static class ToolResultTrimmer
             {
                 if (c is not FunctionResultContent r || ++seen > elide) return c;
                 var name = names.GetValueOrDefault(r.CallId, "tool");
-                return new FunctionResultContent(r.CallId, $"[{name} result elided: {r.Result?.ToString()?.Length ?? 0} chars; call it again if you need it]");
+                return new FunctionResultContent(r.CallId, $"[{name} result elided: {r.Result?.ToString()?.Length ?? 0} chars; call it again if you need it]")
+                    { AdditionalProperties = new() { [ElidedKey] = true } };
             }).ToList();
             result.Add(new ChatMessage(m.Role, contents) { AuthorName = m.AuthorName, MessageId = m.MessageId });
         }
