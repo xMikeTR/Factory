@@ -182,18 +182,18 @@ public static class RegistryLedgerProjector
     /// Run statuses that end the run for good. "parked" waits on a needs-decision and "error" is
     /// the host failing; both resume under the same run id, so the handover stays open.
     private static readonly string[] Merged = ["merged", "auto_merge_enabled"];
-    private static readonly string[] StillOpen = ["parked", "error"];
 
     private static (DateTimeOffset, RegistryEvent)? HandoverClosed(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
     {
         var finished = run.LastOrDefault(e => e.Kind == LedgerKinds.Run);
-        if (finished?.Outcome is null || StillOpen.Contains(finished.Outcome)) return null;
+        // Only a merge ends a handover: any other end can be resumed with --run-id, and abandoning is a person's call in designc.
+        if (finished?.Outcome is null || !Merged.Contains(finished.Outcome)) return null;
         var results = run
             .Where(e => e.Kind == LedgerKinds.Verify && e.Decision is not null && e.Payload is not null)
             .Select(e => (e, Command: CommandOf(e.Payload!)))
             .Where(x => x.Command is not null)
             .Select(x => new CheckResult(DecisionId.NewDecisionId(x.e.Decision!), x.Command!, x.e.Outcome == "passed"));
-        var outcome = HandoverClosure.outcome(ListModule.OfSeq(handover.Decisions), Merged.Contains(finished.Outcome), ListModule.OfSeq(results));
+        var outcome = HandoverClosure.outcome(ListModule.OfSeq(handover.Decisions), true, ListModule.OfSeq(results));
         return (finished.Ts, Row("designc.jsonl", "handover_closed", finished, w =>
         {
             w.WriteString("handover", handover.Id);
