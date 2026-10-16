@@ -67,4 +67,23 @@ public class RunOutcomeTests : IDisposable
 
         Assert.Equal("merged", Result().GetProperty("status").GetString());
     }
+
+    [Fact]
+    public async Task Every_exit_path_reports_how_the_attempt_ended_and_a_failing_report_masks_nothing()
+    {
+        var seen = new List<RunOutcome>();
+        Task Ended(RunOutcome o) { seen.Add(o); return Task.CompletedTask; }
+
+        await RunOutcomeFile.RecordAsync(_runDir, "r1", () => Task.FromResult(new RunOutcome("error", "workflow error", 1)), Ended);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RunOutcomeFile.RecordAsync(_runDir, "r1", () => throw new OperationCanceledException(), Ended));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => RunOutcomeFile.RecordAsync(_runDir, "r1", () => throw new InvalidOperationException("boom"), Ended));
+
+        Assert.Equal(["error", "cancelled", "failed"], seen.Select(o => o.Status));
+        Assert.Equal("InvalidOperationException: boom", seen[2].Reason);
+
+        var code = await RunOutcomeFile.RecordAsync(_runDir, "r1", () => Task.FromResult(new RunOutcome("merged", "", 0)),
+            _ => throw new IOException("registry is read-only"));
+        Assert.Equal(0, code);
+        Assert.Equal("merged", Result().GetProperty("status").GetString());
+    }
 }

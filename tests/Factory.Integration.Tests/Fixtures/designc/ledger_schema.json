@@ -44,13 +44,16 @@
     "item_conflict_deferred",
     "wip_limit_changed",
     "item_budget",
-    "item_judge"
+    "item_judge",
+    "run_started",
+    "run_ended"
   ],
   "rules": [
     "fail_needs_evidence",
     "budget_shape",
     "suite_run_shape",
     "hash_not_blank",
+    "ended_needs_reason",
     "aborted_needs_reason",
     "caught_by_member",
     "origin_member"
@@ -671,6 +674,48 @@
       "types": {},
       "rules": []
     },
+    "run_ended": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "run",
+        "handover",
+        "status"
+      ],
+      "optional": [
+        "reason"
+      ],
+      "enums": {
+        "status": [
+          "succeeded",
+          "failed",
+          "parked",
+          "cancelled"
+        ]
+      },
+      "types": {
+        "run": "string",
+        "handover": "string",
+        "status": "string",
+        "reason": "string"
+      },
+      "rules": [
+        "ended_needs_reason"
+      ]
+    },
+    "run_started": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "run",
+        "handover"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "run": "string",
+        "handover": "string"
+      },
+      "rules": []
+    },
     "suite_run": {
       "stream": "factory.jsonl",
       "required": [
@@ -738,7 +783,8 @@
         "cost",
         "model",
         "tier",
-        "handover"
+        "handover",
+        "run"
       ],
       "enums": {
         "status": [

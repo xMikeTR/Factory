@@ -176,4 +176,60 @@ public class RegistryLedgerProjectorTests
         Assert.Null(Closed([.. Run(), Finished(14, "parked")]));
         Assert.Null(Closed([.. Run(), Finished(14, "error")]));
     }
+
+    private static LedgerEvent Started(int second) => At(second, new(RunId, "S2", "start", LedgerKinds.RunStarted));
+
+    private static LedgerEvent Ended(int second, string status, string detail) => At(second, new(RunId, "S2", "finalize", LedgerKinds.Run,
+        Outcome: status, Payload: JsonSerializer.Serialize(new { RunId, Status = status, Detail = detail })));
+
+    private static List<Dictionary<string, JsonElement>> Rows(List<LedgerEvent> run, string kind)
+    {
+        var rows = RegistryLedgerProjector.Project(run, Handover);
+        foreach (var e in rows) Assert.Empty(DesigncSchema.Validate(e.Line));
+        Assert.All(rows.Where(e => e.Line.Contains($"\"kind\":\"{kind}\"")), e => Assert.Equal(DesigncSchema.StreamOf(kind), e.Stream));
+        return rows.Select(Row).Where(r => r["kind"].GetString() == kind).ToList();
+    }
+
+    [Fact]
+    public void Every_attempt_start_is_a_run_started_row_and_every_finalize_a_run_ended_row()
+    {
+        var run = new List<LedgerEvent> { Started(0) };
+        run.AddRange(Run());
+        run.Add(Ended(16, "parked", "waiting on ND-0004"));
+        run.Add(Started(20));
+        run.Add(Ended(30, "merged", "PR #12 merged"));
+
+        var starts = Rows(run, "run_started");
+        Assert.Equal([T0.ToUnixTimeMilliseconds(), T0.AddSeconds(20).ToUnixTimeMilliseconds()], starts.Select(r => r["ts"].GetInt64()));
+        Assert.All(starts, r => { Assert.Equal(RunId, r["run"].GetString()); Assert.Equal(Handover.Id, r["handover"].GetString()); });
+
+        var ends = Rows(run, "run_ended");
+        Assert.Equal(["parked", "succeeded"], ends.Select(r => r["status"].GetString()));
+        Assert.Equal("waiting on ND-0004", ends[0]["reason"].GetString());
+        Assert.False(ends[1].ContainsKey("reason"));
+        Assert.All(ends, r => Assert.Equal(RunId, r["run"].GetString()));
+    }
+
+    [Fact]
+    public void A_run_that_ends_any_other_way_is_failed_with_its_own_status_in_the_reason_and_an_aborted_attempt_ends_it_too()
+    {
+        var rerun = At(17, new(RunId, "S2", "rerun", LedgerKinds.Run, TaskId: "T-001", Outcome: "rerun"));
+        var aborted = At(25, new(RunId, "S2", "host", LedgerKinds.RunAborted, Outcome: "cancelled",
+            Payload: JsonSerializer.Serialize(new { status = "cancelled", detail = "The operation was canceled." })));
+        var crashed = At(35, new(RunId, "S2", "host", LedgerKinds.RunAborted, Outcome: "failed",
+            Payload: JsonSerializer.Serialize(new { status = "failed", detail = "HttpRequestException: 400" })));
+
+        var ends = Rows([Started(0), Ended(16, "plan_rejected", "planner did not produce a valid plan"), rerun, Started(20), aborted, Started(30), crashed], "run_ended");
+
+        Assert.Equal(["failed", "cancelled", "failed"], ends.Select(r => r["status"].GetString()));
+        Assert.Equal("plan_rejected: planner did not produce a valid plan", ends[0]["reason"].GetString());
+        Assert.Equal("The operation was canceled.", ends[1]["reason"].GetString());
+        Assert.Equal("failed: HttpRequestException: 400", ends[2]["reason"].GetString());
+    }
+
+    [Fact]
+    public void A_task_row_names_its_run_so_designc_counts_only_the_latest_as_spend()
+    {
+        Assert.All(Rows(Run(), "task"), r => Assert.Equal(RunId, r["run"].GetString()));
+    }
 }
