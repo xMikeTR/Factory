@@ -25,8 +25,8 @@ public class RegistryLedgerProjectorTests
     [
         At(1, new(RunId, "S2", "plan", LedgerKinds.Plan, Outcome: "drafted")),
         At(2, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-001", TeamId: "team-1", Outcome: "Running")),
-        At(3, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Standard", TokensIn: 100, TokensOut: 20)),
-        At(4, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Frontier", TokensIn: 300, TokensOut: 40)),
+        At(3, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Standard", TokensIn: 100, TokensOut: 20, Payload: """{"model_id":"mid-model"}""")),
+        At(4, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Frontier", TokensIn: 300, TokensOut: 40, Payload: """{"model_id":"big-model"}""")),
         At(5, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-001", TeamId: "team-1", Element: "Pricing Platform/Referral Worker", Outcome: "Passed")),
         At(6, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-002", TeamId: "team-2", Outcome: "Running")),
         At(7, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-002", TeamId: "team-2", Model: "Small", TokensIn: 50, TokensOut: 5)),
@@ -92,6 +92,9 @@ public class RegistryLedgerProjectorTests
         Assert.Equal(400, t1["tokens_in"].GetInt64());
         Assert.Equal(60, t1["tokens_out"].GetInt64());
         Assert.Equal("Frontier", t1["tier"].GetString());
+        // usage: per tier and model, in the order first used, so designc shows the split.
+        Assert.Equal("""[{"model":"mid-model","tier":"Standard","turns":1,"tokens_in":100,"tokens_out":20},{"model":"big-model","tier":"Frontier","turns":1,"tokens_in":300,"tokens_out":40}]""",
+            t1["usage"].GetRawText());
         Assert.Equal(Handover.Id, t1["handover"].GetString());
         Assert.Equal("Pricing Platform/Referral Worker", t1["element"].GetString());
         Assert.Equal(T0.AddSeconds(5).ToUnixTimeMilliseconds(), t1["ts"].GetInt64());
@@ -99,6 +102,7 @@ public class RegistryLedgerProjectorTests
         var t2 = Assert.Single(rows, r => r["kind"].GetString() == "task" && r["task"].GetString() == "T-002");
         Assert.Equal("blocked", t2["status"].GetString());
         Assert.False(t2.ContainsKey("element"));
+        Assert.Equal("""[{"model":"Small","tier":"Small","turns":1,"tokens_in":50,"tokens_out":5}]""", t2["usage"].GetRawText()); // a turn row from before model_id names its tier
 
         var nd = Assert.Single(rows, r => r["kind"].GetString() == "needs_decision");
         Assert.Equal("ND-0004", nd["id"].GetString());

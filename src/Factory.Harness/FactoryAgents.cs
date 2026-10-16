@@ -90,6 +90,11 @@ public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, 
     public FactoryAgents(GatewayOptions gateway, IToolPolicy policy, ILedger ledger, bool captureContent = false)
         : this(gateway.ChatClientFor, policy, ledger, captureContent) { }
 
+    /// The model a role's tier calls, as its client names it (null when the client does not say): turn rows carry it
+    /// so designc can show which model spent what.
+    public string? ModelIdFor(string role, ModelTier tier) =>
+        chatFor(role, tier).GetService<ChatClientMetadata>()?.DefaultModelId;
+
     /// Tool results older than this many are replaced by stubs in what the model sees.
     public const int KeepRecentToolResults = 5;
 

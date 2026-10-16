@@ -51,6 +51,7 @@
   "rules": [
     "fail_needs_evidence",
     "budget_shape",
+    "usage_shape",
     "suite_run_shape",
     "hash_not_blank",
     "ended_needs_reason",
@@ -784,7 +785,8 @@
         "model",
         "tier",
         "handover",
-        "run"
+        "run",
+        "usage"
       ],
       "enums": {
         "status": [
@@ -795,7 +797,9 @@
         ]
       },
       "types": {},
-      "rules": []
+      "rules": [
+        "usage_shape"
+      ]
     },
     "ui_acceptance_failed": {
       "stream": "pipeline.jsonl",
