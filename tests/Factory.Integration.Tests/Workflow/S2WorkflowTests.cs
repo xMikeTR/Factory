@@ -4,6 +4,7 @@ using Factory.Core;
 using Factory.Harness;
 using Factory.Integration.Tests.Support;
 using Factory.S2;
+using Factory.S2.Git;
 using Factory.S2.Quality;
 using Xunit;
 using static Factory.Integration.Tests.Support.ScriptedChatClient;
@@ -145,7 +146,7 @@ public class S2WorkflowTests
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
             new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
 
-        Assert.Equal("auto_merge_enabled", result?.Status);
+        Assert.Equal("merged", result?.Status);
         Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "drafted");
         Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "accepted");
         var feedback = model.Requests[1].SelectMany(m => m.Contents).OfType<Microsoft.Extensions.AI.FunctionResultContent>().Single();
@@ -250,19 +251,72 @@ public class S2WorkflowTests
         Assert.Contains(h.Rows(LedgerKinds.Turn).Where(e => e.Stage == "act"), e => e.Payload!.Contains("\"capped\":true"));
     }
 
+    /// A person who has not merged: the run must not claim a merge.
+    private sealed class RefusingHuman : IHumanChannel
+    {
+        public Task<MergeApprovalResponse> ApproveAsync(MergeApprovalRequest request, CancellationToken ct) =>
+            Task.FromResult(new MergeApprovalResponse(request.RunId, false, null));
+    }
+
+    /// A PR host that can auto-merge: Auto mode hands the merge to it and asks nobody.
+    private sealed class AutoMergingGitHub : IPullRequests, IApprovalComments
+    {
+        public int AutoMerges { get; private set; }
+        public Task<string> EnsurePullRequestAsync(string head, string baseBranch, string title, string body, CancellationToken ct) =>
+            Task.FromResult("https://github.com/o/r/pull/1");
+        public Task EnableAutoMergeAsync(string url, CancellationToken ct) { AutoMerges++; return Task.CompletedTask; }
+        public Task<IReadOnlyList<PrComment>> CommentsAsync(string url, CancellationToken ct) => Task.FromResult<IReadOnlyList<PrComment>>([]);
+        public Task MergeAsync(string url, CancellationToken ct) => throw new InvalidOperationException("auto mode never merges directly");
+    }
+
     [Fact]
-    public async Task Auto_mode_merges_on_green_whatever_the_tier()
+    public async Task Auto_mode_on_a_PR_host_enables_auto_merge_on_green_whatever_the_tier()
     {
         var model = new ScriptedChatClient();
+        var host = new AutoMergingGitHub();
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3),
-            mergePolicy: Policy(MergeEnforcement.Auto));
+            mergePolicy: Policy(MergeEnforcement.Auto), pullRequests: host);
         var human = new ApprovingHuman();
 
         var result = await RunT001(h, model, human);
 
         Assert.Equal("auto_merge_enabled", result?.Status);
+        Assert.Equal(1, host.AutoMerges);
         Assert.Empty(human.Approvals);
         Assert.Single(h.Rows(LedgerKinds.Merge), e => e.Outcome == "TwoApprovals"); // still reported: Quotes DB is high risk
+    }
+
+    [Fact]
+    public async Task Auto_mode_with_no_PR_host_asks_a_person_to_merge_the_integration_branch_and_ends_merged()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.Auto));
+        var human = new ApprovingHuman();
+
+        var result = await RunT001(h, model, human);
+
+        Assert.Equal("merged", result?.Status);
+        var request = Assert.Single(human.Approvals);
+        Assert.Contains($"no pull request host: merge {GitWorkspace.IntegrationBranch(TeamHarness.RunId)} into main yourself", request.Reasons);
+        Assert.Single(h.Rows(LedgerKinds.Merge), e => e.Outcome == "merged");
+    }
+
+    [Fact]
+    public async Task Auto_mode_with_no_PR_host_ends_not_merged_when_the_person_has_not_merged()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.Auto));
+        model.Enqueue(
+            SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Say("done"));
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new RefusingHuman(), default);
+
+        Assert.Equal("not_merged", result?.Status);
     }
 
     [Theory]
@@ -311,7 +365,7 @@ public class S2WorkflowTests
 
         var resumed = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), human, default);
 
-        Assert.Equal(auto ? "auto_merge_enabled" : "merged", resumed?.Status);
+        Assert.Equal("merged", resumed?.Status); // no PR host: a person merges in both modes
         Assert.Equal(0, model.Remaining); // nothing ran again but the merge
         var prBody = await File.ReadAllTextAsync(Path.Combine(h.StateDir, "runs", TeamHarness.RunId, $"factory_{TeamHarness.RunId}_integration.pr.md"));
         Assert.Contains("Manual checks deferred", prBody);
@@ -534,7 +588,7 @@ public class S2WorkflowTests
         model.Enqueue(Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
 
-        Assert.Equal("auto_merge_enabled", result?.Status);
+        Assert.Equal("merged", result?.Status);
         Assert.Equal(0, model.Remaining);
         Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "drafted");       // plan reused, not redrafted
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.TaskId == "T-001" && e.Stage == "verify");          // verified once
@@ -550,7 +604,7 @@ public class S2WorkflowTests
         // a third run is a no-op on tasks: everything replays
         model.Enqueue();
         var again = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
-        Assert.Equal("auto_merge_enabled", again?.Status);
+        Assert.Equal("merged", again?.Status);
         Assert.Single(h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001"), e => e.Outcome == "Passed");
         Assert.Single((await h.GitIn(integration, "log", "--format=%s")).Output.Split('\n'), l => l.StartsWith("T-001:"));
     }
