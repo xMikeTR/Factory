@@ -57,7 +57,7 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
         }.AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens).AsBuilder().Use(inner => new PromptCachingChatClient(inner)).Build(),
         ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey),
                 new OpenAIClientOptions { Endpoint = Endpoint ?? new Uri("http://localhost:4000/v1") })
-            .GetChatClient(ModelFor(tier)).AsIChatClient(),
+            .GetChatClient(ModelFor(tier)).AsIChatClient().AsBuilder().Use(inner => new OpenAIPromptCacheKeyChatClient(inner)).Build(),
         _ => throw new ArgumentOutOfRangeException(nameof(Provider), Provider, null),
     };
 
@@ -105,6 +105,7 @@ public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, 
     {
         var chat = chatFor(scope.Role, tier).AsBuilder()
             .Use(inner => new TrimmingChatClient(inner, keepRecentResults, ElideBatch))
+            .Use(inner => new PromptCacheKeyChatClient(inner, PromptCacheKey.For(scope)))
             .UseOpenTelemetry(sourceName: FactoryTelemetry.SourceName, configure: o => o.EnableSensitiveData = captureContent)
             .Build();
 
