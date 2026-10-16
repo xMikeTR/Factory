@@ -67,6 +67,8 @@ try
             Directory.CreateDirectory(settings.StateDir);
 
             // result.json in the run folder says how this attempt ended and why, whatever the exit path.
+            // An attempt that ended without reaching Finalize (crash, Ctrl+C, workflow error) is ended in the registry too.
+            Task Ended(RunOutcome o) => Factory.Harness.Registry.RunAttempt.EndAsync(ProgressLedger(settings), runId, o.Status, o.Reason, CancellationToken.None);
             return await RunOutcomeFile.RecordAsync(settings.RunDir(runId), runId, async () =>
             {
             var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
@@ -134,7 +136,7 @@ try
             return result is null
                 ? new RunOutcome("no_result", "run ended without a result", 1)
                 : new RunOutcome(result.Status, result.Detail, result.Status switch { "merged" or "auto_merge_enabled" => 0, "parked" => 3, _ => 1 });
-            });
+            }, Ended);
         }
 
         case "digest":
@@ -393,9 +395,14 @@ catch (ArgumentException e)
 }
 
 /// Everything a run (or a rerun) needs, wired from the environment.
+/// S2's own ledger, projecting each attempt start, task state change and end onto the registry as it happens.
+static ILedger ProgressLedger(FactorySettings settings) => new Factory.Harness.Registry.RegistryProgressLedger(
+    new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")), settings.RegistryPath,
+    id => Factory.Harness.Registry.HandoverRef.From(Factory.Core.Core.ParseHandover(File.ReadAllText(settings.HandoverCopyPath(id)))));
+
 static FactoryServices Services(FactorySettings settings, string runId, Dictionary<string, string> env, IPullRequests pullRequests)
 {
-    var ledger = new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl"));
+    var ledger = ProgressLedger(settings);
     // Agent code runs only in Docker; FACTORY_SANDBOX=local is the explicit, unisolated fallback.
     ISandboxFactory inner = (Environment.GetEnvironmentVariable("FACTORY_SANDBOX") ?? "docker") switch
     {

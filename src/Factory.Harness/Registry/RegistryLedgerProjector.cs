@@ -28,6 +28,7 @@ public static class RegistryLedgerProjector
     public static IReadOnlyList<RegistryEvent> Project(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
     {
         var rows = new List<(DateTimeOffset Ts, RegistryEvent Row)>();
+        rows.AddRange(Attempts(run, handover));
         rows.AddRange(Tasks(run, handover));
         rows.AddRange(AsBuiltEdges(run));
         foreach (var e in run)
@@ -60,8 +61,49 @@ public static class RegistryLedgerProjector
                 w.WriteNumber("tokens_out", turns.Sum(t => t.TokensOut ?? 0));
                 if (turns.LastOrDefault(t => t.Model is not null)?.Model is { } tier) w.WriteString("tier", tier);
                 w.WriteString("handover", handover.Id);
+                w.WriteString("run", last.RunId);
             }));
         }
+    }
+
+    /// One run_started per attempt and one run_ended per attempt that ended: at Finalize (a Run row with no
+    /// task; a task's Run row is a rerun) or without it (RunAborted).
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> Attempts(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    {
+        foreach (var e in run)
+        {
+            if (e.Kind == LedgerKinds.RunStarted)
+                yield return (e.Ts, Row(Pipeline, "run_started", e, w =>
+                {
+                    w.WriteString("run", e.RunId);
+                    w.WriteString("handover", handover.Id);
+                }));
+            else if ((e.Kind == LedgerKinds.Run && e.TaskId is null || e.Kind == LedgerKinds.RunAborted) && e.Outcome is { } s2Status)
+            {
+                var (status, reason) = RunEnd(s2Status, e.Payload is null ? null : DetailOf(e.Payload));
+                yield return (e.Ts, Row(Pipeline, "run_ended", e, w =>
+                {
+                    w.WriteString("run", e.RunId);
+                    w.WriteString("handover", handover.Id);
+                    w.WriteString("status", status);
+                    if (reason is not null) w.WriteString("reason", reason);
+                }));
+            }
+        }
+    }
+
+    /// An S2 run status -> designc's run_ended status and reason (required unless succeeded).
+    private static (string Status, string? Reason) RunEnd(string s2Status, string? detail) => s2Status switch
+    {
+        "merged" or "auto_merge_enabled" => ("succeeded", null),
+        "parked" or "cancelled" => (s2Status, string.IsNullOrWhiteSpace(detail) ? s2Status : detail),
+        _ => ("failed", string.IsNullOrWhiteSpace(detail) ? s2Status : $"{s2Status}: {detail}"),
+    };
+
+    private static string? DetailOf(string payload)
+    {
+        using var doc = JsonDocument.Parse(payload);
+        return Prop(doc.RootElement, "detail")?.GetString();
     }
 
     /// Debt the fitness ratchet let through: one row per element pair the code crosses with no relationship in the model,

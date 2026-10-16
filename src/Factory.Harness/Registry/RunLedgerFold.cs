@@ -9,6 +9,8 @@ public static class RegistryStreams
     private static readonly IReadOnlyDictionary<string, string> ByKind = new Dictionary<string, string>
     {
         ["task"] = "pipeline.jsonl",
+        ["run_started"] = "pipeline.jsonl",
+        ["run_ended"] = "pipeline.jsonl",
         ["needs_decision"] = "pipeline.jsonl",
         ["asbuilt_edge"] = "pipeline.jsonl",
         ["false_positive"] = "pipeline.jsonl",
