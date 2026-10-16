@@ -1,5 +1,6 @@
 using Anthropic.Models.Messages;
 using Microsoft.Extensions.AI;
+using ChatCompletionOptions = OpenAI.Chat.ChatCompletionOptions;
 
 namespace Factory.Harness;
 
@@ -56,12 +57,78 @@ public static class PromptCache
 }
 
 /// Applies PromptCache to every request to an Anthropic client. Sits under TrimmingChatClient, so it sees the
-/// trimmed history.
+/// trimmed history. Anthropic has no cache key, so the agent's is dropped here.
 public sealed class PromptCachingChatClient(IChatClient inner) : DelegatingChatClient(inner)
 {
     public override Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
-        base.GetResponseAsync(PromptCache.Mark(messages.ToList()), options, cancellationToken);
+        base.GetResponseAsync(PromptCache.Mark(messages.ToList()), PromptCacheKey.Take(options, out _), cancellationToken);
 
     public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
-        base.GetStreamingResponseAsync(PromptCache.Mark(messages.ToList()), options, cancellationToken);
+        base.GetStreamingResponseAsync(PromptCache.Mark(messages.ToList()), PromptCacheKey.Take(options, out _), cancellationToken);
+}
+
+/// One agent's prompt cache key, provider-neutral: `run/task/role` (the team, else `-`, when there is no task).
+/// FactoryAgents puts it on every request's options; each provider's client takes it off and uses it its own way.
+public static class PromptCacheKey
+{
+    public const string OptionKey = "factory:prompt_cache_key";
+
+    public static string For(AgentScope s) => $"{s.RunId}/{s.TaskId ?? s.TeamId ?? "-"}/{s.Role}";
+
+    /// A copy of the options with the key on it.
+    public static ChatOptions With(ChatOptions? options, string key)
+    {
+        var o = options?.Clone() ?? new ChatOptions();
+        o.AdditionalProperties = new(o.AdditionalProperties ?? []) { [OptionKey] = key };
+        return o;
+    }
+
+    /// The options without the key (a copy when it was there), and the key.
+    public static ChatOptions? Take(ChatOptions? options, out string? key)
+    {
+        key = options?.AdditionalProperties?.TryGetValue(OptionKey, out var v) == true ? v as string : null;
+        if (key is null) return options;
+        var o = options!.Clone();
+        o.AdditionalProperties = new(o.AdditionalProperties!);
+        o.AdditionalProperties.Remove(OptionKey);
+        return o;
+    }
+}
+
+/// Puts the agent's cache key on every request.
+public sealed class PromptCacheKeyChatClient(IChatClient inner, string key) : DelegatingChatClient(inner)
+{
+    public override Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+        base.GetResponseAsync(messages, PromptCacheKey.With(options, key), cancellationToken);
+
+    public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+        base.GetStreamingResponseAsync(messages, PromptCacheKey.With(options, key), cancellationToken);
+}
+
+/// OpenAI-compatible gateways: the key goes on the wire as `prompt_cache_key`, so one agent's calls land on the same
+/// cache (OpenAI routes by it; a gateway that does not know it ignores it). The SDK has no property for it yet, so it
+/// is patched into the request body.
+public sealed class OpenAIPromptCacheKeyChatClient(IChatClient inner) : DelegatingChatClient(inner)
+{
+    public override Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+        base.GetResponseAsync(messages, Keyed(options), cancellationToken);
+
+    public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+        base.GetStreamingResponseAsync(messages, Keyed(options), cancellationToken);
+
+    private static ChatOptions? Keyed(ChatOptions? options)
+    {
+        var o = PromptCacheKey.Take(options, out var key);
+        if (key is null) return o;
+        var previous = o!.RawRepresentationFactory;
+        o.RawRepresentationFactory = client =>
+        {
+            var raw = previous?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions();
+#pragma warning disable SCME0001 // JsonPatch is the SDK's way to send a field it does not model yet
+            raw.Patch.Set("$.prompt_cache_key"u8, key);
+#pragma warning restore SCME0001
+            return raw;
+        };
+        return o;
+    }
 }
