@@ -66,14 +66,19 @@ public static class DesigncSchema
         return ev.EnumerateObject().All(p => known.Contains(p.Name));
     }
 
-    /// designc ledger.js usage_shape: a list of {model, tier?, turns, tokens_in, tokens_out, cost?}.
+    /// designc ledger.js usage_shape: a list of {model, tier?, turns, tokens_in, tokens_out, cost?, cache_read?, cache_write?},
+    /// the cache counts part of tokens_in.
     private static bool UsageOk(JsonElement usage) =>
         usage.ValueKind == JsonValueKind.Array && usage.EnumerateArray().All(u =>
             u.ValueKind == JsonValueKind.Object
             && u.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String && m.GetString()!.Length > 0
             && (!u.TryGetProperty("tier", out var t) || t.ValueKind == JsonValueKind.String)
             && new[] { "turns", "tokens_in", "tokens_out" }.All(k => u.TryGetProperty(k, out var n) && n.ValueKind == JsonValueKind.Number && n.TryGetInt64(out var w) && w >= 0)
-            && (!u.TryGetProperty("cost", out var c) || c.ValueKind == JsonValueKind.Number));
+            && (!u.TryGetProperty("cost", out var c) || c.ValueKind == JsonValueKind.Number)
+            && new[] { "cache_read", "cache_write" }.All(k => !u.TryGetProperty(k, out var n) || n.ValueKind == JsonValueKind.Number && n.TryGetInt64(out var w) && w >= 0)
+            && Count(u, "cache_read") + Count(u, "cache_write") <= Count(u, "tokens_in"));
+
+    private static long Count(JsonElement u, string k) => u.TryGetProperty(k, out var n) && n.TryGetInt64(out var w) ? w : 0;
 
     private static List<string> Strings(JsonElement array) => array.EnumerateArray().Select(x => x.GetString()!).ToList();
 }

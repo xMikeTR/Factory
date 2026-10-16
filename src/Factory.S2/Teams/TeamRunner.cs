@@ -795,6 +795,7 @@ internal sealed class TaskLoop(
     {
         var payload = JsonSerializer.SerializeToNode(detail)!.AsObject();
         if (svc.Agents.ModelIdFor(role, tier) is { } modelId) payload["model_id"] = modelId;
+        TurnUsage.AddCache(payload, usage);
         return svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Turn,
             TaskId: _taskId, TeamId: _teamId, Model: tier.ToString(),
             TokensIn: usage?.InputTokenCount, TokensOut: usage?.OutputTokenCount,

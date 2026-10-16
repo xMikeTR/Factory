@@ -67,7 +67,7 @@ public static class RegistryLedgerProjector
         }
     }
 
-    /// designc's task `usage`: one entry per tier and model, in the order first used. A turn row with no model_id
+    /// designc's task `usage`: one entry per tier and model, in the order first used, with cache_read and cache_write when any turn had them. A turn row with no model_id
     /// (logged before it existed, or a client that does not name its model) is named by its tier.
     private static void WriteUsage(Utf8JsonWriter w, IReadOnlyList<LedgerEvent> turns)
     {
@@ -83,9 +83,27 @@ public static class RegistryLedgerProjector
             w.WriteNumber("turns", g.Count());
             w.WriteNumber("tokens_in", g.Sum(t => t.TokensIn ?? 0));
             w.WriteNumber("tokens_out", g.Sum(t => t.TokensOut ?? 0));
+            long read = g.Sum(t => PayloadCount(t, "cache_read")), write = g.Sum(t => PayloadCount(t, "cache_write"));
+            if (read + write > 0)
+            {
+                w.WriteNumber("cache_read", read);
+                w.WriteNumber("cache_write", write);
+            }
             w.WriteEndObject();
         }
         w.WriteEndArray();
+    }
+
+    private static long PayloadCount(LedgerEvent turn, string name)
+    {
+        if (turn.Payload is null) return 0;
+        try
+        {
+            using var doc = JsonDocument.Parse(turn.Payload);
+            return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty(name, out var n)
+                && n.TryGetInt64(out var v) && v > 0 ? v : 0;
+        }
+        catch (JsonException) { return 0; }
     }
 
     private static string? ModelIdOf(LedgerEvent turn)
