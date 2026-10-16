@@ -55,10 +55,32 @@ public class ToolResultTrimmerTests
         Assert.Equal(Results(Conversation(5)), Results(ToolResultTrimmer.Trim(Conversation(5), keepRecent: 5)));
     }
 
+    /// Results are elided a batch at a time, so what the model sees before the newest few stays the same for a
+    /// whole batch of calls and a provider's prompt cache can reuse it.
+    [Theory]
+    [InlineData(5, 0)]
+    [InlineData(9, 0)]
+    [InlineData(10, 5)]
+    [InlineData(14, 5)]
+    [InlineData(15, 10)]
+    public void Elision_waits_for_a_whole_batch(int calls, int elided)
+    {
+        var results = Results(ToolResultTrimmer.Trim(Conversation(calls), keepRecent: 5, batch: 5));
+        Assert.Equal(elided, results.Count(r => r!.StartsWith("[read_file result elided")));
+    }
+
+    [Fact]
+    public void Within_a_batch_every_call_sends_the_same_prefix()
+    {
+        var first = ToolResultTrimmer.Trim(Conversation(10), keepRecent: 5, batch: 5);
+        var later = ToolResultTrimmer.Trim(Conversation(14), keepRecent: 5, batch: 5);
+        Assert.Equal(Results(first), Results(later).Take(10));
+    }
+
     [Fact]
     public async Task The_model_sees_trimmed_history_when_wired_through_FactoryAgents()
     {
-        var script = Enumerable.Range(1, 8).Select(i => Call("read_file", new { path = $"f{i}.cs" })).Append(Say("done")).ToArray();
+        var script = Enumerable.Range(1, 12).Select(i => Call("read_file", new { path = $"f{i}.cs" })).Append(Say("done")).ToArray();
         var model = new ScriptedChatClient(script);
         IList<AITool> tools = [AIFunctionFactory.Create((string path) => new string('y', 2000), "read_file")];
         var agent = new FactoryAgents(_ => model, new RoleAllowListPolicy(), new MemoryLedger())
@@ -67,7 +89,7 @@ public class ToolResultTrimmerTests
         await agent.RunAsync("go");
 
         var last = Results(model.Requests[^1].ToList());
-        Assert.Equal(8, last.Length);
-        Assert.Equal(3, last.Count(r => r!.StartsWith("[read_file result elided")));
+        Assert.Equal(12, last.Length);
+        Assert.Equal(FactoryAgents.ElideBatch, last.Count(r => r!.StartsWith("[read_file result elided")));
     }
 }
