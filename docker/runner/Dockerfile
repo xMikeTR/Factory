@@ -17,7 +17,7 @@ RUN gradle shadowJar -x check --no-daemon --quiet \
 FROM mcr.microsoft.com/dotnet/sdk:9.0
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openjdk-17-jdk-headless procps \
+ && apt-get install -y --no-install-recommends openjdk-17-jdk-headless procps python3 python3-venv \
  && rm -rf /var/lib/apt/lists/*
 
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
@@ -41,10 +41,10 @@ RUN dotnet tool install coverlet.console --tool-path /opt/dotnet-tools --version
  && chmod -R a+rX /opt/dotnet-tools
 
 # `p compile` emits net8.0 projects. Without the .NET 8 packs the build fetches them from
-# nuget.org, which verify commands cannot reach (--network none). Bake them in.
-COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.NETCore.App.Ref/ /usr/share/dotnet/packs/Microsoft.NETCore.App.Ref/
-COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.NETCore.App.Host.linux-x64/ /usr/share/dotnet/packs/Microsoft.NETCore.App.Host.linux-x64/
-COPY --from=mcr.microsoft.com/dotnet/sdk:8.0 /usr/share/dotnet/packs/Microsoft.AspNetCore.App.Ref/ /usr/share/dotnet/packs/Microsoft.AspNetCore.App.Ref/
+# nuget.org, which verify commands cannot reach (--network none). Bake them in, at the versions this
+# SDK asks for: copying them from the sdk:8.0 image broke whenever either base image moved.
+COPY net8-packs.py /tmp/net8-packs.py
+RUN python3 /tmp/net8-packs.py && rm /tmp/net8-packs.py
 
 # The restore window's only package source (RestoreGate passes --configfile and pins
 # RestoreSources too): a repo's nuget.config, or one an agent writes, never chooses where
@@ -78,6 +78,18 @@ RUN cd /opt/factory/stylelint && npm install --no-save --ignore-scripts stylelin
  && chmod -R a+rX /opt/factory
 RUN printf '%s\n' 'registry=https://registry.npmjs.org/' 'ignore-scripts=true' 'audit=false' 'fund=false' > /etc/factory/npmrc \
  && chmod a+r /etc/factory/npmrc
+
+# Registry decision checks that read the model through designc's parser (`python3 checks/model.py ...`).
+# designc's python package comes in as the `designc-python` build context (build.sh); python3 on PATH is a
+# venv holding it and PyYAML, so a check never needs the registry's own .venv, whose python is the host's.
+COPY --from=designc-python pyproject.toml /tmp/designc-src/pyproject.toml
+COPY --from=designc-python designc /tmp/designc-src/designc
+RUN python3 -m venv /opt/designc \
+ && /opt/designc/bin/pip install --no-cache-dir /tmp/designc-src \
+ && rm -rf /tmp/designc-src \
+ && chmod -R a+rX /opt/designc \
+ && /opt/designc/bin/python3 -c "import yaml; from designc import dsl"
+ENV PATH="/opt/designc/bin:${PATH}"
 
 COPY --from=pobserve /PObserve.jar /opt/pobserve/PObserve.jar
 COPY --from=pobserve-parser src/ /opt/pobserve/parser/
