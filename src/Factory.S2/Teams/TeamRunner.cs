@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Policy;
@@ -368,14 +369,14 @@ internal sealed class TaskLoop(
 
         if (signals.NeedsDecision is { } raised)
         {
-            await LogTurnAsync("task_plan", tier, response.Usage, new { needs_decision = raised.Question }, ct);
+            await LogTurnAsync("task_plan", Roles.TaskPlanner, tier, response.Usage, new { needs_decision = raised.Question }, ct);
             return await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(AgentDecision(raised)), ct);
         }
 
         // No submit_approach: the reply is the note and the pack is the defaults alone.
         _approachNote = signals.ApproachNote ?? response.Text;
         _selection = signals.ContextSelection ?? Select([]);
-        await LogTurnAsync("task_plan", tier, response.Usage, new
+        await LogTurnAsync("task_plan", Roles.TaskPlanner, tier, response.Usage, new
         {
             note = _approachNote,
             context = _selection.Entries.Select(e => new { path = e.Path, reason = e.Source is ContextSource.Nominated n ? n.reason : null }),
@@ -453,7 +454,7 @@ internal sealed class TaskLoop(
             if (_lastMutants.TryGetValue(id, out var claimed)) _claims[MutantKey(claimed)] = reason; // a mutant of the last run only
         // At the cap the turn counts as done: verify (or the red run) judges whatever is on the worktree.
         if (budget.Exhausted) signals.Capped = true;
-        await LogTurnAsync("act", tier, response.Usage,
+        await LogTurnAsync("act", role, tier, response.Usage,
             new { role, tool_calls = budget.Calls, browser = svc.Settings.BrowserVariant, files = signals.FilesWritten, done = signals.DoneSummary, capped = signals.Capped, needs_decision = signals.NeedsDecision?.Question, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
     }
 
@@ -790,11 +791,15 @@ internal sealed class TaskLoop(
         return next;
     }
 
-    private ValueTask LogTurnAsync(string stage, ModelTier tier, Microsoft.Extensions.AI.UsageDetails? usage, object detail, CancellationToken ct) =>
-        svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Turn,
+    private ValueTask LogTurnAsync(string stage, string role, ModelTier tier, Microsoft.Extensions.AI.UsageDetails? usage, object detail, CancellationToken ct)
+    {
+        var payload = JsonSerializer.SerializeToNode(detail)!.AsObject();
+        if (svc.Agents.ModelIdFor(role, tier) is { } modelId) payload["model_id"] = modelId;
+        return svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Turn,
             TaskId: _taskId, TeamId: _teamId, Model: tier.ToString(),
             TokensIn: usage?.InputTokenCount, TokensOut: usage?.OutputTokenCount,
-            Payload: JsonSerializer.Serialize(detail)), ct);
+            Payload: payload.ToJsonString()), ct);
+    }
 
     /// The approach note and the frozen context selection from the task's last task_plan turn.
     private async Task<(string? Note, Selection? Selection)> LastApproachAsync(CancellationToken ct)

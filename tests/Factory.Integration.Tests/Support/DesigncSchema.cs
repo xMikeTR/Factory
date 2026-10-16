@@ -43,6 +43,8 @@ public static class DesigncSchema
             if (rule == "fail_needs_evidence" && ev.TryGetProperty("outcome", out var o) && o.GetString() == "fail"
                 && !ev.TryGetProperty("exit_code", out _) && !(ev.TryGetProperty("reason", out var why) && why.GetString() is { Length: > 0 }))
                 errors.Add($"{kind}.exit_code: required when outcome is 'fail' (or give reason)");
+            else if (rule == "usage_shape" && ev.TryGetProperty("usage", out var usage) && !UsageOk(usage))
+                errors.Add($"{kind}.usage: must be a list of {{model, turns, tokens_in, tokens_out}}");
         return errors;
     }
 
@@ -63,6 +65,15 @@ public static class DesigncSchema
         known.UnionWith(Strings(spec.GetProperty("optional")));
         return ev.EnumerateObject().All(p => known.Contains(p.Name));
     }
+
+    /// designc ledger.js usage_shape: a list of {model, tier?, turns, tokens_in, tokens_out, cost?}.
+    private static bool UsageOk(JsonElement usage) =>
+        usage.ValueKind == JsonValueKind.Array && usage.EnumerateArray().All(u =>
+            u.ValueKind == JsonValueKind.Object
+            && u.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String && m.GetString()!.Length > 0
+            && (!u.TryGetProperty("tier", out var t) || t.ValueKind == JsonValueKind.String)
+            && new[] { "turns", "tokens_in", "tokens_out" }.All(k => u.TryGetProperty(k, out var n) && n.ValueKind == JsonValueKind.Number && n.TryGetInt64(out var w) && w >= 0)
+            && (!u.TryGetProperty("cost", out var c) || c.ValueKind == JsonValueKind.Number));
 
     private static List<string> Strings(JsonElement array) => array.EnumerateArray().Select(x => x.GetString()!).ToList();
 }

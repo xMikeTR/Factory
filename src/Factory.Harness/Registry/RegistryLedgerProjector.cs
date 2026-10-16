@@ -60,10 +60,44 @@ public static class RegistryLedgerProjector
                 w.WriteNumber("tokens_in", turns.Sum(t => t.TokensIn ?? 0));
                 w.WriteNumber("tokens_out", turns.Sum(t => t.TokensOut ?? 0));
                 if (turns.LastOrDefault(t => t.Model is not null)?.Model is { } tier) w.WriteString("tier", tier);
+                WriteUsage(w, turns);
                 w.WriteString("handover", handover.Id);
                 w.WriteString("run", last.RunId);
             }));
         }
+    }
+
+    /// designc's task `usage`: one entry per tier and model, in the order first used. A turn row with no model_id
+    /// (logged before it existed, or a client that does not name its model) is named by its tier.
+    private static void WriteUsage(Utf8JsonWriter w, IReadOnlyList<LedgerEvent> turns)
+    {
+        var groups = turns.Where(t => t.Model is not null)
+            .GroupBy(t => (Tier: t.Model!, ModelId: ModelIdOf(t) ?? t.Model!)).ToList();
+        if (groups.Count == 0) return;
+        w.WriteStartArray("usage");
+        foreach (var g in groups)
+        {
+            w.WriteStartObject();
+            w.WriteString("model", g.Key.ModelId);
+            w.WriteString("tier", g.Key.Tier);
+            w.WriteNumber("turns", g.Count());
+            w.WriteNumber("tokens_in", g.Sum(t => t.TokensIn ?? 0));
+            w.WriteNumber("tokens_out", g.Sum(t => t.TokensOut ?? 0));
+            w.WriteEndObject();
+        }
+        w.WriteEndArray();
+    }
+
+    private static string? ModelIdOf(LedgerEvent turn)
+    {
+        if (turn.Payload is null) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(turn.Payload);
+            return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("model_id", out var m)
+                && m.ValueKind == JsonValueKind.String && m.GetString() is { Length: > 0 } id ? id : null;
+        }
+        catch (JsonException) { return null; }
     }
 
     /// One run_started per attempt and one run_ended per attempt that ended: at Finalize (a Run row with no
