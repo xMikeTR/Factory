@@ -25,6 +25,17 @@ public class ModelGatewaysTests
         Assert.Equal(ModelProvider.Anthropic, g.Implementer.Provider);
     }
 
+    /// A reviewer on another family is likely not Claude: the implementer's cache_control is not passed on to it.
+    [Fact]
+    public void Cache_control_reaches_a_configured_reviewer_only_when_set_for_it()
+    {
+        (string, string)[] gateway = [("FACTORY_PROVIDER", "openai"), ("FACTORY_GATEWAY_KEY", Key), ("FACTORY_GATEWAY_CACHE_CONTROL", "on"),
+            ("FACTORY_REVIEWER_GATEWAY_KEY", "k2"), ("FACTORY_MODEL_FAMILY", "claude"), ("FACTORY_REVIEWER_MODEL_FAMILY", "gemini")];
+
+        Assert.Equal((true, false), (From(false, gateway).Implementer.CacheControl, From(false, gateway).Reviewer.CacheControl));
+        Assert.True(From(false, [.. gateway, ("FACTORY_REVIEWER_GATEWAY_CACHE_CONTROL", "on")]).Reviewer.CacheControl);
+    }
+
     [Fact]
     public void With_no_reviewer_configured_start_up_refuses_unless_same_family_is_allowed_on_dry_run_merges()
     {

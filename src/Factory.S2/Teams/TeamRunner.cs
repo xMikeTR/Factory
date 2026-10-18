@@ -243,7 +243,7 @@ internal sealed class TaskLoop(
         var diff = await svc.Git.TaskDiffAsync(worktree, runId, ct);
         var tree = await svc.Git.SnapshotAsync(worktree, ct);
         var request = new ReviewRequest(runId, _teamId, _taskId, worktree,
-            Briefs.Task(handover, task, [], _approachNote, null, _resolvedDecision), diff, round, progress.OpenFindings.ToList());
+            Briefs.Task(handover, task, [], _approachNote, null, _resolvedDecision).Text, diff, round, progress.OpenFindings.ToList());
 
         var verdict = await svc.Reviewer.ReviewAsync(request, ct);
         if (verdict is ReviewVerdict.Malformed)
@@ -368,7 +368,7 @@ internal sealed class TaskLoop(
         Selection Select(IReadOnlyList<Nomination> nominations) => SelectContext(defaults, nominations);
         var agent = svc.Agents.Create(new AgentScope(runId, Roles.TaskPlanner, _teamId, _taskId), tier,
             Briefs.Prompt("task-planner"), Workspace(signals, sandbox: null, []).TaskPlannerTools(Select));
-        var response = await agent.RunAsync(Brief(task.Writes.Concat(task.TestWrites), null), cancellationToken: ct);
+        var response = await agent.RunAsync(Brief(task.Writes.Concat(task.TestWrites), null).Messages, cancellationToken: ct);
 
         if (signals.NeedsDecision is { } raised)
         {
@@ -452,7 +452,7 @@ internal sealed class TaskLoop(
         var budget = new TurnBudget(exempt: ExemptFromCap);
         var agent = svc.Agents.Create(new AgentScope(runId, role, _teamId, _taskId), tier,
             Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools(svc.Settings.PlaywrightCli) : role == Roles.TestAuthor ? workspace.TestAuthorTools() : workspace.ExecutorTools(), budget);
-        var response = await agent.RunAsync(Brief(writable, await ContextPackAsync(ct)), cancellationToken: ct);
+        var response = await agent.RunAsync(Brief(writable, await ContextPackAsync(ct)).Messages, cancellationToken: ct);
         foreach (var (id, reason) in signals.DeclaredEquivalents)
             if (_lastMutants.TryGetValue(id, out var claimed)) _claims[MutantKey(claimed)] = reason; // a mutant of the last run only
         // At the cap the turn counts as done: verify (or the red run) judges whatever is on the worktree.
@@ -721,7 +721,7 @@ internal sealed class TaskLoop(
         return ContextPack.fit(ContextPack.defaultLimits, ListModule.OfSeq(contents)).ToList();
     }
 
-    private string Brief(IEnumerable<PathPattern> writable, IReadOnlyList<PackFile>? context)
+    private TaskBrief Brief(IEnumerable<PathPattern> writable, IReadOnlyList<PackFile>? context)
     {
         var failures = _reverted is null
             ? _lastFailures

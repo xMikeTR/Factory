@@ -1,3 +1,6 @@
+using System.ClientModel;
+using System.ClientModel.Primitives;
+using System.Text.Json.Nodes;
 using Anthropic.Models.Messages;
 using Microsoft.Extensions.AI;
 using ChatCompletionOptions = OpenAI.Chat.ChatCompletionOptions;
@@ -130,5 +133,50 @@ public sealed class OpenAIPromptCacheKeyChatClient(IChatClient inner) : Delegati
             return raw;
         };
         return o;
+    }
+}
+
+/// PromptCache's two breakpoints on the OpenAI-compatible wire, for a gateway that passes them to Claude: LiteLLM
+/// reads `cache_control` on a user or tool message as Anthropic's on that block. The brief is the first user
+/// message; the end is the last user or tool message (the last of a batch of results, so all of them are cached).
+public static class OpenAICacheControl
+{
+    public static void Mark(JsonArray messages)
+    {
+        var roles = messages.Select(m => (string?)m?["role"]).ToList();
+        var brief = roles.IndexOf("user");
+        var end = roles.FindLastIndex(r => r is "user" or "tool");
+        if (brief >= 0) Control(messages[brief]!);
+        if (end > brief) Control(messages[end]!);
+    }
+
+    private static void Control(JsonNode message) => message["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
+}
+
+/// Rewrites each chat request body with OpenAICacheControl. On the wire rather than on the IChatClient messages:
+/// the OpenAI adapter builds the messages (one per tool result, the instructions as a system message), and the SDK
+/// has no field for the breakpoint.
+public sealed class OpenAICacheControlPolicy : PipelinePolicy
+{
+    public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
+    {
+        Mark(message);
+        ProcessNext(message, pipeline, currentIndex);
+    }
+
+    public override ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
+    {
+        Mark(message);
+        return ProcessNextAsync(message, pipeline, currentIndex);
+    }
+
+    private static void Mark(PipelineMessage message)
+    {
+        if (message.Request.Content is not { } content) return;
+        using var buffer = new MemoryStream();
+        content.WriteTo(buffer);
+        if (JsonNode.Parse(buffer.ToArray()) is not JsonObject body || body["messages"] is not JsonArray messages) return;
+        OpenAICacheControl.Mark(messages);
+        message.Request.Content = BinaryContent.Create(BinaryData.FromString(body.ToJsonString()));
     }
 }

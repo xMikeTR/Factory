@@ -16,7 +16,10 @@ public enum ModelProvider { Anthropic, OpenAICompatible }
 /// the OpenAI-compatible protocol; or the native Anthropic client, against the public API or a
 /// gateway that fronts it. Model names are gateway aliases (or Claude model ids for Anthropic),
 /// so routing changes are config, not code. A null Endpoint is the provider's public endpoint.
-public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, string ApiKey, string FrontierModel, string StandardModel, string SmallModel)
+/// CacheControl (FACTORY_GATEWAY_CACHE_CONTROL = on | off, default off) puts Anthropic's cache breakpoints on the
+/// OpenAI-compatible wire, for a gateway whose models are Claude; the Anthropic client always sends them.
+public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, string ApiKey, string FrontierModel, string StandardModel, string SmallModel,
+    bool CacheControl = false)
 {
     /// Anthropic requires max_tokens on every request; the IChatClient default is too small for a whole file.
     public const int AnthropicMaxOutputTokens = 16_000;
@@ -39,10 +42,16 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
             ?? throw new FactoryRejectedException("no gateway key",
                 [anthropic ? "set FACTORY_GATEWAY_KEY or ANTHROPIC_API_KEY" : "set FACTORY_GATEWAY_KEY"]);
         var url = Get("FACTORY_GATEWAY_URL") ?? (anthropic ? null : "http://localhost:4000/v1");
+        var cacheControl = Get("FACTORY_GATEWAY_CACHE_CONTROL") switch
+        {
+            null or "off" => false,
+            "on" => true,
+            var other => throw new FactoryRejectedException("FACTORY_GATEWAY_CACHE_CONTROL is invalid", [$"'{other}' is not on|off"]),
+        };
         return new(provider, url is null ? null : new Uri(url), key,
             Get("FACTORY_MODEL_FRONTIER") ?? (anthropic ? "claude-opus-5-5" : "frontier"),
             Get("FACTORY_MODEL_STANDARD") ?? (anthropic ? "claude-sonnet-5-5" : "standard"),
-            Get("FACTORY_MODEL_SMALL") ?? (anthropic ? "claude-haiku-4-5" : "small"));
+            Get("FACTORY_MODEL_SMALL") ?? (anthropic ? "claude-haiku-4-5" : "small"), cacheControl);
     }
 
     public string ModelFor(ModelTier tier) =>
@@ -55,17 +64,23 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
             ApiKey = ApiKey,
             BaseUrl = Endpoint?.ToString() ?? "https://api.anthropic.com",
         }.AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens).AsBuilder().Use(inner => new PromptCachingChatClient(inner)).Build(),
-        ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey),
-                new OpenAIClientOptions { Endpoint = Endpoint ?? new Uri("http://localhost:4000/v1") })
+        ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey), OpenAIOptions())
             .GetChatClient(ModelFor(tier)).AsIChatClient().AsBuilder().Use(inner => new OpenAIPromptCacheKeyChatClient(inner)).Build(),
         _ => throw new ArgumentOutOfRangeException(nameof(Provider), Provider, null),
     };
+
+    private OpenAIClientOptions OpenAIOptions()
+    {
+        var o = new OpenAIClientOptions { Endpoint = Endpoint ?? new Uri("http://localhost:4000/v1") };
+        if (CacheControl) o.AddPolicy(new OpenAICacheControlPolicy(), System.ClientModel.Primitives.PipelinePosition.PerCall);
+        return o;
+    }
 
     // A record prints every member; the key must never reach a log, ledger row or trace.
     private bool PrintMembers(System.Text.StringBuilder b)
     {
         b.Append($"Provider = {Provider}, Endpoint = {Endpoint?.ToString() ?? "(default)"}, ApiKey = <redacted>, ");
-        b.Append($"FrontierModel = {FrontierModel}, StandardModel = {StandardModel}, SmallModel = {SmallModel}");
+        b.Append($"FrontierModel = {FrontierModel}, StandardModel = {StandardModel}, SmallModel = {SmallModel}, CacheControl = {CacheControl}");
         return true;
     }
 }

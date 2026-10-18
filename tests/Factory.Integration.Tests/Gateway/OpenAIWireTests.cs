@@ -57,6 +57,50 @@ public class OpenAIWireTests
         Assert.DoesNotContain("factory:", fake.Bodies.Single());
     }
 
+    /// Claude behind LiteLLM caches only where a request says so: with FACTORY_GATEWAY_CACHE_CONTROL=on the brief and
+    /// the end of the request carry Anthropic's breakpoint, at message level, where LiteLLM reads it for user and tool
+    /// messages alike. The same two places PromptCache marks on the native Anthropic wire.
+    [Fact]
+    public async Task With_cache_control_on_the_brief_and_the_last_tool_result_carry_a_breakpoint()
+    {
+        using var fake = new FakeModelServer(Reply);
+        var gateway = GatewayOptions.FromEnvironment(new Dictionary<string, string>
+        {
+            ["FACTORY_GATEWAY_KEY"] = "k", ["FACTORY_GATEWAY_URL"] = fake.Url.ToString(), ["FACTORY_GATEWAY_CACHE_CONTROL"] = "on",
+        });
+        List<ChatMessage> history =
+        [
+            new(ChatRole.System, "plan"),
+            new(ChatRole.User, "the brief"),
+            new(ChatRole.Assistant, [new FunctionCallContent("c1", "read_file"), new FunctionCallContent("c2", "read_file")]),
+            new(ChatRole.Tool, [new FunctionResultContent("c1", "one"), new FunctionResultContent("c2", "two")]),
+        ];
+        await gateway.ChatClientFor(ModelTier.Standard).GetResponseAsync(history);
+
+        var marked = JsonNode.Parse(fake.Bodies.Single())!["messages"]!.AsArray()
+            .Select(m => ((string?)m!["role"], (string?)m["cache_control"]?["type"]));
+        Assert.Equal([("system", null), ("user", "ephemeral"), ("assistant", null), ("tool", null), ("tool", "ephemeral")], marked);
+    }
+
+    /// Off unless asked: a gateway model that is not Claude may reject the field.
+    [Fact]
+    public async Task Without_cache_control_no_breakpoint_reaches_the_wire()
+    {
+        using var fake = new FakeModelServer(Reply);
+        var gateway = new GatewayOptions(ModelProvider.OpenAICompatible, fake.Url, "test-key", "f", "standard", "s");
+        await new FactoryAgents(gateway, new RoleAllowListPolicy(), new MemoryLedger())
+            .Create(Scope, ModelTier.Standard, "plan", []).RunAsync("go");
+
+        Assert.DoesNotContain("cache_control", fake.Bodies.Single());
+    }
+
+    [Fact]
+    public void Cache_control_is_on_or_off()
+    {
+        var env = new Dictionary<string, string> { ["FACTORY_GATEWAY_KEY"] = "k", ["FACTORY_GATEWAY_CACHE_CONTROL"] = "yes" };
+        Assert.Throws<FactoryRejectedException>(() => GatewayOptions.FromEnvironment(env));
+    }
+
     /// Gemini caches implicitly; behind LiteLLM or Gemini's OpenAI endpoint a cache read comes back as
     /// prompt_tokens_details.cached_tokens, inside prompt_tokens. It reaches the turn row as cache_read.
     [Fact]

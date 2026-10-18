@@ -1,3 +1,4 @@
+using Microsoft.Extensions.AI;
 using System.Text;
 using Factory.Core;
 
@@ -14,7 +15,7 @@ public static class Briefs
     public static string Prompt(string name) =>
         File.ReadAllText(Path.Combine(PromptDir, name + ".md")).TrimEnd() + "\n" + File.ReadAllText(Path.Combine(PromptDir, "sandbox.md"));
 
-    public static string Task(
+    public static TaskBrief Task(
         Handover handover, PlannedTask task, IEnumerable<PathPattern> writable,
         string? approachNote, string? lastFailures, string? resolvedDecision,
         IReadOnlyList<PackFile>? context = null)
@@ -73,6 +74,9 @@ public static class Briefs
             }
         }
 
+        var stable = sb.ToString();
+        sb.Clear();
+
         if (context is { Count: > 0 })
         {
             sb.AppendLine().AppendLine("## Context")
@@ -94,10 +98,22 @@ public static class Briefs
         if (lastFailures is not null)
             sb.AppendLine().AppendLine("## What failed last time").AppendLine(lastFailures);
 
-        return sb.ToString();
+        return new TaskBrief(stable, sb.ToString());
     }
 
     public static string Failures(IEnumerable<VerifyOutcome> outcomes) =>
         string.Join("\n\n", outcomes.Where(o => o.ExitCode != 0)
             .Select(o => $"### {o.Name} (exit {o.ExitCode})\n```\n{o.OutputTail}\n```"));
+}
+
+/// A task brief in two parts: what every turn of a role on the task repeats, and what this turn adds (the context
+/// pack, which changes as the task writes, and the notes and failures since the last turn).
+public sealed record TaskBrief(string Stable, string Turn)
+{
+    public string Text => Stable + Turn;
+
+    /// One user message per part: PromptCache puts the brief's breakpoint on the first, so the role's next turn on
+    /// the task reads tools, instructions and the stable part from cache.
+    public IEnumerable<ChatMessage> Messages =>
+        Turn.Length == 0 ? [new(ChatRole.User, Stable)] : [new(ChatRole.User, Stable), new(ChatRole.User, Turn)];
 }

@@ -33,6 +33,8 @@ public sealed record ModelGateways(GatewayOptions Implementer, GatewayOptions Re
             var remapped = env.ToDictionary(e => e.Key, e => e.Value); // unset reviewer settings fall back to the implementer's
             foreach (var s in Settings)
                 if (env.TryGetValue($"FACTORY_REVIEWER_{s}", out var v) && v.Length > 0) remapped[$"FACTORY_{s}"] = v;
+            // the one setting not inherited: a reviewer on another family is likely not Claude
+            remapped["FACTORY_GATEWAY_CACHE_CONTROL"] = env.GetValueOrDefault("FACTORY_REVIEWER_GATEWAY_CACHE_CONTROL", "");
             reviewer = GatewayOptions.FromEnvironment(remapped);
         }
 
