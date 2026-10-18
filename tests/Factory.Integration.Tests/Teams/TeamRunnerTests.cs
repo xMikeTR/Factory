@@ -2,6 +2,7 @@ using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Policy;
 using Factory.Integration.Tests.Support;
+using Microsoft.Extensions.AI;
 using Factory.S2;
 using Factory.S2.Teams;
 using Xunit;
@@ -686,6 +687,24 @@ public class TeamRunnerTests
 
     [Fact]
     public async Task Breaking_a_test_that_passed_before_blocks_Passed_until_it_passes_again()
+        => await BreakAndRestoreAsync();
+
+    /// The implementer's second turn on the task sends the same first brief message as its first, so it reads the
+    /// first turn's cache breakpoint there; what failed last time comes after it.
+    [Fact]
+    public async Task A_roles_next_turn_on_a_task_repeats_the_first_message_of_its_brief()
+    {
+        var model = await BreakAndRestoreAsync();
+
+        var briefs = model.Requests.Where(r => r[^1].Role == ChatRole.User)
+            .Select(r => r.Where(m => m.Role == ChatRole.User).Select(m => m.Text).ToList()).ToList();
+        var (first, second) = (briefs[^2], briefs[^1]);
+        Assert.Equal(first[0], second[0]);
+        Assert.DoesNotContain("What failed last time", second[0]);
+        Assert.Contains("What failed last time", second[^1]);
+    }
+
+    private static async Task<ScriptedChatClient> BreakAndRestoreAsync()
     {
         const string quote = "src/Pricing.Data/Quote.cs";
         var model = new ScriptedChatClient(
@@ -709,5 +728,6 @@ public class TeamRunnerTests
         Assert.Equal(2, h.Rows(LedgerKinds.Verify).Count(e => e.Stage == "verify"));
         Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("What failed last time") && m.Text.Contains("Quote.exists"));
         Assert.Single(h.Rows(LedgerKinds.TaskEvent), e => e.Outcome == "Passed");
+        return model;
     }
 }

@@ -40,7 +40,7 @@ public class BriefsTests
         var handover = await new DesigncHandoverReader().LoadAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"),
             new S2Config([]), CancellationToken.None);
 
-        var brief = Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null);
+        var brief = Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null).Text;
 
         Assert.Contains("`eCommitted`", brief);
         Assert.Contains("`pobserve <event> <payload> key=<id>`", brief);
@@ -59,12 +59,32 @@ public class BriefsTests
             new("src/Big.cs", ContextSource.Default, "class Big {", true),
         ];
 
-        var brief = Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null, context);
+        var brief = Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null, context).Text;
 
         Assert.Contains("## Context", brief);
         Assert.Contains("### `src/Quote.cs` (written by this task)\n```\nclass Quote {}\n```", brief);
         Assert.Contains("### `src/Repo.cs` (Quote is loaded here)", brief);
         Assert.Contains("### `src/Big.cs` (truncated to fit the context budget)", brief);
-        Assert.DoesNotContain("## Context", Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null));
+        Assert.DoesNotContain("## Context", Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null).Text);
+    }
+
+    /// What every turn of a role on a task repeats comes first, apart from what this turn adds, so the cache
+    /// breakpoint on the brief's first message is read back by the next turn.
+    [Fact]
+    public async Task The_brief_holds_still_up_to_the_context_pack_and_this_turns_notes_follow()
+    {
+        var handover = await new DesigncHandoverReader().LoadAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"),
+            new S2Config([]), CancellationToken.None);
+        PackFile[] context = [new("src/Quote.cs", ContextSource.TaskWritten, "class Quote {}", false)];
+
+        var brief = Briefs.Task(handover, Plans.Task("T-004"), [], "note", "Quote.exists failed", "chose B", context);
+
+        Assert.Contains("## How this task is verified", brief.Stable);
+        Assert.DoesNotContain("## Context", brief.Stable);
+        Assert.StartsWith("\n## Context", brief.Turn);
+        foreach (var turn in new[] { "note", "Quote.exists failed", "chose B" }) Assert.Contains(turn, brief.Turn);
+        Assert.Equal(brief.Stable + brief.Turn, brief.Text);
+        Assert.Equal([brief.Stable, brief.Turn], brief.Messages.Select(m => m.Text));
+        Assert.Equal([brief.Stable], Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null).Messages.Select(m => m.Text));
     }
 }
