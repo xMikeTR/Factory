@@ -48,6 +48,16 @@ public class SuiteDiscoveryTests
     }
 
     [Fact]
+    public void A_typescript_package_on_disk_runs_npm_test_and_installed_packages_do_not()
+    {
+        var repo = RepoWith(
+            ("web/package.json", """{ "scripts": { "test": "vitest run" } }"""),
+            ("web/node_modules/vitest/package.json", """{ "scripts": { "test": "node test.js" } }"""));
+
+        Assert.Equal(SuitePlan.NewCommand("s=0; (cd 'web' && npm test) || s=1; exit $s"), SuiteDiscovery.Plan(null, repo));
+    }
+
+    [Fact]
     public void An_empty_folder_has_no_suite()
     {
         Assert.Equal(SuitePlan.NoSuite, SuiteDiscovery.Plan(null, RepoWith()));
