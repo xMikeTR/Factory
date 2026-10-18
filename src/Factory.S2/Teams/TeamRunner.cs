@@ -492,6 +492,9 @@ internal sealed class TaskLoop(
         var tests = (await svc.Git.ChangedPathsAsync(worktree, ct)).Where(p => task.TestWrites.Any(w => Core.Matches(w, p))).ToList();
         await svc.Git.CommitPathsAsync(worktree, tests, $"{_taskId} (tests): {task.Title}\n\nfactory-run: {runId}\nfactory-team: {_teamId}", ct);
         _lastFailures = null;
+        // Back from a hand-back, a review or a stash check, the implementation is still on the worktree: verify it
+        // before the Implementer gets a turn, which it would spend finding nothing to change.
+        _doneDeclared = (await ImplPathsAsync(ct)).Count > 0;
         return await ApplyAsync(state, TaskEvent.NewTestsAuthored(red.ResultValue), ct);
     }
 
