@@ -82,7 +82,33 @@ public class OpenAIWireTests
         Assert.Equal([("system", null), ("user", "ephemeral"), ("assistant", null), ("tool", null), ("tool", "ephemeral")], marked);
     }
 
-    /// Off unless asked: a gateway model that is not Claude may reject the field.
+    private static async Task<string> BodyForAsync(string model, string? setting)
+    {
+        using var fake = new FakeModelServer(Reply);
+        var env = new Dictionary<string, string>
+        {
+            ["FACTORY_GATEWAY_KEY"] = "k", ["FACTORY_GATEWAY_URL"] = fake.Url.ToString(), ["FACTORY_MODEL_STANDARD"] = model,
+        };
+        if (setting is not null) env["FACTORY_GATEWAY_CACHE_CONTROL"] = setting;
+        await GatewayOptions.FromEnvironment(env).ChatClientFor(ModelTier.Standard)
+            .GetResponseAsync([new ChatMessage(ChatRole.User, "the brief")]);
+        return fake.Bodies.Single();
+    }
+
+    /// Any model can sit behind the endpoint (Vertex Model Garden, LiteLLM): the breakpoint goes where the model is
+    /// Claude, which caches only where asked. Gemini and OpenAI cache the prefix themselves and get nothing extra.
+    [Theory]
+    [InlineData("claude-sonnet-4-5@20250929", null, true)]
+    [InlineData("publishers/anthropic/models/claude-opus-4-1", "auto", true)]
+    [InlineData("gemini-2.5-pro", null, false)]
+    [InlineData("gpt-5", null, false)]
+    [InlineData("standard", null, false)]
+    [InlineData("gemini-2.5-pro", "on", true)]
+    [InlineData("claude-sonnet-4-5", "off", false)]
+    public async Task Cache_control_follows_the_model_unless_set(string model, string? setting, bool sent) =>
+        Assert.Equal(sent, (await BodyForAsync(model, setting)).Contains("cache_control"));
+
+    /// A model the endpoint does not take cache_control for: left off.
     [Fact]
     public async Task Without_cache_control_no_breakpoint_reaches_the_wire()
     {
@@ -95,7 +121,7 @@ public class OpenAIWireTests
     }
 
     [Fact]
-    public void Cache_control_is_on_or_off()
+    public void Cache_control_is_auto_on_or_off()
     {
         var env = new Dictionary<string, string> { ["FACTORY_GATEWAY_KEY"] = "k", ["FACTORY_GATEWAY_CACHE_CONTROL"] = "yes" };
         Assert.Throws<FactoryRejectedException>(() => GatewayOptions.FromEnvironment(env));

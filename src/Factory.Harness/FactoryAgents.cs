@@ -16,10 +16,11 @@ public enum ModelProvider { Anthropic, OpenAICompatible }
 /// the OpenAI-compatible protocol; or the native Anthropic client, against the public API or a
 /// gateway that fronts it. Model names are gateway aliases (or Claude model ids for Anthropic),
 /// so routing changes are config, not code. A null Endpoint is the provider's public endpoint.
-/// CacheControl (FACTORY_GATEWAY_CACHE_CONTROL = on | off, default off) puts Anthropic's cache breakpoints on the
-/// OpenAI-compatible wire, for a gateway whose models are Claude; the Anthropic client always sends them.
+/// CacheControl (FACTORY_GATEWAY_CACHE_CONTROL = auto | on | off) puts Anthropic's cache breakpoints on the
+/// OpenAI-compatible wire. Null (auto, the default) sends them to a model whose name says Claude, which caches only
+/// where asked; other models (Gemini, OpenAI) cache the prefix themselves. The Anthropic client always sends them.
 public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, string ApiKey, string FrontierModel, string StandardModel, string SmallModel,
-    bool CacheControl = false)
+    bool? CacheControl = null)
 {
     /// Anthropic requires max_tokens on every request; the IChatClient default is too small for a whole file.
     public const int AnthropicMaxOutputTokens = 16_000;
@@ -44,9 +45,10 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
         var url = Get("FACTORY_GATEWAY_URL") ?? (anthropic ? null : "http://localhost:4000/v1");
         var cacheControl = Get("FACTORY_GATEWAY_CACHE_CONTROL") switch
         {
-            null or "off" => false,
+            null or "auto" => (bool?)null,
+            "off" => false,
             "on" => true,
-            var other => throw new FactoryRejectedException("FACTORY_GATEWAY_CACHE_CONTROL is invalid", [$"'{other}' is not on|off"]),
+            var other => throw new FactoryRejectedException("FACTORY_GATEWAY_CACHE_CONTROL is invalid", [$"'{other}' is not auto|on|off"]),
         };
         return new(provider, url is null ? null : new Uri(url), key,
             Get("FACTORY_MODEL_FRONTIER") ?? (anthropic ? "claude-opus-5-5" : "frontier"),
@@ -64,15 +66,15 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
             ApiKey = ApiKey,
             BaseUrl = Endpoint?.ToString() ?? "https://api.anthropic.com",
         }.AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens).AsBuilder().Use(inner => new PromptCachingChatClient(inner)).Build(),
-        ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey), OpenAIOptions())
+        ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey), OpenAIOptions(ModelFor(tier)))
             .GetChatClient(ModelFor(tier)).AsIChatClient().AsBuilder().Use(inner => new OpenAIPromptCacheKeyChatClient(inner)).Build(),
         _ => throw new ArgumentOutOfRangeException(nameof(Provider), Provider, null),
     };
 
-    private OpenAIClientOptions OpenAIOptions()
+    private OpenAIClientOptions OpenAIOptions(string model)
     {
         var o = new OpenAIClientOptions { Endpoint = Endpoint ?? new Uri("http://localhost:4000/v1") };
-        if (CacheControl) o.AddPolicy(new OpenAICacheControlPolicy(), System.ClientModel.Primitives.PipelinePosition.PerCall);
+        if (CacheControl ?? model.Contains("claude", StringComparison.OrdinalIgnoreCase)) o.AddPolicy(new OpenAICacheControlPolicy(), System.ClientModel.Primitives.PipelinePosition.PerCall);
         return o;
     }
 
