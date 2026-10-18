@@ -214,7 +214,7 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         IntegrationRun.classify(Core.ToList(failed)) is IntegrationReading.Unrunnable u
             ? new RunFinished(runId, "integration_unrunnable",
                 $"The sandbox could not run {string.Join(", ", u.checks)}, so nothing ran against the code. " +
-                "Fix the runner image or the integration test command, then resume with --run-id.\n\n" + Briefs.Failures(failed))
+                "Fix the runner image, or name the repo's suite in integration.testCommand in .factory/policy.yaml, then resume with --run-id.\n\n" + Briefs.Failures(failed))
             : new RunFinished(runId, "integration_failed", Briefs.Failures(failed));
 
     /// The handover's frozen design tokens must be well formed and keep text at or above the minimum; then the
