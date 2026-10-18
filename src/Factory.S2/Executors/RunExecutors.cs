@@ -167,10 +167,12 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             }
         }
 
-        var outcomes = new List<VerifyOutcome>
-        {
-            await svc.Verify.RunCommandAsync(msg.RunId, "integration tests", s.IntegrationTestCommand, integration, timeout, cancellationToken),
-        };
+        var outcomes = new List<VerifyOutcome>();
+        if (SuiteDiscovery.Plan(s.IntegrationTestCommand, integration) is SuitePlan.Command suite)
+            outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, "integration tests", suite.Item, integration, timeout, cancellationToken));
+        else
+            await svc.LogAsync(msg.RunId, "integration_verify", LedgerKinds.Verify, outcome: "no_suite",
+                payload: JsonSerializer.Serialize(new { reason = "no integration.testCommand and no test project in the repo" }), ct: cancellationToken);
 
         if (s.PObserveCommand is { } pobserve)
             outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, "PObserve", pobserve, integration, timeout, cancellationToken));

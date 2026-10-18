@@ -19,6 +19,7 @@
     <Compile Include="Dispatcher.fs" />
     <Compile Include="TaskState.fs" />
     <Compile Include="Regression.fs" />
+    <Compile Include="Suite.fs" />
     <Compile Include="Quality.fs" />
     <Compile Include="Fitness.fs" />
     <Compile Include="UiGuard.fs" />

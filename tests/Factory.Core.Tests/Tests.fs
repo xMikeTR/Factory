@@ -827,6 +827,7 @@ let tests: (string * (unit -> unit)) list =
     @ Factory.Core.Tests.UxReviewTests.tests
     @ Factory.Core.Tests.JiraMirrorTests.tests
     @ Factory.Core.Tests.ItemBudgetTests.tests
+    @ Factory.Core.Tests.SuiteTests.tests
     @ Factory.Core.Tests.MetricsTests.tests
     @ Factory.Core.Tests.BoardTests.tests
 
