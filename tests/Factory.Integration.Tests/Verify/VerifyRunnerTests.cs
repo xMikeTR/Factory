@@ -83,6 +83,53 @@ public class VerifyRunnerTests : IDisposable
         }
     }
 
+    /// Designc writes a decision check as `.venv/bin/python checks/model.py ...`: the registry's venv, built on the host.
+    /// In the runner image that venv starts the image's python without designc (exit 1, read as a code failure);
+    /// python3 there is the image's venv with designc. 20261016-095826 and after.
+    [Fact]
+    public async Task A_decision_check_in_the_container_runs_the_registry_venv_python_as_the_image_python()
+    {
+        var sandboxes = new RecordingSandboxes("docker");
+        var runner = new VerifyRunner(_ledger, sandboxes, new GitWorkspace(_dir, Path.Combine(_out, "state")));
+
+        await runner.RunCommandAsync("run-1", "D-1 [script]", ".venv/bin/python checks/model.py no-retry user agent", _dir, TimeSpan.FromSeconds(5), default, "D-1");
+        await runner.RunCommandAsync("run-1", "D-2 [script]", "./.venv/bin/python3 checks/model.py holds", _dir, TimeSpan.FromSeconds(5), default, "D-2");
+        await runner.RunCommandAsync("run-1", "integration tests", ".venv/bin/python -m pytest", _dir, TimeSpan.FromSeconds(5), default);
+
+        Assert.Equal(["python3 checks/model.py no-retry user agent", "python3 checks/model.py holds", ".venv/bin/python -m pytest"], sandboxes.Commands);
+        Assert.Contains(_ledger.Events, e => e.Decision == "D-1" && e.Payload!.Contains("\"command\":\"python3 checks/model.py no-retry user agent\"")
+            && e.Payload.Contains("\"declared\":\".venv/bin/python checks/model.py no-retry user agent\""));
+    }
+
+    [Fact]
+    public async Task A_decision_check_on_the_host_runs_as_declared()
+    {
+        var sandboxes = new RecordingSandboxes("local");
+        var runner = new VerifyRunner(_ledger, sandboxes, new GitWorkspace(_dir, Path.Combine(_out, "state")));
+
+        await runner.RunCommandAsync("run-1", "D-1 [script]", ".venv/bin/python checks/model.py holds", _dir, TimeSpan.FromSeconds(5), default, "D-1");
+
+        Assert.Equal([".venv/bin/python checks/model.py holds"], sandboxes.Commands);
+    }
+
+    private sealed class RecordingSandboxes(string kind) : ISandboxFactory
+    {
+        public List<string> Commands { get; } = [];
+
+        public System.Threading.Tasks.Task<ICommandSandbox> ForTeamAsync(string teamId, string worktree, CancellationToken ct) => System.Threading.Tasks.Task.FromResult<ICommandSandbox>(new Recording(this, kind));
+
+        private sealed class Recording(RecordingSandboxes owner, string kind) : ICommandSandbox
+        {
+            public string Kind => kind;
+            public System.Threading.Tasks.Task<ProcessResult> RunAsync(string command, string workdir, TimeSpan timeout, IReadOnlyDictionary<string, string> env, CancellationToken ct)
+            {
+                owner.Commands.Add(command);
+                return System.Threading.Tasks.Task.FromResult(new ProcessResult(0, "", TimeSpan.Zero, false));
+            }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
     [Fact]
     public async Task Cleanup_runs_even_when_the_check_fails()
     {
