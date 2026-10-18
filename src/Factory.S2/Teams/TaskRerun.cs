@@ -1,5 +1,6 @@
 using System.Globalization;
 using Factory.Core;
+using Factory.S2.Verify;
 using Factory.Harness;
 
 namespace Factory.S2.Teams;
@@ -50,7 +51,8 @@ public static class TaskRerun
         var worktree = await svc.Git.EnsureTeamAsync(runId, team.Id.Value, ct);
         IReadOnlyList<TestResult>? baseline;
         await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
-            baseline = await svc.Verify.BaselineAsync(runId, team.Id.Value, svc.Settings.IntegrationTestCommand, worktree, ct);
+            baseline = SuiteDiscovery.Plan(svc.Settings.IntegrationTestCommand, worktree) is SuitePlan.Command suite
+                ? await svc.Verify.BaselineAsync(runId, team.Id.Value, suite.Item, worktree, ct) : null;
 
         var stop = await new TaskLoop(svc, handover, runId, team, task, worktree, baseline).RunAsync(NoAnswers, ct);
 

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Factory.Core;
+using Factory.S2.Verify;
 using Factory.Harness;
 using Factory.Harness.Policy;
 using Factory.Harness.Telemetry;
@@ -38,7 +39,8 @@ public sealed class TeamRunner(FactoryServices svc, Handover handover, string ru
         var worktree = await svc.Git.EnsureTeamAsync(runId, teamId, ct);
         IReadOnlyList<TestResult>? baseline;
         await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
-            baseline = await svc.Verify.BaselineAsync(runId, teamId, svc.Settings.IntegrationTestCommand, worktree, ct);
+            baseline = SuiteDiscovery.Plan(svc.Settings.IntegrationTestCommand, worktree) is SuitePlan.Command suite
+                ? await svc.Verify.BaselineAsync(runId, teamId, suite.Item, worktree, ct) : null;
 
         foreach (var task in team.Tasks.Except(carried))
         {
@@ -174,7 +176,8 @@ internal sealed class TaskLoop(
                     {
                         green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct);
                         if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
-                            && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, svc.Settings.IntegrationTestCommand, worktree, ct) is { } regressed)
+                            && SuiteDiscovery.Plan(svc.Settings.IntegrationTestCommand, worktree) is SuitePlan.Command suite
+                            && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, suite.Item, worktree, ct) is { } regressed)
                             green.Add(regressed); // P2P: a test that passed before fails now, so this is not green
                     }
                     if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await QualityOutcomeAsync(attempt, ct) is { } quality)

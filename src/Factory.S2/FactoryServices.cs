@@ -22,8 +22,9 @@ public sealed record FactorySettings(
     IReadOnlyList<string> CommandAllowList,
     /// Full suite. Also the P2P baseline/regression check when it writes JUnit XML to
     /// $FACTORY_TEST_RESULTS (relative to the worktree); with no results the check is off. The repo's
-    /// `integration.testCommand` in .factory/policy.yaml wins over FACTORY_INTEGRATION_TEST_CMD.
-    string IntegrationTestCommand,
+    /// `integration.testCommand` in .factory/policy.yaml wins over FACTORY_INTEGRATION_TEST_CMD; null is
+    /// discovered from the worktree each time (SuiteDiscovery).
+    string? IntegrationTestCommand,
     string? PObserveCommand,
     /// From the target repo's .factory/policy.yaml; null is the default (auto).
     MergePolicy? MergePolicy = null,
@@ -58,7 +59,7 @@ public sealed record FactorySettings(
             int.Parse(Env("FACTORY_MAX_VERIFY_ATTEMPTS", "3"))),
         CommandAllowList: Env("FACTORY_COMMANDS", "dotnet build;dotnet test;dotnet format")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-        IntegrationTestCommand: IntegrationPolicyFile.TestCommand(Path.GetFullPath(repo)) ?? Env("FACTORY_INTEGRATION_TEST_CMD", "dotnet test"),
+        IntegrationTestCommand: IntegrationPolicyFile.TestCommand(Path.GetFullPath(repo)) ?? Environment.GetEnvironmentVariable("FACTORY_INTEGRATION_TEST_CMD"),
         PObserveCommand: Environment.GetEnvironmentVariable("FACTORY_POBSERVE_CMD"),
         MergePolicy: MergePolicyFile.FromEnvironment(Path.GetFullPath(repo)),
         QualityPolicy: QualityPolicyFile.Load(Path.GetFullPath(repo)),

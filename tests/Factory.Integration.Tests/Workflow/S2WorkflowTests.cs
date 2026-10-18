@@ -483,6 +483,21 @@ public class S2WorkflowTests
         Assert.Contains("--run-id", result.Detail);
     }
 
+    /// A new repo names no suite and has no test project yet: `dotnet test` at its root would be MSB1003. There is
+    /// nothing to run, which is not the code failing; the task's own red-green checks have already gated it.
+    [Fact]
+    public async Task A_repo_with_no_suite_named_and_no_test_project_yet_integrates_with_no_suite()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), suiteCommand: null);
+        RunScript(model, h.Handover);
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+
+        Assert.Equal("merged", result?.Status);
+        Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "integration_verify" && e.Outcome == "no_suite");
+    }
+
     [Fact]
     public async Task A_finished_run_projects_its_tasks_and_decision_checks_into_the_registry_ledger()
     {

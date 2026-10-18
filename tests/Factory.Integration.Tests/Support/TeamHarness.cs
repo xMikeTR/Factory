@@ -40,7 +40,7 @@ public sealed class TeamHarness : IDisposable
     /// Finds nothing unless a test queues mutants; consulted only when the quality policy turns mutation on.
     public ScriptedMutationRunner Mutation { get; } = new();
 
-    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa)
+    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string? suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa)
     {
         _root = root;
         Repo = Path.Combine(root, "repo");
@@ -61,9 +61,9 @@ public sealed class TeamHarness : IDisposable
             Mutation, qa);
     }
 
-    /// `suiteCommand` is the integration test command; "true" writes no results, so there is no
+    /// `suiteCommand` is the integration test command (null: discovered from the repo); "true" writes no results, so there is no
     /// regression baseline and the P2P check is skipped.
-    public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits, string suiteCommand = "true",
+    public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits, string? suiteCommand = "true",
         MergePolicy? mergePolicy = null, IPullRequests? pullRequests = null, QualityPolicy? qualityPolicy = null, IQaRunner? qa = null)
     {
         var root = Directory.CreateTempSubdirectory("team-").FullName;
@@ -92,7 +92,7 @@ public sealed class TeamHarness : IDisposable
         return await WireAsync(root, _ => model, limits, "true", mergePolicy, new GhCliPullRequests(repo), null, null);
     }
 
-    private static async Task<TeamHarness> WireAsync(string root, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string suiteCommand,
+    private static async Task<TeamHarness> WireAsync(string root, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string? suiteCommand,
         MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa)
     {
         var handover = await new DesigncHandoverReader().LoadAsync(
