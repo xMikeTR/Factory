@@ -77,6 +77,37 @@ public class ToolResultTrimmerTests
         Assert.Equal(Results(first), Results(later).Take(10));
     }
 
+    private static string Render(ChatMessage m) => m.Role + ": " + string.Join(" | ", m.Contents.Select(c => c switch
+    {
+        FunctionCallContent call => $"call {call.CallId} {call.Name}",
+        FunctionResultContent r => $"result {r.CallId} {r.Result}",
+        TextContent t => t.Text,
+        _ => c.GetType().Name,
+    }));
+
+    /// A provider caches a prefix, so within a turn each request must extend the one before it. The only
+    /// places it may not are where a whole batch of old results is elided, once every ElideBatch calls.
+    [Fact]
+    public async Task Within_a_turn_each_request_extends_the_last_except_where_a_batch_is_elided()
+    {
+        const int calls = 22;
+        var script = Enumerable.Range(1, calls).Select(i => Call("read_file", new { path = $"f{i}.cs" })).Append(Say("done")).ToArray();
+        var model = new ScriptedChatClient(script);
+        IList<AITool> tools = [AIFunctionFactory.Create((string path) => $"contents of {path}", "read_file")];
+        var agent = new FactoryAgents(_ => model, new RoleAllowListPolicy(), new MemoryLedger())
+            .Create(new AgentScope("run-1", Roles.TaskPlanner, "team-T-001", "T-001"), ModelTier.Standard, "plan", tools);
+
+        await agent.RunAsync("go");
+
+        var requests = model.Requests.Select(r => r.Select(Render).ToList()).ToList();
+        Assert.Equal(calls + 1, requests.Count);
+        var breaks = Enumerable.Range(1, requests.Count - 1)
+            .Where(n => requests[n].Count < requests[n - 1].Count || !requests[n].Take(requests[n - 1].Count).SequenceEqual(requests[n - 1]))
+            .ToArray();
+        // keep 5, elide 5 at a time: the first batch goes when the 10th result arrives
+        Assert.Equal([10, 15, 20], breaks);
+    }
+
     [Fact]
     public async Task The_model_sees_trimmed_history_when_wired_through_FactoryAgents()
     {
