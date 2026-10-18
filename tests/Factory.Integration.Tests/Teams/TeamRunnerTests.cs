@@ -346,7 +346,7 @@ public class TeamRunnerTests
     [
         Call("declare_equivalent", new { mutantId = id, reason = "the comparison is on an unreachable branch" }),
         Call("declare_done", new { summary = "claimed" }), Say("done"),
-        Call("declare_done", new { summary = "impl unchanged" }), Say("done"),
+        // no implementer turn: its code is still there, so verify runs first
     ];
 
     [Fact]
@@ -367,8 +367,8 @@ public class TeamRunnerTests
     [Fact]
     public async Task A_declared_equivalent_the_reviewer_does_not_confirm_still_counts_as_a_survivor_and_goes_back_with_that_said()
     {
-        var model = TestsThenImpl(ClaimEquivalent("m1"));
-        using var h = await TeamHarness.CreateAsync(model, new Limits(6, 3), qualityPolicy: MutationOn(QualityMode.Block));
+        var model = TestsThenImpl([.. ClaimEquivalent("m1"), Say("I cannot strengthen these")]);
+        using var h = await TeamHarness.CreateAsync(model, new Limits(5, 3), qualityPolicy: MutationOn(QualityMode.Block));
         h.Mutation.Then(Survivor(), Killed()).Then(Survivor(), Killed());
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
@@ -580,9 +580,8 @@ public class TeamRunnerTests
             Call("return_to_test_author", new { problem }), Say("handed back"),
             // test author again
             Call("write_file", new { path = fixture, content = "x\n" }),
-            Call("declare_done", new { summary = "added the fixture" }), Say("done"),
-            // implementer again: its code is still there
-            Call("declare_done", new { summary = "code unchanged" }), Say("done"));
+            Call("declare_done", new { summary = "added the fixture" }), Say("done"));
+            // no implementer turn: its code is still there, so verify runs first
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
@@ -592,6 +591,7 @@ public class TeamRunnerTests
         Assert.Empty(h.Rows(LedgerKinds.NeedsDecision));
         Assert.Contains(h.Rows(LedgerKinds.TaskEvent), e => e.Payload!.Contains("returned_to_test_author"));
         Assert.Equal(2, h.Rows(LedgerKinds.Verify).Count(e => e.Stage == "red_run"));
+        Assert.Single(h.Rows(LedgerKinds.Turn), e => e.Payload!.Contains($"\"role\":\"{Roles.Implementer}\""));
         Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains(problem));
         var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
         Assert.True(File.Exists(Path.Combine(integration, fixture)));
