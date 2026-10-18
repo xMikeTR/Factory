@@ -467,6 +467,22 @@ public class S2WorkflowTests
         Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "qa" && e.Outcome == "passed");
     }
 
+    /// 20261016-095826: no solution at the repo root and no .venv in the image. Nothing ran against the
+    /// code, so the run does not say the code failed.
+    [Fact]
+    public async Task Integration_checks_the_sandbox_could_not_run_end_the_run_unrunnable_not_failed()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), suiteCommand: "exit 127");
+        RunScript(model, h.Handover);
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+
+        Assert.Equal("integration_unrunnable", result?.Status);
+        Assert.Contains("integration tests", result!.Detail);
+        Assert.Contains("--run-id", result.Detail);
+    }
+
     [Fact]
     public async Task A_finished_run_projects_its_tasks_and_decision_checks_into_the_registry_ledger()
     {

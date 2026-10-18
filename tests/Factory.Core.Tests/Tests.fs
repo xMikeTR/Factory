@@ -335,6 +335,16 @@ let tests: (string * (unit -> unit)) list =
       "red run: a refused restore ran no check: it goes back to the author with the reasons", fun () ->
           let refused = RestoreRefusal.outcome [ "tests/A/A.csproj: <Target> is not allowed" ]
           equal (Refused "tests/A/A.csproj: <Target> is not allowed") (RedRun.classify [ refused ]) "refused"
+      "integration: when every failure is the sandbox's, nothing ran against the code", fun () ->
+          let failing name code tail = { outcome name code with OutputTail = tail }
+          let noSolution = failing "integration tests" 1 "MSBUILD : error MSB1003: Specify a project or solution file. The current working directory does not contain a project or solution file."
+          let noVenv = failing "AC-1 [script]" 127 "bash: line 1: .venv/bin/python: No such file or directory"
+          equal (IntegrationReading.Unrunnable [ "integration tests"; "AC-1 [script]" ]) (IntegrationRun.classify [ noSolution; noVenv ]) "no solution, no venv"
+      "integration: one failure the code could fix makes it a code failure", fun () ->
+          let failing name code tail = { outcome name code with OutputTail = tail }
+          let noVenv = failing "AC-1 [script]" 127 "bash: line 1: .venv/bin/python: No such file or directory"
+          equal IntegrationReading.CodeFailures (IntegrationRun.classify [ noVenv; failing "integration tests" 1 "Failed!  - Failed: 2" ]) "mixed"
+          equal IntegrationReading.CodeFailures (IntegrationRun.classify [ failing "integration tests" 1 "Failed!  - Failed: 2" ]) "code only"
       "evidence: verified needs green and a stashed-impl run that fails", fun () ->
           check (Result.isError (VerifiedEvidence.Create(1, [], red, stashedRed))) "no empty evidence"
           check (Result.isError (VerifiedEvidence.Create(1, [ outcome "a" 1 ], red, stashedRed))) "not green"

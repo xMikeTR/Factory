@@ -114,17 +114,20 @@ type RedReading =
     | Unrunnable of checks: string list
     | Refused of reasons: string
 
-/// Reads the TestAuthor's red run before it becomes evidence.
 [<RequireQualifiedAccess>]
-module RedRun =
+module private Outcome =
 
-    let private matches (pattern: string) (text: string) =
+    let matches (pattern: string) (text: string) =
         System.Text.RegularExpressions.Regex.IsMatch(text, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase)
 
     /// The sandbox could not run the check: a package source it cannot reach (verify runs with
     /// the network off), or a command the image does not have. No code change fixes either.
-    let private environmental (o: VerifyOutcome) =
+    let environmental (o: VerifyOutcome) =
         o.ExitCode = 127 || matches @"error NU1301\b" o.OutputTail
+
+/// Reads the TestAuthor's red run before it becomes evidence.
+[<RequireQualifiedAccess>]
+module RedRun =
 
     /// Refused: the restore gate refused the author's project-file changes, so nothing ran; the
     /// author fixes them. Unrunnable: the checks the sandbox could not run. One is enough: it can
@@ -133,11 +136,36 @@ module RedRun =
     /// a run with no red.
     let classify (outcomes: VerifyOutcome list) : RedReading =
         let failed = outcomes |> List.filter (fun o -> o.ExitCode <> 0)
-        match outcomes |> List.tryFind RestoreRefusal.isRefusal, failed |> List.filter environmental with
+        match outcomes |> List.tryFind RestoreRefusal.isRefusal, failed |> List.filter Outcome.environmental with
         | Some refused, _ -> Refused refused.OutputTail
-        | None, [] when failed |> List.exists (fun o -> matches @"error (CS|FS)\d+|Build FAILED" o.OutputTail) -> Red BuildFailure
+        | None, [] when failed |> List.exists (fun o -> Outcome.matches @"error (CS|FS)\d+|Build FAILED" o.OutputTail) -> Red BuildFailure
         | None, [] -> Red AssertionFailure
         | None, env -> Unrunnable(env |> List.map (fun o -> o.Name))
+
+/// What the integration checks' failures show.
+[<RequireQualifiedAccess>]
+type IntegrationReading =
+    /// At least one failure the code could fix.
+    | CodeFailures
+    /// Every failure is the environment's: nothing ran against the code.
+    | Unrunnable of checks: string list
+
+/// Reads the failed integration checks before the run ends on them.
+[<RequireQualifiedAccess>]
+module IntegrationRun =
+
+    /// Besides what a red run counts, the integration command finding no project or solution to run
+    /// (MSB1003) is the command's or the repo layout's, not the code's. A red run does not count it:
+    /// there, the TestAuthor not having written the test project yet would look the same.
+    let private environmental (o: VerifyOutcome) =
+        Outcome.environmental o || Outcome.matches @"error MSB1003\b" o.OutputTail
+
+    /// Unrunnable only when every failure is the environment's; one failure the code could fix
+    /// makes them code failures, so a real failure never hides behind a runner fix.
+    let classify (failed: VerifyOutcome list) : IntegrationReading =
+        if not failed.IsEmpty && failed |> List.forall environmental then
+            IntegrationReading.Unrunnable(failed |> List.map (fun o -> o.Name))
+        else IntegrationReading.CodeFailures
 
 /// Who holds the pen. The Implementer phase cannot exist without the red evidence that ended
 /// the TestAuthor phase.
