@@ -204,10 +204,18 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
 
         var failed = outcomes.Where(o => o.ExitCode != 0).ToList();
         object next = failed.Count > 0
-            ? new RunFinished(msg.RunId, "integration_failed", Briefs.Failures(failed))
+            ? IntegrationVerdict(msg.RunId, failed)
             : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);
         await context.SendMessageAsync(next, cancellationToken: cancellationToken);
     }
+
+    /// When every failure is the sandbox's, nothing ran against the code: the run is unrunnable, not failed.
+    static RunFinished IntegrationVerdict(string runId, List<VerifyOutcome> failed) =>
+        IntegrationRun.classify(Core.ToList(failed)) is IntegrationReading.Unrunnable u
+            ? new RunFinished(runId, "integration_unrunnable",
+                $"The sandbox could not run {string.Join(", ", u.checks)}, so nothing ran against the code. " +
+                "Fix the runner image or the integration test command, then resume with --run-id.\n\n" + Briefs.Failures(failed))
+            : new RunFinished(runId, "integration_failed", Briefs.Failures(failed));
 
     /// The handover's frozen design tokens must be well formed and keep text at or above the minimum; then the
     /// raw-value lint runs over the integrated worktree. Each violation is a TranslationError on the
