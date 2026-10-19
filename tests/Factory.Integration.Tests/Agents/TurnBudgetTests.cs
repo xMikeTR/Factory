@@ -44,6 +44,31 @@ public class TurnBudgetTests
         Assert.Equal(15, model.Requests.Count); // the request after call 15 is never made
     }
 
+    /// pilot P1: the planner made 22 reads and the task planner 18, with no cap on either.
+    [Theory]
+    [InlineData("submit_plan")]
+    [InlineData("submit_approach")]
+    public async Task A_planning_turn_is_capped_at_thirty_calls_and_told_to_submit_at_twenty_four(string submit)
+    {
+        var model = new ScriptedChatClient([.. Reads(40), Say("never reached")]);
+        var budget = TurnBudget.ForPlanning(submit);
+
+        var warned = false;
+        var tools = new List<AITool> { AIFunctionFactory.Create((string path) =>
+        {
+            _reads++;
+            return $"contents of {path}";
+        }, "read_file") };
+        await new FactoryAgents(_ => model, new AllowAll(), new MemoryLedger())
+            .Create(Scope, ModelTier.Frontier, "plan", tools, budget).RunAsync("go");
+        warned = model.Requests.SelectMany(r => r).SelectMany(m => m.Contents).OfType<FunctionResultContent>()
+            .Any(r => r.Result?.ToString()?.Contains($"call {submit}") == true);
+
+        Assert.Equal(30, _reads);
+        Assert.True(budget.Exhausted);
+        Assert.True(warned);
+    }
+
     [Fact]
     public async Task A_role_that_only_reads_can_keep_every_result_in_view()
     {

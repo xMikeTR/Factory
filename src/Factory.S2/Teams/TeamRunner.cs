@@ -367,7 +367,7 @@ internal sealed class TaskLoop(
         var defaults = await DefaultContextAsync(ct);
         Selection Select(IReadOnlyList<Nomination> nominations) => SelectContext(defaults, nominations);
         var agent = svc.Agents.Create(new AgentScope(runId, Roles.TaskPlanner, _teamId, _taskId), tier,
-            Briefs.Prompt("task-planner"), Workspace(signals, sandbox: null, []).TaskPlannerTools(Select));
+            Briefs.Prompt("task-planner"), Workspace(signals, sandbox: null, []).TaskPlannerTools(Select), TurnBudget.ForPlanning("submit_approach"));
         var response = await agent.RunAsync(Brief(task.Writes.Concat(task.TestWrites), null).Messages, cancellationToken: ct);
 
         if (signals.NeedsDecision is { } raised)
