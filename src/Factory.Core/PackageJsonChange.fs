@@ -91,13 +91,28 @@ module PackageJsonChange =
         | Error e -> [ $"{path}: {e}" ]
         | Ok doc ->
             let old = before |> Option.bind (parse >> Result.toOption)
-            changed old doc "packages"
-            |> List.choose (fun (k, v) ->
+            // Version 2 and 3 list `packages` by path; version 1 (and 2, for old npm) nests `dependencies`, where a git
+            // dependency's `version` is its spec and `resolved` is the tarball.
+            let rec legacy (k: string, v: JsonNode) : string list =
                 match v with
-                | :? JsonObject as o when o.ContainsKey "resolved" && not (isNull o.["resolved"]) ->
-                    let url = o.["resolved"].ToString()
-                    if url.StartsWith registry then None else Some $"{path}: {k} resolves from {url}, not from the pinned registry {registry}"
-                | _ -> None)
+                | :? JsonObject as o ->
+                    let version = match o.["version"] with null -> "" | n -> n.ToString()
+                    [ if fromElsewhere version then $"{path}: {k} is locked to {version}, which does not come from the registry"
+                      match o.["resolved"] with
+                      | null -> ()
+                      | r when not (r.ToString().StartsWith registry) -> $"{path}: {k} resolves from {r}, not from the pinned registry {registry}"
+                      | _ -> ()
+                      yield! entries o.["dependencies"] |> List.collect legacy ]
+                | _ -> []
+            let modern =
+                changed old doc "packages"
+                |> List.choose (fun (k, v) ->
+                    match v with
+                    | :? JsonObject as o when o.ContainsKey "resolved" && not (isNull o.["resolved"]) ->
+                        let url = o.["resolved"].ToString()
+                        if url.StartsWith registry then None else Some $"{path}: {k} resolves from {url}, not from the pinned registry {registry}"
+                    | _ -> None)
+            modern @ (changed old doc "dependencies" |> List.collect legacy)
 
     /// The rule for one changed npm restore input. `after` is None when the file was deleted, which is always fine.
     let review (path: string) (before: string option) (after: string option) : Result<unit, string list> =
