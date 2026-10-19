@@ -43,6 +43,51 @@ public class ScopedWorkspaceTests : IDisposable
         Assert.DoesNotContain("check_quality", new ScopedWorkspace(_root, [], [], [], new TurnSignals(), qualityCheck: _ => Task.FromResult("")).ExecutorTools().Select(t => t.Name));
     }
 
+    private sealed class SlowSandbox(bool honoursTimeout) : ICommandSandbox
+    {
+        public TimeSpan? Timeout { get; private set; }
+        public string Kind => "fake";
+        public async Task<ProcessResult> RunAsync(string command, string workdir, TimeSpan timeout, IReadOnlyDictionary<string, string> env, CancellationToken ct)
+        {
+            Timeout = timeout;
+            if (honoursTimeout) return new ProcessResult(124, "", timeout, true);
+            await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct); // a heavy-gate queue: waits on ct only
+            return new ProcessResult(0, "", TimeSpan.Zero, false);
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    // The prompt cache lives 5 minutes from the last model call, so a tool call longer than the cap leaves the next call uncached.
+    [Fact]
+    public async Task A_command_gets_at_most_the_command_cap_and_a_timeout_says_to_use_the_verify_gate()
+    {
+        var sandbox = new SlowSandbox(honoursTimeout: true);
+        var ws = new ScopedWorkspace(_root, [], [], ["dotnet test"], new TurnSignals(), sandbox, commandCap: TimeSpan.FromSeconds(90));
+        var output = await ws.RunCommand("dotnet test");
+        Assert.Equal(TimeSpan.FromSeconds(90), sandbox.Timeout);
+        Assert.Contains("timed out", output);
+        Assert.Contains("verify", output);
+    }
+
+    [Fact]
+    public async Task Time_spent_waiting_for_the_sandbox_counts_against_the_cap()
+    {
+        var ws = new ScopedWorkspace(_root, [], [], ["dotnet test"], new TurnSignals(), new SlowSandbox(honoursTimeout: false), commandCap: TimeSpan.FromMilliseconds(200));
+        var started = DateTime.UtcNow;
+        var output = await ws.RunCommand("dotnet test");
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(5));
+        Assert.Contains("timed out", output);
+        Assert.Contains("verify", output);
+    }
+
+    [Fact]
+    public async Task A_cancelled_turn_still_cancels_the_command()
+    {
+        var ws = new ScopedWorkspace(_root, [], [], ["dotnet test"], new TurnSignals(), new SlowSandbox(honoursTimeout: false), commandCap: TimeSpan.FromMinutes(1));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ws.RunCommand("dotnet test", cts.Token));
+    }
+
     private sealed class RecordingSandbox : ICommandSandbox
     {
         public List<string> Commands { get; } = [];
