@@ -55,6 +55,14 @@ let tests: (string * (unit -> unit)) list =
           check (PathPattern.matches pat (String.replicate 30 "d/" + "x.cs")) "x.cs"
           check (sw.ElapsedMilliseconds < 1000L) $"took {sw.ElapsedMilliseconds} ms"
 
+      "paths: overlap of two patterns with many ** segments does not take exponential time", fun () ->
+          let a = PathPattern.createOrFail (String.replicate 14 "**/" + "x.cs")
+          let b = PathPattern.createOrFail (String.replicate 14 "**/" + "y.cs")
+          let sw = Diagnostics.Stopwatch.StartNew()
+          check (not (PathPattern.mayOverlap a b)) "x.cs and y.cs cannot meet"
+          check (PathPattern.mayOverlap a (PathPattern.createOrFail "**/x.cs")) "same tail overlaps"
+          check (sw.ElapsedMilliseconds < 1000L) $"took {sw.ElapsedMilliseconds} ms"
+
       "quality: overloads of one name in one file are judged each against its own baseline", fun () ->
           let t = { MaxCyclomatic = 10; MaxCrap = 30.0; MaxLines = 60 }
           let f line c = { File = "a.cs"; Name = "Parse"; Line = line; Cyclomatic = c; Lines = 10; Coverage = Some 1.0 }

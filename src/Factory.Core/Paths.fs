@@ -135,14 +135,23 @@ module PathPattern =
                 | false, _ -> matchSeg y 0 x 0
                 | true, false -> matchSeg x 0 y 0
                 | true, true -> true
-            let rec overlap xs ys =
-                match xs, ys with
-                | [], [] -> true
-                | "**" :: xt, _ -> overlap xt ys || (match ys with _ :: yt -> overlap xs yt | [] -> false)
-                | _, "**" :: yt -> overlap xs yt || (match xs with _ :: xt -> overlap xt ys | [] -> false)
-                | x :: xt, y :: yt -> segCompatible x y && overlap xt yt
-                | _ -> false
-            overlap a.Segs b.Segs
+            let xa = Array.ofList a.Segs
+            let ya = Array.ofList b.Segs
+            let memo = System.Collections.Generic.Dictionary<struct (int * int), bool>()
+            // Same walk as before over array positions; each (i, j) is decided once, so repeated `**` cannot blow up.
+            let rec overlap i j =
+                match memo.TryGetValue(struct (i, j)) with
+                | true, v -> v
+                | _ ->
+                    let v =
+                        if i = xa.Length && j = ya.Length then true
+                        elif i < xa.Length && xa.[i] = "**" then overlap (i + 1) j || (j < ya.Length && overlap i (j + 1))
+                        elif j < ya.Length && ya.[j] = "**" then overlap i (j + 1) || (i < xa.Length && overlap (i + 1) j)
+                        elif i < xa.Length && j < ya.Length then segCompatible xa.[i] ya.[j] && overlap (i + 1) (j + 1)
+                        else false
+                    memo.[struct (i, j)] <- v
+                    v
+            overlap 0 0
 
     /// Is every file matched by `inner` also matched by `outer`?
     ///
