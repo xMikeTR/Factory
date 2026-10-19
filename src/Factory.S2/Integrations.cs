@@ -43,9 +43,20 @@ public sealed class GhCliPullRequests(string repoPath) : IPullRequests, IApprova
 
     public async Task<IReadOnlyList<PrComment>> CommentsAsync(string url, CancellationToken ct)
     {
-        using var doc = JsonDocument.Parse(await Gh(ct, "pr", "view", url, "--json", "comments"));
-        return doc.RootElement.GetProperty("comments").EnumerateArray()
-            .Select(c => new PrComment(c.GetProperty("author").GetProperty("login").GetString() ?? "", c.GetProperty("body").GetString() ?? ""))
+        return ParseComments(await Gh(ct, "pr", "view", url, "--json", "comments"));
+    }
+
+    /// A comment with no author (a deleted account) or no body is kept with empty text, so it can never count as an approval.
+    public static IReadOnlyList<PrComment> ParseComments(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("comments", out var comments) || comments.ValueKind != JsonValueKind.Array) return [];
+        static string Text(JsonElement parent, string name) =>
+            parent.ValueKind == JsonValueKind.Object && parent.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+        return comments.EnumerateArray()
+            .Select(c => new PrComment(
+                c.ValueKind == JsonValueKind.Object && c.TryGetProperty("author", out var a) ? Text(a, "login") : "",
+                Text(c, "body")))
             .ToList();
     }
 
@@ -85,8 +96,15 @@ public sealed class ConsoleHumanChannel : IHumanChannel
         Console.WriteLine($"\n[merge-approval] {request.Tier}: {request.PullRequestUrl}");
         foreach (var r in request.Reasons) Console.WriteLine($"  - {r}");
         Console.Write("  Type 'merged <your name>' once approved and merged, anything else to stop: ");
-        var line = (Console.ReadLine() ?? "").Trim();
-        var merged = line.StartsWith("merged", StringComparison.OrdinalIgnoreCase);
-        return Task.FromResult(new MergeApprovalResponse(request.RunId, merged, merged && line.Length > 6 ? line[6..].Trim() : null));
+        return Task.FromResult(Answer(request.RunId, Console.ReadLine() ?? ""));
+    }
+
+    /// `merged` alone, or `merged <name>`. A word that only starts with it ("mergedd", "merged-not-yet") stops the run.
+    public static MergeApprovalResponse Answer(string runId, string typed)
+    {
+        var line = typed.Trim();
+        var merged = line.Equals("merged", StringComparison.OrdinalIgnoreCase)
+            || (line.StartsWith("merged", StringComparison.OrdinalIgnoreCase) && char.IsWhiteSpace(line[6]));
+        return new MergeApprovalResponse(runId, merged, merged && line.Length > 6 ? line[6..].Trim() : null);
     }
 }
