@@ -35,6 +35,26 @@ public class ToolResultTrimmerTests
         Assert.Contains("1001 chars", results[0]);
     }
 
+    /// pilot P1: with only five results kept, a planner that read ten small files read them again, and each re-read
+    /// was another model call carrying the whole conversation.
+    [Fact]
+    public void Results_are_kept_while_they_fit_the_hold_budget()
+    {
+        var trimmed = ToolResultTrimmer.Trim(Conversation(12), keepRecent: 5, holdChars: 50_000);
+
+        Assert.All(Results(trimmed), r => Assert.StartsWith("xxx", r));
+    }
+
+    [Fact]
+    public void Results_older_than_the_last_five_are_stubbed_once_they_exceed_the_hold_budget()
+    {
+        var trimmed = ToolResultTrimmer.Trim(Conversation(8), keepRecent: 5, holdChars: 4_000);
+
+        var results = Results(trimmed);
+        Assert.All(results.Take(3), r => Assert.StartsWith("[read_file result elided", r));
+        Assert.All(results.Skip(3), r => Assert.StartsWith("xxx", r));
+    }
+
     [Fact]
     public void The_brief_and_assistant_messages_are_untouched_and_the_input_is_not_mutated()
     {
@@ -93,7 +113,7 @@ public class ToolResultTrimmerTests
         const int calls = 22;
         var script = Enumerable.Range(1, calls).Select(i => Call("read_file", new { path = $"f{i}.cs" })).Append(Say("done")).ToArray();
         var model = new ScriptedChatClient(script);
-        IList<AITool> tools = [AIFunctionFactory.Create((string path) => $"contents of {path}", "read_file")];
+        IList<AITool> tools = [AIFunctionFactory.Create((string path) => $"contents of {path} " + new string('z', 9_000), "read_file")];
         var agent = new FactoryAgents(_ => model, new RoleAllowListPolicy(), new MemoryLedger())
             .Create(new AgentScope("run-1", Roles.TaskPlanner, "team-T-001", "T-001"), ModelTier.Standard, "plan", tools);
 
@@ -104,7 +124,7 @@ public class ToolResultTrimmerTests
         var breaks = Enumerable.Range(1, requests.Count - 1)
             .Where(n => requests[n].Count < requests[n - 1].Count || !requests[n].Take(requests[n - 1].Count).SequenceEqual(requests[n - 1]))
             .ToArray();
-        // keep 5, elide 5 at a time: the first batch goes when the 10th result arrives
+        // large results (over the hold budget); keep 5, elide 5 at a time: the first batch goes when the 10th result arrives
         Assert.Equal([10, 15, 20], breaks);
     }
 
@@ -113,7 +133,7 @@ public class ToolResultTrimmerTests
     {
         var script = Enumerable.Range(1, 12).Select(i => Call("read_file", new { path = $"f{i}.cs" })).Append(Say("done")).ToArray();
         var model = new ScriptedChatClient(script);
-        IList<AITool> tools = [AIFunctionFactory.Create((string path) => new string('y', 2000), "read_file")];
+        IList<AITool> tools = [AIFunctionFactory.Create((string path) => new string('y', 10_000), "read_file")];
         var agent = new FactoryAgents(_ => model, new RoleAllowListPolicy(), new MemoryLedger())
             .Create(new AgentScope("run-1", Roles.TaskPlanner, "team-T-001", "T-001"), ModelTier.Standard, "plan", tools);
 
