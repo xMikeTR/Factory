@@ -212,4 +212,14 @@ public class VerifyRunnerTests : IDisposable
             """);
         Assert.Equal([new("A.ok", true), new("A.bad", false), new("boom", false)], results);
     }
+    /// A report that is there but cannot be read says nothing about the specs, so exit 0 does not stand as a pass.
+    [Fact]
+    public async Task An_unreadable_acceptance_report_fails_even_when_the_command_exits_zero()
+    {
+        var (outcome, _) = await Runner.AcceptanceAsync("run-1", $"mkdir -p .factory-results && echo '<not json' > {VerifyRunner.AcceptanceReportPath}", _dir, [], default);
+        Assert.Equal(1, outcome.ExitCode);
+
+        (outcome, _) = await Runner.AcceptanceAsync("run-1", $"mkdir -p .factory-results && echo '{{\"suites\":[]}}' > {VerifyRunner.AcceptanceReportPath}", _dir, [], default);
+        Assert.Equal(0, outcome.ExitCode);
+    }
 }

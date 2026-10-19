@@ -111,13 +111,15 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
                 ["PLAYWRIGHT_JSON_OUTPUT_NAME"] = AcceptanceReportPath,
             }, ct);
             var failures = new List<Factory.Harness.Verify.PlaywrightReport.Failure>();
+            var unreadable = false;
             if (File.Exists(report))
             {
                 try { failures.AddRange(Factory.Harness.Verify.PlaywrightReport.Failures(await File.ReadAllTextAsync(report, ct), frozenPaths)); }
-                catch (JsonException) { }
+                catch (JsonException) { unreadable = true; }
             }
             var outcome = ToOutcome("acceptance", r);
-            if (outcome.ExitCode == 0 && failures.Count > 0) outcome = new VerifyOutcome(outcome.Name, 1, outcome.DurationMs, outcome.OutputTail);
+            // a report that exists but cannot be read says nothing, so a zero exit does not stand as a pass
+            if (outcome.ExitCode == 0 && (failures.Count > 0 || unreadable)) outcome = new VerifyOutcome(outcome.Name, 1, outcome.DurationMs, outcome.OutputTail);
             await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.Verify,
                 Outcome: outcome.ExitCode == 0 ? "passed" : "failed",
                 Payload: JsonSerializer.Serialize(new { name = "acceptance", command, ExitCode = outcome.ExitCode, ms = outcome.DurationMs,
@@ -184,13 +186,14 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
                 ["FACTORY_LINT_REPORT"] = TokenLintReportPath,
             }, ct);
             var violations = new List<Factory.Core.LintViolation>();
+            var unreadable = false;
             if (File.Exists(report))
             {
                 try { violations.AddRange(Factory.Harness.Verify.StylelintReport.Violations(await File.ReadAllTextAsync(report, ct), worktree)); }
-                catch (JsonException) { }
+                catch (JsonException) { unreadable = true; }
             }
             var outcome = ToOutcome("token lint", r);
-            if (outcome.ExitCode == 0 && violations.Count > 0) outcome = new VerifyOutcome(outcome.Name, 1, outcome.DurationMs, outcome.OutputTail);
+            if (outcome.ExitCode == 0 && (violations.Count > 0 || unreadable)) outcome = new VerifyOutcome(outcome.Name, 1, outcome.DurationMs, outcome.OutputTail);
             await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.Verify,
                 Outcome: outcome.ExitCode == 0 ? "passed" : "failed",
                 Payload: JsonSerializer.Serialize(new { name = "token lint", command, ExitCode = outcome.ExitCode, ms = outcome.DurationMs,

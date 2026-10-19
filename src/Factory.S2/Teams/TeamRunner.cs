@@ -788,7 +788,7 @@ internal sealed class TaskLoop(
     /// What `check_quality` shows the Implementer: the same ratchet verify applies (and the UI guard's findings), so nothing surprises it there,
     /// plus the paths changed outside the writable ones (which verify would revert). The parts run side by side under one 3 s budget; a part
     /// that does not finish is named as not run and left to verify, so a slow check never holds the turn (and the prompt cache).
-    private Task<string> FastFindingsAsync(IReadOnlyList<PathPattern> writable, CancellationToken ct)
+    private async Task<string> FastFindingsAsync(IReadOnlyList<PathPattern> writable, CancellationToken ct)
     {
         var policy = svc.Settings.QualityPolicy!;
         var parts = new List<FastCheck.Part>
@@ -797,7 +797,9 @@ internal sealed class TaskLoop(
             new("ui", async c => (await UiViolationsAsync(c)).Select(UiGate.Line).ToList()),
         };
         if (policy.Mode != QualityMode.Off) parts.Add(new("quality", async c => await QualityLinesAsync(policy, c)));
-        return FastCheck.RunAsync(parts, FastCheck.DefaultBudget, ct).ContinueWith(t => t.Result == "no findings" ? "" : t.Result, TaskContinuationOptions.OnlyOnRanToCompletion);
+        // awaited, not ContinueWith(OnlyOnRanToCompletion): that turned a fault in a part into a bare TaskCanceledException.
+        var found = await FastCheck.RunAsync(parts, FastCheck.DefaultBudget, ct);
+        return found == "no findings" ? "" : found;
     }
 
     private async Task<List<string>> QualityLinesAsync(QualityPolicy policy, CancellationToken ct) =>
