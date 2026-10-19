@@ -20,7 +20,8 @@
 <body>
 <main>
 <h1>designc and factory-s2: getting started</h1>
-<p class="note">designc (System 1) is the desktop app where you design. factory-s2 (System 2) is the pipeline that turns a frozen design into merged code. They share files, not a server: the registry folder and its ledger.</p>
+<p class="note">designc (System 1) is the desktop app where you design. factory-s2 (System 2) is the pipeline that turns a frozen design into merged code. They share files, not a server: the design folder (also called the registry) and its ledger.</p>
+<p class="note">The design folder holds the model, requirements, decisions and ledger as plain files. It can sit inside your code repo (for example <code>design/</code>) or beside it, and a new empty folder is fine.</p>
 <nav><a href="#idea">The idea</a><a href="#first">First 10 minutes</a><a href="#terms">Terms</a><a href="#s1">Using designc</a><a href="#s2">Running factory-s2</a><a href="#loop">The whole loop</a><a href="#safety">What is guarded</a><a href="#more">Where to read more</a></nav>
 
 <h2 id="idea">The idea</h2>
@@ -33,7 +34,7 @@
 <p>No model, key or cost needed.</p>
 <p>When you want a model, a reviewer or Langfuse, run <code>scripts/setup-wizard.sh</code>: a step-by-step prompt that writes <code>~/.config/factory-s2/env</code> (mode 600, outside the repo). Connection tests are free and only run if you say yes.</p>
 <ol>
-<li><code>npm install &amp;&amp; npm start</code>, then choose <strong>Open sample</strong>. This opens <code>sample-registry/</code>, a small pricing-engine design.</li>
+<li><code>npm install &amp;&amp; npm start</code>, then choose <strong>Try the sample project</strong>. The first launch also shows a short tour (Help, Take the tour, shows it again). This opens <code>sample-registry/</code>, a small pricing-engine design.</li>
 <li>Look at the status bar: the gate says <em>not ready</em>. In the Design sidebar, the blocking clauses are listed in the order to work them. The first one is marked <em>next</em>.</li>
 <li>Open <code>model/workspace.dsl</code> from the Explorer. Findings (DC000 to DC009) appear in the Problems panel as you read; click one to jump to the line.</li>
 <li>On a finding, try <strong>Ask the tutor</strong> to have it explained, or <strong>Record decision</strong> to write down how you will resolve it. Nothing is bound until you press Bind.</li>
@@ -62,7 +63,7 @@
 <pre>npm install
 npm start                          # opens the app
 npm start -- /path/to/registry     # opens straight into a registry folder</pre>
-<p>Needs Node 20 or later. Use <em>Open sample</em> to explore <code>sample-registry/</code>, a small pricing-engine design with a decision, a requirement, and a sample ledger. A registry is a plain folder, so git gives you review and history.</p>
+<p>Needs Node 20 or later. Use <em>Try the sample project</em> to explore <code>sample-registry/</code>, a small pricing-engine design with a decision, a requirement, and a sample ledger. A registry is a plain folder, so git gives you review and history.</p>
 
 <h3>The views</h3>
 <table>
@@ -77,7 +78,7 @@ npm start -- /path/to/registry     # opens straight into a registry folder</pre>
 
 <h3>A first pass</h3>
 <ol>
-<li>Open a registry. The status bar shows the gate: ready or not, with each blocking clause listed in the Design sidebar in working order.</li>
+<li>Open your design folder (File, Open Design Folder). The status bar shows the gate: ready or not, with each blocking clause listed in the Design sidebar in working order.</li>
 <li>Work the clauses. A finding offers <em>Record decision</em> or <em>Accept risk</em>; an unbound decision offers <em>Bind</em>; a decision check offers <em>Run check</em>. Binding is always a person's action.</li>
 <li>When the gate is ready and your files are committed, <em>Freeze handover</em>. It writes <code>handovers/&lt;id&gt;/</code> with copies of the model, requirements, bound decisions, scenarios, evals, an <code>elements.json</code> and a <code>BUILD.md</code> brief. A frozen handover is never rewritten.</li>
 <li>Dispatch it: set <code>dispatch</code> in <code>designc.json</code> to your pipeline command. designc types the filled command into the integrated terminal and stops before Enter.</li>
