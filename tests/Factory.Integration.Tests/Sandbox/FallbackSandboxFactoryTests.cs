@@ -4,7 +4,7 @@ using Xunit;
 
 namespace Factory.Integration.Tests.Sandbox;
 
-/// FACTORY_SANDBOX=hub,docker,local: the first sandbox that starts is used, the ones before it that could not are named.
+/// FACTORY_SANDBOX=docker,local: the first sandbox that starts is used, the ones before it that could not are named.
 public class FallbackSandboxFactoryTests
 {
     private sealed class Stub(string kind) : ICommandSandbox
@@ -28,13 +28,13 @@ public class FallbackSandboxFactoryTests
     public async Task The_first_sandbox_that_starts_is_used_and_each_failure_before_it_is_reported()
     {
         var skipped = new List<string>();
-        var f = new FallbackSandboxFactory([("hub", new Fails("no hub url")), ("docker", new Fails("docker not found")), ("local", new Works("local"))],
+        var f = new FallbackSandboxFactory([("first", new Fails("no url")), ("docker", new Fails("docker not found")), ("local", new Works("local"))],
             (name, why) => skipped.Add($"{name}: {why}"));
 
         await using var s = await f.ForTeamAsync("t", "/w", default);
 
         Assert.Equal("local", s.Kind);
-        Assert.Equal(["hub: no hub url", "docker: docker not found"], skipped);
+        Assert.Equal(["first: no url", "docker: docker not found"], skipped);
     }
 
     [Fact]
@@ -50,9 +50,9 @@ public class FallbackSandboxFactoryTests
     [Fact]
     public async Task When_none_starts_the_error_lists_every_reason()
     {
-        var f = new FallbackSandboxFactory([("hub", new Fails("a")), ("docker", new Fails("b"))], (n, w) => { });
+        var f = new FallbackSandboxFactory([("first", new Fails("a")), ("docker", new Fails("b"))], (n, w) => { });
         var e = await Assert.ThrowsAsync<InvalidOperationException>(() => f.ForTeamAsync("t", "/w", default));
-        Assert.Contains("hub: a", e.Message);
+        Assert.Contains("first: a", e.Message);
         Assert.Contains("docker: b", e.Message);
     }
 
@@ -72,9 +72,10 @@ public class FallbackSandboxFactoryTests
     [Fact]
     public void The_list_parses_in_order_and_refuses_unknown_names()
     {
-        Assert.Equal(["hub", "docker", "local"], FallbackSandboxFactory.Parse("hub, docker ,local"));
+        Assert.Equal(["docker", "local"], FallbackSandboxFactory.Parse("docker ,local"));
         Assert.Equal(["docker"], FallbackSandboxFactory.Parse(null));
         Assert.Throws<ArgumentException>(() => FallbackSandboxFactory.Parse("docker,podman"));
+        Assert.Throws<ArgumentException>(() => FallbackSandboxFactory.Parse("hub,docker"));
         Assert.Throws<ArgumentException>(() => FallbackSandboxFactory.Parse("docker,docker"));
     }
 }

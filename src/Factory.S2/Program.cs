@@ -447,11 +447,10 @@ static ILedger ProgressLedger(FactorySettings settings) => new Factory.Harness.R
 static FactoryServices Services(FactorySettings settings, string runId, Dictionary<string, string> env, IPullRequests pullRequests)
 {
     var ledger = ProgressLedger(settings);
-    // FACTORY_SANDBOX is an ordered list (hub,docker,local); the first that starts is used. Default docker only;
+    // FACTORY_SANDBOX is an ordered list (docker,local); the first that starts is used. Default docker only;
     // local is the explicit, unisolated fallback and runs only when named.
     ISandboxFactory SandboxNamed(string name) => name switch
     {
-        "hub" => new HubSandboxFactory(),
         "docker" => new DockerSandboxFactory(new DockerSandboxOptions(
             Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest", NpmRebuild: settings.Npm?.Rebuild), ledger, runId),
         _ => new LocalSandboxFactory(),

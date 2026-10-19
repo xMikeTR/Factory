@@ -1,11 +1,11 @@
 namespace Factory.Harness.Sandbox;
 
-/// FACTORY_SANDBOX=hub,docker,local: tries each sandbox in order and uses the first that starts. A failure is
+/// FACTORY_SANDBOX=docker,local: tries each sandbox in order and uses the first that starts. A failure is
 /// reported through `onSkipped` (the run ledgers it) and the next is tried; a cancelled start is not a failure.
 /// Which names are listed is the person's choice: `local` runs unisolated, so it is never added on its own.
 public sealed class FallbackSandboxFactory(IReadOnlyList<(string Name, ISandboxFactory Factory)> candidates, Action<string, string> onSkipped) : ISandboxFactory
 {
-    public static readonly IReadOnlyList<string> Known = ["hub", "docker", "local"];
+    public static readonly IReadOnlyList<string> Known = ["docker", "local"];
 
     /// The ordered names from the variable; unset means docker only.
     public static IReadOnlyList<string> Parse(string? value)
@@ -34,10 +34,3 @@ public sealed class FallbackSandboxFactory(IReadOnlyList<(string Name, ISandboxF
     }
 }
 
-/// The agentweave hub as a sandbox (the hub is the sandbox). Not wired yet: its API is not documented here, so
-/// asking for it fails with a reason and the next sandbox in FACTORY_SANDBOX takes over.
-public sealed class HubSandboxFactory : ISandboxFactory
-{
-    public Task<ICommandSandbox> ForTeamAsync(string teamId, string worktree, CancellationToken ct) =>
-        throw new NotSupportedException("the hub adapter is not implemented yet");
-}
