@@ -72,14 +72,27 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
             ApiKey = ApiKey,
             BaseUrl = Endpoint?.ToString() ?? "https://api.anthropic.com",
         }.AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens).AsBuilder().Use(inner => new PromptCachingChatClient(inner)).Build(),
-        // Credentials are Application Default Credentials (gcloud auth application-default login, or the VM's service account).
-        ModelProvider.Vertex => new Anthropic.Vertex.AnthropicVertexClient(new Anthropic.Vertex.AnthropicVertexCredentials(VertexRegion ?? "global", VertexProject
+        // Application Default Credentials (gcloud auth application-default login, or the VM's service account).
+        // Claude models use Anthropic's Vertex client; any other model id (Gemini, Model Garden) goes through Vertex's
+        // OpenAI-compatible endpoint, so the reviewer can be another family on the same login.
+        ModelProvider.Vertex when VertexAuthPolicy.IsClaude(ModelFor(tier)) => new Anthropic.Vertex.AnthropicVertexClient(new Anthropic.Vertex.AnthropicVertexCredentials(VertexRegion ?? "global", VertexProject
                 ?? throw new FactoryRejectedException("no Vertex project", ["set FACTORY_VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT"])))
             .AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens).AsBuilder().Use(inner => new PromptCachingChatClient(inner)).Build(),
+        ModelProvider.Vertex => VertexOpenAIClient(ModelFor(tier)),
         ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey), OpenAIOptions(ModelFor(tier)))
             .GetChatClient(ModelFor(tier)).AsIChatClient().AsBuilder().Use(inner => new OpenAIPromptCacheKeyChatClient(inner)).Build(),
         _ => throw new ArgumentOutOfRangeException(nameof(Provider), Provider, null),
     };
+
+    private IChatClient VertexOpenAIClient(string model)
+    {
+        var o = new OpenAIClientOptions { Endpoint = VertexAuthPolicy.OpenAIEndpoint(
+            VertexProject ?? throw new FactoryRejectedException("no Vertex project", ["set FACTORY_VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT"]), VertexRegion ?? "global") };
+        o.AddPolicy(new VertexAuthPolicy(), System.ClientModel.Primitives.PipelinePosition.PerCall);
+        // the key is a placeholder: the policy replaces the Authorization header with the ADC token
+        return new OpenAIClient(new ApiKeyCredential("adc"), o).GetChatClient(model).AsIChatClient().AsBuilder()
+            .Use(inner => new OpenAIPromptCacheKeyChatClient(inner)).Build();
+    }
 
     private OpenAIClientOptions OpenAIOptions(string model)
     {

@@ -114,6 +114,8 @@ export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MOD
 #   export FACTORY_PROVIDER=anthropic ANTHROPIC_API_KEY=<key>
 #   or Claude on Vertex AI with gcloud Application Default Credentials (no key, no gateway):
 #   export FACTORY_PROVIDER=vertex FACTORY_VERTEX_PROJECT=<project> [FACTORY_VERTEX_REGION=global]
+#   (any Vertex model: claude-* via the Anthropic client; others, e.g. google/gemini-2.5-pro, via Vertex's
+#   OpenAI-compatible endpoint, so the reviewer can be a Gemini on the same login)
 #   The reviewer and QA run on another model family (FACTORY_REVIEWER_PROVIDER / _GATEWAY_URL /
 #   _GATEWAY_KEY / _MODEL_*, and declare FACTORY_MODEL_FAMILY + FACTORY_REVIEWER_MODEL_FAMILY); start-up
 #   refuses otherwise. With one provider only: FACTORY_REVIEWER_SAME_FAMILY=allow, dry-run merges only

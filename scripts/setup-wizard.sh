@@ -37,10 +37,13 @@ provider() {
       gcloud auth application-default print-access-token >/dev/null 2>&1 && echo "    Application Default Credentials found." \
         || echo "    No credentials yet. Run: gcloud auth application-default login"
     else echo "    gcloud not found. Install it, then: gcloud auth application-default login"; fi
-    ask "  Frontier model (planner, hardest work)" "claude-opus-5-5";  add "FACTORY_${p}MODEL_FRONTIER" "$REPLY"
-    ask "  Standard model (implementer)"           "claude-sonnet-5-5"; add "FACTORY_${p}MODEL_STANDARD" "$REPLY"
-    ask "  Small model (cheap turns)"              "claude-haiku-4-5";  add "FACTORY_${p}MODEL_SMALL" "$REPLY"
-    FAMILY=anthropic
+    local f="claude-opus-5-5" st="claude-sonnet-5-5" sm="claude-haiku-4-5" fam=anthropic
+    if [ -n "$p" ]; then f="google/gemini-2.5-pro"; st="google/gemini-2.5-pro"; sm="google/gemini-2.5-flash"; fam=google
+      echo "  Any Vertex model works: Claude ids use the Anthropic client, everything else (Gemini, Model Garden) the OpenAI-compatible endpoint."; fi
+    ask "  Frontier model" "$f"; add "FACTORY_${p}MODEL_FRONTIER" "$REPLY"
+    ask "  Standard model" "$st"; add "FACTORY_${p}MODEL_STANDARD" "$REPLY"
+    ask "  Small model"    "$sm"; add "FACTORY_${p}MODEL_SMALL" "$REPLY"
+    ask "  Model family (anthropic, google, meta, ...)" "$fam"; FAMILY="$REPLY"
   elif [ "$prov" = 1 ]; then
     add "FACTORY_${p}PROVIDER" anthropic
     ask "  Base URL (blank = api.anthropic.com)" ""; url="$REPLY"
@@ -50,10 +53,13 @@ provider() {
     if [ -z "$p" ] && [ -n "${!key:-}" ] && yes "  Test the key (lists models, free)?"; then
       curl -fsS -m 15 -H "x-api-key: ${!key}" -H "anthropic-version: 2023-06-01" "${url:-https://api.anthropic.com}/v1/models" >/dev/null \
         && echo "    OK" || echo "    Failed. Check the key."; fi
-    ask "  Frontier model (planner, hardest work)" "claude-opus-5-5";  add "FACTORY_${p}MODEL_FRONTIER" "$REPLY"
-    ask "  Standard model (implementer)"           "claude-sonnet-5-5"; add "FACTORY_${p}MODEL_STANDARD" "$REPLY"
-    ask "  Small model (cheap turns)"              "claude-haiku-4-5";  add "FACTORY_${p}MODEL_SMALL" "$REPLY"
-    FAMILY=anthropic
+    local f="claude-opus-5-5" st="claude-sonnet-5-5" sm="claude-haiku-4-5" fam=anthropic
+    if [ -n "$p" ]; then f="google/gemini-2.5-pro"; st="google/gemini-2.5-pro"; sm="google/gemini-2.5-flash"; fam=google
+      echo "  Any Vertex model works: Claude ids use the Anthropic client, everything else (Gemini, Model Garden) the OpenAI-compatible endpoint."; fi
+    ask "  Frontier model" "$f"; add "FACTORY_${p}MODEL_FRONTIER" "$REPLY"
+    ask "  Standard model" "$st"; add "FACTORY_${p}MODEL_STANDARD" "$REPLY"
+    ask "  Small model"    "$sm"; add "FACTORY_${p}MODEL_SMALL" "$REPLY"
+    ask "  Model family (anthropic, google, meta, ...)" "$fam"; FAMILY="$REPLY"
   else
     add "FACTORY_${p}PROVIDER" openai
     ask "  Gateway URL" "https://gateway/litellm/v1"; url="$REPLY"; add "FACTORY_${p}GATEWAY_URL" "$url"

@@ -55,6 +55,15 @@ public class GatewayOptionsTests
         Assert.Equal(("p2", "europe-west1"), (r.VertexProject, r.VertexRegion));
     }
 
+    [Fact]
+    public void Vertex_sends_Claude_to_the_Anthropic_client_and_other_models_to_the_OpenAI_compatible_endpoint()
+    {
+        Assert.True(VertexAuthPolicy.IsClaude("claude-sonnet-5-5"));
+        Assert.False(VertexAuthPolicy.IsClaude("google/gemini-2.5-pro"));
+        Assert.Equal(new Uri("https://europe-west1-aiplatform.googleapis.com/v1/projects/p/locations/europe-west1/endpoints/openapi"), VertexAuthPolicy.OpenAIEndpoint("p", "europe-west1"));
+        Assert.Equal(new Uri("https://aiplatform.googleapis.com/v1/projects/p/locations/global/endpoints/openapi"), VertexAuthPolicy.OpenAIEndpoint("p", "global"));
+    }
+
     [Theory]
     [InlineData(ModelProvider.Anthropic, "anthropic")]
     [InlineData(ModelProvider.OpenAICompatible, "openai")]
