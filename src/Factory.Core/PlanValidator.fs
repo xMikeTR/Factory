@@ -151,65 +151,65 @@ module PlanValidator =
     ///   whole plan:  UncoveredDecision (every handover decision covered by some task), DependencyCycle
     /// Return Ok(ValidatedPlan(plan, handover)) only when the list is empty. The constructor is
     /// `internal`: this function is the only door into ValidatedPlan.
+    let private planLevel (handover: Handover) (plan: Plan) =
+        [ if plan.Tasks.IsEmpty then EmptyPlan
+          if plan.HandoverId <> handover.Id then HandoverMismatch(handover.Id, plan.HandoverId)
+          if plan.HandoverDigest <> handover.Digest then HandoverMismatch(handover.Digest, plan.HandoverDigest)
+          for id, n in plan.Tasks |> List.countBy (fun t -> t.Id) do
+              if n > 1 then DuplicateTaskId id ]
+
+    let private verifyErrors (handover: Handover) (t: PlannedTask) (v: VerifyEntry) =
+        [ match v with
+          | Automated a ->
+              if isBlank a.Run then EmptyVerify(t.Id, a.Name)
+              if a.Kind = SelfSeeded && (a.Cleanup |> Option.forall isBlank) then SelfSeededWithoutCleanup(t.Id, a.Name)
+              if a.TimeoutSeconds <= 0 then InvalidTimeout(t.Id, a.Name)
+              if a.Kind = Invariant && not (isBlank a.Run) && not (mentionsPathUnder (t.TestWrites @ handover.ProtectedPaths) a.Run) then
+                  InvariantNotUnderTestWrites(t.Id, a.Name)
+              if not (pobserveCheckArityOk a.Run) then PObserveCheckArity(t.Id, a.Name)
+              if pobserveCheckNegated a.Run then NegatedPObserveCheck(t.Id, a.Name)
+          | Manual m -> if isBlank m.Instructions then EmptyVerify(t.Id, m.Name) ]
+
+    let private taskLevel (handover: Handover) (elements: Map<_, _>) (decisions: Map<_, _>) (taskIds: Set<_>) (t: PlannedTask) =
+        let known = t.Elements |> List.choose (fun e -> Map.tryFind e elements)
+        // An out-of-scope element is rejected at the link (OutOfScopeElement), so its code areas
+        // count here and a write into them is not reported a second time.
+        let codeAreas = known |> List.collect (fun e -> e.CodeAreas)
+        [ if t.Writes.IsEmpty then NoWrites t.Id
+          if t.Elements.IsEmpty then NoElements t.Id
+          if not (t.Verify |> List.exists (function Automated _ -> true | Manual _ -> false)) then NoAutomatedVerify t.Id
+          for e in t.Elements do
+              match Map.tryFind e elements with
+              | None -> UnknownElement(t.Id, e)
+              | Some el -> if not el.InScope then OutOfScopeElement(t.Id, e)
+          for w in t.Writes do
+              if handover.ProtectedPaths |> List.exists (PathPattern.mayOverlap w) then ProtectedWrite(t.Id, w)
+              elif not (codeAreas |> List.exists (PathPattern.isWithin w)) then WriteOutsideElement(t.Id, w)
+          for tw in t.TestWrites do
+              if handover.ProtectedPaths |> List.exists (PathPattern.mayOverlap tw) then ProtectedWrite(t.Id, tw)
+              elif not (codeAreas |> List.exists (PathPattern.isWithin tw)) then TestWriteOutsideElement(t.Id, tw)
+              for w in t.Writes do
+                  if PathPattern.mayOverlap w tw then TestWritesOverlapWrites(t.Id, w, tw)
+          for d in t.DependsOn do
+              if not (taskIds.Contains d) then UnknownDependency(t.Id, d)
+          for c in t.Covers do
+              match Map.tryFind c decisions with
+              | None -> UnknownDecision(t.Id, c)
+              | Some d -> if not (d.Binds |> List.exists (fun b -> List.contains b t.Elements)) then CoverWithoutBinding(t.Id, c)
+          yield! t.Verify |> List.collect (verifyErrors handover t) ]
+
+    let private wholePlan (handover: Handover) (plan: Plan) =
+        [ for d in handover.Decisions do
+              if not (plan.Tasks |> List.exists (fun t -> List.contains d.Id t.Covers)) then UncoveredDecision d.Id
+          match findCycle plan.Tasks with
+          | Some cycle -> DependencyCycle cycle
+          | None -> () ]
+
     let validate (handover: Handover) (plan: Plan) : Result<ValidatedPlan, PlanError list> =
         let elements = handover.Elements |> List.map (fun e -> e.Id, e) |> Map.ofList
         let decisions = handover.Decisions |> List.map (fun d -> d.Id, d) |> Map.ofList
         let taskIds = plan.Tasks |> List.map (fun t -> t.Id) |> Set.ofList
 
-        let planLevel =
-            [ if plan.Tasks.IsEmpty then EmptyPlan
-              if plan.HandoverId <> handover.Id then HandoverMismatch(handover.Id, plan.HandoverId)
-              if plan.HandoverDigest <> handover.Digest then HandoverMismatch(handover.Digest, plan.HandoverDigest)
-              for id, n in plan.Tasks |> List.countBy (fun t -> t.Id) do
-                  if n > 1 then DuplicateTaskId id ]
-
-        let verifyErrors (t: PlannedTask) (v: VerifyEntry) =
-            [ match v with
-              | Automated a ->
-                  if isBlank a.Run then EmptyVerify(t.Id, a.Name)
-                  if a.Kind = SelfSeeded && (a.Cleanup |> Option.forall isBlank) then SelfSeededWithoutCleanup(t.Id, a.Name)
-                  if a.TimeoutSeconds <= 0 then InvalidTimeout(t.Id, a.Name)
-                  if a.Kind = Invariant && not (isBlank a.Run) && not (mentionsPathUnder (t.TestWrites @ handover.ProtectedPaths) a.Run) then
-                      InvariantNotUnderTestWrites(t.Id, a.Name)
-                  if not (pobserveCheckArityOk a.Run) then PObserveCheckArity(t.Id, a.Name)
-                  if pobserveCheckNegated a.Run then NegatedPObserveCheck(t.Id, a.Name)
-              | Manual m -> if isBlank m.Instructions then EmptyVerify(t.Id, m.Name) ]
-
-        let taskLevel (t: PlannedTask) =
-            let known = t.Elements |> List.choose (fun e -> Map.tryFind e elements)
-            // An out-of-scope element is rejected at the link (OutOfScopeElement), so its code areas
-            // count here and a write into them is not reported a second time.
-            let codeAreas = known |> List.collect (fun e -> e.CodeAreas)
-            [ if t.Writes.IsEmpty then NoWrites t.Id
-              if t.Elements.IsEmpty then NoElements t.Id
-              if not (t.Verify |> List.exists (function Automated _ -> true | Manual _ -> false)) then NoAutomatedVerify t.Id
-              for e in t.Elements do
-                  match Map.tryFind e elements with
-                  | None -> UnknownElement(t.Id, e)
-                  | Some el -> if not el.InScope then OutOfScopeElement(t.Id, e)
-              for w in t.Writes do
-                  if handover.ProtectedPaths |> List.exists (PathPattern.mayOverlap w) then ProtectedWrite(t.Id, w)
-                  elif not (codeAreas |> List.exists (PathPattern.isWithin w)) then WriteOutsideElement(t.Id, w)
-              for tw in t.TestWrites do
-                  if handover.ProtectedPaths |> List.exists (PathPattern.mayOverlap tw) then ProtectedWrite(t.Id, tw)
-                  elif not (codeAreas |> List.exists (PathPattern.isWithin tw)) then TestWriteOutsideElement(t.Id, tw)
-                  for w in t.Writes do
-                      if PathPattern.mayOverlap w tw then TestWritesOverlapWrites(t.Id, w, tw)
-              for d in t.DependsOn do
-                  if not (taskIds.Contains d) then UnknownDependency(t.Id, d)
-              for c in t.Covers do
-                  match Map.tryFind c decisions with
-                  | None -> UnknownDecision(t.Id, c)
-                  | Some d -> if not (d.Binds |> List.exists (fun b -> List.contains b t.Elements)) then CoverWithoutBinding(t.Id, c)
-              yield! t.Verify |> List.collect (verifyErrors t) ]
-
-        let wholePlan =
-            [ for d in handover.Decisions do
-                  if not (plan.Tasks |> List.exists (fun t -> List.contains d.Id t.Covers)) then UncoveredDecision d.Id
-              match findCycle plan.Tasks with
-              | Some cycle -> DependencyCycle cycle
-              | None -> () ]
-
-        match planLevel @ (plan.Tasks |> List.collect taskLevel) @ wholePlan with
+        match planLevel handover plan @ (plan.Tasks |> List.collect (taskLevel handover elements decisions taskIds)) @ wholePlan handover plan with
         | [] -> Ok(ValidatedPlan(plan, handover))
         | errors -> Error errors
