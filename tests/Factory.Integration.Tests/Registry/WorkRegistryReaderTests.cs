@@ -75,6 +75,43 @@ public class WorkRegistryReaderTests
         Assert.Contains("W-1: gate \"dotnet test\" failed at abcdef1", WorkDigestReport.Render(digest, problems));
     }
 
+    private static string Git(string dir, params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var a in new[] { "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false" }.Concat(args)) psi.ArgumentList.Add(a);
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var o = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        return o.Trim();
+    }
+
+    [Fact]
+    public async Task Only_a_hex_commit_from_the_ledger_reaches_git_and_a_ref_name_is_not_judged()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "s2-repo-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(repo);
+        Git(repo, "init", "-q", "-b", "main");
+        File.WriteAllText(Path.Combine(repo, "a"), "1");
+        Git(repo, "add", "."); Git(repo, "commit", "-q", "-m", "one");
+        Git(repo, "checkout", "-q", "-b", "side");
+        File.WriteAllText(Path.Combine(repo, "a"), "2");
+        Git(repo, "commit", "-q", "-am", "two");
+        var side = Git(repo, "rev-parse", "HEAD");
+
+        async Task<string> Digest(string commit) => WorkDigestReport.Render((await WorkDigestReport.BuildAsync(Registry(new()
+        {
+            ["requirements/REQ-1.yaml"] = Requirement,
+            ["work/W-1.yaml"] = Work,
+            ["ledger/designc.jsonl"] = """{"kind":"item_pulled","item":"W-1","ts":1,"by":"mike"}""" + "\n"
+                + $$"""{"kind":"item_done","item":"W-1","commit":"{{commit}}","evidence":["gate"],"ts":2,"by":"mike"}""" + "\n",
+        }), repo, "main", 0, 3, CancellationToken.None)).Digest, []);
+
+        Assert.Contains("Claimed merged, not on main", await Digest(side));      // a full hash is checked
+        Assert.Contains("Claimed merged, not on main", await Digest(side[..8])); // so is an abbreviation
+        Assert.DoesNotContain("not on main", await Digest("side"));              // a branch name is not a hash: not judged
+        Assert.DoesNotContain("not on main", await Digest("--upload-pack=x"));   // and an option never reaches git
+    }
+
     [Fact]
     public async Task An_exceeded_budget_row_is_listed_as_waiting()
     {
