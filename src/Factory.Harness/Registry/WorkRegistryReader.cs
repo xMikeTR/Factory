@@ -155,7 +155,8 @@ public static class WorkRegistryReader
                 "item_awaiting_human" when S("item") is { } i => LedgerFact.NewItemAwaitingHuman(i, O("reason")),
                 "item_pulled" when S("item") is { } i => LedgerFact.NewItemPulled(i),
                 "item_gate" when S("item") is { } i && S("gate") is { } g =>
-                    LedgerFact.NewItemGate(i, g, S("outcome") == "pass", O("commit")),
+                    LedgerFact.NewItemGate(i, g, S("outcome") == "pass", O("commit"),
+                        !r.TryGetProperty("dirty", out var dirty) || dirty.ValueKind != JsonValueKind.False),
                 "item_done" when S("item") is { } i =>
                     LedgerFact.NewItemDone(i, O("commit"),
                         ListModule.OfSeq(TextList(r, "evidence"))),

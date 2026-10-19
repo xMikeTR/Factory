@@ -7,7 +7,8 @@ type LedgerFact =
     | NeedsDecisionResolved of id: string
     | ItemAwaitingHuman of item: string * reason: string option
     | ItemPulled of item: string
-    | ItemGate of item: string * gate: string * passed: bool * commit: string option
+    /// `dirty`: the run was on a tree with uncommitted changes; such a pass is never evidence.
+    | ItemGate of item: string * gate: string * passed: bool * commit: string option * dirty: bool
     /// `evidence` is the row's evidence entries: `gate:<cmd>@<commit>`, and the person's ticks `checklist:<text>` / `review:<name>`.
     | ItemDone of item: string * commit: string option * evidence: string list
     | AcceptanceFailed of task: string * ac: string * element: string * commit: string
@@ -97,7 +98,7 @@ module Digest =
                 Some { Item = task; Text = q; Ts = ts }
             | ItemAwaitingHuman(item, reason) when not (after ev (function
                                                               | ItemPulled i | ItemDone(i, _, _) -> i = item
-                                                              | ItemGate(i, _, _, _) -> i = item
+                                                              | ItemGate(i, _, _, _, _) -> i = item
                                                               | _ -> false) ts) ->
                 let why = reason |> Option.map (fun r -> ": " + r) |> Option.defaultValue ""
                 Some { Item = Some item; Text = $"{item} is waiting for a person{why}"; Ts = ts }
@@ -112,11 +113,11 @@ module Digest =
             |> List.choose (function Gate g -> Some g | _ -> None)
             |> List.choose (fun g ->
                 ev
-                |> List.filter (fun (_, f) -> match f with ItemGate(x, y, _, _) -> x = i.Id.Value && y = g | _ -> false)
+                |> List.filter (fun (_, f) -> match f with ItemGate(x, y, _, _, _) -> x = i.Id.Value && y = g | _ -> false)
                 |> List.tryLast
                 |> Option.bind (fun (ts, f) ->
                     match f with
-                    | ItemGate(_, _, false, commit) ->
+                    | ItemGate(_, _, false, commit, _) ->
                         let at = commit |> Option.map (fun c -> " at " + c7 c) |> Option.defaultValue ""
                         Some { Item = i.Id.Value; Kind = GateFailed; Text = $"{i.Id.Value}: gate \"{g}\" failed{at}"; Ts = ts }
                     | _ -> None)))
@@ -143,7 +144,7 @@ module Digest =
         |> List.fold (fun m (k, v) -> Map.add k v m) Map.empty
         |> Map.toList
         |> List.choose (fun ((task, ac), (ts, el, c)) ->
-            let cleared = after ev (function ItemDone(i, _, _) -> i = task | ItemGate(i, _, true, _) -> i = task | _ -> false) ts
+            let cleared = after ev (function ItemDone(i, _, _) -> i = task | ItemGate(i, _, true, _, false) -> i = task | _ -> false) ts
             if cleared then None
             else Some { Item = task; Kind = AcceptanceFailure; Text = $"{task}: acceptance {ac} failed on {el} at {c7 c}"; Ts = ts })
 

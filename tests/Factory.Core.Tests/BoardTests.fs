@@ -35,9 +35,11 @@ let tests: (string * (unit -> unit)) list =
           equal [] (plan [] ).Pull "nothing"
       "board: a dependency is satisfied only by a done item with evidence on main", fun () ->
           let started = [ frozen "W-A" 1L; frozen "W-B" 1L; 2L, ItemPulled "W-A" ]
-          let finished = started @ [ 3L, ItemGate("W-A", "dotnet test", true, Some "abc1234"); 4L, ItemDone("W-A", Some "abc1234", [ "gate:dotnet test@abc1234" ]) ]
+          let finishedWith dirty = started @ [ 3L, ItemGate("W-A", "dotnet test", true, Some "abc1234", dirty); 4L, ItemDone("W-A", Some "abc1234", [ "gate:dotnet test@abc1234" ]) ]
+          let finished = finishedWith false
           check ((plan started).Deferred |> List.exists (fun (id, d) -> id.Value = "W-B" && d = WaitsOnDependency [ WorkItemId "W-A" ])) "b waits while a is active"
           equal [ "W-B" ] ((plan finished).Pull |> List.map (fun i -> i.Id.Value)) "b after a is done"
+          check ((plan (finishedWith true)).Deferred |> List.exists (fun (id, _) -> id.Value = "W-B")) "a gate that passed on a dirty tree is not evidence"
       "board: a checklist item is Done only when its tick is named in the item_done evidence", fun () ->
           let reviewed =
               match

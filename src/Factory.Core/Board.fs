@@ -25,7 +25,7 @@ module Board =
                     | Error _ -> state, readyAt, runs
                 | ItemPulled x when x = id -> apply (WorkEvent.Pulled(RunId id)), readyAt, runs
                 | ItemAwaitingHuman(x, why) when x = id -> apply (WorkEvent.AwaitedHuman(defaultArg why "")), readyAt, runs
-                | ItemGate(x, g, passed, commit) when x = id -> state, readyAt, runs @ [ { Gate = g; Commit = commit; Passed = passed; Dirty = false } ]
+                | ItemGate(x, g, passed, commit, dirty) when x = id -> state, readyAt, runs @ [ { Gate = g; Commit = commit; Passed = passed; Dirty = dirty } ]
                 | ItemDone(x, commit, evidence) when x = id ->
                     let ticks = evidence |> List.filter (fun e -> e.StartsWith "checklist:" || e.StartsWith "review:")
                     let facts' = { Commit = commit; OnMain = commit |> Option.bind onMain; GateRuns = runs; Ticks = ticks }
