@@ -69,6 +69,34 @@ public class TurnBudgetTests
         Assert.True(warned);
     }
 
+    /// pilot P1: the test author asked for the same refused write again and again.
+    [Fact]
+    public async Task The_turn_ends_when_the_same_call_is_refused_three_times_in_a_row()
+    {
+        var refused = 0;
+        var tools = new List<AITool> { AIFunctionFactory.Create((string path) => { refused++; return "DENIED: path is protected"; }, "write_file") };
+        var model = new ScriptedChatClient([.. Enumerable.Range(0, 10).Select(_ => Call("write_file", new { path = "Directory.Build.props" })), Say("never reached")]);
+
+        await new FactoryAgents(_ => model, new AllowAll(), new MemoryLedger())
+            .Create(Scope, ModelTier.Standard, "implement", tools, new TurnBudget()).RunAsync("go");
+
+        Assert.Equal(3, refused);
+        Assert.Equal(3, model.Requests.Count);
+    }
+
+    [Fact]
+    public async Task A_different_call_or_a_success_between_refusals_starts_the_count_again()
+    {
+        var n = 0;
+        var tools = new List<AITool> { AIFunctionFactory.Create((string path) => ++n % 3 == 0 ? "ok" : "DENIED: path is protected", "write_file") };
+        var model = new ScriptedChatClient([.. Enumerable.Range(0, 9).Select(_ => Call("write_file", new { path = "a.cs" })), Say("done")]);
+
+        await new FactoryAgents(_ => model, new AllowAll(), new MemoryLedger())
+            .Create(Scope, ModelTier.Standard, "implement", tools, new TurnBudget()).RunAsync("go");
+
+        Assert.Equal(9, n);
+    }
+
     [Fact]
     public async Task A_role_that_only_reads_can_keep_every_result_in_view()
     {
