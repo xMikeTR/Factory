@@ -88,6 +88,31 @@ public class RegistryLedgerProjectorTests
         Assert.Equal(5 + 75, rows.Single(r => r["task"].GetString() == "T-002")["tokens_out"].GetInt64());
     }
 
+    /// designc's Build view shows spend by role: the task-planner turns by their stage, acting turns by the role in their payload,
+    /// and the planner's shared tokens as their own entry (its turns counted once, on the first task).
+    [Fact]
+    public void Each_task_row_splits_its_tokens_by_role()
+    {
+        var run = new List<LedgerEvent>
+        {
+            At(0, new(RunId, "S2", "plan", LedgerKinds.Plan, Outcome: "drafted", Model: "frontier", TokensIn: 1001, TokensOut: 100)),
+            At(1, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-001", TeamId: "team-1", Outcome: "Running")),
+            At(2, new(RunId, "S2", "task_plan", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Frontier", TokensIn: 200, TokensOut: 20)),
+            At(3, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Standard", TokensIn: 300, TokensOut: 30, Payload: """{"role":"s2-test-author"}""")),
+            At(4, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Standard", TokensIn: 100, TokensOut: 10, Payload: """{"role":"s2-test-author"}""")),
+            At(5, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-001", TeamId: "team-1", Outcome: "Passed")),
+            At(6, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-002", TeamId: "team-2", Outcome: "Running")),
+            At(7, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-002", TeamId: "team-2", Outcome: "Passed")),
+        };
+
+        var rows = RegistryLedgerProjector.Project(run, Handover).Select(Row).Where(r => r["kind"].GetString() == "task").ToList();
+
+        Assert.Equal("""[{"role":"s2-planner","turns":1,"tokens_in":501,"tokens_out":50},{"role":"s2-task-planner","turns":1,"tokens_in":200,"tokens_out":20},{"role":"s2-test-author","turns":2,"tokens_in":400,"tokens_out":40}]""",
+            rows.Single(r => r["task"].GetString() == "T-001")["by_role"].GetRawText());
+        Assert.Equal("""[{"role":"s2-planner","turns":0,"tokens_in":500,"tokens_out":50}]""",
+            rows.Single(r => r["task"].GetString() == "T-002")["by_role"].GetRawText());
+    }
+
     [Fact]
     public void Each_element_pair_the_code_crosses_without_a_relationship_is_one_asbuilt_edge_row_per_run()
     {

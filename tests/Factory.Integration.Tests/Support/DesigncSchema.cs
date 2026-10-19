@@ -45,6 +45,8 @@ public static class DesigncSchema
                 errors.Add($"{kind}.exit_code: required when outcome is 'fail' (or give reason)");
             else if (rule == "usage_shape" && ev.TryGetProperty("usage", out var usage) && !UsageOk(usage))
                 errors.Add($"{kind}.usage: must be a list of {{model, turns, tokens_in, tokens_out}}");
+            else if (rule == "by_role_shape" && ev.TryGetProperty("by_role", out var byRole) && !ByRoleOk(byRole))
+                errors.Add($"{kind}.by_role: must be a list of {{role, turns, tokens_in, tokens_out}}");
         return errors;
     }
 
@@ -77,6 +79,13 @@ public static class DesigncSchema
             && (!u.TryGetProperty("cost", out var c) || c.ValueKind == JsonValueKind.Number)
             && new[] { "cache_read", "cache_write" }.All(k => !u.TryGetProperty(k, out var n) || n.ValueKind == JsonValueKind.Number && n.TryGetInt64(out var w) && w >= 0)
             && Count(u, "cache_read") + Count(u, "cache_write") <= Count(u, "tokens_in"));
+
+    /// designc ledger.js by_role_shape: a list of {role, turns, tokens_in, tokens_out}.
+    private static bool ByRoleOk(JsonElement byRole) =>
+        byRole.ValueKind == JsonValueKind.Array && byRole.EnumerateArray().All(u =>
+            u.ValueKind == JsonValueKind.Object
+            && u.TryGetProperty("role", out var r) && r.ValueKind == JsonValueKind.String && r.GetString()!.Length > 0
+            && new[] { "turns", "tokens_in", "tokens_out" }.All(k => u.TryGetProperty(k, out var n) && n.ValueKind == JsonValueKind.Number && n.TryGetInt64(out var w) && w >= 0));
 
     private static long Count(JsonElement u, string k) => u.TryGetProperty(k, out var n) && n.TryGetInt64(out var w) ? w : 0;
 

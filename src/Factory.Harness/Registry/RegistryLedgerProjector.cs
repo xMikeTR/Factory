@@ -69,6 +69,7 @@ public static class RegistryLedgerProjector
                 w.WriteNumber("tokens_out", turns.Sum(t => t.TokensOut ?? 0) + ownOut);
                 if (turns.LastOrDefault(t => t.Model is not null)?.Model is { } tier) w.WriteString("tier", tier);
                 WriteUsage(w, turns);
+                WriteByRole(w, turns, ownIn, ownOut, share == 0 ? planners.Count : 0);
                 w.WriteString("handover", handover.Id);
                 w.WriteString("run", last.RunId);
             }));
@@ -100,6 +101,43 @@ public static class RegistryLedgerProjector
             w.WriteEndObject();
         }
         w.WriteEndArray();
+    }
+
+    /// designc's task `by_role`: tokens per role, in the order first seen. A turn names its role in its payload; a task-planner turn is known by its stage.
+    /// The planner's share of the run (see Tasks) is its own entry, its turns counted once on the first task.
+    private static void WriteByRole(Utf8JsonWriter w, IReadOnlyList<LedgerEvent> turns, long planIn, long planOut, int planTurns)
+    {
+        var groups = turns.GroupBy(RoleOf).ToList();
+        var hasPlanner = planIn + planOut > 0;
+        if (groups.Count == 0 && !hasPlanner) return;
+        w.WriteStartArray("by_role");
+        void Entry(string role, int count, long tin, long tout)
+        {
+            w.WriteStartObject();
+            w.WriteString("role", role);
+            w.WriteNumber("turns", count);
+            w.WriteNumber("tokens_in", tin);
+            w.WriteNumber("tokens_out", tout);
+            w.WriteEndObject();
+        }
+        if (hasPlanner) Entry(Roles.Planner, planTurns, planIn, planOut);
+        foreach (var g in groups) Entry(g.Key, g.Count(), g.Sum(t => t.TokensIn ?? 0), g.Sum(t => t.TokensOut ?? 0));
+        w.WriteEndArray();
+    }
+
+    private static string RoleOf(LedgerEvent turn)
+    {
+        if (turn.Payload is not null)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(turn.Payload);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("role", out var r)
+                    && r.ValueKind == JsonValueKind.String && r.GetString() is { Length: > 0 } role) return role;
+            }
+            catch (JsonException) { }
+        }
+        return turn.Stage == "task_plan" ? Roles.TaskPlanner : turn.Stage;
     }
 
     private static long PayloadCount(LedgerEvent turn, string name)
