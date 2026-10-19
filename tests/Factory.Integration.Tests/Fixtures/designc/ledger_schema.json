@@ -52,7 +52,9 @@
     "fail_needs_evidence",
     "budget_shape",
     "usage_shape",
+    "by_role_shape",
     "suite_run_shape",
+    "fail_needs_note",
     "hash_not_blank",
     "ended_needs_reason",
     "aborted_needs_reason",
@@ -207,6 +209,24 @@
       "enums": {},
       "types": {},
       "rules": []
+    },
+    "domain_pinned": {
+      "stream": "designc.jsonl",
+      "required": [
+        "pack",
+        "registry",
+        "hash"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "pack": "string",
+        "registry": "string",
+        "hash": "string"
+      },
+      "rules": [
+        "hash_not_blank"
+      ]
     },
     "escape": {
       "stream": "designc.jsonl",
@@ -786,7 +806,8 @@
         "tier",
         "handover",
         "run",
-        "usage"
+        "usage",
+        "by_role"
       ],
       "enums": {
         "status": [
@@ -798,7 +819,39 @@
       },
       "types": {},
       "rules": [
-        "usage_shape"
+        "usage_shape",
+        "by_role_shape"
+      ]
+    },
+    "trace_review": {
+      "stream": "designc.jsonl",
+      "required": [
+        "trace_id",
+        "observation",
+        "verdict",
+        "note"
+      ],
+      "optional": [
+        "run_id",
+        "task",
+        "attempt",
+        "failure_mode"
+      ],
+      "enums": {
+        "verdict": [
+          "pass",
+          "fail"
+        ]
+      },
+      "types": {
+        "trace_id": "string",
+        "observation": "string",
+        "note": "string",
+        "attempt": "number",
+        "failure_mode": "string|null"
+      },
+      "rules": [
+        "fail_needs_note"
       ]
     },
     "ui_acceptance_failed": {
