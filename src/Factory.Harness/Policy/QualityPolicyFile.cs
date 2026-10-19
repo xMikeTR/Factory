@@ -78,64 +78,64 @@ public static class QualityPolicyFile
     {
         var path = Path.Combine(repoPath, MergePolicyFile.RelativePath);
         var q = (File.Exists(path) ? Yaml.Deserialize<Doc?>(File.ReadAllText(path)) : null)?.Quality ?? new Section();
-        var d = Default.Thresholds;
         var errors = new List<string>();
 
-        QualityMode? mode = q.Mode?.ToLowerInvariant() switch
+        var mode = Mode("mode", q.Mode, Default.Mode, errors);
+        var mutation = Mode("mutation", q.Mutation, QualityMode.Off, errors);
+        if (q.MaxCyclomatic is <= 0) errors.Add("quality.maxCyclomatic: must be > 0");
+        if (q.MaxCrap is <= 0) errors.Add("quality.maxCrap: must be > 0");
+        if (q.MaxLines is <= 0) errors.Add("quality.maxLines: must be > 0");
+        if (q.MutationMinScore is <= 0 or > 1) errors.Add("quality.mutationMinScore: must be in (0, 1]");
+
+        var forbid = Rules("forbid", q.Forbid, namespaces: false, errors);
+        var forbidNamespaces = Rules("forbidNamespaces", q.ForbidNamespaces, namespaces: true, errors);
+        var ui = q.Ui is null ? null : new UiPolicy(Globs("globs", q.Ui.Globs, errors), Globs("testGlobs", q.Ui.TestGlobs, errors));
+
+        if (errors.Count > 0) throw new FactoryRejectedException($"{path} is invalid", errors.ToArray());
+        var d = Default.Thresholds;
+        return new QualityPolicy(mode!.Value, new QualityThresholds(q.MaxCyclomatic ?? d.MaxCyclomatic, q.MaxCrap ?? d.MaxCrap, q.MaxLines ?? d.MaxLines),
+            new MutationPolicy(mutation!.Value, new MutationThresholds(q.MutationMinScore ?? 0.8)), q.Coverage ?? false, forbid, (q.Flaky ?? []).Where(f => !string.IsNullOrWhiteSpace(f)).ToList(), forbidNamespaces, ui);
+    }
+
+    /// null (and an error) for a word that is not off|report|block; an absent value is the fallback.
+    private static QualityMode? Mode(string key, string? value, QualityMode fallback, List<string> errors)
+    {
+        QualityMode? mode = value?.ToLowerInvariant() switch
         {
-            null => Default.Mode,
+            null => fallback,
             "off" => QualityMode.Off,
             "report" => QualityMode.Report,
             "block" => QualityMode.Block,
             _ => null,
         };
-        if (mode is null) errors.Add($"quality.mode: '{q.Mode}' is not off|report|block");
-        if (q.MaxCyclomatic is <= 0) errors.Add("quality.maxCyclomatic: must be > 0");
-        if (q.MaxCrap is <= 0) errors.Add("quality.maxCrap: must be > 0");
-        if (q.MaxLines is <= 0) errors.Add("quality.maxLines: must be > 0");
+        if (mode is null) errors.Add($"quality.{key}: '{value}' is not off|report|block");
+        return mode;
+    }
 
-        QualityMode? mutation = q.Mutation?.ToLowerInvariant() switch
+    private static List<ForbiddenDependency> Rules(string section, IEnumerable<ForbidEntry>? entries, bool namespaces, List<string> errors)
+    {
+        var rules = new List<ForbiddenDependency>();
+        foreach (var (e, i) in (entries ?? []).Select((e, i) => (e, i)))
         {
-            null or "off" => QualityMode.Off,
-            "report" => QualityMode.Report,
-            "block" => QualityMode.Block,
-            _ => null,
-        };
-        if (mutation is null) errors.Add($"quality.mutation: '{q.Mutation}' is not off|report|block");
-        if (q.MutationMinScore is <= 0 or > 1) errors.Add("quality.mutationMinScore: must be in (0, 1]");
-
-        List<ForbiddenDependency> Rules(string section, IEnumerable<ForbidEntry>? entries, bool namespaces)
-        {
-            var rules = new List<ForbiddenDependency>();
-            foreach (var (e, i) in (entries ?? []).Select((e, i) => (e, i)))
-            {
-                if (string.IsNullOrWhiteSpace(e.From) || string.IsNullOrWhiteSpace(e.To) || string.IsNullOrWhiteSpace(e.Why))
-                { errors.Add($"quality.{section}[{i}]: from, to and why are all required"); continue; }
-                var from = PathPatternModule.create(namespaces ? e.From.Replace('.', '/') : e.From);
-                var to = PathPatternModule.create(namespaces ? e.To.Replace('.', '/') : e.To);
-                if (from.IsError) errors.Add($"quality.{section}[{i}].from: {from.ErrorValue}");
-                else if (to.IsError) errors.Add($"quality.{section}[{i}].to: {to.ErrorValue}");
-                else rules.Add(new ForbiddenDependency(from.ResultValue, to.ResultValue, e.Why));
-            }
-            return rules;
+            if (string.IsNullOrWhiteSpace(e.From) || string.IsNullOrWhiteSpace(e.To) || string.IsNullOrWhiteSpace(e.Why))
+            { errors.Add($"quality.{section}[{i}]: from, to and why are all required"); continue; }
+            var from = PathPatternModule.create(namespaces ? e.From.Replace('.', '/') : e.From);
+            var to = PathPatternModule.create(namespaces ? e.To.Replace('.', '/') : e.To);
+            if (from.IsError) errors.Add($"quality.{section}[{i}].from: {from.ErrorValue}");
+            else if (to.IsError) errors.Add($"quality.{section}[{i}].to: {to.ErrorValue}");
+            else rules.Add(new ForbiddenDependency(from.ResultValue, to.ResultValue, e.Why));
         }
-        var forbid = Rules("forbid", q.Forbid, namespaces: false);
-        var forbidNamespaces = Rules("forbidNamespaces", q.ForbidNamespaces, namespaces: true);
+        return rules;
+    }
 
-        List<PathPattern> Globs(string name, IEnumerable<string>? globs)
+    private static List<PathPattern> Globs(string name, IEnumerable<string>? globs, List<string> errors)
+    {
+        var patterns = new List<PathPattern>();
+        foreach (var g in globs ?? [])
         {
-            var patterns = new List<PathPattern>();
-            foreach (var g in globs ?? [])
-            {
-                var p = PathPatternModule.create(g ?? "");
-                if (p.IsError) errors.Add($"quality.ui.{name}: {p.ErrorValue}"); else patterns.Add(p.ResultValue);
-            }
-            return patterns;
+            var p = PathPatternModule.create(g ?? "");
+            if (p.IsError) errors.Add($"quality.ui.{name}: {p.ErrorValue}"); else patterns.Add(p.ResultValue);
         }
-        var ui = q.Ui is null ? null : new UiPolicy(Globs("globs", q.Ui.Globs), Globs("testGlobs", q.Ui.TestGlobs));
-
-        if (errors.Count > 0) throw new FactoryRejectedException($"{path} is invalid", errors.ToArray());
-        return new QualityPolicy(mode!.Value, new QualityThresholds(q.MaxCyclomatic ?? d.MaxCyclomatic, q.MaxCrap ?? d.MaxCrap, q.MaxLines ?? d.MaxLines),
-            new MutationPolicy(mutation!.Value, new MutationThresholds(q.MutationMinScore ?? 0.8)), q.Coverage ?? false, forbid, (q.Flaky ?? []).Where(f => !string.IsNullOrWhiteSpace(f)).ToList(), forbidNamespaces, ui);
+        return patterns;
     }
 }

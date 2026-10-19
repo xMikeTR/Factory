@@ -222,7 +222,7 @@ Contention stops turning passing checks into timeouts, and a timeout is never ev
 - 3.5 ✅ (csproj edges) `Handover.Relationships` (FLAGGED contract widening; optional in JSON, schema updated, read from the
   DSL `a -> b` between code-owning elements), `Fitness` (pure), `CsprojEdges`, `QualityGate.FitnessAsync`; violations join the
   quality outcome (block/report) and `check_quality`. Baseline element pairs are excluded (debt).
-- **Deferred from strand 3** (recorded, not forgotten): F# adapter (FCS not in the offline cache; token heuristic vs FCS is a
+- **Deferred from strand 3** (since done unless named here; ARCHITECTURE.md's change log has the dates: F# adapter `Factory.Quality.FSharp`, coverlet coverage, hand-written fitness rules, flaky re-run; still open: report-mode findings on the PR body, a baseline suite timeout turning P2P off silently) (was: F# adapter (FCS not in the offline cache; token heuristic vs FCS is a
   decision), coverage collection (coverlet in the task's verify; CRAP is skipped without data), report-mode findings on the PR
   body, `asbuilt_edge` debt alerts to Designc (done 2026-10-09, see the last section), hand-written fitness rules, one isolated re-run of
   flaky-looking failures, a baseline suite timeout still turns P2P off silently.
@@ -254,7 +254,7 @@ change (the behaviour already exists) can still be valid red evidence if they ki
   `AgainstMutant` red from the failing stash check; `TestsDoneAsync` tries a mutation run over the existing `Writes` files when a
   red run is all green; `IMutationRunner` seam on `FactoryServices` (null = no tool, gate skipped); `quality.mutation` and
   `quality.mutationMinScore` in the policy (default off, 0.8).
-- **Deferred from strand 4**: the real `StrykerRunner` and its image install (Stryker.NET not installable offline here; add via
+- **Deferred from strand 4** (since done: `StrykerRunner` and its image install, equivalent-mutant declaration, per-file baseline score; still open: F#/TS mutation) (was: the real `StrykerRunner` and its image install (Stryker.NET not installable offline here; add via
   `dotnet tool install --tool-path /opt/dotnet-tools` in docker/runner/Dockerfile, then `./docker/runner/build.sh`), the
   TestAuthor's equivalent-mutant declaration tool and the reviewer's confirmation (pure rule exists: `Mutation.confirmedEquivalents`),
   the per-file baseline score for the ratchet (the check takes it; the runner passes none yet, so the flat 80% applies), F#/TS mutation.
@@ -285,7 +285,7 @@ reviewed inputs, no install scripts, registry fixed by the image; and TS code me
 - Not wired yet: running `RestoreGate.RebuildCommand` in the sandbox after the restore and putting `SkippedInstallScripts` on the
   PR body (the commands, policy and report are built and tested; they need node in the image); `EslintMetrics` is not called from
   `QualityGate` (the eslint run needs the image).
-- Deferred: baking node, npm and Playwright browsers into docker/runner/Dockerfile (needs network at build; then `./docker/runner/build.sh`),
+- Deferred (since done: the Dockerfile bakes node, npm, Playwright, eslint, dependency-cruiser; `quality.forbid` judges TS imports; still open: coverage for TS CRAP) (was): baking node, npm and Playwright browsers into docker/runner/Dockerfile (needs network at build; then `./docker/runner/build.sh`),
   ArchUnit-equivalent for TS (dependency-cruiser rules from the model's relationships), coverage for TS CRAP.
 
 ### Interface changes (flagged)
@@ -307,7 +307,7 @@ judge the integrated result against the baseline. A failure merges nothing and r
 - 6.2 ✅ `QaEnvFile` (protected `.factory/qa-env.yaml`): sibling services with digest-pinned images, `fidelity` gaps declared.
 - 6.3 ✅ `IQaRunner` seam (null = QA skipped) + `QaGate` and the `IntegrationVerifyExecutor` hook: a failing judgement ends the run
   (`qa_failed`), writes `qa` ledger rows and a Designc needs-decision brief. Budget constant 8 turns for the author.
-- Deferred: the QA author agent itself (reviewer pool, prompt, tool policy, writes into the repo's Playwright project, 8-turn
+- Deferred (since done: `AgentQaRunner`, `QaEnvironment` sibling containers on an internal network via `DockerSandboxOptions.Network`, baseline and integrated runs, `factory-s2 qa` follow-up; still open: where requirements come from) (was): the QA author agent itself (reviewer pool, prompt, tool policy, writes into the repo's Playwright project, 8-turn
   budget), starting the sibling containers from `qa-env.yaml`, running the tests on baseline and integrated, the human follow-up run
   with QA tests protected, and the open question where requirements come from (the handover carries none yet).
 
