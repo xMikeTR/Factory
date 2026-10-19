@@ -149,22 +149,11 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         var integration = svc.Git.IntegrationPath(msg.RunId);
         var timeout = TimeSpan.FromMinutes(30);
 
-        // The frozen acceptance specs are not the coding agent's to touch: any difference from the
-        // handover's hashes is a hard fail, ledgered, before anything else runs.
         var frozen = svc.LoadHandover(msg.RunId).AcceptanceSpecs;
-        if (!frozen.IsEmpty)
+        if (await FrozenSpecsChangedAsync(msg.RunId, integration, frozen, cancellationToken) is { } changed)
         {
-            var drift = AcceptanceSpecs.drift(frozen, ListModule.OfSeq(AcceptanceFiles.Hashes(integration).Select(h => Tuple.Create(h.Path, h.Hash))));
-            if (!drift.IsEmpty)
-            {
-                var lines = drift.Select(AcceptanceSpecs.describe).ToList();
-                await svc.LogAsync(msg.RunId, "integration_verify", LedgerKinds.Verify, outcome: "acceptance_specs_modified",
-                    payload: JsonSerializer.Serialize(new { drift = lines }), ct: cancellationToken);
-                await context.SendMessageAsync(new RunFinished(msg.RunId, "integration_failed",
-                    "The frozen acceptance specs changed after the handover was frozen:\n" + string.Join("\n", lines.Select(l => "- " + l))),
-                    cancellationToken: cancellationToken);
-                return;
-            }
+            await context.SendMessageAsync(changed, cancellationToken: cancellationToken);
+            return;
         }
 
         var outcomes = new List<VerifyOutcome>();
@@ -183,32 +172,54 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         if (s.TokenLintCommand is not null && FSharpOption<string>.get_IsSome(svc.LoadHandover(msg.RunId).DesignTokens))
             outcomes.Add(await TokenLintAsync(msg.RunId, integration, cancellationToken));
 
-        if (Directory.Exists(s.RegistryPath))
-        {
-            var decisions = svc.LoadHandover(msg.RunId).Decisions;
-            // `p check` runs a compiled model and the registry holds sources: compile them once, in the sandbox, in a scratch copy.
-            string? pModel = null;
-            if (decisions.Any(d => d.Checks.Any(c => c.Kind == "p"))
-                && PModel.Prepare(s.RegistryPath, Path.Combine(s.RunDir(msg.RunId), "p-model")) is { } prepared)
-            {
-                var compiled = await svc.Verify.RunCommandAsync(msg.RunId, "P compile", "p compile", prepared, timeout, cancellationToken);
-                outcomes.Add(compiled);
-                if (compiled.ExitCode == 0) pModel = prepared;
-            }
-            foreach (var d in decisions)
-                foreach (var check in d.Checks)
-                    outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, $"{d.Id.Value} [{check.Kind}]", check.Run,
-                        check.Kind == "p" && pModel is not null ? pModel : s.RegistryPath, timeout, cancellationToken, d.Id.Value));
-        }
-        else
-            await svc.LogAsync(msg.RunId, "integration_verify", LedgerKinds.Verify, outcome: "skipped_decision_checks",
-                payload: JsonSerializer.Serialize(new { reason = $"registry not found at {s.RegistryPath}" }), ct: cancellationToken);
+        await DecisionChecksAsync(msg.RunId, outcomes, timeout, cancellationToken);
 
         var failed = outcomes.Where(o => o.ExitCode != 0).ToList();
         object next = failed.Count > 0
             ? IntegrationVerdict(msg.RunId, failed)
             : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);
         await context.SendMessageAsync(next, cancellationToken: cancellationToken);
+    }
+
+    /// The frozen acceptance specs are not the coding agent's to touch: any difference from the
+    /// handover's hashes is a hard fail, ledgered, before anything else runs. Null means they are unchanged.
+    private async Task<RunFinished?> FrozenSpecsChangedAsync(string runId, string integration, FSharpList<AcceptanceSpec> frozen, CancellationToken ct)
+    {
+        if (frozen.IsEmpty) return null;
+        var drift = AcceptanceSpecs.drift(frozen, ListModule.OfSeq(AcceptanceFiles.Hashes(integration).Select(h => Tuple.Create(h.Path, h.Hash))));
+        if (drift.IsEmpty) return null;
+        var lines = drift.Select(AcceptanceSpecs.describe).ToList();
+        await svc.LogAsync(runId, "integration_verify", LedgerKinds.Verify, outcome: "acceptance_specs_modified",
+            payload: JsonSerializer.Serialize(new { drift = lines }), ct: ct);
+        return new RunFinished(runId, "integration_failed",
+            "The frozen acceptance specs changed after the handover was frozen:\n" + string.Join("\n", lines.Select(l => "- " + l)));
+    }
+
+    /// The decisions' checks run against the registry; `p check` needs the registry's P sources compiled once, in the
+    /// sandbox, in a scratch copy. A missing registry skips them and says so.
+    private async Task DecisionChecksAsync(string runId, List<VerifyOutcome> outcomes, TimeSpan timeout, CancellationToken ct)
+    {
+        var s = svc.Settings;
+        if (Directory.Exists(s.RegistryPath))
+        {
+            var decisions = svc.LoadHandover(runId).Decisions;
+            // `p check` runs a compiled model and the registry holds sources: compile them once, in the sandbox, in a scratch copy.
+            string? pModel = null;
+            if (decisions.Any(d => d.Checks.Any(c => c.Kind == "p"))
+                && PModel.Prepare(s.RegistryPath, Path.Combine(s.RunDir(runId), "p-model")) is { } prepared)
+            {
+                var compiled = await svc.Verify.RunCommandAsync(runId, "P compile", "p compile", prepared, timeout, ct);
+                outcomes.Add(compiled);
+                if (compiled.ExitCode == 0) pModel = prepared;
+            }
+            foreach (var d in decisions)
+                foreach (var check in d.Checks)
+                    outcomes.Add(await svc.Verify.RunCommandAsync(runId, $"{d.Id.Value} [{check.Kind}]", check.Run,
+                        check.Kind == "p" && pModel is not null ? pModel : s.RegistryPath, timeout, ct, d.Id.Value));
+        }
+        else
+            await svc.LogAsync(runId, "integration_verify", LedgerKinds.Verify, outcome: "skipped_decision_checks",
+                payload: JsonSerializer.Serialize(new { reason = $"registry not found at {s.RegistryPath}" }), ct: ct);
     }
 
     /// When every failure is the sandbox's, nothing ran against the code: the run is unrunnable, not failed.
