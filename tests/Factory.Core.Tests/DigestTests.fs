@@ -35,9 +35,9 @@ let tests: (string * (unit -> unit)) list =
           equal 0 (compute [ w; 2L, ItemPulled "W-A" ]).Needs.Length "pulled"
       "digest: the last run of a gate decides Failed, and a later pass clears it", fun () ->
           let pulled = 1L, ItemPulled "W-A"
-          let fail = 2L, ItemGate("W-A", "dotnet test", false, Some "abcdef123")
+          let fail = 2L, ItemGate("W-A", "dotnet test", false, Some "abcdef123", false)
           equal [ GateFailed ] ((compute [ pulled; fail ]).Failed |> List.map (fun f -> f.Kind)) "fail"
-          equal 0 (compute [ pulled; fail; 3L, ItemGate("W-A", "dotnet test", true, Some "abcdef123") ]).Failed.Length "pass"
+          equal 0 (compute [ pulled; fail; 3L, ItemGate("W-A", "dotnet test", true, Some "abcdef123", false) ]).Failed.Length "pass"
       "digest: done off main or without evidence is Failed, never Done", fun () ->
           let finished ev = [ 1L, ItemPulled "W-A"; 2L, ItemDone("W-A", Some "abc1234", ev) ]
           equal 1 (compute (finished [ "gate:dotnet test@abc1234" ])).Done.Length "done"
@@ -48,7 +48,8 @@ let tests: (string * (unit -> unit)) list =
       "digest: an acceptance failure stands until the item passes a gate", fun () ->
           let f = 2L, AcceptanceFailed("W-A", "AC-1", "Pricing/Form", "abcdef123")
           equal [ AcceptanceFailure ] ((compute [ 1L, ItemPulled "W-A"; f ]).Failed |> List.map (fun x -> x.Kind)) "stands"
-          equal 0 (compute [ 1L, ItemPulled "W-A"; f; 3L, ItemGate("W-A", "dotnet test", true, None) ]).Failed.Length "cleared"
+          equal 0 (compute [ 1L, ItemPulled "W-A"; f; 3L, ItemGate("W-A", "dotnet test", true, None, false) ]).Failed.Length "cleared"
+          equal 1 (compute [ 1L, ItemPulled "W-A"; f; 3L, ItemGate("W-A", "dotnet test", true, None, true) ]).Failed.Length "a dirty pass does not clear it"
       "digest: only Needs and Failed change the notification signature", fun () ->
           let base' = [ 1L, ItemPulled "W-A" ]
           let withDone = base' @ [ 2L, ItemDone("W-A", Some "abc1234", [ "gate:dotnet test@abc1234" ]) ]
