@@ -77,6 +77,8 @@ module Json =
         with
         | DecodeFailure m -> Error(m.Split('\n') |> List.ofArray)
         | :? JsonException as e -> Error [ $"invalid JSON: {e.Message}" ]
+        // A value of the wrong kind where a decoder reads it unguarded (GetValue, AsObject) throws these.
+        | :? InvalidOperationException | :? FormatException | :? InvalidCastException as e -> Error [ $"unexpected value: {e.Message}" ]
 
     // ---------- handover ----------
 
