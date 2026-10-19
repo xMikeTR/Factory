@@ -174,56 +174,7 @@ internal sealed class TaskLoop(
                     break;
 
                 case TaskState.Verifying v:
-                    var attempt = v.Item1.VerifyAttempts;
-                    FactoryTelemetry.RecordAttempt(span, attempt);
-                    List<VerifyOutcome> green;
-                    await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
-                    {
-                        green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct);
-                        if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
-                            && SuiteDiscovery.Plan(svc.Settings.IntegrationTestCommand, worktree) is SuitePlan.Command suite
-                            && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, suite.Item, worktree, ct) is { } regressed)
-                            green.Add(regressed); // P2P: a test that passed before fails now, so this is not green
-                    }
-                    if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await QualityOutcomeAsync(attempt, ct) is { } quality)
-                        green.Add(quality); // block mode: a ratchet violation is not green
-                    if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await MutationOutcomeAsync(attempt, ct) is { } mutation)
-                    {
-                        if (mutation.ExitCode == 124) green.Add(mutation); // the tool never finished: parks below
-                        else
-                        {
-                            // Mutants survived the green tests: the tests are too weak for this change, so the TestAuthor strengthens them.
-                            _lastFailures = mutation.OutputTail;
-                            state = await ApplyAsync(state, TaskEvent.NewReturnedToTestAuthor(mutation.OutputTail), ct);
-                            break;
-                        }
-                    }
-                    if (TimedOut(green) is { } greenTimeout)
-                    {
-                        state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(greenTimeout), ct);
-                        break;
-                    }
-                    if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await UiViolationsAsync(ct) is { Count: > 0 } uiViolations)
-                    {
-                        await svc.LogAsync(runId, "ui", LedgerKinds.Verify, "parked",
-                            JsonSerializer.Serialize(new { attempt, violations = uiViolations.Select(UiGate.Line) }), _teamId, _taskId, ct);
-                        state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(UiDecision(uiViolations)), ct);
-                        break;
-                    }
-                    var stashed = green.Count > 0 && green.All(o => o.ExitCode == 0)
-                        ? await RunWithImplStashedAsync(attempt, "stash_check", ct)
-                        : [];
-                    if (TimedOut(stashed) is { } stashTimeout)
-                    {
-                        state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(stashTimeout), ct);
-                        break;
-                    }
-                    state = await ApplyAsync(state, TaskEvent.NewVerifyCompleted(Core.ToList(green), Core.ToList(stashed)), ct);
-                    _lastVerifyFailed = state.IsReady; // Reviewing is a verify that passed
-                    if (state is TaskState.Ready { Item2.IsTestAuthor: true })
-                        _lastFailures = "With the implementation stashed every test still passes, so the tests do not exercise the change: "
-                            + string.Join(", ", stashed.Select(o => o.Name));
-                    else if (state.IsReady) _lastFailures = Briefs.Failures(green);
+                    state = await VerifyingAsync(state, v.Item1, span, ct);
                     break;
 
                 case TaskState.Ready r:
@@ -234,6 +185,63 @@ internal sealed class TaskLoop(
                     throw new InvalidOperationException($"unknown task state {state}");
             }
         }
+    }
+
+    /// One verify of the task: green runs, regression, quality, mutation, UI guard and the implementation-stashed check,
+    /// in that order; the first one that is not green decides the next state.
+    private async Task<TaskState> VerifyingAsync(TaskState state, Progress progress, System.Diagnostics.Activity? span, CancellationToken ct)
+    {
+        var attempt = progress.VerifyAttempts;
+        FactoryTelemetry.RecordAttempt(span, attempt);
+        List<VerifyOutcome> green;
+        await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
+        {
+            green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct);
+            if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
+                && SuiteDiscovery.Plan(svc.Settings.IntegrationTestCommand, worktree) is SuitePlan.Command suite
+                && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, suite.Item, worktree, ct) is { } regressed)
+                green.Add(regressed); // P2P: a test that passed before fails now, so this is not green
+        }
+        if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await QualityOutcomeAsync(attempt, ct) is { } quality)
+            green.Add(quality); // block mode: a ratchet violation is not green
+        if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await MutationOutcomeAsync(attempt, ct) is { } mutation)
+        {
+            if (mutation.ExitCode == 124) green.Add(mutation); // the tool never finished: parks below
+            else
+            {
+                // Mutants survived the green tests: the tests are too weak for this change, so the TestAuthor strengthens them.
+                _lastFailures = mutation.OutputTail;
+                state = await ApplyAsync(state, TaskEvent.NewReturnedToTestAuthor(mutation.OutputTail), ct);
+                return state;
+            }
+        }
+        if (TimedOut(green) is { } greenTimeout)
+        {
+            state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(greenTimeout), ct);
+            return state;
+        }
+        if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await UiViolationsAsync(ct) is { Count: > 0 } uiViolations)
+        {
+            await svc.LogAsync(runId, "ui", LedgerKinds.Verify, "parked",
+                JsonSerializer.Serialize(new { attempt, violations = uiViolations.Select(UiGate.Line) }), _teamId, _taskId, ct);
+            state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(UiDecision(uiViolations)), ct);
+            return state;
+        }
+        var stashed = green.Count > 0 && green.All(o => o.ExitCode == 0)
+            ? await RunWithImplStashedAsync(attempt, "stash_check", ct)
+            : [];
+        if (TimedOut(stashed) is { } stashTimeout)
+        {
+            state = await ApplyAsync(state, TaskEvent.NewNeedsDecisionRaised(stashTimeout), ct);
+            return state;
+        }
+        state = await ApplyAsync(state, TaskEvent.NewVerifyCompleted(Core.ToList(green), Core.ToList(stashed)), ct);
+        _lastVerifyFailed = state.IsReady; // Reviewing is a verify that passed
+        if (state is TaskState.Ready { Item2.IsTestAuthor: true })
+            _lastFailures = "With the implementation stashed every test still passes, so the tests do not exercise the change: "
+                + string.Join(", ", stashed.Select(o => o.Name));
+        else if (state.IsReady) _lastFailures = Briefs.Failures(green);
+        return state;
     }
 
     /// One review of the verified task, or the park once the rounds are used up. A malformed review
