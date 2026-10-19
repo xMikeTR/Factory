@@ -177,7 +177,7 @@ limits. The network is attached only while `dotnet restore` runs at start (ledge
 `restore`), once per project file on disk, from nuget.org only. Before it opens, every restore input
 changed since HEAD is checked against an allow-list (packages, project references, compile items,
 plain properties); anything else (targets, imports, custom SDKs, nuget.config, .props/.targets)
-refuses the restore, which is ledgered as `refused` and goes back to the agent with the reasons. `FACTORY_SANDBOX=local` runs on the host with a scrubbed environment instead.
+refuses the restore, which is ledgered as `refused` and goes back to the agent with the reasons. `FACTORY_SANDBOX=local` runs on the host with a scrubbed environment instead. `FACTORY_SANDBOX` is an ordered list, `hub,docker,local`: the first that starts is used and each one skipped is ledgered as `sandbox_skipped` with its reason. Unset means `docker` only; `local` (unisolated) runs only when you name it. `hub` (the agentweave hub as the sandbox) is a stub that always falls through until its adapter exists.
 An agent's `run_command` gets at most 3 minutes in total (`ScopedWorkspace.DefaultCommandCap`), waiting for a free heavy-command slot and a flaky re-run included. Anthropic's prompt cache lasts 5 minutes from the last model call, and a longer tool call would make the next call pay for the whole conversation again. Longer checks belong to the verify gate, which runs between agent turns.
 Docker contract tests are opt-in: `FACTORY_TEST_DOCKER=1 dotnet test --filter DockerSandbox`.
 
