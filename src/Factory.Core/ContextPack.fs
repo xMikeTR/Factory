@@ -96,6 +96,8 @@ module ContextPack =
             if left <= 0 then acc, left
             elif text.Length <= left then { Path = e.Path; Source = e.Source; Text = text; Truncated = false } :: acc, left - text.Length
             else
-                let keep = max 0 (left - truncationMark.Length)
+                let room = max 0 (left - truncationMark.Length)
+                // Never cut between the two halves of a surrogate pair (an emoji): the brief would carry a lone half.
+                let keep = if room > 0 && System.Char.IsHighSurrogate text.[room - 1] then room - 1 else room
                 { Path = e.Path; Source = e.Source; Text = text.Substring(0, keep) + truncationMark; Truncated = true } :: acc, 0
         ordered |> List.fold step ([], limits.MaxChars) |> fst |> List.rev

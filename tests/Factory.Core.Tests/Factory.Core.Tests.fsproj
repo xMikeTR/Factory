@@ -18,6 +18,7 @@
     <Compile Include="SuiteTests.fs" />
     <Compile Include="MetricsTests.fs" />
     <Compile Include="BoardTests.fs" />
+    <Compile Include="ContextQualityTests.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
 
