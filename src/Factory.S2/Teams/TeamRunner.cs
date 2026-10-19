@@ -807,11 +807,16 @@ internal sealed class TaskLoop(
         return next;
     }
 
+    /// Roles whose last turn touched the prompt cache, so their next turn is expected to read it.
+    private readonly HashSet<string> _warmRoles = [];
+
     private ValueTask LogTurnAsync(string stage, string role, ModelTier tier, Microsoft.Extensions.AI.UsageDetails? usage, object detail, CancellationToken ct)
     {
         var payload = JsonSerializer.SerializeToNode(detail)!.AsObject();
         if (svc.Agents.ModelIdFor(role, tier) is { } modelId) payload["model_id"] = modelId;
-        TurnUsage.AddCache(payload, usage);
+        var warm = _warmRoles.Contains(role);
+        TurnUsage.AddCache(payload, usage, warm);
+        if (TurnUsage.Touched(usage)) _warmRoles.Add(role);
         return svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Turn,
             TaskId: _taskId, TeamId: _teamId, Model: tier.ToString(),
             TokensIn: usage?.InputTokenCount, TokensOut: usage?.OutputTokenCount,
