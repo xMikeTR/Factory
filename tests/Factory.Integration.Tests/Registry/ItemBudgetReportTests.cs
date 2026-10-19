@@ -28,6 +28,19 @@ public class ItemBudgetReportTests
         new(limit is { } l ? FSharpOption<long>.Some(l) : FSharpOption<long>.None, MapModule.Empty<string, long>());
 
     [Fact]
+    public async Task A_corrupt_or_oddly_typed_handover_is_skipped_and_the_other_runs_still_count()
+    {
+        var (state, ledger) = await State(("r1", "W-1", 100, 50), ("r2", "W-2", 1, 1), ("r3", "W-3", 1, 1));
+        await File.WriteAllTextAsync(Path.Combine(state, "runs", "r2", "handover.json"), "{ \"workItem\": ");
+        await File.WriteAllTextAsync(Path.Combine(state, "runs", "r3", "handover.json"), "{ \"workItem\": 7 }");
+
+        var spend = await ItemBudgetReport.SpendAsync(state, ledger, default);
+
+        Assert.Equal(150, spend["W-1"]);
+        Assert.Single(spend);
+    }
+
+    [Fact]
     public async Task Spend_is_every_runs_tokens_for_the_item_the_handover_names_a_repair_run_included()
     {
         var (state, ledger) = await State(("r1", "W-1", 100, 50), ("r1-r1", "W-1", 10, 5), ("r2", "W-2", 7, 3), ("r3", null, 999, 999));
