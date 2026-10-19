@@ -107,6 +107,26 @@ public class AcsToolPolicyTests
         Assert.Equal([Roles.Diagnosis, Roles.Implementer, Roles.Planner, Roles.Qa, Roles.Repro, Roles.Reviewer, Roles.TaskPlanner, Roles.TestAuthor, Roles.UxJudge], policy.Roles.Order());
     }
 
+    private static readonly string[] EveryTool =
+    [
+        "read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "read_reference", "list_reference",
+        "return_to_test_author", "declare_equivalent", "check_quality", "playwright_cli", "submit_plan", "submit_approach", "submit_review", "confirm_equivalents",
+        "submit_qa_tests", "submit_reproduction", "submit_diagnosis", "submit_ux_scores",
+    ];
+
+    [Fact]
+    public void Each_shipped_policy_file_allows_exactly_what_the_in_code_allow_list_does()
+    {
+        var files = AcsToolPolicy.Load(AcsToolPolicy.DefaultDirectory);
+        var code = new RoleAllowListPolicy();
+        var args = new Dictionary<string, object?>();
+
+        foreach (var role in files.Roles)
+            Assert.Equal(
+                EveryTool.Where(t => code.Evaluate(role, t, args).Allowed),
+                EveryTool.Where(t => files.Evaluate(role, t, args).Allowed));
+    }
+
     [Theory]
     [InlineData("apiVersion: governance.toolkit/v1", "no '# source:' header")]
     [InlineData("# source: hand-authored\nname: s2-planner\ndefault_action: allow", "default_action must be deny")]
