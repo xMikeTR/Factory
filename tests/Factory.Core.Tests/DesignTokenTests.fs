@@ -21,6 +21,8 @@ let tests: (string * (unit -> unit)) list =
               "tokens"
       "tokens: a value with no type is rejected", fun () ->
           check (DesignTokens.parse """{ "gap": { "$value": "4px" } }""" |> Result.isError) "anonymous"
+      "tokens: a $type that is not a string is an error, not a crash", fun () ->
+          check (DesignTokens.parse """{ "gap": { "$type": 5, "$value": "4px" } }""" |> Result.isError) "numeric type"
       "tokens: generated css has one custom property per token", fun () ->
           let css = DesignTokens.parse json |> Result.map DesignTokens.toCss
           check (match css with Ok c -> c.Contains "--font-size-body: 16px;" && c.Contains "--color-brand: #0a5;" | _ -> false) "css"

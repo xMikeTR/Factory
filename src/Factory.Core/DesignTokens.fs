@@ -39,7 +39,9 @@ module DesignTokens =
             match JsonNode.Parse json with
             | :? JsonObject as root -> walk [] None root
             | _ -> errors.Add "tokens.json: expected an object"
-        with :? System.Text.Json.JsonException as e -> errors.Add $"tokens.json: {e.Message}"
+        with
+        | :? System.Text.Json.JsonException as e -> errors.Add $"tokens.json: {e.Message}"
+        | :? InvalidOperationException | :? FormatException as e -> errors.Add $"tokens.json: unexpected value ({e.Message})"
 
         if errors.Count > 0 then Error(List.ofSeq errors)
         else
