@@ -180,7 +180,7 @@ public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, 
 
         if (budget?.Completed(name) is { } note)
             result = text is not null ? text + note : result;
-        if (budget?.Exhausted == true) context.Terminate = true;
+        if (budget?.Exhausted == true || budget?.IdleHandoff == true) context.Terminate = true;
         return result;
     }
 

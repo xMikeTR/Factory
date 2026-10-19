@@ -3,7 +3,7 @@ namespace Factory.Harness;
 /// The tool calls one acting turn may make. One instance per turn. Exempt tools (check_quality)
 /// are never counted, so the budget does not discourage the feedback the agent should seek.
 /// At the cap the turn ends: the harness stops asking the model and verify runs on the worktree.
-public sealed class TurnBudget(int maxToolCalls = 15, int warnAt = 12, IReadOnlySet<string>? exempt = null, string finishTool = "declare_done")
+public sealed class TurnBudget(int maxToolCalls = 15, int warnAt = 12, IReadOnlySet<string>? exempt = null, string finishTool = "declare_done", TimeSpan? idleLimit = null, TimeProvider? time = null)
 {
     /// A planner reads more than an implementer writes, so it gets twice the calls; the warning names the tool that ends its turn.
     public static TurnBudget ForPlanning(string submitTool) => new(30, 24, finishTool: submitTool);
@@ -14,9 +14,19 @@ public sealed class TurnBudget(int maxToolCalls = 15, int warnAt = 12, IReadOnly
     public int Calls { get { lock (_gate) return _calls; } }
     public bool Exhausted { get; private set; }
 
+    /// A tool call took longer than `idleLimit`, so the prompt cache has probably expired. The turn ends without being
+    /// declared done; the next turn starts fresh from the brief and the worktree.
+    public bool IdleHandoff { get; private set; }
+
+    public TimeSpan? IdleLimit => idleLimit;
+
+    private readonly TimeProvider _time = time ?? TimeProvider.System;
+    private long _admittedAt;
+
     /// Counts a call about to run. False when the budget is already spent: the call must not run.
     public bool TryAdmit(string tool)
     {
+        _admittedAt = _time.GetTimestamp();
         if (exempt?.Contains(tool) == true) return true;
         lock (_gate)
         {
@@ -30,6 +40,7 @@ public sealed class TurnBudget(int maxToolCalls = 15, int warnAt = 12, IReadOnly
     /// is over once the cap is. Null for exempt tools and for every other call.
     public string? Completed(string tool)
     {
+        if (idleLimit is { } limit && _time.GetElapsedTime(_admittedAt) >= limit) IdleHandoff = true;
         if (exempt?.Contains(tool) == true) return null;
         lock (_gate)
         {
