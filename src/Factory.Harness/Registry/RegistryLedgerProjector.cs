@@ -45,11 +45,19 @@ public static class RegistryLedgerProjector
     /// One row per task: its latest state, turn count and tokens so far.
     private static IEnumerable<(DateTimeOffset, RegistryEvent)> Tasks(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
     {
-        foreach (var task in run.Where(e => e.TaskId is not null).GroupBy(e => e.TaskId!))
+        var groups = run.Where(e => e.TaskId is not null).GroupBy(e => e.TaskId!).ToList();
+        // The planner works before any task exists: its run-level rows have no task, so share them over the tasks (the first takes the remainder).
+        var planners = run.Where(e => e.Kind == LedgerKinds.Plan && e.TaskId is null).ToList();
+        long planIn = planners.Sum(e => e.TokensIn ?? 0), planOut = planners.Sum(e => e.TokensOut ?? 0);
+        var shared = groups.Count(g => g.Any(e => e.Kind == LedgerKinds.TaskEvent && e.Outcome is not null));
+        var index = 0;
+        foreach (var task in groups)
         {
             var last = task.LastOrDefault(e => e.Kind == LedgerKinds.TaskEvent);
             if (last?.Outcome is null) continue;
             var turns = task.Where(e => e.Kind == LedgerKinds.Turn).ToList();
+            var share = index++;
+            long ownIn = planIn / shared + (share == 0 ? planIn % shared : 0), ownOut = planOut / shared + (share == 0 ? planOut % shared : 0);
             yield return (last.Ts, Row(Pipeline, "task", last, w =>
             {
                 w.WriteString("task", task.Key);
@@ -57,8 +65,8 @@ public static class RegistryLedgerProjector
                 // The elements.json id (System/Container/Component) of the task's first element: designc's cost forecast keys on it.
                 if (task.LastOrDefault(e => e.Kind == LedgerKinds.TaskEvent && e.Element is not null)?.Element is { } element) w.WriteString("element", element);
                 w.WriteNumber("turns", turns.Count);
-                w.WriteNumber("tokens_in", turns.Sum(t => t.TokensIn ?? 0));
-                w.WriteNumber("tokens_out", turns.Sum(t => t.TokensOut ?? 0));
+                w.WriteNumber("tokens_in", turns.Sum(t => t.TokensIn ?? 0) + ownIn);
+                w.WriteNumber("tokens_out", turns.Sum(t => t.TokensOut ?? 0) + ownOut);
                 if (turns.LastOrDefault(t => t.Model is not null)?.Model is { } tier) w.WriteString("tier", tier);
                 WriteUsage(w, turns);
                 w.WriteString("handover", handover.Id);

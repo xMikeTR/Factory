@@ -71,6 +71,23 @@ public class RegistryLedgerProjectorTests
         }
     }
 
+    /// pilot P1: the planner's tokens sat on a run-level row no task row counted, so designc showed a task as cheaper
+    /// than the budget report said. The run's plan tokens are split over its tasks, the first taking the remainder.
+    [Fact]
+    public void The_planners_tokens_are_shared_over_the_task_rows()
+    {
+        var run = Run();
+        run.Add(At(0, new(RunId, "S2", "plan", LedgerKinds.Plan, Outcome: "drafted", Model: "frontier", TokensIn: 1000, TokensOut: 100)));
+        run.Add(At(1, new(RunId, "S2", "plan", LedgerKinds.Plan, Outcome: "drafted", Model: "frontier", TokensIn: 501, TokensOut: 50)));
+
+        var rows = RegistryLedgerProjector.Project(run, Handover).Select(Row).Where(r => r["kind"].GetString() == "task").ToList();
+
+        Assert.Equal(400 + 751, rows.Single(r => r["task"].GetString() == "T-001")["tokens_in"].GetInt64());
+        Assert.Equal(50 + 750, rows.Single(r => r["task"].GetString() == "T-002")["tokens_in"].GetInt64());
+        Assert.Equal(60 + 75, rows.Single(r => r["task"].GetString() == "T-001")["tokens_out"].GetInt64());
+        Assert.Equal(5 + 75, rows.Single(r => r["task"].GetString() == "T-002")["tokens_out"].GetInt64());
+    }
+
     [Fact]
     public void Each_element_pair_the_code_crosses_without_a_relationship_is_one_asbuilt_edge_row_per_run()
     {
