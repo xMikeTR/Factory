@@ -126,55 +126,30 @@ public static class RegistryLedgerProjector
         w.WriteEndArray();
     }
 
-    private static bool IsCold(LedgerEvent turn)
+    /// Reads one value out of a turn's payload object; `fallback` when there is no payload, it is not an object, or it is not JSON.
+    private static T FromPayload<T>(LedgerEvent turn, Func<JsonElement, T> pick, T fallback)
     {
-        if (turn.Payload is null) return false;
+        if (turn.Payload is null) return fallback;
         try
         {
             using var doc = JsonDocument.Parse(turn.Payload);
-            return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("cold", out var c) && c.ValueKind == JsonValueKind.True;
+            return doc.RootElement.ValueKind == JsonValueKind.Object ? pick(doc.RootElement) : fallback;
         }
-        catch (JsonException) { return false; }
+        catch (JsonException) { return fallback; }
     }
 
-    private static string RoleOf(LedgerEvent turn)
-    {
-        if (turn.Payload is not null)
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(turn.Payload);
-                if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("role", out var r)
-                    && r.ValueKind == JsonValueKind.String && r.GetString() is { Length: > 0 } role) return role;
-            }
-            catch (JsonException) { }
-        }
-        return turn.Stage == "task_plan" ? Roles.TaskPlanner : turn.Stage;
-    }
+    private static bool IsCold(LedgerEvent turn) =>
+        FromPayload(turn, p => p.TryGetProperty("cold", out var c) && c.ValueKind == JsonValueKind.True, false);
 
-    private static long PayloadCount(LedgerEvent turn, string name)
-    {
-        if (turn.Payload is null) return 0;
-        try
-        {
-            using var doc = JsonDocument.Parse(turn.Payload);
-            return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty(name, out var n)
-                && n.TryGetInt64(out var v) && v > 0 ? v : 0;
-        }
-        catch (JsonException) { return 0; }
-    }
+    private static string RoleOf(LedgerEvent turn) =>
+        FromPayload<string?>(turn, p => p.TryGetProperty("role", out var r) && r.ValueKind == JsonValueKind.String && r.GetString() is { Length: > 0 } role ? role : null, null)
+        ?? (turn.Stage == "task_plan" ? Roles.TaskPlanner : turn.Stage);
 
-    private static string? ModelIdOf(LedgerEvent turn)
-    {
-        if (turn.Payload is null) return null;
-        try
-        {
-            using var doc = JsonDocument.Parse(turn.Payload);
-            return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("model_id", out var m)
-                && m.ValueKind == JsonValueKind.String && m.GetString() is { Length: > 0 } id ? id : null;
-        }
-        catch (JsonException) { return null; }
-    }
+    private static long PayloadCount(LedgerEvent turn, string name) =>
+        FromPayload(turn, p => p.TryGetProperty(name, out var n) && n.TryGetInt64(out var v) && v > 0 ? v : 0L, 0L);
+
+    private static string? ModelIdOf(LedgerEvent turn) =>
+        FromPayload<string?>(turn, p => p.TryGetProperty("model_id", out var m) && m.ValueKind == JsonValueKind.String && m.GetString() is { Length: > 0 } id ? id : null, null);
 
     /// One run_started per attempt and one run_ended per attempt that ended: at Finalize (a Run row with no
     /// task; a task's Run row is a rerun) or without it (RunAborted).
