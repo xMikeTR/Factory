@@ -229,6 +229,14 @@ let tests: (string * (unit -> unit)) list =
           let old = lock "https://evil.example/x-1.0.0.tgz"
           check (Result.isOk (PackageJsonChange.review "package-lock.json" (Some old) (Some old))) "already there"
           check (Result.isError (PackageJsonChange.review ".npmrc" None (Some "registry=https://evil/"))) "npmrc"
+      "npm: a version-1 lockfile's nested dependencies are judged like packages", fun () ->
+          let lock url = $"""{{ "lockfileVersion": 1, "dependencies": {{ "x": {{ "version": "1.0.0", "resolved": "{url}", "dependencies": {{ "y": {{ "version": "2.0.0", "resolved": "{url}" }} }} }} }} }}"""
+          check (Result.isOk (PackageJsonChange.review "package-lock.json" None (Some(lock "https://registry.npmjs.org/x/-/x-1.0.0.tgz")))) "registry"
+          check (Result.isError (PackageJsonChange.review "package-lock.json" None (Some(lock "https://evil.example/x-1.0.0.tgz")))) "elsewhere, nested too"
+          let git = """{ "lockfileVersion": 1, "dependencies": { "x": { "version": "github:evil/x#abc" } } }"""
+          check (Result.isError (PackageJsonChange.review "package-lock.json" None (Some git))) "a git version"
+          let old = lock "https://evil.example/x-1.0.0.tgz"
+          check (Result.isOk (PackageJsonChange.review "package-lock.json" (Some old) (Some old))) "already there"
       "npm: which repo files are npm restore inputs", fun () ->
           check (PackageJsonChange.affects "web/package.json" && PackageJsonChange.affects "package-lock.json" && PackageJsonChange.affects ".npmrc") "inputs"
           check (not (PackageJsonChange.affects "src/Rater.cs")) "not an input"
