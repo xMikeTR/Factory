@@ -55,4 +55,14 @@ public class NpmPolicyFileTests
 
         Assert.Equal(["@scope/native"], RestoreGate.SkippedInstallScripts(lockfile, ["esbuild"]));
     }
+
+    [Fact]
+    public void A_workspace_package_with_an_install_script_is_reported_by_its_path_not_a_crash()
+    {
+        const string lockfile = """
+            { "packages": { "": {}, "packages/a": { "hasInstallScript": true }, "node_modules/odd": "not an object" } }
+            """;
+
+        Assert.Equal(["packages/a"], RestoreGate.SkippedInstallScripts(lockfile, []));
+    }
 }
