@@ -116,12 +116,14 @@ public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, 
     public const int KeepRecentToolResults = 5;
 
     /// How many results are elided at once, so the prompt prefix holds still between elisions (prompt caching).
+    /// Tool results are all kept while together under this many characters (about 20k tokens).
+    public const int HoldResultChars = 80_000;
     public const int ElideBatch = 5;
 
     public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools, TurnBudget? budget = null, int keepRecentResults = KeepRecentToolResults)
     {
         var chat = chatFor(scope.Role, tier).AsBuilder()
-            .Use(inner => new TrimmingChatClient(inner, keepRecentResults, ElideBatch))
+            .Use(inner => new TrimmingChatClient(inner, keepRecentResults, ElideBatch, HoldResultChars))
             .Use(inner => new PromptCacheKeyChatClient(inner, PromptCacheKey.For(scope)))
             .UseOpenTelemetry(sourceName: FactoryTelemetry.SourceName, configure: o => o.EnableSensitiveData = captureContent)
             .Build();
