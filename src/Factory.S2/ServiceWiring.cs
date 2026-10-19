@@ -36,13 +36,13 @@ public static class ServiceWiring
         ISandboxFactory inner = new FallbackSandboxFactory(
             FallbackSandboxFactory.Parse(Environment.GetEnvironmentVariable("FACTORY_SANDBOX")).Select(n => (n, SandboxNamed(n))).ToList(),
             (name, why) => ledger.AppendAsync(new LedgerEvent(runId, "S2", "sandbox_skipped", LedgerKinds.Verify, Outcome: name,
-                Payload: System.Text.Json.JsonSerializer.Serialize(new { sandbox = name, reason = why })), default).GetAwaiter().GetResult());
+                Payload: System.Text.Json.JsonSerializer.Serialize(new { sandbox = name, reason = why })), default).AsTask());
         // Heavy commands share the machine's CPU across teams; a timeout is re-run once alone (FACTORY_HEAVY_SLOTS).
         var flaky = settings.QualityPolicy?.Flaky ?? [];
         ISandboxFactory sandboxes = new GatedSandboxFactory(inner, new HeavyGate(
             int.TryParse(Environment.GetEnvironmentVariable("FACTORY_HEAVY_SLOTS"), out var slots) && slots > 0 ? slots : HeavyGate.DefaultSlots),
             isFlaky: command => flaky.Any(command.Contains),
-            onFlakyRetry: command => ledger.AppendAsync(new LedgerEvent(runId, "S2", "flaky_retry", LedgerKinds.Verify, Outcome: "re-run alone", Payload: System.Text.Json.JsonSerializer.Serialize(new { command })), default).GetAwaiter().GetResult());
+            onFlakyRetry: command => ledger.AppendAsync(new LedgerEvent(runId, "S2", "flaky_retry", LedgerKinds.Verify, Outcome: "re-run alone", Payload: System.Text.Json.JsonSerializer.Serialize(new { command })), default).AsTask());
         // Tool governance: the AGT policy files per role (policies/s2) by default; the in-code
         // allow-list is the explicit fallback and the contract-test double.
         IToolPolicy toolPolicy = (Environment.GetEnvironmentVariable("FACTORY_TOOL_POLICY") ?? "acs") switch

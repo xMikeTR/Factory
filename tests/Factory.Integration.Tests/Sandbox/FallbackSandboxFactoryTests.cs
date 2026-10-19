@@ -29,7 +29,7 @@ public class FallbackSandboxFactoryTests
     {
         var skipped = new List<string>();
         var f = new FallbackSandboxFactory([("first", new Fails("no url")), ("docker", new Fails("docker not found")), ("local", new Works("local"))],
-            (name, why) => skipped.Add($"{name}: {why}"));
+            (name, why) => { skipped.Add($"{name}: {why}"); return Task.CompletedTask; });
 
         await using var s = await f.ForTeamAsync("t", "/w", default);
 
@@ -41,7 +41,7 @@ public class FallbackSandboxFactoryTests
     public async Task When_the_first_works_nothing_else_is_tried()
     {
         var skipped = new List<string>();
-        var f = new FallbackSandboxFactory([("docker", new Works("docker")), ("local", new Fails("must not run"))], (n, w) => skipped.Add(n));
+        var f = new FallbackSandboxFactory([("docker", new Works("docker")), ("local", new Fails("must not run"))], (n, w) => { skipped.Add(n); return Task.CompletedTask; });
         await using var s = await f.ForTeamAsync("t", "/w", default);
         Assert.Equal("docker", s.Kind);
         Assert.Empty(skipped);
@@ -50,7 +50,7 @@ public class FallbackSandboxFactoryTests
     [Fact]
     public async Task When_none_starts_the_error_lists_every_reason()
     {
-        var f = new FallbackSandboxFactory([("first", new Fails("a")), ("docker", new Fails("b"))], (n, w) => { });
+        var f = new FallbackSandboxFactory([("first", new Fails("a")), ("docker", new Fails("b"))], (n, w) => Task.CompletedTask);
         var e = await Assert.ThrowsAsync<InvalidOperationException>(() => f.ForTeamAsync("t", "/w", default));
         Assert.Contains("first: a", e.Message);
         Assert.Contains("docker: b", e.Message);
@@ -60,7 +60,7 @@ public class FallbackSandboxFactoryTests
     public async Task A_cancelled_start_is_not_a_fallback()
     {
         var cts = new CancellationTokenSource(); cts.Cancel();
-        var f = new FallbackSandboxFactory([("docker", new CancelsFactory()), ("local", new Works("local"))], (n, w) => { });
+        var f = new FallbackSandboxFactory([("docker", new CancelsFactory()), ("local", new Works("local"))], (n, w) => Task.CompletedTask);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => f.ForTeamAsync("t", "/w", cts.Token));
     }
 

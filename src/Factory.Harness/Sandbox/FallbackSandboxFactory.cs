@@ -3,7 +3,7 @@ namespace Factory.Harness.Sandbox;
 /// FACTORY_SANDBOX=docker,local: tries each sandbox in order and uses the first that starts. A failure is
 /// reported through `onSkipped` (the run ledgers it) and the next is tried; a cancelled start is not a failure.
 /// Which names are listed is the person's choice: `local` runs unisolated, so it is never added on its own.
-public sealed class FallbackSandboxFactory(IReadOnlyList<(string Name, ISandboxFactory Factory)> candidates, Action<string, string> onSkipped) : ISandboxFactory
+public sealed class FallbackSandboxFactory(IReadOnlyList<(string Name, ISandboxFactory Factory)> candidates, Func<string, string, Task> onSkipped) : ISandboxFactory
 {
     public static readonly IReadOnlyList<string> Known = ["docker", "local"];
 
@@ -27,7 +27,7 @@ public sealed class FallbackSandboxFactory(IReadOnlyList<(string Name, ISandboxF
             catch (Exception e) when (e is not OperationCanceledException)
             {
                 reasons.Add($"{name}: {e.Message}");
-                onSkipped(name, e.Message);
+                await onSkipped(name, e.Message);
             }
         }
         throw new InvalidOperationException("No sandbox could start. " + string.Join("; ", reasons));
