@@ -114,6 +114,23 @@ public class RegistryLedgerProjectorTests
     }
 
     [Fact]
+    public void A_role_reports_how_many_of_its_turns_missed_a_cache_they_should_have_hit()
+    {
+        var run = new List<LedgerEvent>
+        {
+            At(1, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-001", TeamId: "team-1", Outcome: "Running")),
+            At(2, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Standard", TokensIn: 300, TokensOut: 30, Payload: """{"role":"s2-implementer","cache_write":200}""")),
+            At(3, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Standard", TokensIn: 300, TokensOut: 30, Payload: """{"role":"s2-implementer","cold":true}""")),
+            At(4, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Standard", TokensIn: 100, TokensOut: 10, Payload: """{"role":"s2-test-author"}""")),
+        };
+
+        var task = RegistryLedgerProjector.Project(run, Handover).Select(Row).Single(r => r["kind"].GetString() == "task");
+
+        Assert.Equal("""[{"role":"s2-implementer","turns":2,"tokens_in":600,"tokens_out":60,"cold":1},{"role":"s2-test-author","turns":1,"tokens_in":100,"tokens_out":10}]""",
+            task["by_role"].GetRawText());
+    }
+
+    [Fact]
     public void Each_element_pair_the_code_crosses_without_a_relationship_is_one_asbuilt_edge_row_per_run()
     {
         var edges = RegistryLedgerProjector.Project(Run(), Handover).Where(e => Row(e)["kind"].GetString() == "asbuilt_edge").ToList();

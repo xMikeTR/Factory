@@ -111,18 +111,30 @@ public static class RegistryLedgerProjector
         var hasPlanner = planIn + planOut > 0;
         if (groups.Count == 0 && !hasPlanner) return;
         w.WriteStartArray("by_role");
-        void Entry(string role, int count, long tin, long tout)
+        void Entry(string role, int count, long tin, long tout, int cold = 0)
         {
             w.WriteStartObject();
             w.WriteString("role", role);
             w.WriteNumber("turns", count);
             w.WriteNumber("tokens_in", tin);
             w.WriteNumber("tokens_out", tout);
+            if (cold > 0) w.WriteNumber("cold", cold);
             w.WriteEndObject();
         }
         if (hasPlanner) Entry(Roles.Planner, planTurns, planIn, planOut);
-        foreach (var g in groups) Entry(g.Key, g.Count(), g.Sum(t => t.TokensIn ?? 0), g.Sum(t => t.TokensOut ?? 0));
+        foreach (var g in groups) Entry(g.Key, g.Count(), g.Sum(t => t.TokensIn ?? 0), g.Sum(t => t.TokensOut ?? 0), g.Count(IsCold));
         w.WriteEndArray();
+    }
+
+    private static bool IsCold(LedgerEvent turn)
+    {
+        if (turn.Payload is null) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(turn.Payload);
+            return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("cold", out var c) && c.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException) { return false; }
     }
 
     private static string RoleOf(LedgerEvent turn)
