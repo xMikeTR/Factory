@@ -6,7 +6,7 @@ open Factory.Core
 
 // A tiny dependency-free runner so the core can be tested anywhere `dotnet` runs.
 // Swap to xUnit/Expecto when the repo has a package feed; the test bodies port unchanged.
-// These tests are the spec for every TODO(you) in Factory.Core. Work order: RESOURCES.md.
+// These tests are the spec for the behaviour of Factory.Core.
 open Factory.Core.Tests.Support
 
 let p = PathPattern.createOrFail

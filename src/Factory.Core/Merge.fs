@@ -83,7 +83,7 @@ module Merge =
         | OneApproval -> 1
         | TwoApprovals -> 2
 
-    /// RESOURCES.md §5. Spec: tests starting "merge:".
+    /// Spec: tests starting "merge:".
     /// Produce (tier, reason) pairs from these rules, then take the highest tier:
     ///   - touched element with Risk = High                          -> TwoApprovals
     ///   - touched element riskier than policy.AutoMergeMaxRisk      -> OneApproval

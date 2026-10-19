@@ -1,9 +1,7 @@
 # factory-s2: System 2 (coding pipeline), workbook edition
 
 > **Where to look:** [ARCHITECTURE.md](ARCHITECTURE.md) is the living map (container and module diagrams,
-> high-centrality modules, dated change log). [SESSION_HANDOFF.md](SESSION_HANDOFF.md) is the current state and
-> open decisions. [RESOURCES.md](RESOURCES.md) is the original workbook order. [PLAN.md](PLAN.md) and
-> [PLAN-QUALITY.md](PLAN-QUALITY.md) are the plans. New here? Open [docs/guide.html](docs/guide.html). Eval method and contract: [docs/evals/](docs/evals/).
+> high-centrality modules, dated change log). New here? Open [docs/guide.html](docs/guide.html). Eval method and contract: [docs/evals/](docs/evals/).
 
 A head start on System 2 of the design-to-code factory. System 2 takes a frozen handover package
 from System 1 and turns it into merged code, recording everything it does in the ledger so that
