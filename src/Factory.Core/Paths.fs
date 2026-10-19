@@ -51,19 +51,53 @@ module PathPattern =
 
     let literalPrefix (p: PathPattern) = p.Segs |> List.takeWhile (isWild >> not)
 
-    let rec private matchSeg (pat: string) pi (s: string) si =
-        if pi = pat.Length then si = s.Length
-        elif pat.[pi] = '*' then matchSeg pat (pi + 1) s si || (si < s.Length && matchSeg pat pi s (si + 1))
-        elif si < s.Length && (pat.[pi] = '?' || pat.[pi] = s.[si]) then matchSeg pat (pi + 1) s (si + 1)
-        else false
+    /// `*` any run of characters, `?` one character. Linear in practice: a failed attempt resumes at the
+    /// last `*` one character further on, instead of trying every split (which is exponential for `*a*a*a*b`).
+    let private matchSeg (pat: string) pi (s: string) si =
+        let mutable p = pi
+        let mutable i = si
+        let mutable star = -1
+        let mutable mark = 0
+        let mutable ok = true
+        let mutable finished = false
+        while not finished do
+            if i >= s.Length then finished <- true
+            elif p < pat.Length && pat.[p] = '*' then
+                star <- p
+                mark <- i
+                p <- p + 1
+            elif p < pat.Length && (pat.[p] = '?' || pat.[p] = s.[i]) then
+                p <- p + 1
+                i <- i + 1
+            elif star >= 0 then
+                p <- star + 1
+                mark <- mark + 1
+                i <- mark
+            else
+                ok <- false
+                finished <- true
+        if not ok then false
+        else
+            while p < pat.Length && pat.[p] = '*' do p <- p + 1
+            p = pat.Length
 
-    let rec private matchSegs (ps: string list) (ss: string list) =
-        match ps, ss with
-        | [], [] -> true
-        | "**" :: rest, _ ->
-            matchSegs rest ss || (match ss with _ :: st -> matchSegs ps st | [] -> false)
-        | p :: prest, s :: srest -> matchSeg p 0 s 0 && matchSegs prest srest
-        | _ -> false
+    /// Does the pattern's segment list match the path's? `**` takes any number of segments; the answer
+    /// for each (pattern position, path position) is worked out once, so repeated `**` cannot blow up.
+    let private matchSegs (ps: string list) (ss: string list) =
+        let pa = Array.ofList ps
+        let sa = Array.ofList ss
+        let memo = System.Collections.Generic.Dictionary<struct (int * int), bool>()
+        let rec go pi si =
+            match memo.TryGetValue(struct (pi, si)) with
+            | true, v -> v
+            | _ ->
+                let v =
+                    if pi = pa.Length then si = sa.Length
+                    elif pa.[pi] = "**" then go (pi + 1) si || (si < sa.Length && go pi (si + 1))
+                    else si < sa.Length && matchSeg pa.[pi] 0 sa.[si] 0 && go (pi + 1) (si + 1)
+                memo.[struct (pi, si)] <- v
+                v
+        go 0 0
 
     let private split (path: string) =
         let p = path.Replace('\\', '/')

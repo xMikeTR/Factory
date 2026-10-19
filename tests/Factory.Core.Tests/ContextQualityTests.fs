@@ -23,6 +23,38 @@ let tests: (string * (unit -> unit)) list =
                   check (not (loneSurrogate f.Text)) $"budget {budget}: broken pair"
                   check (f.Text.Length <= budget) $"budget {budget}: over budget"
 
+      "review diff: a path git quotes (non-ASCII, quote or backslash) is read as the path a finding cites", fun () ->
+          let diff =
+              String.concat "\n"
+                  [ "diff --git \"a/src/caf\\303\\251.cs\" \"b/src/caf\\303\\251.cs\""
+                    "--- \"a/src/caf\\303\\251.cs\""
+                    "+++ \"b/src/caf\\303\\251.cs\""
+                    "@@ -1,1 +1,2 @@"
+                    " keep"
+                    "+new"
+                    "+++ \"b/src/say \\\"hi\\\".cs\""
+                    "@@ -1,1 +1,2 @@"
+                    " keep"
+                    "+new" ]
+          let d = Diff.parse diff
+          equal (Set.ofList [ 2 ]) d.Added.["src/café.cs"] "octal-escaped UTF-8"
+          // the second '+++' line sits inside the first hunk's counts only if the counts were wrong; here the hunk ended
+          equal (Set.ofList [ 2 ]) d.Added.["src/say \"hi\".cs"] "escaped quote"
+
+      "paths: a segment with many stars does not take exponential time", fun () ->
+          let pat = PathPattern.createOrFail (String.replicate 14 "*a" + "*b")
+          let sw = Diagnostics.Stopwatch.StartNew()
+          check (not (PathPattern.matches pat (String.replicate 60 "a"))) "no b"
+          check (PathPattern.matches pat (String.replicate 60 "a" + "b")) "ends in b"
+          check (sw.ElapsedMilliseconds < 1000L) $"took {sw.ElapsedMilliseconds} ms"
+      "paths: repeated ** segments do not take exponential time", fun () ->
+          let pat = PathPattern.createOrFail (String.replicate 12 "**/" + "x.cs")
+          let path = String.replicate 30 "d/" + "y.cs"
+          let sw = Diagnostics.Stopwatch.StartNew()
+          check (not (PathPattern.matches pat path)) "no x.cs"
+          check (PathPattern.matches pat (String.replicate 30 "d/" + "x.cs")) "x.cs"
+          check (sw.ElapsedMilliseconds < 1000L) $"took {sw.ElapsedMilliseconds} ms"
+
       "quality: overloads of one name in one file are judged each against its own baseline", fun () ->
           let t = { MaxCyclomatic = 10; MaxCrap = 30.0; MaxLines = 60 }
           let f line c = { File = "a.cs"; Name = "Parse"; Line = line; Cyclomatic = c; Lines = 10; Coverage = Some 1.0 }
