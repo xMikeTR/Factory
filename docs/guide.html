@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>designc and factory-s2: getting started</title>
+<style>
+  :root { --bg:#fff; --fg:#1d2226; --muted:#5b6670; --line:#d9dee3; --code:#f3f5f7; --accent:#1f5fbf; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16191c; --fg:#e4e8eb; --muted:#9aa5ae; --line:#2e353b; --code:#21262b; --accent:#6aa5ff; } }
+  body { background:var(--bg); color:var(--fg); font:16px/1.55 system-ui, sans-serif; margin:0; }
+  main { max-width:50rem; margin:0 auto; padding:2rem 1rem 4rem; }
+  h1 { font-size:1.8rem; } h2 { margin-top:2.5rem; border-bottom:1px solid var(--line); padding-bottom:.3rem; } h3 { margin-top:1.6rem; }
+  code, pre { background:var(--code); border-radius:4px; font:.9em ui-monospace, monospace; }
+  code { padding:.1em .3em; } pre { padding:.8rem 1rem; overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; } th, td { border:1px solid var(--line); padding:.4rem .6rem; text-align:left; vertical-align:top; }
+  a { color:var(--accent); } .note { color:var(--muted); }
+  nav a { margin-right:1rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>designc and factory-s2: getting started</h1>
+<p class="note">designc (System 1) is the desktop app where you design. factory-s2 (System 2) is the pipeline that turns a frozen design into merged code. They share files, not a server: the registry folder and its ledger.</p>
+<nav><a href="#idea">The idea</a><a href="#s1">Using designc</a><a href="#s2">Running factory-s2</a><a href="#loop">The whole loop</a><a href="#safety">What is guarded</a><a href="#more">Where to read more</a></nav>
+
+<h2 id="idea">The idea</h2>
+<p>The design is the source of truth and code is a build output. Models propose; deterministic checks and people decide. An agent never writes anything without a policy check, and writes need a person's approval.</p>
+<pre>designc (you design)  ──freeze──►  handover  ──►  factory-s2 (plans, builds, verifies, merges)
+        ▲                                                         │
+        └──────────── ledger (append-only events) ◄───────────────┘</pre>
+
+<h2 id="s1">Using designc</h2>
+<h3>Install and open</h3>
+<pre>npm install
+npm start                          # opens the app
+npm start -- /path/to/registry     # opens straight into a registry folder</pre>
+<p>Needs Node 20 or later. Use <em>Open sample</em> to explore <code>sample-registry/</code>, a small pricing-engine design with a decision, a requirement, and a sample ledger. A registry is a plain folder, so git gives you review and history.</p>
+
+<h3>The views</h3>
+<table>
+<tr><th>View</th><th>Use it to</th></tr>
+<tr><td>Design</td><td>Edit the Structurizr model with <code>d.*</code> properties, see live findings (DC000 to DC009), the C4 sheet, decisions, requirements, and the gate.</td></tr>
+<tr><td>Code map</td><td>Extract a .NET or JS/TS codebase into a C4 model and see drift against your design.</td></tr>
+<tr><td>Build</td><td>See pipeline runs, tokens per passing task, reruns, and items that need a decision.</td></tr>
+<tr><td>Improve</td><td>See escapes by the stage that should have caught them, and rule health.</td></tr>
+<tr><td>Deployment</td><td>Read-only view of the declared deployment; click a node to see what goes down if it is unavailable.</td></tr>
+<tr><td>Agent panel</td><td>Chat with Architect, Grill-me, Analyst or Tutor on the built-in model, any ACP agent, or an AG-UI service.</td></tr>
+</table>
+
+<h3>A first pass</h3>
+<ol>
+<li>Open a registry. The status bar shows the gate: ready or not, with each blocking clause listed in the Design sidebar in working order.</li>
+<li>Work the clauses. A finding offers <em>Record decision</em> or <em>Accept risk</em>; an unbound decision offers <em>Bind</em>; a decision check offers <em>Run check</em>. Binding is always a person's action.</li>
+<li>When the gate is ready and your files are committed, <em>Freeze handover</em>. It writes <code>handovers/&lt;id&gt;/</code> with copies of the model, requirements, bound decisions, scenarios, evals, an <code>elements.json</code> and a <code>BUILD.md</code> brief. A frozen handover is never rewritten.</li>
+<li>Dispatch it: set <code>dispatch</code> in <code>designc.json</code> to your pipeline command. designc types the filled command into the integrated terminal and stops before Enter.</li>
+</ol>
+
+<h3>Settings</h3>
+<p><code>designc.json</code> in the registry holds settings, and only the <em>names</em> of environment variables for secrets. The Set up page (opened when a folder has no <code>designc.json</code>) walks through the model, LLM and Langfuse sections, each skippable, with a Test connection button.</p>
+<pre>{
+  "model": "model/workspace.dsl",
+  "codebase": "../pricing-repo",
+  "dispatch": { "pipeline": { "label": "Build it",
+    "command": "my-build --handover {handover} --repo {repo} --registry {registry} --base {base}" } }
+}</pre>
+
+<h3>CI</h3>
+<pre>cd python &amp;&amp; python3 -m designc check &lt;registry&gt;    # exit 0 ready, 1 not ready, 2 unreadable folder</pre>
+
+<h2 id="s2">Running factory-s2</h2>
+<h3>Try it without a model</h3>
+<pre>dotnet run --project tests/Factory.Core.Tests
+dotnet run --project src/Factory.S2 -- validate --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
+dotnet run --project src/Factory.S2 -- dispatch --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json</pre>
+<p><code>validate</code> and <code>dispatch</code> are deterministic: no agents, no network, no cost. <code>dispatch</code> prints the waves of tasks that can run in parallel.</p>
+
+<h3>A real run</h3>
+<p>This calls a paid model. Pick one provider setup.</p>
+<pre># an LLM gateway
+export FACTORY_GATEWAY_URL=https://&lt;gateway&gt;/v1 FACTORY_GATEWAY_KEY=&lt;key&gt;
+export FACTORY_MODEL_FRONTIER=&lt;alias&gt; FACTORY_MODEL_STANDARD=&lt;alias&gt; FACTORY_MODEL_SMALL=&lt;alias&gt;
+# or the Anthropic API
+export FACTORY_PROVIDER=anthropic ANTHROPIC_API_KEY=&lt;key&gt;
+
+dotnet run --project src/Factory.S2 -- run \
+  --handover &lt;registry&gt;/handovers/&lt;id&gt;/handover.json \
+  --repo &lt;target repo&gt; --registry &lt;registry&gt; [--base main] [--github]</pre>
+<p>The reviewer and QA must run on a different model family from the author. Start-up refuses otherwise; with one provider only, <code>FACTORY_REVIEWER_SAME_FAMILY=allow</code> allows dry-run merges and stamps the reviews as same-family. Without <code>--github</code>, pull requests are written under <code>.factory/runs/&lt;id&gt;/</code> instead of opened.</p>
+
+<h3>Useful commands</h3>
+<table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>run --run-id &lt;id&gt;</code></td><td>Resume a run.</td></tr>
+<tr><td><code>run --repair &lt;run&gt;</code></td><td>Repair a run that ended <code>integration_failed</code>.</td></tr>
+<tr><td><code>budget --repo . --registry r</code></td><td>Check spend caps. Exit 2 when exceeded; <code>run</code> then exits 4.</td></tr>
+<tr><td><code>digest --registry r</code></td><td>What needs you, what failed, what finished.</td></tr>
+<tr><td><code>pull-plan</code>, <code>metrics</code></td><td>Read-only reports over the registry.</td></tr>
+<tr><td><code>qa --repo . --run-id &lt;id&gt;</code></td><td>Follow-up QA without an author.</td></tr>
+</table>
+<p>Every run leaves <code>.factory/runs/&lt;id&gt;/result.json</code> saying how it ended (<code>merged</code>, <code>parked</code>, <code>failed</code>, <code>integration_failed</code>, <code>refused</code>, and so on).</p>
+
+<h3>Turning the levers</h3>
+<p>These environment variables have these defaults (from <code>FactorySettings</code>):</p>
+<table>
+<tr><th>Variable</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>FACTORY_MAX_PLANNER_ATTEMPTS</code></td><td>3</td><td>Planner retries before giving up.</td></tr>
+<tr><td><code>FACTORY_MAX_TURNS</code></td><td>8</td><td>Turns per task.</td></tr>
+<tr><td><code>FACTORY_MAX_VERIFY_ATTEMPTS</code></td><td>3</td><td>Verify attempts per task.</td></tr>
+<tr><td><code>FACTORY_COMMANDS</code></td><td>dotnet build;dotnet test;dotnet format</td><td>Commands the agent may run.</td></tr>
+<tr><td><code>FACTORY_BASE_BRANCH</code></td><td>main</td><td>Branch to merge into.</td></tr>
+<tr><td><code>FACTORY_STATE_DIR</code></td><td>&lt;repo&gt;/.factory</td><td>Where runs are kept.</td></tr>
+<tr><td><code>FACTORY_SANDBOX</code></td><td>docker</td><td>Comma-separated fallback chain (docker, local).</td></tr>
+<tr><td><code>FACTORY_MERGE_ENFORCEMENT</code></td><td>auto</td><td><code>auto</code> or <code>tiered</code>; also settable in the merge policy file.</td></tr>
+<tr><td><code>FACTORY_PLAYWRIGHT_CLI</code></td><td>on</td><td>Set to <code>0</code> to stop the implementer using the browser tool.</td></tr>
+</table>
+<p class="note">Start with tight limits and loosen them as the numbers justify it. Per-repo policy lives in <code>.factory/</code> files (integration, merge, quality, npm, UI contract); see the factory-s2 README and <code>ARCHITECTURE.md</code>.</p>
+
+<h2 id="loop">The whole loop</h2>
+<ol>
+<li>In designc, work the gate to ready and commit the registry.</li>
+<li>Freeze a handover (whole model, or one work item for a scoped slice).</li>
+<li>Dispatch it to factory-s2 with <code>run</code>.</li>
+<li>If the pipeline needs a human answer, it writes a <code>needs_decision</code> to the ledger. Open Build or the Work digest in designc and answer with a decision.</li>
+<li>When the pipeline merges, check evidence in Build. A work item is Done only with a passing gate at a commit on main; an agent's claim is never enough.</li>
+<li>Extract the code map to see drift, and use Improve to classify escapes.</li>
+</ol>
+
+<h2 id="safety">What is guarded</h2>
+<ul>
+<li>Agents cannot bind decisions, freeze handovers, or write the ledger's human-only events.</li>
+<li>Registry access is confined to the open folder; child processes do not inherit secrets.</li>
+<li>The ledger is append-only and validated on every write.</li>
+<li>Checks, git and the terminal run only in a folder you have trusted.</li>
+</ul>
+
+<h2 id="more">Where to read more</h2>
+<ul>
+<li>designc: <code>README.md</code> (user guide), <code>AGENTS.md</code> (technical reference), <code>docs/pipeline-contract.md</code>, <code>docs/handover-elements.schema.json</code>.</li>
+<li>factory-s2: <code>README.md</code>, <code>ARCHITECTURE.md</code>, <code>PLAN-QUALITY.md</code>, <code>docs/evals/</code>.</li>
+</ul>
+</main>
+</body>
+</html>
