@@ -77,12 +77,31 @@ public static class FactoryTelemetry
     public static bool CaptureContent(IReadOnlyDictionary<string, string> env) =>
         env.TryGetValue("FACTORY_OTEL_CAPTURE_CONTENT", out var v) && v == "1";
 
+    /// Langfuse's own variables (LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY) are enough to
+    /// export: they give the OTLP endpoint, protocol and Basic auth header, so nobody builds the base64
+    /// header by hand. An explicit OTEL_EXPORTER_OTLP_ENDPOINT wins; with any of the three missing nothing changes.
+    public static IReadOnlyDictionary<string, string> WithLangfuseDefaults(IReadOnlyDictionary<string, string> env)
+    {
+        if (env.TryGetValue("OTEL_EXPORTER_OTLP_ENDPOINT", out var set) && !string.IsNullOrWhiteSpace(set)) return env;
+        if (!env.TryGetValue("LANGFUSE_HOST", out var host) || string.IsNullOrWhiteSpace(host)
+            || !env.TryGetValue("LANGFUSE_PUBLIC_KEY", out var pk) || string.IsNullOrWhiteSpace(pk)
+            || !env.TryGetValue("LANGFUSE_SECRET_KEY", out var sk) || string.IsNullOrWhiteSpace(sk)) return env;
+        var derived = new Dictionary<string, string>(env)
+        {
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = host.Trim().TrimEnd('/') + "/api/public/otel",
+            ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf",
+            ["OTEL_EXPORTER_OTLP_HEADERS"] = "Authorization=Basic " + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{pk.Trim()}:{sk.Trim()}")),
+        };
+        return derived;
+    }
+
     /// An OTLP exporter for Factory spans when OTEL_EXPORTER_OTLP_ENDPOINT is set; otherwise null
     /// and no span is ever recorded. Read from `env` with the spec's meaning:
     /// OTEL_EXPORTER_OTLP_ENDPOINT (base URL; /v1/traces is appended for http/protobuf),
     /// OTEL_EXPORTER_OTLP_HEADERS (k=v,k=v) and OTEL_EXPORTER_OTLP_PROTOCOL (grpc | http/protobuf).
-    public static TracerProvider? CreateTracerProvider(IReadOnlyDictionary<string, string> env)
+    public static TracerProvider? CreateTracerProvider(IReadOnlyDictionary<string, string> envIn)
     {
+        var env = WithLangfuseDefaults(envIn);
         if (!env.TryGetValue("OTEL_EXPORTER_OTLP_ENDPOINT", out var endpoint) || string.IsNullOrWhiteSpace(endpoint)) return null;
         var http = env.TryGetValue("OTEL_EXPORTER_OTLP_PROTOCOL", out var protocol) && protocol == "http/protobuf";
         return Sdk.CreateTracerProviderBuilder()
