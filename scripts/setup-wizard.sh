@@ -25,9 +25,9 @@ secret() { # secret VAR  (hidden entry, Enter to skip)
 # provider SIDE  where SIDE is "" (implementer) or "REVIEWER_" -> sets FACTORY_[REVIEWER_]...
 provider() {
   local p="$1" label="$2" prov url key
-  echo "  1) Anthropic API (public, or your own base URL)"
-  echo "  2) OpenAI-compatible gateway (LiteLLM, APIM, ...)"
-  ask "$label provider" 1; prov="$REPLY"
+  echo "  1) Anthropic API (needs an Anthropic key; not available on the work VM)"
+  echo "  2) OpenAI-compatible gateway (LiteLLM/APIM in front of Vertex: the work route)"
+  ask "$label provider" 2; prov="$REPLY"
   if [ "$prov" = 1 ]; then
     add "FACTORY_${p}PROVIDER" anthropic
     ask "  Base URL (blank = api.anthropic.com)" ""; url="$REPLY"
