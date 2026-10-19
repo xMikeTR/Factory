@@ -156,6 +156,37 @@ public class TelemetryContractTests
         Assert.True(FactoryTelemetry.CaptureContent(new Dictionary<string, string> { ["FACTORY_OTEL_CAPTURE_CONTENT"] = "1" }));
     }
 
+    [Fact]
+    public void Langfuse_keys_alone_give_the_OTLP_endpoint_and_auth()
+    {
+        var env = new Dictionary<string, string>
+        {
+            ["LANGFUSE_HOST"] = "https://us.cloud.langfuse.com/",
+            ["LANGFUSE_PUBLIC_KEY"] = "pk-lf-a",
+            ["LANGFUSE_SECRET_KEY"] = "sk-lf-b",
+        };
+        var otlp = FactoryTelemetry.WithLangfuseDefaults(env);
+        Assert.Equal("https://us.cloud.langfuse.com/api/public/otel", otlp["OTEL_EXPORTER_OTLP_ENDPOINT"]);
+        Assert.Equal("http/protobuf", otlp["OTEL_EXPORTER_OTLP_PROTOCOL"]);
+        Assert.Equal("Authorization=Basic " + Convert.ToBase64String("pk-lf-a:sk-lf-b"u8.ToArray()), otlp["OTEL_EXPORTER_OTLP_HEADERS"]);
+        using var provider = FactoryTelemetry.CreateTracerProvider(env);
+        Assert.NotNull(provider);
+    }
+
+    [Fact]
+    public void An_explicit_OTLP_endpoint_wins_and_partial_Langfuse_settings_change_nothing()
+    {
+        var explicitEnv = new Dictionary<string, string>
+        {
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://collector:4317",
+            ["LANGFUSE_HOST"] = "https://cloud.langfuse.com", ["LANGFUSE_PUBLIC_KEY"] = "pk", ["LANGFUSE_SECRET_KEY"] = "sk",
+        };
+        Assert.Equal("http://collector:4317", FactoryTelemetry.WithLangfuseDefaults(explicitEnv)["OTEL_EXPORTER_OTLP_ENDPOINT"]);
+        var noSecret = new Dictionary<string, string> { ["LANGFUSE_HOST"] = "https://cloud.langfuse.com", ["LANGFUSE_PUBLIC_KEY"] = "pk" };
+        Assert.False(FactoryTelemetry.WithLangfuseDefaults(noSecret).ContainsKey("OTEL_EXPORTER_OTLP_ENDPOINT"));
+        Assert.Null(FactoryTelemetry.CreateTracerProvider(noSecret));
+    }
+
     private static bool IsUnder(System.Diagnostics.Activity s, System.Diagnostics.Activity ancestor)
     {
         for (var p = s.Parent; p is not null; p = p.Parent) if (p.SpanId == ancestor.SpanId) return true;

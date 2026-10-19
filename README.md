@@ -147,7 +147,7 @@ Sidecar tests: `cd tools/laya-sidecar && python3 -m unittest test_server`.
 
 Traces: a run is one OTel trace (`run <id>`, then `task <id>` per task, then a gen_ai `chat`
 span per model call and an `execute_tool` span per tool call); every ledger row carries its
-`trace_id`. Spans are exported only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (plus
+`trace_id`. Spans are exported only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or when `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are all set (the endpoint, protocol and auth header are then derived; an explicit endpoint wins; export them in your shell profile so every run has them) (plus
 `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_HEADERS`), to Langfuse or any OTLP collector:
 
 ```bash
