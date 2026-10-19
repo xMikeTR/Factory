@@ -24,7 +24,9 @@ public sealed class DesigncHandoverReader : IHandoverSource
         if (!File.Exists(manifestPath)) Reject(handoverDir, ["handover.yaml is missing"]);
 
         var manifestBytes = await File.ReadAllBytesAsync(manifestPath, ct);
-        var manifest = Yaml.Deserialize<Dictionary<string, object?>>(Encoding.UTF8.GetString(manifestBytes)) ?? [];
+        Dictionary<string, object?> manifest;
+        try { manifest = Yaml.Deserialize<Dictionary<string, object?>>(Encoding.UTF8.GetString(manifestBytes)) ?? []; }
+        catch (YamlDotNet.Core.YamlException e) { Reject(handoverDir, [$"handover.yaml is not readable: {e.Message}"]); return null!; }
 
         var id = Str(manifest, "id");
         if (id is null) errors.Add("handover.yaml: id is required");

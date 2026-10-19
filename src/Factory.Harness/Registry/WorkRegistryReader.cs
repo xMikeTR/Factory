@@ -22,7 +22,7 @@ public static class WorkRegistryReader
     public static async Task<WorkRegistry> ReadAsync(string registryPath, CancellationToken ct)
     {
         var problems = new List<string>();
-        var requirements = await RequirementsAsync(registryPath, ct);
+        var requirements = await RequirementsAsync(registryPath, problems, ct);
         var drafts = new List<WorkDraft>();
         var dir = Path.Combine(registryPath, "work");
         if (Directory.Exists(dir))
@@ -65,7 +65,7 @@ public static class WorkRegistryReader
         return own.Count > 0 ? (null, own) : (made.ResultValue, own);
     }
 
-    private static async Task<Dictionary<string, HashSet<string>>> RequirementsAsync(string registryPath, CancellationToken ct)
+    private static async Task<Dictionary<string, HashSet<string>>> RequirementsAsync(string registryPath, List<string> problems, CancellationToken ct)
     {
         var map = new Dictionary<string, HashSet<string>>();
         var dir = Path.Combine(registryPath, "requirements");
@@ -77,7 +77,7 @@ public static class WorkRegistryReader
                 var m = Yaml.Deserialize<Dictionary<string, object?>>(await File.ReadAllTextAsync(file, ct)) ?? [];
                 if (m.GetValueOrDefault("id")?.ToString() is { Length: > 0 } id) map[id] = Strings(m.GetValueOrDefault("elements")).ToHashSet();
             }
-            catch (YamlDotNet.Core.YamlException) { }
+            catch (YamlDotNet.Core.YamlException e) { problems.Add($"requirements/{Path.GetFileName(file)}: not readable ({e.Message}); work items naming it will say it does not exist."); }
         }
         return map;
     }

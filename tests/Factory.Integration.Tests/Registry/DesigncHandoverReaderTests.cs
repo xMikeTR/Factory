@@ -133,4 +133,15 @@ public class DesigncHandoverReaderTests
             ? $"  - {{ path: \"{rel}\", hash: {DesigncHandoverReader.Hash16(text)} }}" : l);
         File.WriteAllLines(manifest, lines);
     }
+
+    [Fact]
+    public async Task A_handover_yaml_that_is_not_yaml_is_rejected_not_crashed()
+    {
+        var dir = FixtureCopy();
+        await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"), "id: [unclosed\n");
+
+        var e = await Assert.ThrowsAsync<FactoryRejectedException>(() => Load(dir));
+
+        Assert.Contains(e.Errors, x => x.Contains("handover.yaml is not readable"));
+    }
 }
