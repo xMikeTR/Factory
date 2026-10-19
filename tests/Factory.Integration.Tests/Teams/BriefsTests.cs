@@ -1,3 +1,4 @@
+using FactoryCore = global::Factory.Core.Core;
 using Factory.Core;
 using Factory.Harness.Registry;
 using Factory.Integration.Tests.Support;
@@ -86,5 +87,24 @@ public class BriefsTests
         Assert.Equal(brief.Stable + brief.Turn, brief.Text);
         Assert.Equal([brief.Stable, brief.Turn], brief.Messages.Select(m => m.Text));
         Assert.Equal([brief.Stable], Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null).Messages.Select(m => m.Text));
+    }
+
+    [Fact]
+    public async Task Read_only_references_are_named_with_their_tools_and_a_handover_without_any_has_no_such_section()
+    {
+        var handover = await new DesigncHandoverReader().LoadAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"),
+            new S2Config([]), CancellationToken.None);
+        var node = System.Text.Json.Nodes.JsonNode.Parse(FactoryCore.HandoverJson(handover))!.AsObject();
+        node["references"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject { ["key"] = "wpf", ["kind"] = "legacy" });
+        var withRefs = FactoryCore.ParseHandover(node.ToJsonString());
+
+        var brief = Briefs.Task(withRefs, Plans.Task("T-004"), [], null, null, null).Text;
+
+        Assert.Contains("## Read-only references", brief);
+        Assert.Contains("`wpf` (legacy)", brief);
+        Assert.Contains("`read_reference`", brief);
+        Assert.Contains("`list_reference`", brief);
+        Assert.Contains("never write", brief);
+        Assert.DoesNotContain("## Read-only references", Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null).Text);
     }
 }

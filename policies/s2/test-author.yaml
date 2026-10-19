@@ -17,6 +17,14 @@ rules:
     condition: "tool_name == 'list_files'"
     action: allow
     priority: 10
+  - name: allow-read-reference
+    condition: "tool_name == 'read_reference'"
+    action: allow
+    priority: 10
+  - name: allow-list-reference
+    condition: "tool_name == 'list_reference'"
+    action: allow
+    priority: 10
   - name: allow-write-file
     condition: "tool_name == 'write_file'"
     action: allow

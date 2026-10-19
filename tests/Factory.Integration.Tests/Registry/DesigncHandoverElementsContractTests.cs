@@ -135,4 +135,26 @@ public class DesigncHandoverElementsContractTests
         await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"), Manifest("\"tests/acceptance/other.spec.ts\""));
         await Assert.ThrowsAnyAsync<Exception>(() => new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None));
     }
+
+    [Fact]
+    public async Task References_are_carried_as_key_and_kind_and_a_malformed_one_is_refused()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "s2-refs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var elements = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "handover-elements-2.json"));
+        await File.WriteAllTextAsync(Path.Combine(dir, "elements.json"), elements);
+        string Manifest(string refs) =>
+            $"id: 20261019-refs\nelements: \"elements.json\"\nreferences: {refs}\nfiles:\n  - {{ path: \"elements.json\", hash: {DesigncHandoverReader.Hash16(elements)} }}\n";
+        await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"), Manifest("[{ key: wpf, kind: legacy }]"));
+
+        var h = await new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None);
+
+        var r = Assert.Single(h.References);
+        Assert.Equal(("wpf", "legacy"), (r.Key, r.Kind));
+        Assert.Equal("wpf", FactoryCore.ParseHandover(FactoryCore.HandoverJson(h)).References.Single().Key);
+        Assert.Empty((await LoadExample()).References);
+
+        await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"), Manifest("[{ kind: legacy }]"));
+        await Assert.ThrowsAnyAsync<Exception>(() => new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None));
+    }
 }

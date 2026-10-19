@@ -192,5 +192,80 @@ public class ScopedWorkspaceTests : IDisposable
         Assert.Equal("A", signals.NeedsDecision.Recommended);
     }
 
-    public void Dispose() => Directory.Delete(_root, recursive: true);
+    private string Reference()
+    {
+        var dir = Directory.CreateTempSubdirectory("ref-").FullName;
+        Directory.CreateDirectory(Path.Combine(dir, "Views"));
+        File.WriteAllText(Path.Combine(dir, "Views", "Calc.cs"), "Math.Round(x)");
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(dir)!, Path.GetFileName(dir) + "-secret.txt"), "outside");
+        _refs.Add(dir);
+        return dir;
+    }
+
+    private readonly List<string> _refs = [];
+
+    private ScopedWorkspace WithReference(string dir) =>
+        new(_root, [], [], [], new TurnSignals(), references: new Dictionary<string, string> { ["wpf"] = dir });
+
+    [Fact]
+    public void A_reference_is_read_by_key_and_listed_under_it()
+    {
+        var ws = WithReference(Reference());
+        Assert.Equal("Math.Round(x)", ws.ReadReference("wpf", "Views/Calc.cs"));
+        Assert.Equal("Views/Calc.cs", ws.ListReference("wpf", "."));
+    }
+
+    [Fact]
+    public void A_reference_read_cannot_leave_the_reference()
+    {
+        var dir = Reference();
+        var ws = WithReference(dir);
+        var sibling = Path.GetFileName(dir) + "-secret.txt";
+        Assert.StartsWith("DENIED", ws.ReadReference("wpf", "../" + sibling));
+        Assert.StartsWith("DENIED", ws.ReadReference("wpf", Path.Combine(Path.GetDirectoryName(dir)!, sibling)));
+        Assert.StartsWith("DENIED", ws.ListReference("wpf", ".."));
+        Assert.StartsWith("DENIED", ws.ReadReference("wpf", ".git/config"));
+    }
+
+    [Fact]
+    public void A_symlink_inside_a_reference_cannot_lead_out_of_it()
+    {
+        var dir = Reference();
+        var outside = Path.Combine(Path.GetDirectoryName(dir)!, Path.GetFileName(dir) + "-secret.txt");
+        File.CreateSymbolicLink(Path.Combine(dir, "link.txt"), outside);
+        Assert.StartsWith("DENIED", WithReference(dir).ReadReference("wpf", "link.txt"));
+    }
+
+    [Fact]
+    public void An_unknown_reference_key_is_refused()
+    {
+        Assert.StartsWith("ERROR", WithReference(Reference()).ReadReference("web", "Views/Calc.cs"));
+    }
+
+    [Fact]
+    public void Reference_tools_go_to_the_roles_that_build_and_only_when_the_run_has_references()
+    {
+        string[] names(IEnumerable<Microsoft.Extensions.AI.AITool> t) => t.Select(x => x.Name).ToArray();
+        var without = new ScopedWorkspace(_root, [], [], [], new TurnSignals());
+        Assert.DoesNotContain("read_reference", names(without.ImplementerTools()));
+        Assert.DoesNotContain("read_reference", names(without.TestAuthorTools()));
+
+        var ws = WithReference(Reference());
+        Assert.Contains("read_reference", names(ws.ImplementerTools()));
+        Assert.Contains("list_reference", names(ws.ImplementerTools()));
+        Assert.Contains("read_reference", names(ws.TestAuthorTools()));
+        Assert.DoesNotContain("read_reference", names(ws.ReviewerTools()));
+        Assert.DoesNotContain("read_reference", names(ws.ReadOnlyTools()));
+        Assert.DoesNotContain("read_reference", names(ws.QaAuthorTools()));
+    }
+
+    public void Dispose()
+    {
+        Directory.Delete(_root, recursive: true);
+        foreach (var r in _refs)
+        {
+            Directory.Delete(r, recursive: true);
+            File.Delete(Path.Combine(Path.GetDirectoryName(r)!, Path.GetFileName(r) + "-secret.txt"));
+        }
+    }
 }
