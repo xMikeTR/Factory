@@ -4,7 +4,7 @@ using Factory.Harness;
 
 namespace Factory.S2;
 
-/// repair.json: why a repair run exists. A run that ended `integration_failed` on frozen-spec or
+/// repair.json: why a repair run exists (an integration that failed frozen specs or token lint, or a CI failure reported with `ci-report`). A run that ended `integration_failed` on frozen-spec or
 /// token-lint failures is repaired by a new run cut from the failed integration branch that re-runs
 /// only the tasks those failures blame; every other task is carried (its work is already on base).
 /// Feedback maps a task id to what its brief must say.
@@ -29,6 +29,8 @@ public static class Repair
                 LedgerKinds.UiAcceptanceFailed =>
                     $"Frozen acceptance spec {S("spec")} (acceptance {S("ac")}{(e.Element is null ? "" : $" on element {e.Element}")}) failed on integration at {S("commit")}."
                     + (S("trace") is { Length: > 0 } t ? "\nTrace:\n" + (t.Length > TraceChars ? t[..TraceChars] + " …" : t) : ""),
+                LedgerKinds.CiFailed =>
+                    $"CI check \"{S("check")}\" failed{(S("commit") is { Length: > 0 } c ? $" at {c}" : "")}. End of its log:\n{S("log")}",
                 LedgerKinds.TokenLintViolation =>
                     $"Raw value where a design token belongs: {S("file")}:{doc.RootElement.GetProperty("line")} {S("rule")}: {S("text")}",
                 _ => null,
@@ -48,6 +50,19 @@ public static class Repair
         foreach (var l in lines) sb.AppendLine().AppendLine("- " + l);
         return sb.ToString().TrimEnd();
     }
+
+    /// How many repair runs lie behind this one: follows `repair.json`'s `Of` back to a run that is not itself a repair.
+    public static int Rounds(FactorySettings s, string runId)
+    {
+        var rounds = 0;
+        for (var seen = new HashSet<string>(); seen.Add(runId) && File.Exists(s.RepairPath(runId)); rounds++)
+            runId = JsonSerializer.Deserialize<RepairFile>(File.ReadAllText(s.RepairPath(runId)))!.Of;
+        return rounds;
+    }
+
+    /// Why a repair of `failedRun` is refused: its chain already used `max` rounds, so a person looks instead of the harness paying again.
+    public static string? RoundsRefusal(FactorySettings s, string failedRun, int max) =>
+        Rounds(s, failedRun) >= max ? $"run {failedRun} is already repair round {Rounds(s, failedRun)} (limit {max}, FACTORY_MAX_FIX_ROUNDS): a person should look at it" : null;
 
     public static string? Feedback(FactorySettings s, string runId, string taskId)
     {

@@ -48,6 +48,7 @@ public static class LedgerKinds
     public const string AsBuiltEdge = "asbuilt_edge"; // payload {from, to}: an element pair the code crosses with no relationship in the model (debt)
     public const string TokenLintViolation = "token_lint_violation"; // task + payload {file, line, rule, text}: a raw value where a design token belongs
     public const string UiAcceptanceFailed = "ui_acceptance_failed"; // element + payload {ac, spec, commit, trace}: a frozen Playwright spec failed on this task's element
+    public const string CiFailed = "ci_failed";     // task + payload {check, log, files, commit}: CI failed after the run ended (factory-s2 ci-report); a repair run reads it
     public const string Diagnosis = "diagnosis";    // task + payload {finding}: the s2-diagnosis agent's explanation of a failed frozen spec, folded into the repair brief
     public const string Reproduction = "reproduction"; // payload {report, steps}: the s2-repro agent's steps for a reported escape; intake still needs a failing spec
     public const string UxScreenshots = "ux_screenshots"; // payload {command, shots:[{element,state,breakpoint,path}]}: freeze-time screenshots taken for one human review
