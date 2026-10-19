@@ -25,6 +25,22 @@ public class BriefsTests
         Assert.Contains("--expect-violation", prompt);
     }
 
+    /// pilot P1: sandbox.md said "Nothing else is installed", so the planner built a C# Jint harness to run a
+    /// JavaScript repo's tests. The runner image carries Node and npm (docker/runner/Dockerfile).
+    [Theory]
+    [InlineData("planner")]
+    [InlineData("task-planner")]
+    [InlineData("test-author")]
+    [InlineData("implementer")]
+    public void Every_role_is_told_the_sandbox_runs_Node_so_a_JavaScript_repo_is_tested_with_its_own_runner(string role)
+    {
+        var prompt = Briefs.Prompt(role);
+
+        Assert.Contains("Node 22", prompt);
+        Assert.Contains("node --test", prompt);
+        Assert.Contains("not through a .NET harness", prompt);
+    }
+
     /// live3: the planner told the code to log JSON lines, which the PObserve parser cannot read.
     [Fact]
     public void The_planner_is_told_the_line_format_PObserve_parses()
