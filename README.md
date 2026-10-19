@@ -120,6 +120,9 @@ export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MOD
 #   _GATEWAY_KEY / _MODEL_*, and declare FACTORY_MODEL_FAMILY + FACTORY_REVIEWER_MODEL_FAMILY); start-up
 #   refuses otherwise. With one provider only: FACTORY_REVIEWER_SAME_FAMILY=allow, dry-run merges only
 #   (not --github); those reviews are stamped same-family.
+#   Agent contracts: a handover frozen with compiled contracts (designc `contracts/`) lists them;
+#   FACTORY_CONTRACTS=warn (default) names agents with none, require refuses to start, off ignores.
+#   S2 reads and checks them only; enforcing the policy at run time is not built yet.
 dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/pricing-v3/handover.json \
     --repo <target repo> --registry <registry repo> [--base main] [--github] [--run-id <id to resume>]
 ```
