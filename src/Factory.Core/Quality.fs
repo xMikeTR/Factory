@@ -50,8 +50,13 @@ module Quality =
         | Crap -> t.MaxCrap
         | Length -> float t.MaxLines
 
-    /// A function is identified by file and name: moving it down the file is not a change.
-    let private key (f: FunctionMetrics) = f.File, f.Name
+    /// A function is identified by file, name and its order among same-named functions in the file
+    /// (overloads): moving it down the file is not a change, and overloads do not share a baseline.
+    let private keyed (fs: FunctionMetrics list) =
+        fs
+        |> List.sortBy (fun f -> f.Line)
+        |> List.groupBy (fun f -> f.File, f.Name)
+        |> List.collect (fun ((file, name), group) -> group |> List.mapi (fun i f -> (file, name, i), f))
 
     let private touches (ranges: ChangedRange list) (f: FunctionMetrics) =
         ranges |> List.exists (fun r -> r.File = f.File && r.First <= f.Line + f.Lines - 1 && r.Last >= f.Line)
@@ -61,13 +66,13 @@ module Quality =
     /// Functions the task did not touch are not judged. CRAP is judged only where coverage data exists.
     let check (t: QualityThresholds) (baseline: FunctionMetrics list) (current: FunctionMetrics list) (changed: ChangedRange list)
         : QualityViolation list =
-        let before = baseline |> List.map (fun f -> key f, f) |> Map.ofList
-        [ for f in current do
+        let before = keyed baseline |> Map.ofList
+        [ for k, f in keyed current do
               if touches changed f then
                   // CRAP needs coverage: without data for this function it is not judged (rather than assumed 0%)
                   for m in [ Cyclomatic; Crap; Length ] |> List.filter (fun m -> m <> Crap || f.Coverage.IsSome) do
                       let v = value m f
-                      match Map.tryFind (key f) before with
+                      match Map.tryFind k before with
                       | None when v > limit t m -> yield { Function = f; Measure = m; Value = v; Limit = limit t m; Baseline = None }
                       | Some old when v > value m old ->
                           yield { Function = f; Measure = m; Value = v; Limit = value m old; Baseline = Some(value m old) }
