@@ -120,12 +120,15 @@ public static class WorkDigestReport
 
     private static async Task<bool?> IsOnAsync(string repo, string baseBranch, string commit, CancellationToken ct)
     {
+        // The commit comes from a ledger line: only a hash may reach git's argument list (a leading '-' would be read as an option).
+        if (!System.Text.RegularExpressions.Regex.IsMatch(commit, "^[0-9a-fA-F]{4,64}$")) return null;
         try
         {
             var psi = new ProcessStartInfo("git") { WorkingDirectory = repo, RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (var a in new[] { "merge-base", "--is-ancestor", commit, baseBranch }) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi)!;
-            await p.WaitForExitAsync(ct);
+            try { await p.WaitForExitAsync(ct); }
+            catch (OperationCanceledException) { try { p.Kill(entireProcessTree: true); } catch (InvalidOperationException) { } throw; }
             return p.ExitCode switch { 0 => true, 1 => false, _ => null };
         }
         catch (System.ComponentModel.Win32Exception) { return null; }

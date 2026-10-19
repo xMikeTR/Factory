@@ -85,4 +85,17 @@ public class RunLedgerFoldTests
 
         Assert.Equal(new FoldReport(1, 0, 2), report);
     }
+
+    [Fact]
+    public async Task A_fold_lock_that_is_never_released_is_an_error_naming_the_file_not_a_hang()
+    {
+        var registry = NewRegistry();
+        await RunLedgerStream.AppendAsync(registry, "run-a", [Row("s2-a", "task", "pipeline.jsonl")], CancellationToken.None);
+        var lockFile = Path.Combine(registry, "ledger", ".fold.lock");
+        await using var held = new FileStream(lockFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+        var e = await Assert.ThrowsAsync<IOException>(() => LedgerFold.RunAsync(registry, CancellationToken.None, TimeSpan.FromMilliseconds(150)));
+
+        Assert.Contains(".fold.lock", e.Message);
+    }
 }

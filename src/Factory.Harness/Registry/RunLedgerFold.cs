@@ -83,13 +83,13 @@ public sealed record FoldReport(int Streams, int Appended, int Unreadable);
 /// folding twice appends nothing.
 public static class LedgerFold
 {
-    public static async Task<FoldReport> RunAsync(string registryPath, CancellationToken ct)
+    public static async Task<FoldReport> RunAsync(string registryPath, CancellationToken ct, TimeSpan? lockTimeout = null)
     {
         var ledger = Path.Combine(registryPath, "ledger");
         var runs = Path.Combine(ledger, "runs");
         if (!Directory.Exists(runs)) return new FoldReport(0, 0, 0);
 
-        await using var gate = await AcquireAsync(Path.Combine(ledger, ".fold.lock"), ct);
+        await using var gate = await AcquireAsync(Path.Combine(ledger, ".fold.lock"), lockTimeout ?? TimeSpan.FromSeconds(30), ct);
         var files = Directory.GetFiles(runs, "*.jsonl").OrderBy(f => f, StringComparer.Ordinal).ToList();
         var rows = new List<RegistryEvent>();
         var unreadable = 0;
@@ -111,12 +111,16 @@ public static class LedgerFold
             .Select(s => Path.Combine(ledger, s!))
             .Where(File.Exists).Sum(p => File.ReadLines(p).Count(l => !string.IsNullOrWhiteSpace(l)));
 
-    private static async Task<FileStream> AcquireAsync(string path, CancellationToken ct)
+    /// Waits for the lock, but not forever: a fold that never ends (a stuck process holding the lock) is an error naming the file.
+    private static async Task<FileStream> AcquireAsync(string path, TimeSpan timeout, CancellationToken ct)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var giveUp = DateTime.UtcNow + timeout;
         while (true)
         {
             try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException e) when (DateTime.UtcNow >= giveUp)
+            { throw new IOException($"the ledger fold lock {path} is held by another process and was not released within {timeout.TotalSeconds:0.#}s; end that process (or delete the file if nothing is running) and fold again", e); }
             catch (IOException) { await Task.Delay(25, ct); }
         }
     }
