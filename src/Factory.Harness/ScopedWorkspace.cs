@@ -473,17 +473,15 @@ public sealed class ScopedWorkspace(
         if (Path.IsPathRooted(path)) { error = $"DENIED: {path} is outside reference {key}"; return false; }
         var rel = Normalise(path);
         full = Path.GetFullPath(Path.Combine(root, rel));
-        var real = Path.GetFullPath((File.Exists(full) || Directory.Exists(full)
-            ? (File.ResolveLinkTarget(full, returnFinalTarget: true) ?? Directory.ResolveLinkTarget(full, returnFinalTarget: true))?.FullName : null) ?? full);
         var ok = (full + Path.DirectorySeparatorChar).StartsWith(root, StringComparison.Ordinal)
-                 && (real + Path.DirectorySeparatorChar).StartsWith(RealRoot(root), StringComparison.Ordinal)
+                 && (RealPath(full) + Path.DirectorySeparatorChar).StartsWith(RealRoot(root), StringComparison.Ordinal)
                  && rel != ".git" && !rel.StartsWith(".git/");
         error = ok ? "" : $"DENIED: {path} is outside reference {key}";
         return ok;
     }
 
     /// Where `full` ends up after every link on its way is followed, component by component. Components that do not exist yet are kept as written.
-    private static string RealPath(string full)
+    internal static string RealPath(string full)
     {
         var path = Path.GetFullPath(full);
         var cur = Path.GetPathRoot(path)!;
@@ -497,7 +495,7 @@ public sealed class ScopedWorkspace(
     }
 
     private static string RealRoot(string root) =>
-        (Directory.ResolveLinkTarget(root.TrimEnd(Path.DirectorySeparatorChar), returnFinalTarget: true)?.FullName ?? root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        RealPath(root.TrimEnd(Path.DirectorySeparatorChar)).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
 
     private bool TryResolve(string path, out string full, out string error)
     {

@@ -307,6 +307,22 @@ public class ScopedWorkspaceTests : IDisposable
     }
 
     [Fact]
+    public void A_symlinked_folder_inside_a_reference_cannot_lead_out_of_it()
+    {
+        var dir = Reference();
+        var outside = Directory.CreateTempSubdirectory("ref-outside-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "secret.txt"), "hidden");
+            Directory.CreateSymbolicLink(Path.Combine(dir, "linked"), outside);
+            var ws = WithReference(dir);
+            Assert.StartsWith("DENIED", ws.ReadReference("wpf", "linked/secret.txt"));
+            Assert.StartsWith("DENIED", ws.ListReference("wpf", "linked"));
+        }
+        finally { Directory.Delete(outside, recursive: true); }
+    }
+
+    [Fact]
     public void An_unknown_reference_key_is_refused()
     {
         Assert.StartsWith("ERROR", WithReference(Reference()).ReadReference("web", "Views/Calc.cs"));
