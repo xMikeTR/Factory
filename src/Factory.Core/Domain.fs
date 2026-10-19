@@ -61,6 +61,10 @@ type AcceptanceCriterion = { Id: string; Element: string; Text: string }
 /// and kind only; the path comes from whoever runs the build, so the handover is machine-independent.
 type Reference = { Key: string; Kind: string }
 
+/// A compiled agent contract (handover.yaml `contracts.agents`): the design agent it governs, the frozen policy
+/// file inside the handover and that file's hash16. The policy is whatever the team's compiler produced; S2 does not read it here.
+type AgentContract = { Agent: string; Policy: string; Hash: string }
+
 type Handover =
     { Id: string
       Digest: string
@@ -86,7 +90,11 @@ type Handover =
       /// the full suite runs at merge. Empty when the handover names none.
       LoopSpecs: string list
       /// Read-only references the build may read for parity and never writes; empty when the handover names none.
-      References: Reference list }
+      References: Reference list
+      /// Compiled contracts for the design's agents (handover.yaml `contracts`); empty when the handover has none.
+      Contracts: AgentContract list
+      /// Design agents (agents.json) that act on their own and have no compiled contract; empty when none, or when the handover lists no agents.
+      Uncovered: string list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

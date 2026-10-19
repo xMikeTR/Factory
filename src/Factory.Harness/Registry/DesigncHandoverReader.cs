@@ -73,6 +73,7 @@ public sealed class DesigncHandoverReader : IHandoverSource
         var criteria = Criteria(manifest, files, errors);
         var loopSpecs = LoopSpecs(manifest, errors);
         var references = References(manifest, errors);
+        var (contracts, uncovered) = Contracts(manifest, files, errors);
 
         if (errors.Count > 0) Reject(handoverDir, errors);
         return new Handover(
@@ -89,7 +90,9 @@ public sealed class DesigncHandoverReader : IHandoverSource
             Str(manifest, "design_version") is { } version ? FSharpOption<string>.Some(version) : FSharpOption<string>.None,
             Core.ToList(criteria),
             Core.ToList(loopSpecs),
-            Core.ToList(references));
+            Core.ToList(references),
+            Core.ToList(contracts),
+            Core.ToList(uncovered));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
@@ -107,6 +110,40 @@ public sealed class DesigncHandoverReader : IHandoverSource
             criteria.Add(new AcceptanceCriterion(id, element, files[rel]));
         }
         return criteria;
+    }
+
+    /// `contracts`: `{result, agents: {<agent id>: <policy path>}, uncontracted: [ids]}` (absent in an older handover). Each
+    /// policy must be a frozen file (so it was hash-checked above). `Uncovered` lists the agents in `agents.json` that act on
+    /// their own (any autonomy but `suggest`) with neither a policy nor a place in `uncontracted`.
+    private static (List<AgentContract>, List<string>) Contracts(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
+    {
+        var contracts = new List<AgentContract>();
+        var section = manifest.GetValueOrDefault("contracts") as Dictionary<object, object?>;
+        if (section?.GetValueOrDefault("agents") is Dictionary<object, object?> map)
+            foreach (var (k, v) in map)
+            {
+                var policy = v?.ToString();
+                if (policy is null || !files.TryGetValue(policy, out var text)) { errors.Add($"handover.yaml: the contract for {k} names '{policy}', which is not among the frozen files"); continue; }
+                contracts.Add(new AgentContract(k.ToString()!, policy, Hash16(text)));
+            }
+        var uncontracted = (section?.GetValueOrDefault("uncontracted") as List<object?> ?? []).Select(u => u?.ToString()).OfType<string>().ToHashSet();
+        var uncovered = new List<string>();
+        var agentsPath = Str(manifest, "agents");
+        if (agentsPath is not null && files.TryGetValue(agentsPath, out var agentsJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(agentsJson);
+                foreach (var a in doc.RootElement.GetProperty("agents").EnumerateArray())
+                {
+                    var id = a.GetProperty("id").GetString()!;
+                    var suggest = a.TryGetProperty("autonomy", out var au) && au.GetString() == "suggest";
+                    if (!suggest && !uncontracted.Contains(id) && !contracts.Any(c => c.Agent == id)) uncovered.Add(id);
+                }
+            }
+            catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"agents.json: {e.Message}"); }
+        }
+        return (contracts, uncovered);
     }
 
     /// `references`: `[{key, kind}]`, no paths. A key is a plain name and appears once.

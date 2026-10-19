@@ -90,7 +90,9 @@ try
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
             var handoverPath = Path.GetFullPath(await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token));
-            RequireReferences(Core.ParseHandover(await File.ReadAllTextAsync(handoverPath, cts.Token)), args, settings.RepoPath);
+            var parsed = Core.ParseHandover(await File.ReadAllTextAsync(handoverPath, cts.Token));
+            RequireReferences(parsed, args, settings.RepoPath);
+            RequireContracts(parsed, Environment.GetEnvironmentVariable("FACTORY_CONTRACTS"), Console.Error);
 
             // A new run for an item already over its token budget is refused (a resume of a started run is not new;
             // started means the workflow copied the handover, so a refused attempt's result.json does not count).
