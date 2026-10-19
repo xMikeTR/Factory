@@ -26,7 +26,7 @@ public sealed class TurnBudget(int maxToolCalls = 15, int warnAt = 12, IReadOnly
     /// Counts a call about to run. False when the budget is already spent: the call must not run.
     public bool TryAdmit(string tool)
     {
-        _admittedAt = _time.GetTimestamp();
+        Interlocked.Exchange(ref _admittedAt, _time.GetTimestamp());
         if (exempt?.Contains(tool) == true) return true;
         lock (_gate)
         {
@@ -40,7 +40,7 @@ public sealed class TurnBudget(int maxToolCalls = 15, int warnAt = 12, IReadOnly
     /// is over once the cap is. Null for exempt tools and for every other call.
     public string? Completed(string tool)
     {
-        if (idleLimit is { } limit && _time.GetElapsedTime(_admittedAt) >= limit) IdleHandoff = true;
+        if (idleLimit is { } limit && _time.GetElapsedTime(Interlocked.Read(ref _admittedAt)) >= limit) IdleHandoff = true;
         if (exempt?.Contains(tool) == true) return null;
         lock (_gate)
         {
