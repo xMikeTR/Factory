@@ -80,7 +80,8 @@ public sealed class ScopedWorkspace(
     TurnSignals signals,
     ICommandSandbox? sandbox = null,
     Func<CancellationToken, Task<string>>? qualityCheck = null,
-    IReadOnlyDictionary<string, string>? references = null)
+    IReadOnlyDictionary<string, string>? references = null,
+    TimeSpan? commandCap = null)
 {
     private readonly string _root = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
     private const int MaxReadChars = 200_000;
@@ -329,6 +330,14 @@ public sealed class ScopedWorkspace(
         return $"deleted {path}";
     }
 
+    /// How long one agent command may take. Anthropic's prompt cache lasts 5 minutes from the last model call
+    /// (PromptCache uses the default lifetime), so this leaves room for the call before and after.
+    public static readonly TimeSpan DefaultCommandCap = TimeSpan.FromMinutes(3);
+
+    private static string TimedOut(TimeSpan cap, string tail) =>
+        $"exit 124 (timed out after {cap.TotalSeconds:0} s, including any wait for a free slot)\n{tail}\n"
+        + "Commands that long are not run here: declare_done runs the verify checks outside your turn. Run a narrower command, or declare_done.";
+
     [Description("Run an allow-listed build or test command from the repository root, e.g. 'dotnet test tests/X'. Returns exit code and the output tail.")]
     public async Task<string> RunCommand([Description("the command line")] string command, CancellationToken ct = default)
     {
@@ -342,8 +351,20 @@ public sealed class ScopedWorkspace(
         if (sandbox is null)
             return "DENIED: no sandbox is attached to this workspace, so commands cannot run.";
 
-        var result = await sandbox.RunAsync(cmd, _root, TimeSpan.FromMinutes(10), new Dictionary<string, string>(), ct);
-        return $"exit {result.ExitCode}{(result.TimedOut ? " (timed out)" : "")}\n{result.Tail(6000)}";
+        // One deadline for the whole call, queueing for a sandbox slot and a flaky re-run included: the prompt cache
+        // goes cold if this call outlasts it, and the next model call then pays for the whole conversation again.
+        var cap = commandCap ?? DefaultCommandCap;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(cap);
+        try
+        {
+            var result = await sandbox.RunAsync(cmd, _root, cap, new Dictionary<string, string>(), deadline.Token);
+            return result.TimedOut ? TimedOut(cap, result.Tail(6000)) : $"exit {result.ExitCode}\n{result.Tail(6000)}";
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return TimedOut(cap, "");
+        }
     }
 
     /// Subcommands of `playwright-cli` an agent may run: drive and observe a page, nothing that installs, runs
