@@ -52,35 +52,43 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
         }
         else if (blocked.Length > 0)
         {
-            var ids = await NeedsDecisionIdsAsync(runId, blocked, ct);
-            var resolutions = await new RegistryNeedsDecisions(svc.Settings.RegistryPath).ResolutionsAsync(ct);
-            // A resolution naming an option the agent never offered answers nothing: the ND stays open.
-            var answered = blocked.Select(b => (b, Answer: resolutions.TryGetValue(ids[b.TaskId], out var r)
-                ? Core.AnswerDecision(ToNeedsDecision(b), r.Option!, r.Note!) : (FSharpResult<string, string>?)null)).ToList();
-            var open = answered.Where(a => a.Answer is not { IsOk: true }).ToList();
-            if (open.Count > 0)
-            {
-                foreach (var (b, answer) in open.Where(a => a.Answer is { IsError: true }))
-                    await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "resolution_rejected",
-                        payload: JsonSerializer.Serialize(new { id = ids[b.TaskId], reason = answer!.Value.ErrorValue }), teamId: b.TeamId, taskId: b.TaskId, ct: ct);
-                await context.SendMessageAsync(new RunFinished(runId, "parked",
-                    string.Join(",", open.Select(a => a.Answer is { IsError: true } bad ? $"{ids[a.b.TaskId]} ({bad.ErrorValue})" : ids[a.b.TaskId]))), cancellationToken: ct);
-                return;
-            }
-            var next = new List<DecisionAnswer>();
-            foreach (var (b, answer) in answered)
-            {
-                var r = resolutions[ids[b.TaskId]];
-                await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "resolved",
-                    payload: JsonSerializer.Serialize(new { id = r.Id, b.Question, b.Elements, r.Decision, r.Option, r.Note }), teamId: b.TeamId, taskId: b.TaskId, ct: ct);
-                next.Add(new DecisionAnswer(b.TaskId, r.Decision ?? r.Id, answer!.Value.ResultValue));
-            }
-            await RunWaveAsync(runId, index, next.ToArray(), context, ct);
+            if (await AnswerBlockedAsync(runId, blocked, context, ct) is not { } next) return;
+            await RunWaveAsync(runId, index, next, context, ct);
         }
         else
         {
             await context.SendMessageAsync(new WaveCompleted(runId, index), cancellationToken: ct);
         }
+    }
+
+    /// Asks the registry whether every blocked task's needs-decision has been answered with an option the agent offered.
+    /// If one has not, tells the run it is parked and returns null; otherwise logs the resolutions and returns the answers to rerun the wave with.
+    private async Task<DecisionAnswer[]?> AnswerBlockedAsync(string runId, BlockedTask[] blocked, IWorkflowContext context, CancellationToken ct)
+    {
+        var ids = await NeedsDecisionIdsAsync(runId, blocked, ct);
+        var resolutions = await new RegistryNeedsDecisions(svc.Settings.RegistryPath).ResolutionsAsync(ct);
+        // A resolution naming an option the agent never offered answers nothing: the ND stays open.
+        var answered = blocked.Select(b => (b, Answer: resolutions.TryGetValue(ids[b.TaskId], out var r)
+            ? Core.AnswerDecision(ToNeedsDecision(b), r.Option!, r.Note!) : (FSharpResult<string, string>?)null)).ToList();
+        var open = answered.Where(a => a.Answer is not { IsOk: true }).ToList();
+        if (open.Count > 0)
+        {
+            foreach (var (b, answer) in open.Where(a => a.Answer is { IsError: true }))
+                await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "resolution_rejected",
+                    payload: JsonSerializer.Serialize(new { id = ids[b.TaskId], reason = answer!.Value.ErrorValue }), teamId: b.TeamId, taskId: b.TaskId, ct: ct);
+            await context.SendMessageAsync(new RunFinished(runId, "parked",
+                string.Join(",", open.Select(a => a.Answer is { IsError: true } bad ? $"{ids[a.b.TaskId]} ({bad.ErrorValue})" : ids[a.b.TaskId]))), cancellationToken: ct);
+            return null;
+        }
+        var next = new List<DecisionAnswer>();
+        foreach (var (b, answer) in answered)
+        {
+            var r = resolutions[ids[b.TaskId]];
+            await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "resolved",
+                payload: JsonSerializer.Serialize(new { id = r.Id, b.Question, b.Elements, r.Decision, r.Option, r.Note }), teamId: b.TeamId, taskId: b.TaskId, ct: ct);
+            next.Add(new DecisionAnswer(b.TaskId, r.Decision ?? r.Id, answer!.Value.ResultValue));
+        }
+        return next.ToArray();
     }
 
     /// The ND id for each blocked task: the one already raised for the same question, or the next free one.
