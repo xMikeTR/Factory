@@ -1,4 +1,4 @@
-# factory-s2: System 2 (coding pipeline), workbook edition
+# factory-s2: coding pipeline
 
 > **Where to look:** [ARCHITECTURE.md](ARCHITECTURE.md) is the living map (container and module diagrams,
 > high-centrality modules, dated change log). New here? Open [docs/guide.html](docs/guide.html). Eval method and contract: [docs/evals/](docs/evals/).
@@ -19,8 +19,8 @@ correct are written in F#.
 
 ## Status
 
-`main` is clean, no git remote. Tests: Core 191/0 (`dotnet run --project tests/Factory.Core.Tests`),
-Integration 380/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse,
+Tests: Core 212/0 (`dotnet run --project tests/Factory.Core.Tests`),
+Integration 537/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse,
 GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set.
 Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run
 has been made yet.
@@ -246,46 +246,7 @@ to record a manual check as done. Too few approvals parks the run (`parked: awai
 Opt-in live test (opens and closes a real PR):
 `FACTORY_LIVE_GITHUB=xMikeTR/pricing-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`
 
-## Build order
-
-This maps onto Phases 0, 2 and 4 of the implementation plan. Each step leaves you with
-something that works on its own.
-
-1. **Core in CI (day 1).** Add `Factory.Core` and its tests to the pipeline, then run
-   `validate` and `dispatch` on the plans your existing impl-plan skill produces today. This
-   answers the open question about whether impl-plan tasks can carry C4 element IDs and `writes`,
-   using real data.
-2. **Phase 0 spike: get the MAF code compiling.** Work through the `// VERIFY` markers:
-   - the executor `[MessageHandler]` style and its source generator;
-   - `AddEdge<T>` with conditions;
-   - `RequestPort` round-trips, including `DataAs<T>`;
-   - the function-invocation middleware signature.
-
-   Tool governance is done: `AcsToolPolicy` (AGT `Microsoft.AgentGovernance` 5.0.0, exact pin)
-   evaluates `policies/s2/<role>.yaml` inside the ledger middleware. Each file needs a
-   `# source: hand-authored | mlang@<version>` header and `default_action: deny`; a bad file stops
-   the run. `FACTORY_TOOL_POLICY=allowlist` falls back to the in-code list; `FACTORY_POLICY_DIR`
-   points at mlang output. Note AGT 5.0.0 conditions: `in [..]` lists never match, so write one
-   `tool_name == '...'` rule per tool.
-3. **One task, one team (Phase 2 slice).** Run T-001 from the example against the real repo,
-   using the dry-run PR mode. Check the ledger: task events should replay to `Passed`, and there
-   should be token counts on each turn and a verify row per attempt.
-4. **Resume drill.** Kill the process mid-turn and rerun with the same `--run-id`. The task
-   should resume from the ledger and finished work should not be redone. Then kill it during a
-   needs-decision wait and do the same.
-5. **Full example.** Run all four tasks. Wave 1 runs two teams in parallel, and the PR is opened
-   at the tier the F# policy chose (two approvals here: Quotes DB is high risk and T-004 has a
-   manual check).
-6. **Regeneration drill.** Delete `src/Quotes.Data`, rerun from the same handover, and require
-   every check to pass. Record the result in the ledger.
-7. **Swap in the real integrations as they land:**
-   - a Postgres `ILedger`, using `sql/ledger.sql`;
-   - Jev/Laya behind `IConfigurator`;
-   - a registry-backed `IHumanChannel` (needs-decision minted into the registry for System 1's
-     grill-me, merge approval from a GitHub webhook);
-   - MAF checkpointing, once the checkpoint-store decision is made.
-
-## Contracts to agree with System 1
+## Interfaces with designc
 
 - **`handover.json`** (`schemas/handover.schema.json`):
   - each element needs `codeAreas` and `risk`, which means `d.code` and `d.risk` on the elements
@@ -309,7 +270,7 @@ something that works on its own.
 - **Ledger kinds** (`LedgerKinds`) and the `task` event payload (`Json.encodeTaskEvent`). System 4
   queries depend on these.
 
-## Design decisions to review
+## Design decisions
 
 - **The team loop is a plain loop over the F# state machine, not a nested MAF workflow.** There
   are three reasons. The number of teams is only known after dispatch. MAF runs executors in
@@ -331,7 +292,7 @@ something that works on its own.
   - a changed file outside the declared writes, or under a protected path, blocks the merge in every mode.
 - **Self-seeded verify steps get `FACTORY_VERIFY_NS`,** so seeded data never collides between
   runs or attempts.
-- **The only change to the Phase 2 task-state DU is `Ready of Progress`.** The Queued state
+- **The only change to the task-state DU is `Ready of Progress`.** The Queued state
   becomes `Ready {0;0}`, so that turn and verify budgets survive escalation and resume.
 
 ## CI for heavy suites, then a bug-fix run
