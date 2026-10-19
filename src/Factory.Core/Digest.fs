@@ -82,121 +82,130 @@ module Digest =
             i.Id, s)
         |> Map.ofList
 
+    let private stateOf (st: Map<WorkItemId, DigestState>) (id: string) = st |> Map.tryFind (WorkItemId id) |> Option.defaultValue InBacklog
+
+    /// True when a fact matching `pred` was recorded after `ts`.
+    let private after (ev: (int64 * LedgerFact) list) (pred: LedgerFact -> bool) ts = ev |> List.exists (fun (t, f) -> t > ts && pred f)
+
+    /// Open needs-decisions and items a pipeline says wait for a person.
+    let private needsOf (ev: (int64 * LedgerFact) list) =
+        let resolved = ev |> List.choose (function _, NeedsDecisionResolved id -> Some id | _ -> None) |> Set.ofList
+        ev
+        |> List.choose (fun (ts, f) ->
+            match f with
+            | NeedsDecisionOpened(id, task, element, q) when not (resolved.Contains id) ->
+                Some { Item = task; Text = q; Ts = ts }
+            | ItemAwaitingHuman(item, reason) when not (after ev (function
+                                                              | ItemPulled i | ItemDone(i, _, _) -> i = item
+                                                              | ItemGate(i, _, _, _) -> i = item
+                                                              | _ -> false) ts) ->
+                let why = reason |> Option.map (fun r -> ": " + r) |> Option.defaultValue ""
+                Some { Item = Some item; Text = $"{item} is waiting for a person{why}"; Ts = ts }
+            | _ -> None)
+
+    /// The latest run of each declared gate, when it failed.
+    let private gateFailuresOf (items: WorkItem list) stateOf (ev: (int64 * LedgerFact) list) =
+        items
+        |> List.filter (fun i -> stateOf i.Id.Value = InProgress)
+        |> List.collect (fun i ->
+            i.DoneWhen.ToList
+            |> List.choose (function Gate g -> Some g | _ -> None)
+            |> List.choose (fun g ->
+                ev
+                |> List.filter (fun (_, f) -> match f with ItemGate(x, y, _, _) -> x = i.Id.Value && y = g | _ -> false)
+                |> List.tryLast
+                |> Option.bind (fun (ts, f) ->
+                    match f with
+                    | ItemGate(_, _, false, commit) ->
+                        let at = commit |> Option.map (fun c -> " at " + c7 c) |> Option.defaultValue ""
+                        Some { Item = i.Id.Value; Kind = GateFailed; Text = $"{i.Id.Value}: gate \"{g}\" failed{at}"; Ts = ts }
+                    | _ -> None)))
+
+    /// A done claim not on main, or with no evidence, is not done.
+    let private doneFailuresOf (items: WorkItem list) stateOf (ev: (int64 * LedgerFact) list) (onMain: string -> bool option) =
+        items
+        |> List.filter (fun i -> stateOf i.Id.Value = Finished)
+        |> List.choose (fun i ->
+            ev
+            |> List.filter (fun (_, f) -> match f with ItemDone(x, _, _) -> x = i.Id.Value | _ -> false)
+            |> List.tryLast
+            |> Option.bind (fun (ts, f) ->
+                match f with
+                | ItemDone(_, Some c, _) when onMain c = Some false ->
+                    Some { Item = i.Id.Value; Kind = NotOnMain; Text = $"{i.Id.Value}: Claimed merged, not on main ({c7 c})"; Ts = ts }
+                | ItemDone(_, _, []) -> Some { Item = i.Id.Value; Kind = NoEvidence; Text = $"{i.Id.Value}: Claimed done without evidence"; Ts = ts }
+                | _ -> None))
+
+    /// A pipeline's UI acceptance failure stands until the same item later passes a gate or is done.
+    let private acceptanceOf (ev: (int64 * LedgerFact) list) =
+        ev
+        |> List.choose (fun (ts, f) -> match f with AcceptanceFailed(t, ac, el, c) -> Some((t, ac), (ts, el, c)) | _ -> None)
+        |> List.fold (fun m (k, v) -> Map.add k v m) Map.empty
+        |> Map.toList
+        |> List.choose (fun ((task, ac), (ts, el, c)) ->
+            let cleared = after ev (function ItemDone(i, _, _) -> i = task | ItemGate(i, _, true, _) -> i = task | _ -> false) ts
+            if cleared then None
+            else Some { Item = task; Kind = AcceptanceFailure; Text = $"{task}: acceptance {ac} failed on {el} at {c7 c}"; Ts = ts })
+
+    /// Conflicts, unfinished dependencies, deferrals, budgets and the WIP limit.
+    let private waitingOf (items: WorkItem list) (st: Map<WorkItemId, DigestState>) stateOf (ev: (int64 * LedgerFact) list) limit =
+        let active = items |> List.filter (fun i -> stateOf i.Id.Value = InProgress)
+        let backlog = items |> List.filter (fun i -> stateOf i.Id.Value = InBacklog)
+        [ for it in backlog do
+              let id = it.Id.Value
+              for a in active do
+                  match Scheduler.conflict it a with
+                  | Some r -> yield { Item = Some id; Text = $"{id} conflicts with {a.Id.Value}: {describeConflict r}"; Ts = 0L }
+                  | None -> ()
+              for d in it.DependsOn |> List.filter (fun d -> Map.tryFind d st <> Some Finished) do
+                  yield { Item = Some id; Text = $"{id} depends on {d.Value}, which is not done"; Ts = 0L }
+              let deferred =
+                  ev
+                  |> List.filter (fun (_, f) -> match f with ConflictDeferred(x, _) -> x = id | _ -> false)
+                  |> List.tryLast
+              match deferred with
+              | Some(ts, ConflictDeferred(_, reason)) when not (after ev (function ItemPulled i -> i = id | _ -> false) ts) ->
+                  let why = reason |> Option.map (fun r -> ": " + r) |> Option.defaultValue ""
+                  yield { Item = Some id; Text = $"{id} was deferred{why}"; Ts = ts }
+              | _ -> ()
+          // designc's rule: the latest budget row per item decides; `within` or a later pull clears it.
+          // Never Needs or Failed.
+          let latestBudget =
+              ev
+              |> List.choose (fun (ts, f) -> match f with ItemBudgetReading(i, s, l, sp, r) -> Some(i, (ts, s, l, sp, r)) | _ -> None)
+              |> List.fold (fun m (i, v) -> Map.add i v m) Map.empty
+          for KeyValue(i, (ts, status, limitT, spentT, reason)) in latestBudget do
+              if status <> "within" && not (after ev (function ItemPulled x -> x = i | _ -> false) ts) then
+                  let amount =
+                      match spentT, limitT with
+                      | Some s, Some l -> $" ({s} of {l} tokens)"
+                      | _ -> ""
+                  let why = reason |> Option.map (fun r -> ": " + r) |> Option.defaultValue ""
+                  yield { Item = Some i; Text = $"{i} budget {status}{amount}{why}"; Ts = ts }
+          if not backlog.IsEmpty && active.Length >= limit then
+              let noun = if backlog.Length = 1 then "item waits" else "items wait"
+              yield { Item = None; Text = $"{active.Length} active against a WIP limit of {limit}: {backlog.Length} {noun}"; Ts = 0L } ]
+
     /// `onMain` maps a commit to Some true / Some false, or None when it could not be checked (then it is not judged).
     let compute (items: WorkItem list) (facts: (int64 * LedgerFact) list) (onMain: string -> bool option) (defaultWip: int) (lastLook: int64) : Digest =
         let ev = facts |> List.sortBy fst
         let st = states items ev
-        let stateOf (id: string) = st |> Map.tryFind (WorkItemId id) |> Option.defaultValue InBacklog
-        let after (pred: LedgerFact -> bool) ts = ev |> List.exists (fun (t, f) -> t > ts && pred f)
-        let resolved = ev |> List.choose (function _, NeedsDecisionResolved id -> Some id | _ -> None) |> Set.ofList
+        let state = stateOf st
 
-        let needs =
-            ev
-            |> List.choose (fun (ts, f) ->
-                match f with
-                | NeedsDecisionOpened(id, task, element, q) when not (resolved.Contains id) ->
-                    Some { Item = task; Text = q; Ts = ts }
-                | ItemAwaitingHuman(item, reason) when not (after (function
-                                                                  | ItemPulled i | ItemDone(i, _, _) -> i = item
-                                                                  | ItemGate(i, _, _, _) -> i = item
-                                                                  | _ -> false) ts) ->
-                    let why = reason |> Option.map (fun r -> ": " + r) |> Option.defaultValue ""
-                    Some { Item = Some item; Text = $"{item} is waiting for a person{why}"; Ts = ts }
-                | _ -> None)
-
-        let gateFailures =
-            items
-            |> List.filter (fun i -> stateOf i.Id.Value = InProgress)
-            |> List.collect (fun i ->
-                i.DoneWhen.ToList
-                |> List.choose (function Gate g -> Some g | _ -> None)
-                |> List.choose (fun g ->
-                    ev
-                    |> List.filter (fun (_, f) -> match f with ItemGate(x, y, _, _) -> x = i.Id.Value && y = g | _ -> false)
-                    |> List.tryLast
-                    |> Option.bind (fun (ts, f) ->
-                        match f with
-                        | ItemGate(_, _, false, commit) ->
-                            let at = commit |> Option.map (fun c -> " at " + c7 c) |> Option.defaultValue ""
-                            Some { Item = i.Id.Value; Kind = GateFailed; Text = $"{i.Id.Value}: gate \"{g}\" failed{at}"; Ts = ts }
-                        | _ -> None)))
-
-        let doneFailures =
-            items
-            |> List.filter (fun i -> stateOf i.Id.Value = Finished)
-            |> List.choose (fun i ->
-                ev
-                |> List.filter (fun (_, f) -> match f with ItemDone(x, _, _) -> x = i.Id.Value | _ -> false)
-                |> List.tryLast
-                |> Option.bind (fun (ts, f) ->
-                    match f with
-                    | ItemDone(_, Some c, _) when onMain c = Some false ->
-                        Some { Item = i.Id.Value; Kind = NotOnMain; Text = $"{i.Id.Value}: Claimed merged, not on main ({c7 c})"; Ts = ts }
-                    | ItemDone(_, _, []) -> Some { Item = i.Id.Value; Kind = NoEvidence; Text = $"{i.Id.Value}: Claimed done without evidence"; Ts = ts }
-                    | _ -> None))
-
-        // A pipeline's UI acceptance failure stands until the same item later passes a gate or is done.
-        let acceptance =
-            ev
-            |> List.choose (fun (ts, f) -> match f with AcceptanceFailed(t, ac, el, c) -> Some((t, ac), (ts, el, c)) | _ -> None)
-            |> List.fold (fun m (k, v) -> Map.add k v m) Map.empty
-            |> Map.toList
-            |> List.choose (fun ((task, ac), (ts, el, c)) ->
-                let cleared = after (function ItemDone(i, _, _) -> i = task | ItemGate(i, _, true, _) -> i = task | _ -> false) ts
-                if cleared then None
-                else Some { Item = task; Kind = AcceptanceFailure; Text = $"{task}: acceptance {ac} failed on {el} at {c7 c}"; Ts = ts })
-
-        let failed = gateFailures @ doneFailures @ acceptance
+        let failed = gateFailuresOf items state ev @ doneFailuresOf items state ev onMain @ acceptanceOf ev
         let failedItems = failed |> List.map (fun f -> f.Item) |> Set.ofList
 
         let doneNow =
             ev
             |> List.choose (fun (ts, f) ->
                 match f with
-                | ItemDone(i, c, _) when ts > lastLook && stateOf i = Finished && not (failedItems.Contains i) -> Some(i, c, ts)
+                | ItemDone(i, c, _) when ts > lastLook && state i = Finished && not (failedItems.Contains i) -> Some(i, c, ts)
                 | _ -> None)
 
         let limit = ev |> List.choose (function _, WipLimitChanged l -> Some l | _ -> None) |> List.tryLast |> Option.defaultValue defaultWip
-        let active = items |> List.filter (fun i -> stateOf i.Id.Value = InProgress)
-        let backlog = items |> List.filter (fun i -> stateOf i.Id.Value = InBacklog)
+        let active = items |> List.filter (fun i -> state i.Id.Value = InProgress)
 
-        let waiting =
-            [ for it in backlog do
-                  let id = it.Id.Value
-                  for a in active do
-                      match Scheduler.conflict it a with
-                      | Some r -> yield { Item = Some id; Text = $"{id} conflicts with {a.Id.Value}: {describeConflict r}"; Ts = 0L }
-                      | None -> ()
-                  for d in it.DependsOn |> List.filter (fun d -> Map.tryFind d st <> Some Finished) do
-                      yield { Item = Some id; Text = $"{id} depends on {d.Value}, which is not done"; Ts = 0L }
-                  let deferred =
-                      ev
-                      |> List.filter (fun (_, f) -> match f with ConflictDeferred(x, _) -> x = id | _ -> false)
-                      |> List.tryLast
-                  match deferred with
-                  | Some(ts, ConflictDeferred(_, reason)) when not (after (function ItemPulled i -> i = id | _ -> false) ts) ->
-                      let why = reason |> Option.map (fun r -> ": " + r) |> Option.defaultValue ""
-                      yield { Item = Some id; Text = $"{id} was deferred{why}"; Ts = ts }
-                  | _ -> ()
-              // designc's rule: the latest budget row per item decides; `within` or a later pull clears it.
-              // Never Needs or Failed.
-              let latestBudget =
-                  ev
-                  |> List.choose (fun (ts, f) -> match f with ItemBudgetReading(i, s, l, sp, r) -> Some(i, (ts, s, l, sp, r)) | _ -> None)
-                  |> List.fold (fun m (i, v) -> Map.add i v m) Map.empty
-              for KeyValue(i, (ts, status, limitT, spentT, reason)) in latestBudget do
-                  if status <> "within" && not (after (function ItemPulled x -> x = i | _ -> false) ts) then
-                      let amount =
-                          match spentT, limitT with
-                          | Some s, Some l -> $" ({s} of {l} tokens)"
-                          | _ -> ""
-                      let why = reason |> Option.map (fun r -> ": " + r) |> Option.defaultValue ""
-                      yield { Item = Some i; Text = $"{i} budget {status}{amount}{why}"; Ts = ts }
-              if not backlog.IsEmpty && active.Length >= limit then
-                  let noun = if backlog.Length = 1 then "item waits" else "items wait"
-                  yield { Item = None; Text = $"{active.Length} active against a WIP limit of {limit}: {backlog.Length} {noun}"; Ts = 0L } ]
-
-        { Needs = needs; Failed = failed; Done = doneNow; Waiting = waiting; WipLimit = limit; Active = active.Length }
+        { Needs = needsOf ev; Failed = failed; Done = doneNow; Waiting = waitingOf items st state ev limit; WipLimit = limit; Active = active.Length }
 
     /// What a desktop notification may react to: only Needs and Failed, so a new Done or Waiting row never pings.
     let signature (d: Digest) =
