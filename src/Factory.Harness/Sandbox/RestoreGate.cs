@@ -76,8 +76,10 @@ public static partial class RestoreGate
         using var doc = System.Text.Json.JsonDocument.Parse(lockfileJson);
         if (!doc.RootElement.TryGetProperty("packages", out var packages)) return [];
         return packages.EnumerateObject()
-            .Where(p => p.Value.TryGetProperty("hasInstallScript", out var h) && h.ValueKind == System.Text.Json.JsonValueKind.True)
-            .Select(p => p.Name[(p.Name.LastIndexOf("node_modules/", StringComparison.Ordinal) + "node_modules/".Length)..])
+            .Where(p => p.Value.ValueKind == System.Text.Json.JsonValueKind.Object
+                && p.Value.TryGetProperty("hasInstallScript", out var h) && h.ValueKind == System.Text.Json.JsonValueKind.True)
+            // A workspace package has no node_modules/ in its key: it is named by its path.
+            .Select(p => p.Name.LastIndexOf("node_modules/", StringComparison.Ordinal) is var at and >= 0 ? p.Name[(at + "node_modules/".Length)..] : p.Name)
             .Where(n => !allowed.Contains(n)).ToList();
     }
 
