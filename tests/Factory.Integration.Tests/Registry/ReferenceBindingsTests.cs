@@ -59,6 +59,17 @@ public sealed class ReferenceBindingsTests : IDisposable
     }
 
     [Fact]
+    public void A_path_reached_through_a_symlinked_folder_into_the_repo_is_still_inside_it()
+    {
+        Directory.CreateDirectory(Path.Combine(Repo, "refs"));
+        Directory.CreateSymbolicLink(Path.Combine(_root, "alias"), Repo);
+
+        var r = ReferenceBindings.Check([Wpf], new Dictionary<string, string> { ["wpf"] = Path.Combine(_root, "alias", "refs") }, Repo);
+
+        Assert.Contains(r.Errors, e => e.Contains("inside the repo"));
+    }
+
+    [Fact]
     public void A_missing_path_a_file_and_a_path_inside_the_repo_fail()
     {
         var file = Path.Combine(_root, "f.txt");

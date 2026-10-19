@@ -48,9 +48,7 @@ public static class ReferenceBindings
         return new Checked(paths, errors);
     }
 
-    private static string Real(string path)
-    {
-        var full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
-        return (Directory.Exists(full) ? Directory.ResolveLinkTarget(full, returnFinalTarget: true)?.FullName : null)?.TrimEnd(Path.DirectorySeparatorChar) ?? full;
-    }
+    /// Where the path ends up with every link on the way followed, a symlinked parent folder included.
+    private static string Real(string path) =>
+        Factory.Harness.ScopedWorkspace.RealPath(Path.GetFullPath(path)).TrimEnd(Path.DirectorySeparatorChar);
 }
