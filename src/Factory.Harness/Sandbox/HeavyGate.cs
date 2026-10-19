@@ -45,12 +45,12 @@ public sealed class HeavyGate(int slots)
 /// never taken as evidence: it is re-run once with the machine to itself, and only a second
 /// timeout is reported (as one, exit 124). A command the repo's policy marks flaky (`quality.flaky`) gets the same single
 /// isolated re-run after a plain failure; the second answer stands, and `onFlakyRetry` is told so the retry is never hidden.
-public sealed class GatedSandboxFactory(ISandboxFactory inner, HeavyGate gate, Func<string, bool>? isFlaky = null, Action<string>? onFlakyRetry = null) : ISandboxFactory
+public sealed class GatedSandboxFactory(ISandboxFactory inner, HeavyGate gate, Func<string, bool>? isFlaky = null, Func<string, Task>? onFlakyRetry = null) : ISandboxFactory
 {
     public async Task<ICommandSandbox> ForTeamAsync(string teamId, string worktree, CancellationToken ct) =>
         new GatedSandbox(await inner.ForTeamAsync(teamId, worktree, ct), gate, isFlaky, onFlakyRetry);
 
-    private sealed class GatedSandbox(ICommandSandbox sandbox, HeavyGate gate, Func<string, bool>? isFlaky, Action<string>? onFlakyRetry) : ICommandSandbox
+    private sealed class GatedSandbox(ICommandSandbox sandbox, HeavyGate gate, Func<string, bool>? isFlaky, Func<string, Task>? onFlakyRetry) : ICommandSandbox
     {
         public string Kind => sandbox.Kind;
         public IReadOnlyList<string>? RestoreRefusal => sandbox.RestoreRefusal;
@@ -63,7 +63,7 @@ public sealed class GatedSandboxFactory(ISandboxFactory inner, HeavyGate gate, F
                 result = await sandbox.RunAsync(command, workdir, timeout, env, ct);
             var retry = result.TimedOut || (result.ExitCode != 0 && isFlaky?.Invoke(command) == true);
             if (!retry) return result;
-            if (!result.TimedOut) onFlakyRetry?.Invoke(command);
+            if (!result.TimedOut && onFlakyRetry is not null) await onFlakyRetry(command);
 
             await using (await gate.EnterExclusiveAsync(ct))
                 return await sandbox.RunAsync(command, workdir, timeout, env, ct);
