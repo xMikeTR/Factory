@@ -758,18 +758,27 @@ internal sealed class TaskLoop(
     private Task<bool> CommitAsync(CancellationToken ct) =>
         svc.Git.CommitAllAsync(worktree, $"{_taskId}: {task.Title}\n\nfactory-run: {runId}\nfactory-team: {_teamId}", ct);
 
-    private ScopedWorkspace Workspace(TurnSignals signals, Factory.Harness.Sandbox.ICommandSandbox? sandbox, IEnumerable<PathPattern> writable) =>
+    private ScopedWorkspace Workspace(TurnSignals signals, Factory.Harness.Sandbox.ICommandSandbox? sandbox, IEnumerable<PathPattern> writableAreas) =>
+        Workspace(signals, sandbox, writableAreas.ToList());
+
+    private ScopedWorkspace Workspace(TurnSignals signals, Factory.Harness.Sandbox.ICommandSandbox? sandbox, IReadOnlyList<PathPattern> writable) =>
         new(worktree, writable.ToList(), handover.ProtectedPaths.ToList(), svc.Settings.CommandAllowList, signals, sandbox,
-            svc.Settings.QualityPolicy is { Mode: not QualityMode.Off } or { Ui: not null } ? QualityFindingsAsync : null,
+            svc.Settings.QualityPolicy is { Mode: not QualityMode.Off } or { Ui: not null } ? ct => FastFindingsAsync(writable, ct) : null,
             svc.Settings.References);
 
-    /// What `check_quality` shows the Implementer: the same ratchet verify applies (and the UI guard's findings), so nothing surprises it there.
-    private async Task<string> QualityFindingsAsync(CancellationToken ct)
+    /// What `check_quality` shows the Implementer: the same ratchet verify applies (and the UI guard's findings), so nothing surprises it there,
+    /// plus the paths changed outside the writable ones (which verify would revert). The parts run side by side under one 3 s budget; a part
+    /// that does not finish is named as not run and left to verify, so a slow check never holds the turn (and the prompt cache).
+    private Task<string> FastFindingsAsync(IReadOnlyList<PathPattern> writable, CancellationToken ct)
     {
         var policy = svc.Settings.QualityPolicy!;
-        var lines = policy.Mode == QualityMode.Off ? [] : await QualityLinesAsync(policy, ct);
-        lines.AddRange((await UiViolationsAsync(ct)).Select(UiGate.Line));
-        return string.Join("\n", lines);
+        var parts = new List<FastCheck.Part>
+        {
+            new("scope", async c => (await svc.Git.ChangedPathsAsync(worktree, c)).Where(p => !InScope(p, writable)).Select(p => $"- {p} is outside your write paths; verify reverts it").ToList()),
+            new("ui", async c => (await UiViolationsAsync(c)).Select(UiGate.Line).ToList()),
+        };
+        if (policy.Mode != QualityMode.Off) parts.Add(new("quality", async c => await QualityLinesAsync(policy, c)));
+        return FastCheck.RunAsync(parts, FastCheck.DefaultBudget, ct).ContinueWith(t => t.Result == "no findings" ? "" : t.Result, TaskContinuationOptions.OnlyOnRanToCompletion);
     }
 
     private async Task<List<string>> QualityLinesAsync(QualityPolicy policy, CancellationToken ct) =>
