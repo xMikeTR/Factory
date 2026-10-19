@@ -25,6 +25,31 @@ public class ScopedWorkspaceTests : IDisposable
     }
 
     [Fact]
+    public void A_symlink_inside_the_workspace_cannot_lead_out_of_it()
+    {
+        var outside = Directory.CreateTempSubdirectory("outside-").FullName;
+        File.WriteAllText(Path.Combine(outside, "secret.txt"), "hidden");
+        Directory.CreateSymbolicLink(Path.Combine(_root, "link"), outside);
+        var ws = new ScopedWorkspace(_root, [PathPatternModule.createOrFail("**")], [], [], new TurnSignals());
+
+        Assert.StartsWith("DENIED", ws.ReadFile("link/secret.txt"));
+        Assert.StartsWith("DENIED", ws.WriteFile("link/new.txt", "x"));
+        Assert.False(File.Exists(Path.Combine(outside, "new.txt")));
+    }
+
+    [Fact]
+    public void Listings_leave_out_build_output_at_the_root_too()
+    {
+        foreach (var f in new[] { "bin/a.dll", "obj/b.dll", "node_modules/c.js", "src/bin/d.dll", "src/keep.cs", "bin.txt" })
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(_root, f))!);
+            File.WriteAllText(Path.Combine(_root, f), "x");
+        }
+        var listed = new ScopedWorkspace(_root, [], [], [], new TurnSignals()).ListFiles(".").Split('\n');
+        Assert.Equal(["bin.txt", "src/keep.cs"], listed);
+    }
+
+    [Fact]
     public async Task Without_a_sandbox_commands_are_refused()
     {
         var ws = new ScopedWorkspace(_root, [], [], ["printenv"], new TurnSignals());

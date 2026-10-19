@@ -187,8 +187,15 @@ public static class RegistryLedgerProjector
 
     private static string? DetailOf(string payload)
     {
-        using var doc = JsonDocument.Parse(payload);
-        return Prop(doc.RootElement, "detail")?.GetString();
+        using var doc = TryParse(payload);
+        return doc is null ? null : Prop(doc.RootElement, "detail")?.GetString();
+    }
+
+    /// A payload that is not JSON projects as if it had no fields, the way the turn readers treat it.
+    private static JsonDocument? TryParse(string payload)
+    {
+        try { return JsonDocument.Parse(payload); }
+        catch (JsonException) { return null; }
     }
 
     /// Debt the fitness ratchet let through: one row per element pair the code crosses with no relationship in the model,
@@ -198,7 +205,8 @@ public static class RegistryLedgerProjector
         var seen = new HashSet<(string, string)>();
         foreach (var e in run.Where(e => e.Kind == LedgerKinds.AsBuiltEdge && e.Payload is not null))
         {
-            using var doc = JsonDocument.Parse(e.Payload!);
+            using var doc = TryParse(e.Payload!);
+            if (doc is null) continue;
             if (Prop(doc.RootElement, "from")?.GetString() is not { } from || Prop(doc.RootElement, "to")?.GetString() is not { } to) continue;
             if (!seen.Add((from, to))) continue;
             yield return (e.Ts, Row(Pipeline, "asbuilt_edge", e, w =>
@@ -217,7 +225,8 @@ public static class RegistryLedgerProjector
         var seen = new HashSet<(string, string, string)>();
         foreach (var e in run.Where(e => e.Kind == LedgerKinds.UiAcceptanceFailed && e.Payload is not null && e.Element is not null))
         {
-            using var doc = JsonDocument.Parse(e.Payload!);
+            using var doc = TryParse(e.Payload!);
+            if (doc is null) continue;
             if (Prop(doc.RootElement, "ac")?.GetString() is not { } ac || Prop(doc.RootElement, "commit")?.GetString() is not { } commit) continue;
             if (!seen.Add((ac, e.Element!, commit))) continue;
             yield return (e.Ts, Row(Pipeline, "ui_acceptance_failed", e, w =>
@@ -254,8 +263,8 @@ public static class RegistryLedgerProjector
 
     private static string? CommandOf(string payload)
     {
-        using var doc = JsonDocument.Parse(payload);
-        return Prop(doc.RootElement, "command")?.GetString();
+        using var doc = TryParse(payload);
+        return doc is null ? null : Prop(doc.RootElement, "command")?.GetString();
     }
 
     /// TaskState case name -> designc task status.
@@ -272,7 +281,8 @@ public static class RegistryLedgerProjector
     private static RegistryEvent? NeedsDecision(LedgerEvent e)
     {
         if (e.Payload is null) return null;
-        using var doc = JsonDocument.Parse(e.Payload);
+        using var doc = TryParse(e.Payload);
+        if (doc is null) return null;
         var p = doc.RootElement;
         if (Prop(p, "id")?.GetString() is not { } id || Prop(p, "question")?.GetString() is not { } question) return null;
         var element = Prop(p, "elements") is { ValueKind: JsonValueKind.Array } els && els.GetArrayLength() > 0 ? els[0].GetString() : e.Element;
@@ -303,7 +313,8 @@ public static class RegistryLedgerProjector
     private static RegistryEvent? Check(LedgerEvent e)
     {
         if (e.Payload is null || CommandOf(e.Payload) is not { } command) return null;
-        using var doc = JsonDocument.Parse(e.Payload);
+        using var doc = TryParse(e.Payload);
+        if (doc is null) return null;
         var p = doc.RootElement;
         return Row(Checks, "check", e, w =>
         {
