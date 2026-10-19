@@ -41,7 +41,11 @@ public sealed class AgentQaRunner(
     {
         var manifestPath = Path.Combine(integrationPath, TestDir, ManifestFile);
         if (!File.Exists(manifestPath)) return new QaRun([], [], false);
-        var manifest = System.Text.Json.JsonSerializer.Deserialize<QaManifest>(await File.ReadAllTextAsync(manifestPath, ct))!;
+        QaManifest? manifest;
+        try { manifest = System.Text.Json.JsonSerializer.Deserialize<QaManifest>(await File.ReadAllTextAsync(manifestPath, ct)); }
+        catch (System.Text.Json.JsonException) { manifest = null; }
+        // A manifest that cannot be read is no QA to repeat, the same as none: never a pass, never a crash.
+        if (manifest?.Tests is null || manifest.Requirements is null) return new QaRun([], [], false);
         await using var env = environment is null ? null : await environment(ct);
         return await MeasureAsync(env?.Sandboxes ?? sandboxes, env?.Env ?? new Dictionary<string, string>(), runId, integrationPath, manifest.Requirements,
             manifest.Tests.Select(t => new QaTestDecl(t.Id, t.Requirement, t.IsNew, t.Command)).ToList(), ct);

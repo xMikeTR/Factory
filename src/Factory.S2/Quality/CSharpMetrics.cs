@@ -5,8 +5,8 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Factory.S2.Quality;
 
-/// The C# adapter: syntax only, no compilation. Every method, constructor, operator, accessor-bodied
-/// property and local function becomes one `FunctionMetrics` in the neutral format `Quality` judges.
+/// The C# adapter: syntax only, no compilation. Every method, constructor, destructor and operator
+/// with a body (block or expression) becomes one `FunctionMetrics` in the neutral format `Quality` judges.
 /// Coverage is joined in afterwards (`Cobertura`), so this stays a pure function of the source text.
 public static class CSharpMetrics
 {
@@ -14,7 +14,7 @@ public static class CSharpMetrics
     {
         var root = CSharpSyntaxTree.ParseText(source).GetRoot();
         return root.DescendantNodes().OfType<BaseMethodDeclarationSyntax>()
-            .Where(m => m.Body is not null || (m as MethodDeclarationSyntax)?.ExpressionBody is not null || (m as ConstructorDeclarationSyntax)?.ExpressionBody is not null)
+            .Where(m => m.Body is not null || m.ExpressionBody is not null)
             .Select(m =>
             {
                 var span = m.GetLocation().GetLineSpan();

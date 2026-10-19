@@ -77,4 +77,13 @@ public class UiInventoryTests
 
         Assert.Equal(["ok"], Ids(items, UiItemKind.TestId));
     }
+
+    [Fact]
+    public void A_symlinked_folder_is_not_followed()
+    {
+        var root = Tree(("web/App.tsx", "<b data-testid=\"real\"/>"));
+        Directory.CreateSymbolicLink(Path.Combine(root, "web", "loop"), root);
+
+        Assert.Equal(["real"], Ids(Scan(root), UiItemKind.TestId));
+    }
 }

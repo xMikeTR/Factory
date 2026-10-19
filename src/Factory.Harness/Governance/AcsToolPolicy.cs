@@ -22,6 +22,7 @@ public sealed class AcsToolPolicy : IToolPolicy
 
     public static AcsToolPolicy Load(string directory)
     {
+        if (!Directory.Exists(directory)) throw new FactoryRejectedException("tool policies are missing", [$"{directory} does not exist; set FACTORY_POLICY_DIR to the folder holding the role policy files"]);
         var roles = new Dictionary<string, RolePolicy>();
         var errors = new List<string>();
         foreach (var path in Directory.EnumerateFiles(directory, "*.yaml").Order())
