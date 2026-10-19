@@ -359,6 +359,11 @@ let tests: (string * (unit -> unit)) list =
           match Json.decodeTaskEvent """{"type":"needs_decision","question":"q","source":"agent","elements":[]}""" with
           | Ok(NeedsDecisionRaised nd) -> check (nd.Options = [] && nd.Recommended = None) $"%A{nd}"
           | other -> check false $"%A{other}"
+      "needs-decision: a value of the wrong kind is a decode error, not a crash", fun () ->
+          let bad = [ """{"type":"needs_decision","question":"q","source":"agent","elements":[],"recommended":5}"""
+                      """{"type":"needs_decision","question":"q","source":"agent","elements":[],"options":["x"]}"""
+                      """{"type":"verify_completed","outcomes":[{"name":"a","durationMs":"slow"}],"stashedImpl":[]}""" ]
+          for text in bad do check (Result.isError (Json.decodeTaskEvent text)) text
       "needs-decision: options are checked before the question is accepted", fun () ->
           let errs os r = NeedsDecision.optionErrors os r
           equal [] (errs abOptions (Some "B")) "two options, known recommendation"
