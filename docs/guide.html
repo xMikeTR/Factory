@@ -21,13 +21,40 @@
 <main>
 <h1>designc and factory-s2: getting started</h1>
 <p class="note">designc (System 1) is the desktop app where you design. factory-s2 (System 2) is the pipeline that turns a frozen design into merged code. They share files, not a server: the registry folder and its ledger.</p>
-<nav><a href="#idea">The idea</a><a href="#s1">Using designc</a><a href="#s2">Running factory-s2</a><a href="#loop">The whole loop</a><a href="#safety">What is guarded</a><a href="#more">Where to read more</a></nav>
+<nav><a href="#idea">The idea</a><a href="#first">First 10 minutes</a><a href="#terms">Terms</a><a href="#s1">Using designc</a><a href="#s2">Running factory-s2</a><a href="#loop">The whole loop</a><a href="#safety">What is guarded</a><a href="#more">Where to read more</a></nav>
 
 <h2 id="idea">The idea</h2>
 <p>The design is the source of truth and code is a build output. Models propose; deterministic checks and people decide. An agent never writes anything without a policy check, and writes need a person's approval.</p>
 <pre>designc (you design)  ──freeze──►  handover  ──►  factory-s2 (plans, builds, verifies, merges)
         ▲                                                         │
         └──────────── ledger (append-only events) ◄───────────────┘</pre>
+
+<h2 id="first">First 10 minutes</h2>
+<p>No model, key or cost needed.</p>
+<ol>
+<li><code>npm install &amp;&amp; npm start</code>, then choose <strong>Open sample</strong>. This opens <code>sample-registry/</code>, a small pricing-engine design.</li>
+<li>Look at the status bar: the gate says <em>not ready</em>. In the Design sidebar, the blocking clauses are listed in the order to work them. The first one is marked <em>next</em>.</li>
+<li>Open <code>model/workspace.dsl</code> from the Explorer. Findings (DC000 to DC009) appear in the Problems panel as you read; click one to jump to the line.</li>
+<li>On a finding, try <strong>Ask the tutor</strong> to have it explained, or <strong>Record decision</strong> to write down how you will resolve it. Nothing is bound until you press Bind.</li>
+<li>Switch to <strong>Build</strong> and <strong>Improve</strong> to see what the sample ledger looks like once a pipeline has run.</li>
+<li>To see the other half, run the model-free factory-s2 commands in "Running factory-s2" below. They print the plan and the waves of tasks without calling anything.</li>
+</ol>
+<p class="note">The sample is copied from the repo; changes you make are written to the folder, so work on a copy if you want to keep it clean.</p>
+
+<h2 id="terms">Terms</h2>
+<table>
+<tr><th>Term</th><th>What it is for</th></tr>
+<tr><td>Registry</td><td>The folder that holds one design: model, decisions, requirements, scenarios, handovers and the ledger. Plain files, kept in git.</td></tr>
+<tr><td>Model</td><td>The Structurizr DSL file (<code>model/workspace.dsl</code>) with <code>d.*</code> properties that state design intent such as interaction type or code areas.</td></tr>
+<tr><td>Finding</td><td>A lint result from the design compiler. It says what looks wrong or unknown in the design.</td></tr>
+<tr><td>Decision</td><td>A recorded answer to a finding or a requirement. It moves from minted to checked to bound; only a person binds.</td></tr>
+<tr><td>Gate</td><td>The yes/no answer to "is this design ready to build?". It lists every clause still blocking.</td></tr>
+<tr><td>Handover</td><td>A frozen, never rewritten copy of the design that a pipeline builds from, including <code>elements.json</code> and a <code>BUILD.md</code> brief.</td></tr>
+<tr><td>Work item</td><td>A slice of a requirement tied to some elements. It is Done only with a passing gate at a commit on main.</td></tr>
+<tr><td>Ledger</td><td>Append-only event log shared by designc and the pipeline. It is how they talk without a server.</td></tr>
+<tr><td>Code map and drift</td><td>The as-built model extracted from code, compared with the design to show what differs.</td></tr>
+<tr><td>Escape</td><td>A defect that got through; Improve records which stage should have caught it.</td></tr>
+</table>
 
 <h2 id="s1">Using designc</h2>
 <h3>Install and open</h3>
