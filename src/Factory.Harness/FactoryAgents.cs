@@ -129,18 +129,19 @@ public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, 
             .Build();
 
         AIAgent agent = new ChatClientAgent(chat, instructions: instructions, name: scope.Role, tools: tools);
+        var refusals = new Dictionary<string, int>();
 
         // AGT governs through `policy` (AcsToolPolicy) inside this middleware, so its decisions are
         // ledgered with ours; AGT's own MAF extension (preview) is deliberately not used.
         return agent.AsBuilder()
-            .Use((a, context, next, ct) => GovernedToolCallAsync(scope, tier, budget, context, next, ct))
+            .Use((a, context, next, ct) => GovernedToolCallAsync(scope, tier, budget, refusals, context, next, ct))
             .Build();
     }
 
     /// Runs before every tool call of every agent. The governance seam: the policy decides, the
     /// ledger records the decision, and a denied call never reaches the tool.
     private async ValueTask<object?> GovernedToolCallAsync(
-        AgentScope scope, ModelTier tier, TurnBudget? budget,
+        AgentScope scope, ModelTier tier, TurnBudget? budget, Dictionary<string, int> refusals,
         FunctionInvocationContext context,
         Func<FunctionInvocationContext, CancellationToken, ValueTask<object?>> next,
         CancellationToken ct)
@@ -151,6 +152,7 @@ public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, 
         if (!decision.Allowed)
         {
             await LogToolCallAsync(scope, tier, name, args, "denied", decision.Reason, ct);
+            if (RefusedAgain(refusals, name, args)) context.Terminate = true;
             return $"DENIED by policy: {decision.Reason}. This tool is not available to you; do not retry it.";
         }
 
@@ -166,14 +168,30 @@ public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, 
         var result = await next(context, ct);
         var text = result switch { string str => str, JsonElement { ValueKind: JsonValueKind.String } j => j.GetString(), _ => null };
         if (text is not null && text.StartsWith("DENIED", StringComparison.Ordinal))
+        {
             await LogToolCallAsync(scope, tier, name, args, "denied", text, ct);
+            if (RefusedAgain(refusals, name, args)) context.Terminate = true;
+        }
         else
+        {
+            refusals.Clear();
             await LogToolCallAsync(scope, tier, name, args, "allowed", decision.Reason, ct);
+        }
 
         if (budget?.Completed(name) is { } note)
             result = text is not null ? text + note : result;
         if (budget?.Exhausted == true) context.Terminate = true;
         return result;
+    }
+
+    /// The same call refused this many times in a row ends the turn: the agent is not learning from the refusal.
+    public const int RepeatRefusalCap = 3;
+
+    private static bool RefusedAgain(Dictionary<string, int> refusals, string tool, Dictionary<string, object?> args)
+    {
+        var key = tool + "|" + string.Join(",", args.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}"));
+        refusals[key] = refusals.GetValueOrDefault(key) + 1;
+        return refusals[key] >= RepeatRefusalCap;
     }
 
     private ValueTask LogToolCallAsync(AgentScope scope, ModelTier tier, string tool, Dictionary<string, object?> args, string outcome, string? reason, CancellationToken ct) =>
