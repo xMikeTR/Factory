@@ -73,6 +73,11 @@ internal sealed class TaskLoop(
     private string? _approachNote;
     private Selection? _selection; // frozen at the approach turn; contents are read fresh each turn
     private string? _lastFailures;
+    private string? _handoff;
+
+    /// Tool time after which a turn is handed off (FACTORY_IDLE_HANDOFF_SECONDS, default 200; 0 turns it off). The prompt
+    /// cache lives five minutes from its last use, and the model's own time to answer counts against that too.
+    private static TimeSpan? IdleLimit => int.TryParse(Environment.GetEnvironmentVariable("FACTORY_IDLE_HANDOFF_SECONDS"), out var s) ? (s > 0 ? TimeSpan.FromSeconds(s) : null) : TimeSpan.FromSeconds(200);
     private string? _resolvedDecision;
     private bool _doneDeclared;
     private bool _lastVerifyFailed;
@@ -449,16 +454,21 @@ internal sealed class TaskLoop(
     {
         await using var sandbox = await svc.Sandboxes.ForTeamAsync(_teamId, worktree, ct);
         var workspace = Workspace(signals, sandbox, writable);
-        var budget = new TurnBudget(exempt: ExemptFromCap);
+        var budget = new TurnBudget(exempt: ExemptFromCap, idleLimit: IdleLimit);
         var agent = svc.Agents.Create(new AgentScope(runId, role, _teamId, _taskId), tier,
             Briefs.Prompt(prompt), role == Roles.Implementer ? workspace.ImplementerTools(svc.Settings.PlaywrightCli) : role == Roles.TestAuthor ? workspace.TestAuthorTools() : workspace.ExecutorTools(), budget);
-        var response = await agent.RunAsync(Brief(writable, await ContextPackAsync(ct)).Messages, cancellationToken: ct);
+        var brief = Brief(writable, await ContextPackAsync(ct));
+        _handoff = null; // the brief above carried it
+        var response = await agent.RunAsync(brief.Messages, cancellationToken: ct);
+        if (budget.IdleHandoff && !budget.Exhausted)
+            _handoff = $"Your previous turn was ended early because a tool call took over {budget.IdleLimit!.Value.TotalSeconds:0} s and the model's cache had expired. "
+                + "Your edits are on the worktree; read what you need again and carry on, do not start over.";
         foreach (var (id, reason) in signals.DeclaredEquivalents)
             if (_lastMutants.TryGetValue(id, out var claimed)) _claims[MutantKey(claimed)] = reason; // a mutant of the last run only
         // At the cap the turn counts as done: verify (or the red run) judges whatever is on the worktree.
         if (budget.Exhausted) signals.Capped = true;
         await LogTurnAsync("act", role, tier, response.Usage,
-            new { role, tool_calls = budget.Calls, browser = svc.Settings.BrowserVariant, files = signals.FilesWritten, done = signals.DoneSummary, capped = signals.Capped, needs_decision = signals.NeedsDecision?.Question, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
+            new { role, tool_calls = budget.Calls, handoff = budget.IdleHandoff ? "idle" : null, browser = svc.Settings.BrowserVariant, files = signals.FilesWritten, done = signals.DoneSummary, capped = signals.Capped, needs_decision = signals.NeedsDecision?.Question, returned_to_test_author = signals.ReturnedToTestAuthor }, ct);
     }
 
     /// The TestAuthor declared done: run its tests without the implementation. They must fail;
@@ -727,6 +737,7 @@ internal sealed class TaskLoop(
             ? _lastFailures
             : $"These changes were outside your writes and were reverted: {_reverted}\n\n{_lastFailures}".TrimEnd();
         if (_repair is not null) failures = $"{_repair}\n\n{failures}".TrimEnd();
+        if (_handoff is not null) failures = $"{_handoff}\n\n{failures}".TrimEnd();
         return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context);
     }
 

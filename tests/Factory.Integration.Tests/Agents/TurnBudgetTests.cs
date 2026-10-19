@@ -159,4 +159,43 @@ public class TurnBudgetTests
 
         Assert.Equal(4, _reads);
     }
+
+    private sealed class Clock : TimeProvider
+    {
+        private long _ticks;
+        public override long GetTimestamp() => _ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public void Advance(TimeSpan by) => _ticks += by.Ticks;
+    }
+
+    /// The prompt cache lives five minutes from its last use. A call that ate most of that leaves the conversation cold,
+    /// so the turn ends there: the worktree keeps the edits and a fresh turn starts from a small brief.
+    [Fact]
+    public async Task A_slow_tool_call_ends_the_turn_before_the_cache_goes_cold()
+    {
+        var clock = new Clock();
+        var calls = 0;
+        IList<AITool> tools = [AIFunctionFactory.Create(() => { if (++calls == 2) clock.Advance(TimeSpan.FromSeconds(210)); return "ok"; }, "run_command")];
+        var model = new ScriptedChatClient([Call("run_command", new { }), Call("run_command", new { }), Call("run_command", new { }), Say("never reached")]);
+        var budget = new TurnBudget(idleLimit: TimeSpan.FromSeconds(200), time: clock);
+
+        await new FactoryAgents(_ => model, new AllowAll(), new MemoryLedger()).Create(Scope, ModelTier.Standard, "implement", tools, budget).RunAsync("go");
+
+        Assert.Equal(2, calls);
+        Assert.True(budget.IdleHandoff);
+        Assert.False(budget.Exhausted); // a handoff is not a cap: the turn is not declared done
+    }
+
+    [Fact]
+    public async Task Calls_under_the_idle_limit_do_not_hand_off()
+    {
+        var clock = new Clock();
+        IList<AITool> tools = [AIFunctionFactory.Create(() => { clock.Advance(TimeSpan.FromSeconds(60)); return "ok"; }, "run_command")];
+        var model = new ScriptedChatClient([Call("run_command", new { }), Call("run_command", new { }), Say("done")]);
+        var budget = new TurnBudget(idleLimit: TimeSpan.FromSeconds(200), time: clock);
+
+        await new FactoryAgents(_ => model, new AllowAll(), new MemoryLedger()).Create(Scope, ModelTier.Standard, "implement", tools, budget).RunAsync("go");
+
+        Assert.False(budget.IdleHandoff);
+    }
 }
