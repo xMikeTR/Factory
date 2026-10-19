@@ -32,7 +32,7 @@ public static class BudgetPolicyFile
     public static BudgetPolicy Load(string repoPath)
     {
         var path = Path.Combine(repoPath, MergePolicyFile.RelativePath);
-        var b = (File.Exists(path) ? Yaml.Deserialize<Doc?>(File.ReadAllText(path)) : null)?.Budget ?? new Section();
+        var b = PolicyYaml.Read<Doc>(Yaml, path)?.Budget ?? new Section();
         var errors = new List<string>();
         if (b.ItemTokens is < 0) errors.Add("budget.itemTokens: must be >= 0");
         errors.AddRange((b.Items ?? []).Where(kv => kv.Value < 0).Select(kv => $"budget.items.{kv.Key}: must be >= 0"));

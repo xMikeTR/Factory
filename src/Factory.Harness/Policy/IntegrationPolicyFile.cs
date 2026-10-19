@@ -22,7 +22,7 @@ public static class IntegrationPolicyFile
     public static string? TestCommand(string repoPath)
     {
         var path = Path.Combine(repoPath, MergePolicyFile.RelativePath);
-        var command = (File.Exists(path) ? Yaml.Deserialize<Doc?>(File.ReadAllText(path)) : null)?.Integration?.TestCommand;
+        var command = PolicyYaml.Read<Doc>(Yaml, path)?.Integration?.TestCommand;
         if (command is not null && string.IsNullOrWhiteSpace(command))
             throw new FactoryRejectedException($"{path} is invalid", ["integration.testCommand is blank"]);
         return command?.Trim();

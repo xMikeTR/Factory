@@ -41,7 +41,7 @@ public static class MergePolicyFile
     public static MergePolicy Load(string repoPath, IReadOnlyDictionary<string, string> env)
     {
         var path = Path.Combine(repoPath, RelativePath);
-        var m = (File.Exists(path) ? Yaml.Deserialize<Doc?>(File.ReadAllText(path)) : null)?.Merge ?? new Section();
+        var m = PolicyYaml.Read<Doc>(Yaml, path)?.Merge ?? new Section();
         var d = Core.DefaultMergePolicy;
         var errors = new List<string>();
 

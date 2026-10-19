@@ -424,7 +424,7 @@ try
         }
 
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|ci-report  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
             return 2;
     }
 }
@@ -433,9 +433,9 @@ catch (FactoryRejectedException e)
     Console.Error.WriteLine(e.Message);
     return 1;
 }
-catch (ArgumentException e)
+catch (Exception e) when (e is ArgumentException or FormatException or OverflowException)
 {
-    // A missing or bad option, or an unknown setting: a usage error, not a crash.
+    // A missing or bad option (a number that is not one, too), or an unknown setting: a usage error, not a crash.
     Console.Error.WriteLine(e.Message);
     return 2;
 }
