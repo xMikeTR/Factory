@@ -13,7 +13,8 @@
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.15.0" />
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.15.0" />
     <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.15.0" />
-    <PackageVersion Include="Anthropic" Version="12.49.0" />
+    <PackageVersion Include="Anthropic" Version="12.57.0" />
+    <PackageVersion Include="Anthropic.Vertex" Version="0.6.0" />
     <!-- AGT: exact pin (the ACS runtime); its MAF extension is preview and not used. -->
     <PackageVersion Include="Microsoft.AgentGovernance" Version="[5.0.0]" />
     <PackageVersion Include="OpenTelemetry" Version="1.19.1" />

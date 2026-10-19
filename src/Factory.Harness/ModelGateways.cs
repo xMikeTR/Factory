@@ -16,7 +16,7 @@ namespace Factory.Harness;
 public sealed record ModelGateways(GatewayOptions Implementer, GatewayOptions Reviewer, Independence ReviewerIndependence)
 {
     private static readonly string[] Settings =
-        ["PROVIDER", "GATEWAY_URL", "GATEWAY_KEY", "MODEL_FRONTIER", "MODEL_STANDARD", "MODEL_SMALL", "MODEL_FAMILY"];
+        ["PROVIDER", "VERTEX_PROJECT", "VERTEX_REGION", "GATEWAY_URL", "GATEWAY_KEY", "MODEL_FRONTIER", "MODEL_STANDARD", "MODEL_SMALL", "MODEL_FAMILY"];
 
     public static ModelGateways FromEnvironment() =>
         FromEnvironment(Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
@@ -63,7 +63,7 @@ public sealed record ModelGateways(GatewayOptions Implementer, GatewayOptions Re
 
     private static string? FamilyOf(IReadOnlyDictionary<string, string> env, string name, GatewayOptions gateway) =>
         env.TryGetValue(name, out var v) && v.Length > 0 ? v
-        : gateway.Provider == ModelProvider.Anthropic ? "anthropic" : null;
+        : gateway.Provider is ModelProvider.Anthropic or ModelProvider.Vertex ? "anthropic" : null;
 
     public IChatClient ChatClientFor(string role, ModelTier tier) =>
         (role is Roles.Reviewer or Roles.Qa or Roles.UxJudge or Roles.Repro or Roles.Diagnosis ? Reviewer : Implementer).ChatClientFor(tier);
