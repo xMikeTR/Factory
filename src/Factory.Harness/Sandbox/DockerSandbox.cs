@@ -145,7 +145,8 @@ public sealed class DockerSandbox : ICommandSandbox
 
     public async ValueTask DisposeAsync()
     {
-        try { await DockerAsync(CancellationToken.None, "rm", "-f", _container); } catch (InvalidOperationException) { }
+        try { await DockerAsync(CancellationToken.None, "rm", "-f", _container); }
+        catch (InvalidOperationException e) { Console.Error.WriteLine($"warning: could not remove sandbox container {_container}; remove it with `docker rm -f {_container}`. {e.Message.Split('\n')[0]}"); }
     }
 
     private static string Sanitize(string s) => new(s.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray());
