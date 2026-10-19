@@ -117,4 +117,14 @@ public class AcsToolPolicyTests
 
         Assert.Contains(e.Errors, x => x.Contains(error));
     }
+
+    [Fact]
+    public void A_missing_policy_directory_is_a_rejected_setup_naming_it()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "s2-nopolicy-" + Guid.NewGuid().ToString("N"));
+
+        var e = Assert.Throws<FactoryRejectedException>(() => AcsToolPolicy.Load(missing));
+
+        Assert.Contains(e.Errors, x => x.Contains(missing));
+    }
 }

@@ -130,4 +130,17 @@ public class AgentQaRunnerTests
         Assert.Empty(again.Tests);
         Assert.False(again.TimedOut);
     }
+
+    [Fact]
+    public async Task A_follow_up_run_with_an_unreadable_manifest_has_nothing_to_measure()
+    {
+        var (h, runner, integration) = await SetUpAsync(new ScriptedChatClient());
+        using var _ = h;
+        Directory.CreateDirectory(Path.Combine(integration, AgentQaRunner.TestDir));
+        await File.WriteAllTextAsync(Path.Combine(integration, AgentQaRunner.TestDir, AgentQaRunner.ManifestFile), "{ not json");
+
+        var again = await runner.RerunAsync(TeamHarness.RunId, integration, default);
+
+        Assert.Empty(again.Tests);
+    }
 }

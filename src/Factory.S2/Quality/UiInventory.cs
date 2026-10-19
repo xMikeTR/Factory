@@ -43,7 +43,7 @@ public static class UiInventory
         while (pending.Count > 0)
         {
             var dir = pending.Pop();
-            foreach (var sub in Directory.EnumerateDirectories(dir).Where(d => !Vendored.Contains(System.IO.Path.GetFileName(d)))) pending.Push(sub);
+            foreach (var sub in Directory.EnumerateDirectories(dir).Where(d => !Vendored.Contains(System.IO.Path.GetFileName(d)) && !new DirectoryInfo(d).Attributes.HasFlag(FileAttributes.ReparsePoint))) pending.Push(sub);
             foreach (var file in Directory.EnumerateFiles(dir)) yield return (System.IO.Path.GetRelativePath(root, file).Replace('\\', '/'), file);
         }
     }

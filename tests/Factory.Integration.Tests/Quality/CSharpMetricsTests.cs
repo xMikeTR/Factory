@@ -52,4 +52,12 @@ public class CSharpMetricsTests
     {
         Assert.Contains(CSharpMetrics.Measure("src/Rater.cs", Source), f => f.Name == "Pricing.Rater..ctor");
     }
+
+    [Fact]
+    public void An_operator_with_an_expression_body_is_measured()
+    {
+        const string src = "public struct M { public static M operator +(M a, M b) => a; }";
+
+        Assert.Contains(CSharpMetrics.Measure("M.cs", src), f => f.Name == "M.op_+");
+    }
 }
