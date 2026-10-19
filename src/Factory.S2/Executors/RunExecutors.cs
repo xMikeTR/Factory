@@ -356,40 +356,49 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
             payload: JsonSerializer.Serialize(new { url, tier = verdict.Tier.ToString(), verdict.Reasons, blocks, deferred, lines, files = files.Count }),
             ct: cancellationToken);
 
+        await ApplyMergeActionAsync(msg.RunId, action, verdict, github, comments, url, branch, teams, context, cancellationToken);
+    }
+
+    /// Carries out what the merge policy decided: park, block, wait for approval, merge now or enable auto-merge.
+    private async Task ApplyMergeActionAsync(string runId, MergeAction action, MergeVerdict verdict, IApprovalComments? github,
+        IReadOnlyList<PrComment> comments, string url, string branch, List<Team> teams, IWorkflowContext context, CancellationToken cancellationToken)
+    {
+        var s = svc.Settings;
+        var blocks = verdict.Blocks.Select(Core.DescribeBlock).ToArray();
         switch (action)
         {
             case MergeAction.Blocked when verdict.Blocks.All(b => b.IsManualVerifyPending):
                 // Nothing failed: the run waits on a person doing a check, so it parks and says how to record it.
-                await context.SendMessageAsync(new RunFinished(msg.RunId, "parked", ManualWait(msg.RunId, teams, verdict.Blocks)), cancellationToken: cancellationToken);
+                await context.SendMessageAsync(new RunFinished(runId, "parked", ManualWait(runId, teams, verdict.Blocks)), cancellationToken: cancellationToken);
                 break;
             case MergeAction.Blocked:
-                await context.SendMessageAsync(new RunFinished(msg.RunId, "merge_blocked", string.Join("\n", blocks)), cancellationToken: cancellationToken);
+                await context.SendMessageAsync(new RunFinished(runId, "merge_blocked", string.Join("\n", blocks)), cancellationToken: cancellationToken);
                 break;
             case MergeAction.AwaitApproval approval when github is not null:
                 var a = Core.Approvals(approval.tier, approval.approvers, comments);
                 if (!a.Approved)
                 {
-                    await context.SendMessageAsync(new RunFinished(msg.RunId, "parked",
+                    await context.SendMessageAsync(new RunFinished(runId, "parked",
                         $"awaiting_approval {url} ({a.Missing} more /approve from {string.Join(", ", approval.approvers)})"), cancellationToken: cancellationToken);
                     break;
                 }
                 await github.MergeAsync(url, cancellationToken);
-                await svc.LogAsync(msg.RunId, "merge", LedgerKinds.Merge, outcome: "merged",
+                await svc.LogAsync(runId, "merge", LedgerKinds.Merge, outcome: "merged",
                     payload: JsonSerializer.Serialize(new { url, by = a.By, single_operator = a.SingleOperator }), ct: cancellationToken);
-                await context.SendMessageAsync(new RunFinished(msg.RunId, "merged", string.Join(", ", a.By)), cancellationToken: cancellationToken);
+                await context.SendMessageAsync(new RunFinished(runId, "merged", string.Join(", ", a.By)), cancellationToken: cancellationToken);
                 break;
             case MergeAction.AwaitApproval approval: // no PR host to read: ask a human
-                await context.SendMessageAsync(new MergeApprovalRequest(msg.RunId, url, approval.tier.ToString(), verdict.Reasons.ToArray()),
+                await context.SendMessageAsync(new MergeApprovalRequest(runId, url, approval.tier.ToString(), verdict.Reasons.ToArray()),
                     cancellationToken: cancellationToken);
                 break;
             case { IsMergeNow: true } when github is null:
                 // No PR host can merge: a person merges the branch and says so, so the run never claims a merge that did not happen.
-                await context.SendMessageAsync(new MergeApprovalRequest(msg.RunId, url, verdict.Tier.ToString(),
+                await context.SendMessageAsync(new MergeApprovalRequest(runId, url, verdict.Tier.ToString(),
                     [$"no pull request host: merge {branch} into {s.BaseBranch} yourself", .. verdict.Reasons]), cancellationToken: cancellationToken);
                 break;
             default: // MergeNow
                 await svc.PullRequests.EnableAutoMergeAsync(url, cancellationToken);
-                await context.SendMessageAsync(new RunFinished(msg.RunId, "auto_merge_enabled", url), cancellationToken: cancellationToken);
+                await context.SendMessageAsync(new RunFinished(runId, "auto_merge_enabled", url), cancellationToken: cancellationToken);
                 break;
         }
     }
