@@ -274,6 +274,115 @@ module TaskState =
         | ReviewGuided _ -> "ReviewGuided"
         | Abandon _ -> "Abandon"
 
+    let private fromReady (limits: Limits) (illegal: unit -> Result<TaskState, TransitionError>) (p: Progress) (ph: Phase) (event: TaskEvent) : Result<TaskState, TransitionError> =
+        match event with
+        | Abandon r -> Ok(Failed(Abandoned r, p))
+        | TurnStarted tier ->
+            if p.Turns >= limits.MaxTurns then Ok(Failed(TurnBudgetExhausted p.Turns, p))
+            else Ok(Running({ p with Turns = p.Turns + 1 }, ph, tier))
+        | NeedsDecisionRaised n -> Ok(Blocked(p, ph, n))
+        | TestsAuthored red ->
+            match ph with
+            | TestAuthor -> Ok(Ready(p, Implementer red))
+            | Implementer _ -> illegal ()
+        | ReturnedToTestAuthor _ ->
+            match ph with
+            | TestAuthor -> illegal ()
+            | Implementer _ -> Ok(Ready(p, TestAuthor))
+        | VerifyRequested ->
+            match ph with
+            | TestAuthor -> illegal ()
+            | Implementer _ ->
+                if p.VerifyAttempts >= limits.MaxVerifyAttempts then Ok(Failed(VerifyBudgetExhausted [], p))
+                else Ok(Verifying({ p with VerifyAttempts = p.VerifyAttempts + 1 }, ph))
+        | TurnEnded
+        | DecisionBound _
+        | VerifyCompleted _
+        | ReviewCompleted _
+        | ReviewAccepted _
+        | ReviewGuided _ -> illegal ()
+
+    let private fromRunning (illegal: unit -> Result<TaskState, TransitionError>) (p: Progress) (ph: Phase) (event: TaskEvent) : Result<TaskState, TransitionError> =
+        match event with
+        | Abandon r -> Ok(Failed(Abandoned r, p))
+        | TurnEnded -> Ok(Ready(p, ph))
+        | NeedsDecisionRaised n -> Ok(Blocked(p, ph, n))
+        | TurnStarted _
+        | DecisionBound _
+        | VerifyRequested
+        | VerifyCompleted _
+        | TestsAuthored _
+        | ReturnedToTestAuthor _
+        | ReviewCompleted _
+        | ReviewAccepted _
+        | ReviewGuided _ -> illegal ()
+
+    let private fromBlocked (illegal: unit -> Result<TaskState, TransitionError>) (p: Progress) (ph: Phase) (event: TaskEvent) : Result<TaskState, TransitionError> =
+        match event with
+        | Abandon r -> Ok(Failed(Abandoned r, p))
+        | DecisionBound _ -> Ok(Ready(p, ph))
+        | TurnStarted _
+        | TurnEnded
+        | NeedsDecisionRaised _
+        | VerifyRequested
+        | VerifyCompleted _
+        | TestsAuthored _
+        | ReturnedToTestAuthor _
+        | ReviewCompleted _
+        | ReviewAccepted _
+        | ReviewGuided _ -> illegal ()
+
+    let private fromVerifying (limits: Limits) (illegal: unit -> Result<TaskState, TransitionError>) (p: Progress) (ph: Phase) (event: TaskEvent) : Result<TaskState, TransitionError> =
+        match event with
+        | Abandon r -> Ok(Failed(Abandoned r, p))
+        | VerifyCompleted(green, stashed) ->
+            match ph with
+            | TestAuthor -> illegal ()
+            | Implementer red ->
+                let greenOk = not green.IsEmpty && green |> List.forall (fun o -> o.ExitCode = 0)
+                match VerifiedEvidence.Create(p.VerifyAttempts, green, red, stashed) with
+                | Ok ev -> Ok(Reviewing(p, ph, ev, None))
+                | Error _ when p.VerifyAttempts >= limits.MaxVerifyAttempts ->
+                    Ok(Failed(VerifyBudgetExhausted(if greenOk then stashed else green), p))
+                | Error _ when greenOk -> Ok(Ready(p, TestAuthor))
+                | Error _ -> Ok(Ready(p, ph))
+        | NeedsDecisionRaised n -> Ok(Blocked(p, ph, n)) // a check that could not answer (timed out twice) is not evidence either way
+        | ReturnedToTestAuthor problem -> // mutants survived a green verify: the tests are too weak for the change
+            if p.VerifyAttempts >= limits.MaxVerifyAttempts then
+                Ok(Failed(VerifyBudgetExhausted [ { Name = "mutation"; ExitCode = 1; DurationMs = 0L; OutputTail = problem } ], p))
+            else Ok(Ready(p, TestAuthor))
+        | TurnStarted _
+        | TurnEnded
+        | DecisionBound _
+        | VerifyRequested
+        | TestsAuthored _
+        | ReviewCompleted _
+        | ReviewAccepted _
+        | ReviewGuided _ -> illegal ()
+
+    let private fromReviewing (illegal: unit -> Result<TaskState, TransitionError>) (p: Progress) (ph: Phase) (ev: VerifiedEvidence) (parked: NeedsDecision option) (event: TaskEvent) : Result<TaskState, TransitionError> =
+        let exhausted = p.ReviewRounds >= maxReviewRounds
+        let passed (r: ReviewEvidence) = Ok(Passed(ev, r))
+        match event, parked with
+        | Abandon r, _ -> Ok(Failed(Abandoned r, p))
+        | ReviewCompleted r, None when not exhausted ->
+            let rounds = p.ReviewRounds + 1
+            match r.Blocking with
+            | [] -> passed { Advisory = r.Advisory; Accepted = []; Independence = r.Independence; Rounds = rounds; Note = None }
+            | blocking ->
+                let p' = { p with ReviewRounds = rounds; OpenFindings = blocking }
+                if rounds >= maxReviewRounds then Ok(Reviewing(p', ph, ev, None)) // a designer decides next
+                else
+                    match Review.route blocking with
+                    | ToTestAuthor -> Ok(Ready(p', TestAuthor))
+                    | ToImplementer -> Ok(Ready(p', ph))
+        | NeedsDecisionRaised n, None -> Ok(Reviewing(p, ph, ev, Some n)) // rounds ran out, or no usable review could be had
+        | ReviewAccepted(note, independence), Some _ ->
+            passed { Advisory = []; Accepted = p.OpenFindings; Independence = independence; Rounds = p.ReviewRounds; Note = Some note }
+        | ReviewGuided _, Some _ -> Ok(Ready((if exhausted then { p with ReviewRounds = 0 } else p), ph)) // guidance buys fresh rounds only once they ran out
+        | (ReviewCompleted _ | NeedsDecisionRaised _ | ReviewAccepted _ | ReviewGuided _), _
+        | (TurnStarted _ | TurnEnded | DecisionBound _ | VerifyRequested | VerifyCompleted _ | TestsAuthored _ | ReturnedToTestAuthor _), _ -> illegal ()
+
     /// The whole task lifecycle. Budgets and separation of duties are enforced here, not by
     /// agents or prompts. Spec: every test starting "state:".
     /// Transition table (anything not listed is illegal -> Error { State; Event }):
@@ -302,115 +411,16 @@ module TaskState =
     ///   Reviewing(.., Some _)      + ReviewGuided          -> Ready(p, ph); ReviewRounds reset only if they had run out
     let transition (limits: Limits) (state: TaskState) (event: TaskEvent) : Result<TaskState, TransitionError> =
         let illegal () = Error { State = name state; Event = eventName event }
-        // Outer match on state, inner on event, no wildcards: adding a case to either DU is a
+        // Outer match on state, inner on event (in the from* functions), no wildcards: adding a case to either DU is a
         // compile error here until the table says what it means.
         match state with
         | Passed _
         | Failed _ -> illegal ()
-        | Ready(p, ph) ->
-            match event with
-            | Abandon r -> Ok(Failed(Abandoned r, p))
-            | TurnStarted tier ->
-                if p.Turns >= limits.MaxTurns then Ok(Failed(TurnBudgetExhausted p.Turns, p))
-                else Ok(Running({ p with Turns = p.Turns + 1 }, ph, tier))
-            | NeedsDecisionRaised n -> Ok(Blocked(p, ph, n))
-            | TestsAuthored red ->
-                match ph with
-                | TestAuthor -> Ok(Ready(p, Implementer red))
-                | Implementer _ -> illegal ()
-            | ReturnedToTestAuthor _ ->
-                match ph with
-                | TestAuthor -> illegal ()
-                | Implementer _ -> Ok(Ready(p, TestAuthor))
-            | VerifyRequested ->
-                match ph with
-                | TestAuthor -> illegal ()
-                | Implementer _ ->
-                    if p.VerifyAttempts >= limits.MaxVerifyAttempts then Ok(Failed(VerifyBudgetExhausted [], p))
-                    else Ok(Verifying({ p with VerifyAttempts = p.VerifyAttempts + 1 }, ph))
-            | TurnEnded
-            | DecisionBound _
-            | VerifyCompleted _
-            | ReviewCompleted _
-            | ReviewAccepted _
-            | ReviewGuided _ -> illegal ()
-        | Running(p, ph, _) ->
-            match event with
-            | Abandon r -> Ok(Failed(Abandoned r, p))
-            | TurnEnded -> Ok(Ready(p, ph))
-            | NeedsDecisionRaised n -> Ok(Blocked(p, ph, n))
-            | TurnStarted _
-            | DecisionBound _
-            | VerifyRequested
-            | VerifyCompleted _
-            | TestsAuthored _
-            | ReturnedToTestAuthor _
-            | ReviewCompleted _
-            | ReviewAccepted _
-            | ReviewGuided _ -> illegal ()
-        | Blocked(p, ph, _) ->
-            match event with
-            | Abandon r -> Ok(Failed(Abandoned r, p))
-            | DecisionBound _ -> Ok(Ready(p, ph))
-            | TurnStarted _
-            | TurnEnded
-            | NeedsDecisionRaised _
-            | VerifyRequested
-            | VerifyCompleted _
-            | TestsAuthored _
-            | ReturnedToTestAuthor _
-            | ReviewCompleted _
-            | ReviewAccepted _
-            | ReviewGuided _ -> illegal ()
-        | Verifying(p, ph) ->
-            match event with
-            | Abandon r -> Ok(Failed(Abandoned r, p))
-            | VerifyCompleted(green, stashed) ->
-                match ph with
-                | TestAuthor -> illegal ()
-                | Implementer red ->
-                    let greenOk = not green.IsEmpty && green |> List.forall (fun o -> o.ExitCode = 0)
-                    match VerifiedEvidence.Create(p.VerifyAttempts, green, red, stashed) with
-                    | Ok ev -> Ok(Reviewing(p, ph, ev, None))
-                    | Error _ when p.VerifyAttempts >= limits.MaxVerifyAttempts ->
-                        Ok(Failed(VerifyBudgetExhausted(if greenOk then stashed else green), p))
-                    | Error _ when greenOk -> Ok(Ready(p, TestAuthor))
-                    | Error _ -> Ok(Ready(p, ph))
-            | NeedsDecisionRaised n -> Ok(Blocked(p, ph, n)) // a check that could not answer (timed out twice) is not evidence either way
-            | ReturnedToTestAuthor problem -> // mutants survived a green verify: the tests are too weak for the change
-                if p.VerifyAttempts >= limits.MaxVerifyAttempts then
-                    Ok(Failed(VerifyBudgetExhausted [ { Name = "mutation"; ExitCode = 1; DurationMs = 0L; OutputTail = problem } ], p))
-                else Ok(Ready(p, TestAuthor))
-            | TurnStarted _
-            | TurnEnded
-            | DecisionBound _
-            | VerifyRequested
-            | TestsAuthored _
-            | ReviewCompleted _
-            | ReviewAccepted _
-            | ReviewGuided _ -> illegal ()
-        | Reviewing(p, ph, ev, parked) ->
-            let exhausted = p.ReviewRounds >= maxReviewRounds
-            let passed (r: ReviewEvidence) = Ok(Passed(ev, r))
-            match event, parked with
-            | Abandon r, _ -> Ok(Failed(Abandoned r, p))
-            | ReviewCompleted r, None when not exhausted ->
-                let rounds = p.ReviewRounds + 1
-                match r.Blocking with
-                | [] -> passed { Advisory = r.Advisory; Accepted = []; Independence = r.Independence; Rounds = rounds; Note = None }
-                | blocking ->
-                    let p' = { p with ReviewRounds = rounds; OpenFindings = blocking }
-                    if rounds >= maxReviewRounds then Ok(Reviewing(p', ph, ev, None)) // a designer decides next
-                    else
-                        match Review.route blocking with
-                        | ToTestAuthor -> Ok(Ready(p', TestAuthor))
-                        | ToImplementer -> Ok(Ready(p', ph))
-            | NeedsDecisionRaised n, None -> Ok(Reviewing(p, ph, ev, Some n)) // rounds ran out, or no usable review could be had
-            | ReviewAccepted(note, independence), Some _ ->
-                passed { Advisory = []; Accepted = p.OpenFindings; Independence = independence; Rounds = p.ReviewRounds; Note = Some note }
-            | ReviewGuided _, Some _ -> Ok(Ready((if exhausted then { p with ReviewRounds = 0 } else p), ph)) // guidance buys fresh rounds only once they ran out
-            | (ReviewCompleted _ | NeedsDecisionRaised _ | ReviewAccepted _ | ReviewGuided _), _
-            | (TurnStarted _ | TurnEnded | DecisionBound _ | VerifyRequested | VerifyCompleted _ | TestsAuthored _ | ReturnedToTestAuthor _), _ -> illegal ()
+        | Ready(p, ph) -> fromReady limits illegal p ph event
+        | Running(p, ph, _) -> fromRunning illegal p ph event
+        | Blocked(p, ph, _) -> fromBlocked illegal p ph event
+        | Verifying(p, ph) -> fromVerifying limits illegal p ph event
+        | Reviewing(p, ph, ev, parked) -> fromReviewing illegal p ph ev parked event
 
     /// Rebuild a task's state from its ledger events. This is how a restarted runner resumes.
     let replay (limits: Limits) (events: TaskEvent seq) : Result<TaskState, TransitionError> =
