@@ -116,4 +116,28 @@ public class UiGuardLoopTests
         Assert.Contains(model.Requests.SelectMany(r => r).SelectMany(m => m.Contents).OfType<Microsoft.Extensions.AI.FunctionResultContent>(),
             r => r.Result?.ToString()!.Contains("data-testid \"export-btn\" existed and is gone") == true);
     }
+
+    // A command the agent runs can leave files outside its write paths; check_quality says so now, where verify would only revert them later.
+    [Fact]
+    public async Task check_quality_names_a_change_outside_the_write_paths_before_verify_reverts_it()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: add QuoteStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("write_file", new { path = Page, content = WithoutButton }),
+            Call("run_command", new { command = "touch stray.md" }),
+            Call("check_quality", new { }),
+            Call("declare_done", new { summary = "added" }), Say("done"),
+            Call("declare_done", new { summary = "again" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qualityPolicy: UiOn, commands: ["touch"]);
+        var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-T-001", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(wt, Page), WithButton);
+        await h.Services.Git.CommitAllAsync(wt, "page", CancellationToken.None);
+        await h.GitIn(h.Services.Git.IntegrationPath(TeamHarness.RunId), "merge", "--ff-only", GitWorkspace.TeamBranch(TeamHarness.RunId, "team-T-001"));
+
+        await RunAsync(h);
+
+        Assert.Contains(model.Requests.SelectMany(r => r).SelectMany(m => m.Contents).OfType<Microsoft.Extensions.AI.FunctionResultContent>(),
+            r => r.Result?.ToString()!.Contains("- stray.md is outside your write paths; verify reverts it") == true);
+    }
 }
