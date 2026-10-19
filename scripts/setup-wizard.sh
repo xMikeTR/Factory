@@ -96,6 +96,11 @@ case "$REPLY" in 2) add FACTORY_SANDBOX docker,local ;; 3) add FACTORY_SANDBOX l
 if grep -q 'FACTORY_SANDBOX=.*docker' < <(printf '%s\n' "${OUT[@]}") && ! command -v docker >/dev/null; then
   echo "  Note: docker is not installed or not on PATH."; fi
 
+echo; echo "Agent contracts: a handover frozen with designc compiled contracts lists them."
+echo "  1) warn (default): say which agents have no compiled contract   2) require: refuse to start without one   3) off"
+ask "Choose" 1
+case "$REPLY" in 2) add FACTORY_CONTRACTS require ;; 3) add FACTORY_CONTRACTS off ;; *) add FACTORY_CONTRACTS warn ;; esac
+
 echo; echo "Step 4 of 4: telemetry (optional)"
 if yes "Send traces to Langfuse?"; then
   ask "  Langfuse URL" "https://cloud.langfuse.com"; H="$REPLY"; add LANGFUSE_HOST "$H"

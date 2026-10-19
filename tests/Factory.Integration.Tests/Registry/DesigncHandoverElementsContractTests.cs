@@ -157,4 +157,72 @@ public class DesigncHandoverElementsContractTests
         await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"), Manifest("[{ kind: legacy }]"));
         await Assert.ThrowsAnyAsync<Exception>(() => new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None));
     }
+
+    private static async Task<Handover> LoadWithContracts(string contractsYaml, string agentsJson, string? policyText = "name: quote-bot\n")
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "s2-contracts-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(dir, "contracts"));
+        var elements = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "handover-elements-2.json"));
+        await File.WriteAllTextAsync(Path.Combine(dir, "elements.json"), elements);
+        await File.WriteAllTextAsync(Path.Combine(dir, "agents.json"), agentsJson);
+        var files = $"  - {{ path: \"elements.json\", hash: {DesigncHandoverReader.Hash16(elements)} }}\n  - {{ path: \"agents.json\", hash: {DesigncHandoverReader.Hash16(agentsJson)} }}\n";
+        if (policyText is not null)
+        {
+            await File.WriteAllTextAsync(Path.Combine(dir, "contracts", "quote-bot.yaml"), policyText);
+            files += $"  - {{ path: \"contracts/quote-bot.yaml\", hash: {DesigncHandoverReader.Hash16(policyText)} }}\n";
+        }
+        await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"),
+            $"id: 20261019-contracts\nelements: \"elements.json\"\nagents: \"agents.json\"\n{contractsYaml}files:\n{files}");
+        return await new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None);
+    }
+
+    private const string TwoAgents = "{\"schema\":\"designc.handover.agents/1\",\"agents\":[{\"id\":\"Q/Quote Bot\",\"name\":\"Quote Bot\",\"autonomy\":\"approve-writes\",\"tools\":[]},{\"id\":\"Q/Plain\",\"name\":\"Plain\",\"autonomy\":\"suggest\",\"tools\":[]}]}";
+
+    [Fact]
+    public async Task Contracts_are_read_and_a_suggest_agent_needs_none()
+    {
+        var h = await LoadWithContracts("contracts: {\"result\":\"contracts/result.json\",\"agents\":{\"Q/Quote Bot\":\"contracts/quote-bot.yaml\"},\"uncontracted\":[]}\n", TwoAgents);
+        var c = Assert.Single(h.Contracts);
+        Assert.Equal(("Q/Quote Bot", "contracts/quote-bot.yaml"), (c.Agent, c.Policy));
+        Assert.Empty(h.Uncovered);
+        Assert.Equal("Q/Quote Bot", FactoryCore.ParseHandover(FactoryCore.HandoverJson(h)).Contracts.Single().Agent); // survives the run-dir copy
+    }
+
+    [Fact]
+    public async Task An_agent_with_no_contract_is_uncovered_unless_listed_uncontracted_and_old_handovers_load()
+    {
+        var none = await LoadWithContracts("", TwoAgents, null);
+        Assert.Equal(["Q/Quote Bot"], none.Uncovered);
+        Assert.Empty(none.Contracts);
+        var listed = await LoadWithContracts("contracts: {\"uncontracted\":[\"Q/Quote Bot\"],\"agents\":{}}\n", TwoAgents, null);
+        Assert.Empty(listed.Uncovered);
+        Assert.Empty((await LoadExample()).Uncovered); // no agents.json: nothing to judge
+    }
+
+    [Fact]
+    public async Task A_policy_that_is_not_a_frozen_file_is_refused()
+    {
+        await Assert.ThrowsAnyAsync<Exception>(() => LoadWithContracts("contracts: {\"agents\":{\"Q/Quote Bot\":\"contracts/other.yaml\"}}\n", TwoAgents));
+    }
+
+    [Theory]
+    [InlineData("off", false, false)]
+    [InlineData("warn", false, true)]
+    [InlineData(null, false, true)]
+    [InlineData("require", true, false)]
+    public async Task FACTORY_CONTRACTS_decides_between_silence_a_warning_and_a_refusal(string? mode, bool refuses, bool warns)
+    {
+        var h = await LoadWithContracts("", TwoAgents, null);
+        var w = new StringWriter();
+        if (refuses) Assert.Throws<FactoryRejectedException>(() => Factory.S2.CliOptions.RequireContracts(h, mode, w));
+        else Factory.S2.CliOptions.RequireContracts(h, mode, w);
+        Assert.Equal(warns, w.ToString().Contains("Q/Quote Bot"));
+    }
+
+    [Fact]
+    public async Task Require_passes_when_every_agent_is_covered()
+    {
+        var h = await LoadWithContracts("contracts: {\"agents\":{\"Q/Quote Bot\":\"contracts/quote-bot.yaml\"}}\n", TwoAgents);
+        Factory.S2.CliOptions.RequireContracts(h, "require", new StringWriter());
+    }
 }

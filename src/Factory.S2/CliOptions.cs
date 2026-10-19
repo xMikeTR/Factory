@@ -36,6 +36,18 @@ public static class CliOptions
         if (errors.Count > 0) throw new FactoryRejectedException("read-only references rejected", errors.ToArray());
     }
 
+    /// FACTORY_CONTRACTS: `off`, `warn` (the default: say which agents have no contract) or `require` (refuse to start).
+    public static void RequireContracts(Handover handover, string? mode, TextWriter warn)
+    {
+        mode = string.IsNullOrWhiteSpace(mode) ? "warn" : mode.Trim().ToLowerInvariant();
+        if (mode is not ("off" or "warn" or "require")) throw new ArgumentException($"FACTORY_CONTRACTS must be off, warn or require, not '{mode}'");
+        if (mode == "off" || handover.Uncovered.IsEmpty) return;
+        var uncovered = handover.Uncovered.ToArray();
+        if (mode == "require")
+            throw new FactoryRejectedException("agent contracts required", uncovered.Select(a => $"{a} has no compiled contract: compile contracts in designc and freeze again").ToArray());
+        warn.WriteLine($"warning: no compiled contract for {string.Join(", ", uncovered)} (FACTORY_CONTRACTS=require refuses this)");
+    }
+
     public static string Required(Dictionary<string, string> opts, string name) =>
         opts.TryGetValue(name, out var v) ? v : throw new ArgumentException($"--{name} is required");
 
