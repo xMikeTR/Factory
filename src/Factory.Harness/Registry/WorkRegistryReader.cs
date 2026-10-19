@@ -43,20 +43,26 @@ public static class WorkRegistryReader
         var items = new List<WorkItem>();
         foreach (var d in drafts)
         {
-            var own = new List<string>();
-            if (d.Requirement is { } rq && !string.IsNullOrWhiteSpace(rq.Value))
-            {
-                if (!requirements.TryGetValue(rq.Value, out var elements)) own.Add($"{d.Id}: requirement {rq.Value} does not exist in requirements/.");
-                else own.AddRange(d.Elements.Where(e => !elements.Contains(e)).Select(e =>
-                    $"{d.Id}: {e} is not an element of requirement {rq.Value}. Add it to the requirement, or take it out of this item."));
-            }
-            own.AddRange(d.DependsOn.Where(x => !ids.Contains(x)).Select(x => $"{d.Id}: depends_on {x} is not a work item."));
-            var made = WorkItemModule.create(d);
-            if (made.IsError) own.AddRange(made.ErrorValue.Select(e => WorkErrorModule.describe(d.Id, e)));
-            if (own.Count > 0) problems.AddRange(own);
-            else items.Add(made.ResultValue);
+            var (item, own) = Check(d, requirements, ids);
+            if (item is null) problems.AddRange(own); else items.Add(item);
         }
         return new WorkRegistry(items, problems, await FactsAsync(registryPath, ct));
+    }
+
+    /// The item when nothing is wrong with it, else the problems (requirement, elements, dependencies, then WorkItem.create's own).
+    private static (WorkItem? Item, List<string> Problems) Check(WorkDraft d, Dictionary<string, HashSet<string>> requirements, HashSet<string> ids)
+    {
+        var own = new List<string>();
+        if (d.Requirement is { } rq && !string.IsNullOrWhiteSpace(rq.Value))
+        {
+            if (!requirements.TryGetValue(rq.Value, out var elements)) own.Add($"{d.Id}: requirement {rq.Value} does not exist in requirements/.");
+            else own.AddRange(d.Elements.Where(e => !elements.Contains(e)).Select(e =>
+                $"{d.Id}: {e} is not an element of requirement {rq.Value}. Add it to the requirement, or take it out of this item."));
+        }
+        own.AddRange(d.DependsOn.Where(x => !ids.Contains(x)).Select(x => $"{d.Id}: depends_on {x} is not a work item."));
+        var made = WorkItemModule.create(d);
+        if (made.IsError) own.AddRange(made.ErrorValue.Select(e => WorkErrorModule.describe(d.Id, e)));
+        return own.Count > 0 ? (null, own) : (made.ResultValue, own);
     }
 
     private static async Task<Dictionary<string, HashSet<string>>> RequirementsAsync(string registryPath, CancellationToken ct)
@@ -121,6 +127,14 @@ public static class WorkRegistryReader
         return facts.OrderBy(f => f.Item1).ToList();
     }
 
+    private static List<string> TextList(JsonElement r, string name) =>
+        r.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Array
+            ? v.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString()! : x.ToString()).ToList()
+            : [];
+
+    private static FSharpOption<long> OptLong(JsonElement r, string name) =>
+        r.TryGetProperty(name, out var v) && v.TryGetInt64(out var n) ? FSharpOption<long>.Some(n) : FSharpOption<long>.None;
+
     internal static (long, LedgerFact)? Fact(string line)
     {
         if (string.IsNullOrWhiteSpace(line)) return null;
@@ -144,22 +158,17 @@ public static class WorkRegistryReader
                     LedgerFact.NewItemGate(i, g, S("outcome") == "pass", O("commit")),
                 "item_done" when S("item") is { } i =>
                     LedgerFact.NewItemDone(i, O("commit"),
-                        ListModule.OfSeq(r.TryGetProperty("evidence", out var ev) && ev.ValueKind == JsonValueKind.Array
-                            ? ev.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString()! : x.ToString()).ToList()
-                            : new List<string>())),
+                        ListModule.OfSeq(TextList(r, "evidence"))),
                 "ui_acceptance_failed" when S("task") is { } k && S("ac") is { } ac =>
                     LedgerFact.NewAcceptanceFailed(k, ac, S("element") ?? "", S("commit") ?? ""),
                 "item_conflict_deferred" when S("item") is { } i => LedgerFact.NewConflictDeferred(i, O("reason")),
                 "item_recheck" when S("item") is { } i =>
                     LedgerFact.NewItemRecheck(i, r.TryGetProperty("stale", out var st) && st.ValueKind == JsonValueKind.True,
-                        ListModule.OfSeq(r.TryGetProperty("reasons", out var rs) && rs.ValueKind == JsonValueKind.Array
-                            ? rs.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString()! : x.ToString()).ToList()
-                            : new List<string>())),
+                        ListModule.OfSeq(TextList(r, "reasons"))),
                 "handover" when S("item") is { } i && S("handover") is { } h => LedgerFact.NewItemFrozen(i, h, S("revision") ?? ""),
                 "item_budget" when S("item") is { } i && S("status") is { } bs =>
                     LedgerFact.NewItemBudgetReading(i, bs,
-                        r.TryGetProperty("limit_tokens", out var lt) && lt.TryGetInt64(out var lv) ? FSharpOption<long>.Some(lv) : FSharpOption<long>.None,
-                        r.TryGetProperty("spent_tokens", out var st2) && st2.TryGetInt64(out var sv) ? FSharpOption<long>.Some(sv) : FSharpOption<long>.None,
+                        OptLong(r, "limit_tokens"), OptLong(r, "spent_tokens"),
                         O("reason")),
                 "escape" when S("id") is { } e => LedgerFact.NewEscapeRecorded(e, O("origin")),
                 "wip_limit_changed" when r.TryGetProperty("limit", out var l) && l.TryGetInt32(out var n) => LedgerFact.NewWipLimitChanged(n),
