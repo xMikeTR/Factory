@@ -21,6 +21,7 @@ using Factory.S2.Verify;
 // factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
 // factory-s2 verify --repo . --run-id <id> --check "T-001: <check name>" --by <you> [--outcome done|deferred] [--note "why"]   records a manual check; run again with --run-id <id> to reach the merge (Tiered: --by must be an approver; deferred needs --note)
+// factory-s2 run|rerun ... [--reference key=path]...   binds each read-only reference the handover names (a legacy app) to a folder outside the repo; agents read it with read_reference/list_reference and never write it
 // factory-s2 rerun --handover <h.json | dir> --plan plan.json --task T-001 [--k 3] --repo . [--base main]   k fresh attempts, no merge
 
 var cmd = args.FirstOrDefault() ?? "help";
@@ -64,6 +65,7 @@ try
             var settings = FactorySettings.FromEnvironment(
                 Required(opts, "repo"), opts.GetValueOrDefault("registry"),
                 repairOf is null ? opts.GetValueOrDefault("base") : GitWorkspace.IntegrationBranch(repairOf));
+            settings = settings with { References = ReferenceFlags(args).Bindings };
             var runId = opts.GetValueOrDefault("run-id") ?? (repairOf is null ? $"{DateTime.UtcNow:yyyyMMdd-HHmmss}" : $"{repairOf}-r1");
             Directory.CreateDirectory(settings.StateDir);
 
@@ -85,6 +87,7 @@ try
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
             var handoverPath = Path.GetFullPath(await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token));
+            RequireReferences(Core.ParseHandover(await File.ReadAllTextAsync(handoverPath, cts.Token)), args, settings.RepoPath);
 
             // A new run for an item already over its token budget is refused (a resume of a started run is not new;
             // started means the workflow copied the handover, so a refused attempt's result.json does not count).
@@ -352,6 +355,8 @@ try
 
             var handover = Core.ParseHandover(await File.ReadAllTextAsync(
                 await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token), cts.Token));
+            RequireReferences(handover, args, settings.RepoPath);
+            settings = settings with { References = ReferenceFlags(args).Bindings };
             var validation = Core.ValidatePlan(handover, await File.ReadAllTextAsync(Required(opts, "plan"), cts.Token));
             if (!validation.IsValid) throw new FactoryRejectedException("plan rejected", validation.Errors);
             var taskId = Required(opts, "task");
@@ -482,6 +487,20 @@ static PlanValidation Validate(Dictionary<string, string> opts) =>
     Core.ValidatePlan(
         Core.ParseHandover(File.ReadAllText(Required(opts, "handover"))),
         File.ReadAllText(Required(opts, "plan")));
+
+/// Every `--reference key=path` (the flag repeats, which ParseOptions cannot carry).
+static Factory.Harness.Registry.ReferenceBindings.Parsed ReferenceFlags(string[] a) =>
+    Factory.Harness.Registry.ReferenceBindings.Parse(
+        a.Select((x, i) => (x, i)).Where(t => t.x == "--reference" && t.i + 1 < a.Length).Select(t => a[t.i + 1]));
+
+/// A run whose handover names references starts only when each is bound to a folder outside the repo, and no other is.
+static void RequireReferences(Handover handover, string[] a, string repoPath)
+{
+    var flags = ReferenceFlags(a);
+    var checkedRefs = Factory.Harness.Registry.ReferenceBindings.Check(handover.References, flags.Bindings, repoPath);
+    var errors = flags.Errors.Concat(checkedRefs.Errors).ToList();
+    if (errors.Count > 0) throw new FactoryRejectedException("read-only references rejected", errors.ToArray());
+}
 
 static string Required(Dictionary<string, string> opts, string name) =>
     opts.TryGetValue(name, out var v) ? v : throw new ArgumentException($"--{name} is required");

@@ -11,7 +11,7 @@ public abstract class ToolPolicyContract
     protected abstract IToolPolicy Policy { get; }
 
     private static readonly string[] Tools =
-        ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "return_to_test_author"];
+        ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "read_reference", "list_reference", "return_to_test_author"];
 
     private static readonly Dictionary<string, string[]> MayCall = new()
     {

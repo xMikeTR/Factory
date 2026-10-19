@@ -37,9 +37,9 @@ public sealed class RoleAllowListPolicy : IToolPolicy
         [Roles.Planner] = ["read_file", "list_files", "submit_plan"],
         [Roles.TaskPlanner] = ["read_file", "list_files", "raise_needs_decision", "submit_approach"],
         [Roles.Reviewer] = ["read_file", "list_files", "submit_review", "confirm_equivalents"],
-        [Roles.TestAuthor] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "declare_equivalent"],
+        [Roles.TestAuthor] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "read_reference", "list_reference", "declare_equivalent"],
         [Roles.Qa] = ["read_file", "list_files", "write_file", "run_command", "submit_qa_tests"],
-        [Roles.Implementer] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "return_to_test_author", "check_quality", "playwright_cli"],
+        [Roles.Implementer] = ["read_file", "list_files", "write_file", "delete_file", "run_command", "declare_done", "raise_needs_decision", "read_reference", "list_reference", "return_to_test_author", "check_quality", "playwright_cli"],
         // The browser CLI is for roles that drive a page; never the planner, task planner, reviewer, test author or QA (nor the merge stage, which has no agent).
         [Roles.UxJudge] = ["submit_ux_scores"],
         [Roles.Repro] = ["read_file", "list_files", "playwright_cli", "submit_reproduction"],

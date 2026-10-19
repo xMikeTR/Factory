@@ -70,6 +70,7 @@ public sealed class DesigncHandoverReader : IHandoverSource
         var tokens = Tokens(manifest, files, errors);
         var criteria = Criteria(manifest, files, errors);
         var loopSpecs = LoopSpecs(manifest, errors);
+        var references = References(manifest, errors);
 
         if (errors.Count > 0) Reject(handoverDir, errors);
         return new Handover(
@@ -85,7 +86,8 @@ public sealed class DesigncHandoverReader : IHandoverSource
             tokens,
             Str(manifest, "design_version") is { } version ? FSharpOption<string>.Some(version) : FSharpOption<string>.None,
             Core.ToList(criteria),
-            Core.ToList(loopSpecs));
+            Core.ToList(loopSpecs),
+            Core.ToList(references));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
@@ -103,6 +105,21 @@ public sealed class DesigncHandoverReader : IHandoverSource
             criteria.Add(new AcceptanceCriterion(id, element, files[rel]));
         }
         return criteria;
+    }
+
+    /// `references`: `[{key, kind}]`, no paths. A key is a plain name and appears once.
+    private static List<Reference> References(Dictionary<string, object?> manifest, List<string> errors)
+    {
+        var refs = new List<Reference>();
+        foreach (var entry in List(manifest, "references").OfType<Dictionary<object, object?>>())
+        {
+            var key = entry.GetValueOrDefault("key")?.ToString();
+            var kind = entry.GetValueOrDefault("kind")?.ToString();
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(kind)) { errors.Add("handover.yaml: every reference needs key and kind"); continue; }
+            if (refs.Any(r => r.Key == key)) { errors.Add($"handover.yaml: reference '{key}' is listed twice"); continue; }
+            refs.Add(new Reference(key, kind));
+        }
+        return refs;
     }
 
     /// `loop_specs`: each must be one of the frozen `specs`, so the agent's loop never runs a file the gate did not freeze.

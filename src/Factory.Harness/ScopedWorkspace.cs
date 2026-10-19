@@ -79,7 +79,8 @@ public sealed class ScopedWorkspace(
     IReadOnlyList<string> commandAllowList,
     TurnSignals signals,
     ICommandSandbox? sandbox = null,
-    Func<CancellationToken, Task<string>>? qualityCheck = null)
+    Func<CancellationToken, Task<string>>? qualityCheck = null,
+    IReadOnlyDictionary<string, string>? references = null)
 {
     private readonly string _root = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
     private const int MaxReadChars = 200_000;
@@ -215,7 +216,13 @@ public sealed class ScopedWorkspace(
         AIFunctionFactory.Create(RunCommand, "run_command"),
         AIFunctionFactory.Create(DeclareDone, "declare_done"),
         AIFunctionFactory.Create(RaiseNeedsDecision, "raise_needs_decision"),
+        .. ReferenceTools(),
     ];
+
+    /// Read-only references (a legacy app being replaced): offered only when the run has some. No tool writes through them.
+    private AITool[] ReferenceTools() => references is { Count: > 0 }
+        ? [AIFunctionFactory.Create(ReadReference, "read_reference"), AIFunctionFactory.Create(ListReference, "list_reference")]
+        : [];
 
     /// The repro agent's tools: read the repo, drive a browser, submit the steps that reproduce the escape.
     /// It writes no file: the failing spec reaches `tests/acceptance/**` only through intake.
@@ -407,6 +414,55 @@ public sealed class ScopedWorkspace(
                    "If the task genuinely needs it, raise_needs_decision.";
         return null;
     }
+
+    [Description("Read a UTF-8 text file from a read-only reference (named in the brief). Path is relative to that reference's root. You can never write there.")]
+    public string ReadReference([Description("the reference key from the brief")] string key, [Description("path inside the reference")] string path)
+    {
+        if (!TryResolveReference(key, path, out var full, out var error)) return error;
+        if (!File.Exists(full)) return $"ERROR: {path} does not exist in reference {key}";
+        var text = File.ReadAllText(full);
+        return text.Length <= MaxReadChars ? text : text[..MaxReadChars] + "\n…(truncated)";
+    }
+
+    [Description("List files under a directory of a read-only reference, recursively, excluding .git, bin and obj. Max 500 entries.")]
+    public string ListReference([Description("the reference key from the brief")] string key, [Description("directory inside the reference, '.' for its root")] string directory)
+    {
+        if (!TryResolveReference(key, directory, out var full, out var error)) return error;
+        if (!Directory.Exists(full)) return $"ERROR: {directory} is not a directory in reference {key}";
+        var root = references![key].TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var files = Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(root, f).Replace('\\', '/'))
+            .Where(f => !f.StartsWith(".git/") && !f.Contains("/bin/") && !f.Contains("/obj/"))
+            .Order(StringComparer.Ordinal)
+            .Take(501)
+            .ToList();
+        return string.Join("\n", files.Take(500)) + (files.Count > 500 ? "\n…(more than 500 files; narrow the directory)" : "");
+    }
+
+    /// The path must stay inside the reference after symlinks are followed, so a link in a legacy repo cannot lead out of it.
+    private bool TryResolveReference(string key, string path, out string full, out string error)
+    {
+        full = "";
+        if (references is null || !references.TryGetValue(key, out var rootPath))
+        {
+            error = $"ERROR: no reference '{key}'" + (references is { Count: > 0 } ? $"; the keys are {string.Join(", ", references.Keys.Order())}" : "");
+            return false;
+        }
+        var root = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (Path.IsPathRooted(path)) { error = $"DENIED: {path} is outside reference {key}"; return false; }
+        var rel = Normalise(path);
+        full = Path.GetFullPath(Path.Combine(root, rel));
+        var real = Path.GetFullPath((File.Exists(full) || Directory.Exists(full)
+            ? (File.ResolveLinkTarget(full, returnFinalTarget: true) ?? Directory.ResolveLinkTarget(full, returnFinalTarget: true))?.FullName : null) ?? full);
+        var ok = (full + Path.DirectorySeparatorChar).StartsWith(root, StringComparison.Ordinal)
+                 && (real + Path.DirectorySeparatorChar).StartsWith(RealRoot(root), StringComparison.Ordinal)
+                 && rel != ".git" && !rel.StartsWith(".git/");
+        error = ok ? "" : $"DENIED: {path} is outside reference {key}";
+        return ok;
+    }
+
+    private static string RealRoot(string root) =>
+        (Directory.ResolveLinkTarget(root.TrimEnd(Path.DirectorySeparatorChar), returnFinalTarget: true)?.FullName ?? root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
 
     private bool TryResolve(string path, out string full, out string error)
     {

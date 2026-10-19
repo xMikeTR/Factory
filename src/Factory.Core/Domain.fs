@@ -57,6 +57,10 @@ type AcceptanceSpec = { Path: string; Hash: string }
 /// as Designc wrote it (a name or a `System/Container` path); `Text` is the frozen file.
 type AcceptanceCriterion = { Id: string; Element: string; Text: string }
 
+/// A read-only reference (handover.yaml `references`): the legacy app being replaced. The handover names it by key
+/// and kind only; the path comes from whoever runs the build, so the handover is machine-independent.
+type Reference = { Key: string; Kind: string }
+
 type Handover =
     { Id: string
       Digest: string
@@ -80,7 +84,9 @@ type Handover =
       AcceptanceCriteria: AcceptanceCriterion list
       /// The acceptance specs the agent's own loop runs (handover.yaml `loop_specs`): a subset of AcceptanceSpecs;
       /// the full suite runs at merge. Empty when the handover names none.
-      LoopSpecs: string list }
+      LoopSpecs: string list
+      /// Read-only references the build may read for parity and never writes; empty when the handover names none.
+      References: Reference list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

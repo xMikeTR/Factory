@@ -60,6 +60,13 @@ public static class Briefs
             sb.AppendLine("The key names the entity whose history the spec follows (e.g. the quote id): each key is checked on its own, so logs from many entities can share a file. Without a key, every event is one history.");
         }
 
+        if (!handover.References.IsEmpty)
+        {
+            sb.AppendLine().AppendLine("## Read-only references");
+            sb.AppendLine("These folders exist for parity only. Roles that build read them with `read_reference` (key, path) and `list_reference` (key, directory); you never write them, and nothing outside them is reachable that way:");
+            foreach (var r in handover.References) sb.AppendLine($"- `{r.Key}` ({r.Kind})");
+        }
+
         sb.AppendLine().AppendLine("## How this task is verified (fixed; you cannot change these)");
         foreach (var v in task.Verify)
         {

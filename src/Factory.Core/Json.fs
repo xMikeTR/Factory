@@ -122,7 +122,11 @@ module Json =
                 collect (arr "$" o "acceptanceCriteria") (fun p n ->
                     let co = obj p n
                     { Id = str p co "id"; Element = str p co "element"; Text = str p co "text" })
-              LoopSpecs = strs "$" o "loopSpecs" })
+              LoopSpecs = strs "$" o "loopSpecs"
+              References =
+                collect (arr "$" o "references") (fun p n ->
+                    let ro = obj p n
+                    { Key = str p ro "key"; Kind = str p ro "kind" }) })
 
     // ---------- plan ----------
 
@@ -228,7 +232,9 @@ module Json =
                    if not h.AcceptanceCriteria.IsEmpty then
                        "acceptanceCriteria",
                        JsonArray(h.AcceptanceCriteria |> List.map (fun c -> node [ "id", JsonValue.Create c.Id; "element", JsonValue.Create c.Element; "text", JsonValue.Create c.Text ]) |> Array.ofList)
-                   if not h.LoopSpecs.IsEmpty then "loopSpecs", strArr h.LoopSpecs ]
+                   if not h.LoopSpecs.IsEmpty then "loopSpecs", strArr h.LoopSpecs
+                   if not h.References.IsEmpty then
+                       "references", JsonArray(h.References |> List.map (fun r -> node [ "key", JsonValue.Create r.Key; "kind", JsonValue.Create r.Kind ]) |> Array.ofList) ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     // ---------- task events (the ledger payload a runner replays on resume) ----------

@@ -46,7 +46,10 @@ public sealed record FactorySettings(
     bool PlaywrightCli = false,
     /// Renders each element in each state and breakpoint and writes PNGs to $FACTORY_SCREENSHOT_DIR for one human
     /// review at freeze (FACTORY_SCREENSHOT_CMD); null is off. Never a gate.
-    string? ScreenshotCommand = null)
+    string? ScreenshotCommand = null,
+    /// Read-only references by handover key, each bound to an absolute folder outside the repo by `--reference key=path`
+    /// (validated against the handover before a run starts); null or empty is none.
+    IReadOnlyDictionary<string, string>? References = null)
 {
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
         RepoPath: Path.GetFullPath(repo),
