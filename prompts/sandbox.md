@@ -4,7 +4,12 @@
 Verify checks and run_command run in the factory runner container (docker/runner/Dockerfile).
 Plan, write and run only what it can run:
 - Tools: .NET 9 SDK (with the .NET 8 reference packs `p compile` needs), P 3.1.0 as `p`, JDK 17,
-  bash and coreutils. Nothing else is installed, and nothing can be installed.
+  Node 22 with npm (plus eslint, TypeScript and Playwright with its chromium), python3, bash and
+  coreutils. Nothing else is installed, and nothing can be installed.
+- A JavaScript or TypeScript repo is tested with its own runner: `node --test`, or the `npm test`
+  script it already has, not through a .NET harness (no Jint, no C# wrapper around JavaScript).
+  `npm ci` runs once in the restore window and only from a `package-lock.json`; a repo with no
+  dependencies needs no restore and runs offline.
 - There is no network. `dotnet restore` runs once before the checks with the network on, so
   NuGet packages referenced by the repository's projects are available; nothing else is.
 - There is no Docker daemon: Testcontainers, docker compose and anything else that starts a
