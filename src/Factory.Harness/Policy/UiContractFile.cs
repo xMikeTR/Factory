@@ -24,7 +24,7 @@ public static class UiContractFile
     {
         var path = Path.Combine(repoPath, RelativePath);
         if (!File.Exists(path)) return [];
-        var doc = Yaml.Deserialize<Doc?>(File.ReadAllText(path)) ?? new Doc();
+        var doc = PolicyYaml.Read<Doc>(Yaml, path) ?? new Doc();
         var errors = new List<string>();
         List<UiItem> Items(string section, List<string>? ids, UiItemKind kind)
         {

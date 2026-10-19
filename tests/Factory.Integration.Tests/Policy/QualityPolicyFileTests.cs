@@ -122,4 +122,12 @@ public class QualityPolicyFileTests
     {
         Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  ui:\n    globs: [\"../x\"]\n")));
     }
+
+    [Fact]
+    public void A_policy_file_that_is_not_yaml_is_a_rejected_policy_naming_the_file()
+    {
+        var e = Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality: [unclosed\n  mode: block\n")));
+
+        Assert.Contains("policy.yaml is invalid", e.Message.Split('\n')[0]);
+    }
 }

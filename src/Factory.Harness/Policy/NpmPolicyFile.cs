@@ -25,7 +25,7 @@ public static partial class NpmPolicyFile
     public static NpmPolicy Load(string repoPath)
     {
         var path = Path.Combine(repoPath, MergePolicyFile.RelativePath);
-        var rebuild = (File.Exists(path) ? Yaml.Deserialize<Doc?>(File.ReadAllText(path)) : null)?.Npm?.Rebuild ?? [];
+        var rebuild = PolicyYaml.Read<Doc>(Yaml, path)?.Npm?.Rebuild ?? [];
         var bad = rebuild.Where(n => !PackageName().IsMatch(n)).Select(n => $"npm.rebuild: '{n}' is not an npm package name").ToArray();
         if (bad.Length > 0) throw new FactoryRejectedException($"{path} is invalid", bad);
         return new NpmPolicy(rebuild);

@@ -33,7 +33,7 @@ public static partial class QaEnvFile
     {
         var path = Path.Combine(repoPath, RelativePath);
         if (!File.Exists(path)) return null;
-        var doc = Yaml.Deserialize<Doc?>(File.ReadAllText(path)) ?? new Doc();
+        var doc = PolicyYaml.Read<Doc>(Yaml, path) ?? new Doc();
         var errors = new List<string>();
         var services = new List<QaService>();
         foreach (var s in doc.Services ?? [])

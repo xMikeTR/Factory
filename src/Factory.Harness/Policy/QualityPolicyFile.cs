@@ -77,7 +77,7 @@ public static class QualityPolicyFile
     public static QualityPolicy Load(string repoPath)
     {
         var path = Path.Combine(repoPath, MergePolicyFile.RelativePath);
-        var q = (File.Exists(path) ? Yaml.Deserialize<Doc?>(File.ReadAllText(path)) : null)?.Quality ?? new Section();
+        var q = PolicyYaml.Read<Doc>(Yaml, path)?.Quality ?? new Section();
         var errors = new List<string>();
 
         var mode = Mode("mode", q.Mode, Default.Mode, errors);
