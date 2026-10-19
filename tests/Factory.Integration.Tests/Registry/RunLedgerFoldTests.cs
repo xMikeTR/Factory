@@ -71,4 +71,18 @@ public class RunLedgerFoldTests
         Assert.Equal(new FoldReport(1, 0, 1), report);
         Assert.False(File.Exists(Path.Combine(registry, "ledger", "pipeline.jsonl")));
     }
+
+    [Fact]
+    public async Task A_row_whose_id_or_kind_is_not_a_string_is_counted_not_a_crash()
+    {
+        var registry = NewRegistry();
+        var runs = Path.Combine(registry, "ledger", "runs");
+        Directory.CreateDirectory(runs);
+        await File.WriteAllTextAsync(Path.Combine(runs, "run-y.jsonl"),
+            """{"event_id":5,"kind":"task"}""" + "\n" + """{"event_id":"s2-y","kind":7}""" + "\n");
+
+        var report = await LedgerFold.RunAsync(registry, CancellationToken.None);
+
+        Assert.Equal(new FoldReport(1, 0, 2), report);
+    }
 }

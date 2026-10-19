@@ -64,8 +64,8 @@ public static class RunLedgerStream
             using var doc = JsonDocument.Parse(line);
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object
-                || !root.TryGetProperty("event_id", out var id) || id.GetString() is not { } eventId
-                || !root.TryGetProperty("kind", out var kind) || kind.GetString() is not { } k
+                || !root.TryGetProperty("event_id", out var id) || id.ValueKind != JsonValueKind.String || id.GetString() is not { } eventId
+                || !root.TryGetProperty("kind", out var kind) || kind.ValueKind != JsonValueKind.String || kind.GetString() is not { } k
                 || RegistryStreams.Of(k) is not { } stream) return null;
             return new RegistryEvent(stream, eventId, line);
         }
