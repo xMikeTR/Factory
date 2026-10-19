@@ -95,7 +95,10 @@ public sealed class JsonlLedger(string path) : ILedger
         while (await reader.ReadLineAsync(ct) is { } line)
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
-            var e = JsonSerializer.Deserialize<LedgerEvent>(line, Json);
+            LedgerEvent? e;
+            // A line cut short by a crash mid-append is skipped; it must not make the whole run unreadable.
+            try { e = JsonSerializer.Deserialize<LedgerEvent>(line, Json); }
+            catch (JsonException) { continue; }
             if (e is null || e.RunId != runId) continue;
             // TraceId defaults to the current trace, which is the writer's and never the reader's: a row with none keeps none.
             if (e.TraceId is not null && !HasTraceId(line)) e = e with { TraceId = null };

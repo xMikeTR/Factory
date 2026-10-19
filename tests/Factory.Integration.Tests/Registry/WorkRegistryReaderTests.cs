@@ -130,4 +130,14 @@ public class WorkRegistryReaderTests
         Assert.Empty(deferred.Pull);
         Assert.Contains("needs a re-check: Pricing moved", WorkDigestReport.RenderPullPlan(deferred));
     }
+
+    [Fact]
+    public async Task An_unparseable_requirement_file_is_named_in_the_problems()
+    {
+        var root = Registry(new() { ["requirements/REQ-1.yaml"] = "id: [unclosed\n", ["work/W-1.yaml"] = Work });
+
+        var reg = await WorkRegistryReader.ReadAsync(root, CancellationToken.None);
+
+        Assert.Contains(reg.Problems, p => p.StartsWith("requirements/REQ-1.yaml: not readable"));
+    }
 }

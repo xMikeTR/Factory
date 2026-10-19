@@ -31,4 +31,23 @@ public class JsonlLedgerTests
         }
         finally { File.Delete(path); }
     }
+
+    [Fact]
+    public async Task A_line_cut_short_by_a_crash_is_skipped_and_the_rest_still_read()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ledger-{Guid.NewGuid():N}.jsonl");
+        try
+        {
+            var ledger = new JsonlLedger(path);
+            await ledger.AppendAsync(new LedgerEvent("r1", "S2", "run", LedgerKinds.RunStarted));
+            await File.AppendAllTextAsync(path, "{\"run_id\":\"r1\",\"sys\n");
+            await ledger.AppendAsync(new LedgerEvent("r1", "S2", "run", LedgerKinds.RunAborted));
+
+            var kinds = new List<string>();
+            await foreach (var e in ledger.ReadAsync("r1")) kinds.Add(e.Kind);
+
+            Assert.Equal([LedgerKinds.RunStarted, LedgerKinds.RunAborted], kinds);
+        }
+        finally { File.Delete(path); }
+    }
 }
