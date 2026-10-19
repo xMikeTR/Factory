@@ -301,7 +301,7 @@ public sealed class ScopedWorkspace(
         if (!Directory.Exists(full)) return $"ERROR: {directory} is not a directory";
         var files = Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(_root, f).Replace('\\', '/'))
-            .Where(f => !f.StartsWith(".git/") && !f.Contains("/bin/") && !f.Contains("/obj/") && !f.StartsWith(".factory/"))
+            .Where(f => !IsHidden(f) && !f.StartsWith(".factory/"))
             .Order(StringComparer.Ordinal)
             .Take(501)
             .ToList();
@@ -453,7 +453,7 @@ public sealed class ScopedWorkspace(
         var root = references![key].TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         var files = Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(root, f).Replace('\\', '/'))
-            .Where(f => !f.StartsWith(".git/") && !f.Contains("/bin/") && !f.Contains("/obj/"))
+            .Where(f => !IsHidden(f))
             .Order(StringComparer.Ordinal)
             .Take(501)
             .ToList();
@@ -482,6 +482,20 @@ public sealed class ScopedWorkspace(
         return ok;
     }
 
+    /// Where `full` ends up after every link on its way is followed, component by component. Components that do not exist yet are kept as written.
+    private static string RealPath(string full)
+    {
+        var path = Path.GetFullPath(full);
+        var cur = Path.GetPathRoot(path)!;
+        foreach (var part in path[cur.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            cur = Path.Combine(cur, part);
+            FileSystemInfo info = Directory.Exists(cur) ? new DirectoryInfo(cur) : new FileInfo(cur);
+            if (info.Exists && info.ResolveLinkTarget(returnFinalTarget: true) is { } target) cur = target.FullName;
+        }
+        return cur;
+    }
+
     private static string RealRoot(string root) =>
         (Directory.ResolveLinkTarget(root.TrimEnd(Path.DirectorySeparatorChar), returnFinalTarget: true)?.FullName ?? root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
 
@@ -490,9 +504,15 @@ public sealed class ScopedWorkspace(
         full = Path.GetFullPath(Path.Combine(_root, Normalise(path)));
         var ok = (full + Path.DirectorySeparatorChar).StartsWith(_root, StringComparison.Ordinal) &&
                  !Normalise(path).StartsWith(".git/") && Normalise(path) != ".git";
+        // A link inside the worktree must not lead out of it: judge where the path really points.
+        ok = ok && (RealPath(full) + Path.DirectorySeparatorChar).StartsWith(RealRoot(_root), StringComparison.Ordinal);
         error = ok ? "" : $"DENIED: {path} is outside the workspace";
         return ok;
     }
+
+    /// A listing leaves out .git and build output at any depth, the root included (a folder named bin, obj or node_modules).
+    private static bool IsHidden(string rel) =>
+        rel.Split('/')[..^1].Any(d => d is ".git" or "bin" or "obj" or "node_modules");
 
     private static string Normalise(string path)
     {

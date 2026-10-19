@@ -61,6 +61,20 @@ public class RegistryLedgerProjectorTests
     }
 
     [Fact]
+    public void A_payload_that_is_not_json_projects_nothing_instead_of_failing_the_run()
+    {
+        var run = Run();
+        run.Add(At(40, new(RunId, "S2", "verify", LedgerKinds.NeedsDecision, Payload: "not json")));
+        run.Add(At(41, new(RunId, "S2", "verify", LedgerKinds.Verify, Decision: "D-0009", Outcome: "passed", Payload: "{broken")));
+        run.Add(At(42, new(RunId, "S2", "verify", LedgerKinds.AsBuiltEdge, Payload: "<<")));
+
+        var rows = RegistryLedgerProjector.Project(run, Handover);
+
+        Assert.DoesNotContain(rows, r => r.Line.Contains("D-0009"));
+        Assert.Equal(RegistryLedgerProjector.Project(Run(), Handover).Count, rows.Count);
+    }
+
+    [Fact]
     public void Every_row_validates_against_the_designc_schema_is_kept_by_its_gate_and_lands_in_its_kinds_stream()
     {
         foreach (var e in RegistryLedgerProjector.Project(Run(), Handover))
