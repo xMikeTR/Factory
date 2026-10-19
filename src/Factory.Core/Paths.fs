@@ -115,7 +115,7 @@ module PathPattern =
 
     /// Could any file match both patterns?
     ///
-    /// RESOURCES.md §1. Spec: tests "paths: overlap".
+    /// Spec: tests "paths: overlap".
     ///   - exact vs exact: same segments
     ///   - exact vs glob: does the glob match the exact path? (precise)
     ///   - glob vs glob: walk both segment lists together; `**` matches any number of segments,
@@ -155,7 +155,7 @@ module PathPattern =
 
     /// Is every file matched by `inner` also matched by `outer`?
     ///
-    /// RESOURCES.md §1. Spec: tests "paths: containment".
+    /// Spec: tests "paths: containment".
     ///   Here the safe direction is the opposite: under-approximate. A false "no" rejects a valid
     ///   plan (the planner retries); a false "yes" lets a task write outside its element.
     ///   - exact inner: does outer match it?

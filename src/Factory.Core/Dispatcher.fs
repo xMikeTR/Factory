@@ -103,7 +103,7 @@ module Dispatcher =
         if out.Count <> items.Length then failwith "cycle in topoBy input (validator should have rejected it)"
         List.ofSeq out
 
-    /// RESOURCES.md §4. Spec: every test starting "dispatcher:".
+    /// Spec: every test starting "dispatcher:".
     /// Helpers provided: tasksOverlap, scc (Tarjan), topoBy (stable Kahn). Steps:
     ///   1. Sort tasks by id (determinism). Union-find: union every pair whose writes may overlap.
     ///   2. Build the graph between groups from DependsOn (edge: group of dep -> group of task).

@@ -16,10 +16,10 @@
 > a timed-out check is never evidence (`Verifying + NeedsDecisionRaised -> Blocked`, parked as "environment").
 > Also: `Handover.Relationships` (modelled dependencies; old handovers have none) and fitness (3.5).
 > Also: quality ratchet for C# (strand 3.2/3.3): `Core/Quality.fs`, `S2/Quality/{CSharpMetrics,Cobertura,QualityGate}`, `QualityPolicyFile`.
-> Previously 2026-10-08 — reviewer + provider seam (strand 2 of PLAN-QUALITY.md): the review is the fourth gate
+> Previously 2026-10-08 — reviewer + provider seam: the review is the fourth gate
 > (`Reviewing` state, `Review.fs`, `IReviewer`/`AgentReviewer` on a reviewer pool apart from the implementer's,
 > `ModelGateways`, independence stamped in the ledger and the PR body).
-> Previously 2026-10-08 — context cut (strand 1 of PLAN-QUALITY.md): `ContextPack` (task-planner nominations
+> Previously 2026-10-08 — context cut: `ContextPack` (task-planner nominations
 > via `submit_approach` + deterministic defaults, frozen per task, refreshed each turn), `TurnBudget` (15 tool
 > calls per acting turn, then verify), `ToolResultTrimmer` (older tool results stubbed).
 > Previously 2026-10-07 — gated restore window: `RestoreGate` restores every project on disk (live5:
@@ -248,10 +248,10 @@ Used by structural-centrality-guard to determine escalation threshold.
 
 | Rule | Location | Type | Notes |
 |------|---------|------|-------|
-| The task-planner's context nominations are validated and never block (bad paths are reported back, defaults remain); the selection is frozen at the approach turn and recovered from the `task_plan` ledger row, contents are read fresh each turn | `ContextPack.fs`, `TaskLoop.PlanTurnAsync`/`ContextPackAsync` | Invariant | PLAN-QUALITY.md strand 1 |
+| The task-planner's context nominations are validated and never block (bad paths are reported back, defaults remain); the selection is frozen at the approach turn and recovered from the `task_plan` ledger row, contents are read fresh each turn | `ContextPack.fs`, `TaskLoop.PlanTurnAsync`/`ContextPackAsync` | Invariant | context, review and quality gates |
 | An acting turn is capped at 15 tool calls (`check_quality` exempt); at the cap it counts as done and verify (or the red run) judges the worktree | `TurnBudget.cs`, `FactoryAgents.GovernedToolCallAsync`, `TaskLoop.ActTurnAsync` | Invariant | live1: a 514k-token, 31-call TestAuthor turn |
-| A task cannot pass without a review of its green diff: findings must cite a line in the diff (the rest are dropped and ledgered), design findings are advice, weak tests go to the TestAuthor first; three blocking rounds, then it parks for a designer (accept / reject / send back); a malformed review is asked for once more, then parks, never passes; a re-review may add findings only on lines the fix changed | `Review.fs`, `TaskState.fs` `Reviewing`, `TaskLoop.ReviewAsync` | Invariant (type-enforced gate) | PLAN-QUALITY.md strand 2 |
-| The reviewer is a different pool from the implementer; unknown model family counts as the same; same-family needs `FACTORY_REVIEWER_SAME_FAMILY=allow` and dry-run merges, and is stamped `independence: same-family` on the ledger and PR | `ModelGateways.cs`, `RunExecutors.ReviewSectionAsync` | Invariant | PLAN-QUALITY.md strand 2 |
+| A task cannot pass without a review of its green diff: findings must cite a line in the diff (the rest are dropped and ledgered), design findings are advice, weak tests go to the TestAuthor first; three blocking rounds, then it parks for a designer (accept / reject / send back); a malformed review is asked for once more, then parks, never passes; a re-review may add findings only on lines the fix changed | `Review.fs`, `TaskState.fs` `Reviewing`, `TaskLoop.ReviewAsync` | Invariant (type-enforced gate) | context, review and quality gates |
+| The reviewer is a different pool from the implementer; unknown model family counts as the same; same-family needs `FACTORY_REVIEWER_SAME_FAMILY=allow` and dry-run merges, and is stamped `independence: same-family` on the ledger and PR | `ModelGateways.cs`, `RunExecutors.ReviewSectionAsync` | Invariant | context, review and quality gates |
 | `Verified` needs red evidence, all-green automated outcomes and a stashed-impl run that fails; `Passed` also needs the review | `TaskState.fs` `VerifiedEvidence` | Invariant (type-enforced) | private ctors |
 | TestAuthor writes only `testWrites`, Implementer only `writes`; disjoint | `PlanValidator.fs`, `ScopedWorkspace.cs` | Invariant | scope enforced by tools and after each turn |
 | A test that passed in the team baseline and fails now blocks green (P2P) | `Regression.fs`, `TaskLoop` | Business rule | missing test counts as failing |

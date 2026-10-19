@@ -116,7 +116,7 @@ module PlanValidator =
 
     /// First dependency cycle found, as the list of task ids around it (first id repeated at the end).
     ///
-    /// RESOURCES.md §3. Spec: "validator: dependency cycle and unknown dep".
+    /// Spec: "validator: dependency cycle and unknown dep".
     /// Depth-first search with three colours: unvisited, on-the-stack, finished. Reaching a node
     /// that is on the stack means a cycle; the cycle is the stack from that node to here.
     /// Ignore dependencies on unknown ids (validate reports those separately).
@@ -137,7 +137,7 @@ module PlanValidator =
                 found
         tasks |> List.tryPick (fun t -> visit [] t.Id)
 
-    /// RESOURCES.md §3. Spec: every test starting "validator:".
+    /// Spec: every test starting "validator:".
     /// Collect ALL errors (don't stop at the first): the list goes back to the planner in one go.
     /// One PlanError case = one rule. Suggested order:
     ///   plan-level:  EmptyPlan, HandoverMismatch (id AND digest), DuplicateTaskId
