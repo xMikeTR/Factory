@@ -9,6 +9,8 @@ using Factory.S2.Git;
 using Factory.S2.Quality;
 using Factory.S2.Teams;
 using Factory.S2.Verify;
+using static Factory.S2.CliOptions;
+using static Factory.S2.ServiceWiring;
 
 // factory-s2 validate --handover h.json --plan plan.json      deterministic, no agents, no git
 // factory-s2 dispatch --handover h.json --plan plan.json      prints teams and waves
@@ -436,111 +438,4 @@ catch (ArgumentException e)
     // A missing or bad option, or an unknown setting: a usage error, not a crash.
     Console.Error.WriteLine(e.Message);
     return 2;
-}
-
-/// Everything a run (or a rerun) needs, wired from the environment.
-/// S2's own ledger, projecting each attempt start, task state change and end onto the registry as it happens.
-static ILedger ProgressLedger(FactorySettings settings) => new Factory.Harness.Registry.RegistryProgressLedger(
-    new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")), settings.RegistryPath,
-    id => Factory.Harness.Registry.HandoverRef.From(Factory.Core.Core.ParseHandover(File.ReadAllText(settings.HandoverCopyPath(id)))));
-
-static FactoryServices Services(FactorySettings settings, string runId, Dictionary<string, string> env, IPullRequests pullRequests)
-{
-    var ledger = ProgressLedger(settings);
-    // FACTORY_SANDBOX is an ordered list (docker,local); the first that starts is used. Default docker only;
-    // local is the explicit, unisolated fallback and runs only when named.
-    ISandboxFactory SandboxNamed(string name) => name switch
-    {
-        "docker" => new DockerSandboxFactory(new DockerSandboxOptions(
-            Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest", NpmRebuild: settings.Npm?.Rebuild), ledger, runId),
-        _ => new LocalSandboxFactory(),
-    };
-    ISandboxFactory inner = new FallbackSandboxFactory(
-        FallbackSandboxFactory.Parse(Environment.GetEnvironmentVariable("FACTORY_SANDBOX")).Select(n => (n, SandboxNamed(n))).ToList(),
-        (name, why) => ledger.AppendAsync(new LedgerEvent(runId, "S2", "sandbox_skipped", LedgerKinds.Verify, Outcome: name,
-            Payload: System.Text.Json.JsonSerializer.Serialize(new { sandbox = name, reason = why })), default).GetAwaiter().GetResult());
-    // Heavy commands share the machine's CPU across teams; a timeout is re-run once alone (FACTORY_HEAVY_SLOTS).
-    var flaky = settings.QualityPolicy?.Flaky ?? [];
-    ISandboxFactory sandboxes = new GatedSandboxFactory(inner, new HeavyGate(
-        int.TryParse(Environment.GetEnvironmentVariable("FACTORY_HEAVY_SLOTS"), out var slots) && slots > 0 ? slots : HeavyGate.DefaultSlots),
-        isFlaky: command => flaky.Any(command.Contains),
-        onFlakyRetry: command => ledger.AppendAsync(new LedgerEvent(runId, "S2", "flaky_retry", LedgerKinds.Verify, Outcome: "re-run alone", Payload: System.Text.Json.JsonSerializer.Serialize(new { command })), default).GetAwaiter().GetResult());
-    // Tool governance: the AGT policy files per role (policies/s2) by default; the in-code
-    // allow-list is the explicit fallback and the contract-test double.
-    IToolPolicy toolPolicy = (Environment.GetEnvironmentVariable("FACTORY_TOOL_POLICY") ?? "acs") switch
-    {
-        "acs" => AcsToolPolicy.Load(Environment.GetEnvironmentVariable("FACTORY_POLICY_DIR") ?? AcsToolPolicy.DefaultDirectory),
-        "allowlist" => new RoleAllowListPolicy(),
-        var other => throw new ArgumentException($"FACTORY_TOOL_POLICY: '{other}' is not acs|allowlist"),
-    };
-    // Laya routes turns when FACTORY_LAYA_URL points at tools/laya-sidecar and it is confident
-    // enough; otherwise (and always when unset) the heuristic decides. The ledger names who did.
-    IConfigurator configurator = Environment.GetEnvironmentVariable("FACTORY_LAYA_URL") is { Length: > 0 } laya
-        ? new FallbackConfigurator(
-            new LayaConfigurator(new HttpClient { BaseAddress = new Uri(laya), Timeout = TimeSpan.FromSeconds(5) }),
-            new HeuristicConfigurator(),
-            double.Parse(Environment.GetEnvironmentVariable("FACTORY_LAYA_MIN_CONFIDENCE") ?? "0.7", System.Globalization.CultureInfo.InvariantCulture))
-        : new HeuristicConfigurator();
-    var git = new GitWorkspace(settings.RepoPath, settings.StateDir);
-    var gateways = ModelGateways.FromEnvironment(env, mergesAreDryRun: pullRequests is DryRunPullRequests);
-    var agents = new FactoryAgents(gateways, toolPolicy, ledger, FactoryTelemetry.CaptureContent(env));
-    // QA runs only for a repo that describes a QA environment (.factory/qa-env.yaml); its requirements are the plan's tasks
-    // (default source, until the handover carries requirements of its own).
-    FactoryServices? built = null;
-    var qaEnv = QaEnvFile.Load(settings.RepoPath);
-    var dockerOptions = new DockerSandboxOptions(
-        Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest", NpmRebuild: settings.Npm?.Rebuild);
-    // The qa-env.yaml services run on their own docker network for the length of one QA run; the QA sandboxes join it (docker only).
-    IQaRunner? qa = qaEnv is null ? null
-        : new AgentQaRunner(agents, git, sandboxes, settings.BaseBranch,
-            id => built!.LoadValidatedPlan(id).Plan.Tasks.Select(t => $"{t.Id.Value}: {t.Title}").ToList(), settings.CommandAllowList,
-            environment: inner is DockerSandboxFactory ? ct => QaEnvironment.StartAsync(qaEnv, dockerOptions, ct) : null);
-    built = new FactoryServices(
-        settings,
-        ledger,
-        agents,
-        configurator,
-        git,
-        new VerifyRunner(ledger, sandboxes, git),
-        sandboxes,
-        pullRequests,
-        new AgentReviewer(agents, gateways.ReviewerIndependence, settings.CommandAllowList),
-        mutation: new StrykerRunner(sandboxes),
-        qa: qa);
-    return built;
-}
-
-static PlanValidation Validate(Dictionary<string, string> opts) =>
-    Core.ValidatePlan(
-        Core.ParseHandover(File.ReadAllText(Required(opts, "handover"))),
-        File.ReadAllText(Required(opts, "plan")));
-
-/// Every `--reference key=path` (the flag repeats, which ParseOptions cannot carry).
-static Factory.Harness.Registry.ReferenceBindings.Parsed ReferenceFlags(string[] a) =>
-    Factory.Harness.Registry.ReferenceBindings.Parse(
-        a.Select((x, i) => (x, i)).Where(t => t.x == "--reference" && t.i + 1 < a.Length).Select(t => a[t.i + 1]));
-
-/// A run whose handover names references starts only when each is bound to a folder outside the repo, and no other is.
-static void RequireReferences(Handover handover, string[] a, string repoPath)
-{
-    var flags = ReferenceFlags(a);
-    var checkedRefs = Factory.Harness.Registry.ReferenceBindings.Check(handover.References, flags.Bindings, repoPath);
-    var errors = flags.Errors.Concat(checkedRefs.Errors).ToList();
-    if (errors.Count > 0) throw new FactoryRejectedException("read-only references rejected", errors.ToArray());
-}
-
-static string Required(Dictionary<string, string> opts, string name) =>
-    opts.TryGetValue(name, out var v) ? v : throw new ArgumentException($"--{name} is required");
-
-static Dictionary<string, string> ParseOptions(string[] a)
-{
-    var d = new Dictionary<string, string>();
-    for (var i = 0; i < a.Length; i++)
-    {
-        if (!a[i].StartsWith("--")) continue;
-        var key = a[i][2..];
-        var hasValue = i + 1 < a.Length && !a[i + 1].StartsWith("--");
-        d[key] = hasValue ? a[++i] : "true";
-    }
-    return d;
 }
