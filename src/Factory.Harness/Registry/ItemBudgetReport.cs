@@ -22,8 +22,11 @@ public static class ItemBudgetReport
         {
             var handover = Path.Combine(dir, "handover.json");
             if (!File.Exists(handover)) continue;
-            using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(handover, ct));
-            if (!doc.RootElement.TryGetProperty("workItem", out var w) || w.GetString() is not { Length: > 0 } item) continue;
+            JsonDocument doc;
+            try { doc = JsonDocument.Parse(await File.ReadAllTextAsync(handover, ct)); }
+            catch (JsonException) { continue; } // a half-written handover.json names no item; one bad run must not hide every other item's spend
+            using var _ = doc;
+            if (!doc.RootElement.TryGetProperty("workItem", out var w) || w.ValueKind != JsonValueKind.String || w.GetString() is not { Length: > 0 } item) continue;
             long tokens = 0;
             await foreach (var e in ledger.ReadAsync(Path.GetFileName(dir), ct)) tokens += (e.TokensIn ?? 0) + (e.TokensOut ?? 0);
             spend[item] = spend.GetValueOrDefault(item) + tokens;

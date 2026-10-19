@@ -56,8 +56,18 @@ public static class Repair
     {
         var rounds = 0;
         for (var seen = new HashSet<string>(); seen.Add(runId) && File.Exists(s.RepairPath(runId)); rounds++)
-            runId = JsonSerializer.Deserialize<RepairFile>(File.ReadAllText(s.RepairPath(runId)))!.Of;
+        {
+            // An unreadable repair.json still marks a repair run; the chain behind it cannot be followed.
+            if (Read(s.RepairPath(runId)) is not { } file) return rounds + 1;
+            runId = file.Of;
+        }
         return rounds;
+    }
+
+    private static RepairFile? Read(string path)
+    {
+        try { return JsonSerializer.Deserialize<RepairFile>(File.ReadAllText(path)); }
+        catch (JsonException) { return null; }
     }
 
     /// Why a repair of `failedRun` is refused: its chain already used `max` rounds, so a person looks instead of the harness paying again.
@@ -68,7 +78,6 @@ public static class Repair
     {
         var path = s.RepairPath(runId);
         if (!File.Exists(path)) return null;
-        var file = JsonSerializer.Deserialize<RepairFile>(File.ReadAllText(path));
-        return file?.Feedback.GetValueOrDefault(taskId);
+        return Read(path)?.Feedback?.GetValueOrDefault(taskId);
     }
 }

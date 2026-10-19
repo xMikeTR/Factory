@@ -112,6 +112,16 @@ public class CiReportTests
         Assert.Null(Repair.RoundsRefusal(h.Services.Settings, "fix-1", max: 2));
     }
 
+    [Fact]
+    public async Task A_corrupt_repair_file_counts_as_a_round_and_gives_no_feedback_instead_of_throwing()
+    {
+        using var h = await HarnessAsync();
+        Directory.CreateDirectory(h.Services.Settings.RunDir("fix-1"));
+        File.WriteAllText(h.Services.Settings.RepairPath("fix-1"), "{ not json");
+        Assert.Equal(1, Repair.Rounds(h.Services.Settings, "fix-1"));
+        Assert.Null(Repair.Feedback(h.Services.Settings, "fix-1", "T-001"));
+    }
+
     private static async Task<List<LedgerEvent>> Rows(TeamHarness h, string run)
     {
         var rows = new List<LedgerEvent>();
