@@ -20,6 +20,7 @@ using Factory.S2.Verify;
 // factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
 // factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
+// factory-s2 ci-report --repo . --run-id <id> --check "<CI check>" --log <file | -> [--file a.cs,b.cs | --task T-001] [--commit sha]   a CI failure after the run ended, blamed on the tasks whose write paths own the files; then run --repair <id> (at most FACTORY_MAX_FIX_ROUNDS rounds, default 2)
 // factory-s2 verify --repo . --run-id <id> --check "T-001: <check name>" --by <you> [--outcome done|deferred] [--note "why"]   records a manual check; run again with --run-id <id> to reach the merge (Tiered: --by must be an approver; deferred needs --note)
 // factory-s2 run|rerun ... [--reference key=path]...   binds each read-only reference the handover names (a legacy app) to a folder outside the repo; agents read it with read_reference/list_reference and never write it
 // factory-s2 rerun --handover <h.json | dir> --plan plan.json --task T-001 [--k 3] --repo . [--base main]   k fresh attempts, no merge
@@ -110,10 +111,16 @@ try
 
             if (repairOf is not null && !File.Exists(settings.RepairPath(runId)))
             {
+                var maxRounds = int.TryParse(Environment.GetEnvironmentVariable("FACTORY_MAX_FIX_ROUNDS"), out var mr) && mr > 0 ? mr : 2;
+                if (Repair.RoundsRefusal(settings, repairOf, maxRounds) is { } tooMany)
+                {
+                    Console.Error.WriteLine("refused: " + tooMany);
+                    return new RunOutcome("refused", tooMany, 1);
+                }
                 var repair = await Repair.FromFailedRunAsync(services, repairOf, cts.Token);
                 if (repair is null)
                 {
-                    var nothing = $"run {repairOf} recorded no acceptance or token-lint failure that names a task: nothing to repair";
+                    var nothing = $"run {repairOf} recorded no acceptance, token-lint or CI failure that names a task: nothing to repair";
                     Console.Error.WriteLine(nothing);
                     return new RunOutcome("refused", nothing, 1);
                 }
@@ -330,6 +337,22 @@ try
             return why is null ? 0 : 1;
         }
 
+        case "ci-report":
+        {
+            // CI failed after the run ended: blame the tasks that own the failing files; run --repair <run-id> then re-runs only those.
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), null, opts.GetValueOrDefault("base"));
+            var runId = Required(opts, "run-id");
+            if (!File.Exists(settings.PlanPath(runId))) { Console.Error.WriteLine($"no run {runId} with a plan in {settings.StateDir}"); return 1; }
+            var logPath = Required(opts, "log");
+            var log = logPath == "-" ? await Console.In.ReadToEndAsync() : await File.ReadAllTextAsync(logPath);
+            var services = Services(settings, runId, new Dictionary<string, string>(), new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+            var why = await CiReport.RecordAsync(services, runId, Required(opts, "check"), log,
+                (opts.GetValueOrDefault("file") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                opts.GetValueOrDefault("task"), opts.GetValueOrDefault("commit"), CancellationToken.None);
+            Console.WriteLine(why is null ? $"recorded; repair with: factory-s2 run --handover <handover> --repo . --repair {runId}" : $"not recorded: {why}");
+            return why is null ? 0 : 1;
+        }
+
         case "verify":
         {
             // A manual check a person did (or deferred) for a parked run; the next attempt of the same run id reads it at the merge.
@@ -399,7 +422,7 @@ try
         }
 
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|ci-report  (see README)");
             return 2;
     }
 }

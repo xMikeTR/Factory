@@ -335,3 +335,16 @@ something that works on its own.
   runs or attempts.
 - **The only change to the Phase 2 task-state DU is `Ready of Progress`.** The Queued state
   becomes `Ready {0;0}`, so that turn and verify budgets survive escalation and resume.
+
+## CI for heavy suites, then a bug-fix run
+
+Keep the pre-commit checks under 3 s (`check_quality`) and run long suites in CI, so the run ends instead of waiting on them. When CI fails, record it against the run:
+
+```
+factory-s2 ci-report --repo . --run-id <id> --check "<CI check>" --log ci.log [--file a.cs,b.cs | --task T-001] [--commit <sha>]
+factory-s2 run --handover <handover> --repo . --repair <id>
+```
+
+`ci-report` blames the tasks whose `writes` or `testWrites` match the failing files (or the task you name) and writes one `ci_failed` ledger row each, carrying only the log tail. Nothing is guessed: if no task owns the files it says so. `--repair` then re-runs only the blamed tasks from the run's integration branch, with the CI failure as their brief. A chain of repairs stops after `FACTORY_MAX_FIX_ROUNDS` rounds (default 2) and asks for a person.
+
+To measure it: compare tokens per passing task from `by_role` for a run that ran the suite itself against one that offloaded it to CI plus its repair round.
