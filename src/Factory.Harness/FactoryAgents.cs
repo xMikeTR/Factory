@@ -9,8 +9,9 @@ using OpenAI;
 
 namespace Factory.Harness;
 
-/// Which wire protocol the gateway speaks. FACTORY_PROVIDER = openai (default) | anthropic.
-public enum ModelProvider { Anthropic, OpenAICompatible }
+/// Which wire protocol the gateway speaks. FACTORY_PROVIDER = openai (default) | anthropic | vertex.
+/// `vertex` is Claude on Google Vertex AI with Application Default Credentials: no key, no gateway.
+public enum ModelProvider { Anthropic, OpenAICompatible, Vertex }
 
 /// Agents never call a provider directly: APIM -> LiteLLM (per-user key, Langfuse) -> Vertex, over
 /// the OpenAI-compatible protocol; or the native Anthropic client, against the public API or a
@@ -20,7 +21,7 @@ public enum ModelProvider { Anthropic, OpenAICompatible }
 /// OpenAI-compatible wire. Null (auto, the default) sends them to a model whose name says Claude, which caches only
 /// where asked; other models (Gemini, OpenAI) cache the prefix themselves. The Anthropic client always sends them.
 public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, string ApiKey, string FrontierModel, string StandardModel, string SmallModel,
-    bool? CacheControl = null)
+    bool? CacheControl = null, string? VertexProject = null, string? VertexRegion = null)
 {
     /// Anthropic requires max_tokens on every request; the IChatClient default is too small for a whole file.
     public const int AnthropicMaxOutputTokens = 16_000;
@@ -36,13 +37,18 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
         {
             null or "openai" => ModelProvider.OpenAICompatible,
             "anthropic" => ModelProvider.Anthropic,
-            var other => throw new FactoryRejectedException("FACTORY_PROVIDER is invalid", [$"'{other}' is not openai|anthropic"]),
+            "vertex" => ModelProvider.Vertex,
+            var other => throw new FactoryRejectedException("FACTORY_PROVIDER is invalid", [$"'{other}' is not openai|anthropic|vertex"]),
         };
-        var anthropic = provider == ModelProvider.Anthropic;
-        var key = Get("FACTORY_GATEWAY_KEY") ?? (anthropic ? Get("ANTHROPIC_API_KEY") : null)
+        var vertex = provider == ModelProvider.Vertex;
+        var anthropic = provider != ModelProvider.OpenAICompatible; // Claude model ids and defaults on both Claude providers
+        var project = vertex ? Get("FACTORY_VERTEX_PROJECT") ?? Get("GOOGLE_CLOUD_PROJECT")
+            ?? throw new FactoryRejectedException("no Vertex project", ["set FACTORY_VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT"]) : null;
+        var region = vertex ? Get("FACTORY_VERTEX_REGION") ?? Get("CLOUD_ML_REGION") ?? "global" : null;
+        var key = vertex ? "" : Get("FACTORY_GATEWAY_KEY") ?? (anthropic ? Get("ANTHROPIC_API_KEY") : null)
             ?? throw new FactoryRejectedException("no gateway key",
                 [anthropic ? "set FACTORY_GATEWAY_KEY or ANTHROPIC_API_KEY" : "set FACTORY_GATEWAY_KEY"]);
-        var url = Get("FACTORY_GATEWAY_URL") ?? (anthropic ? null : "http://localhost:4000/v1");
+        var url = vertex ? null : Get("FACTORY_GATEWAY_URL") ?? (anthropic ? null : "http://localhost:4000/v1");
         var cacheControl = Get("FACTORY_GATEWAY_CACHE_CONTROL") switch
         {
             null or "auto" => (bool?)null,
@@ -53,7 +59,7 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
         return new(provider, url is null ? null : new Uri(url), key,
             Get("FACTORY_MODEL_FRONTIER") ?? (anthropic ? "claude-opus-5-5" : "frontier"),
             Get("FACTORY_MODEL_STANDARD") ?? (anthropic ? "claude-sonnet-5-5" : "standard"),
-            Get("FACTORY_MODEL_SMALL") ?? (anthropic ? "claude-haiku-4-5" : "small"), cacheControl);
+            Get("FACTORY_MODEL_SMALL") ?? (anthropic ? "claude-haiku-4-5" : "small"), cacheControl, project, region);
     }
 
     public string ModelFor(ModelTier tier) =>
@@ -66,6 +72,10 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
             ApiKey = ApiKey,
             BaseUrl = Endpoint?.ToString() ?? "https://api.anthropic.com",
         }.AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens).AsBuilder().Use(inner => new PromptCachingChatClient(inner)).Build(),
+        // Credentials are Application Default Credentials (gcloud auth application-default login, or the VM's service account).
+        ModelProvider.Vertex => new Anthropic.Vertex.AnthropicVertexClient(new Anthropic.Vertex.AnthropicVertexCredentials(VertexRegion ?? "global", VertexProject
+                ?? throw new FactoryRejectedException("no Vertex project", ["set FACTORY_VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT"])))
+            .AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens).AsBuilder().Use(inner => new PromptCachingChatClient(inner)).Build(),
         ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey), OpenAIOptions(ModelFor(tier)))
             .GetChatClient(ModelFor(tier)).AsIChatClient().AsBuilder().Use(inner => new OpenAIPromptCacheKeyChatClient(inner)).Build(),
         _ => throw new ArgumentOutOfRangeException(nameof(Provider), Provider, null),
@@ -81,7 +91,7 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
     // A record prints every member; the key must never reach a log, ledger row or trace.
     private bool PrintMembers(System.Text.StringBuilder b)
     {
-        b.Append($"Provider = {Provider}, Endpoint = {Endpoint?.ToString() ?? "(default)"}, ApiKey = <redacted>, ");
+        b.Append($"Provider = {Provider}, Endpoint = {Endpoint?.ToString() ?? "(default)"}, ApiKey = <redacted>, VertexProject = {VertexProject}, VertexRegion = {VertexRegion}, ");
         b.Append($"FrontierModel = {FrontierModel}, StandardModel = {StandardModel}, SmallModel = {SmallModel}, CacheControl = {CacheControl}");
         return true;
     }

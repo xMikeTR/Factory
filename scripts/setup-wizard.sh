@@ -25,10 +25,23 @@ secret() { # secret VAR  (hidden entry, Enter to skip)
 # provider SIDE  where SIDE is "" (implementer) or "REVIEWER_" -> sets FACTORY_[REVIEWER_]...
 provider() {
   local p="$1" label="$2" prov url key
-  echo "  1) Anthropic API (needs an Anthropic key; not available on the work VM)"
-  echo "  2) OpenAI-compatible gateway (LiteLLM/APIM in front of Vertex: the work route)"
-  ask "$label provider" 2; prov="$REPLY"
-  if [ "$prov" = 1 ]; then
+  echo "  1) Anthropic API (needs an Anthropic key)"
+  echo "  2) OpenAI-compatible gateway (LiteLLM/APIM, per-user key)"
+  echo "  3) Claude on Vertex AI (gcloud Application Default Credentials, no key)"
+  ask "$label provider" 3; prov="$REPLY"
+  if [ "$prov" = 3 ]; then
+    add "FACTORY_${p}PROVIDER" vertex
+    ask "  Google Cloud project" "${GOOGLE_CLOUD_PROJECT:-}"; add "FACTORY_${p}VERTEX_PROJECT" "$REPLY"
+    ask "  Region" "${CLOUD_ML_REGION:-global}"; add "FACTORY_${p}VERTEX_REGION" "$REPLY"
+    if command -v gcloud >/dev/null; then
+      gcloud auth application-default print-access-token >/dev/null 2>&1 && echo "    Application Default Credentials found." \
+        || echo "    No credentials yet. Run: gcloud auth application-default login"
+    else echo "    gcloud not found. Install it, then: gcloud auth application-default login"; fi
+    ask "  Frontier model (planner, hardest work)" "claude-opus-5-5";  add "FACTORY_${p}MODEL_FRONTIER" "$REPLY"
+    ask "  Standard model (implementer)"           "claude-sonnet-5-5"; add "FACTORY_${p}MODEL_STANDARD" "$REPLY"
+    ask "  Small model (cheap turns)"              "claude-haiku-4-5";  add "FACTORY_${p}MODEL_SMALL" "$REPLY"
+    FAMILY=anthropic
+  elif [ "$prov" = 1 ]; then
     add "FACTORY_${p}PROVIDER" anthropic
     ask "  Base URL (blank = api.anthropic.com)" ""; url="$REPLY"
     [ -n "$url" ] && add "FACTORY_${p}GATEWAY_URL" "$url"

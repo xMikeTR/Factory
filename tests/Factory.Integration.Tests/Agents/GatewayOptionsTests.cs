@@ -37,8 +37,22 @@ public class GatewayOptionsTests
     [Fact]
     public void An_unknown_provider_or_a_missing_key_is_rejected()
     {
-        Assert.Throws<FactoryRejectedException>(() => From(("FACTORY_PROVIDER", "vertex"), ("FACTORY_GATEWAY_KEY", Key)));
+        Assert.Throws<FactoryRejectedException>(() => From(("FACTORY_PROVIDER", "bedrock"), ("FACTORY_GATEWAY_KEY", Key)));
+        Assert.Throws<FactoryRejectedException>(() => From(("FACTORY_PROVIDER", "vertex")));
         Assert.Throws<FactoryRejectedException>(() => From(("FACTORY_PROVIDER", "anthropic")));
+    }
+
+    [Fact]
+    public void Vertex_needs_a_project_not_a_key_and_defaults_to_the_global_region_and_Claude_models()
+    {
+        var g = From(("FACTORY_PROVIDER", "vertex"), ("GOOGLE_CLOUD_PROJECT", "proj-1"));
+
+        Assert.Equal(ModelProvider.Vertex, g.Provider);
+        Assert.Equal(("proj-1", "global"), (g.VertexProject, g.VertexRegion));
+        Assert.Equal("", g.ApiKey);
+        Assert.Equal("claude-sonnet-5-5", g.ModelFor(ModelTier.Standard));
+        var r = From(("FACTORY_PROVIDER", "vertex"), ("FACTORY_VERTEX_PROJECT", "p2"), ("GOOGLE_CLOUD_PROJECT", "p1"), ("CLOUD_ML_REGION", "europe-west1"));
+        Assert.Equal(("p2", "europe-west1"), (r.VertexProject, r.VertexRegion));
     }
 
     [Theory]

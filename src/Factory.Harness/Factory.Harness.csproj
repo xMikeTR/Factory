@@ -11,6 +11,7 @@
     <PackageReference Include="Microsoft.Agents.AI" />
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
     <PackageReference Include="Anthropic" />
+    <PackageReference Include="Anthropic.Vertex" />
     <PackageReference Include="Microsoft.AgentGovernance" />
     <PackageReference Include="YamlDotNet" />
     <PackageReference Include="OpenTelemetry" />
