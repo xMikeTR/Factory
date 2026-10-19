@@ -54,6 +54,32 @@ module Diff =
     let private hunkHeader =
         System.Text.RegularExpressions.Regex(@"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
+    /// git quotes a path holding a quote, backslash, control or non-ASCII character as "..." with C escapes
+    /// (octal bytes for UTF-8). Unquoted, it is the path a finding cites.
+    let private unquote (path: string) =
+        if path.Length < 2 || path.[0] <> '"' || path.[path.Length - 1] <> '"' then path
+        else
+            let body = path.Substring(1, path.Length - 2)
+            let bytes = System.Collections.Generic.List<byte>()
+            let mutable i = 0
+            let isOctal (c: char) = c >= '0' && c <= '7'
+            while i < body.Length do
+                if body.[i] <> '\\' || i + 1 >= body.Length then
+                    bytes.AddRange(System.Text.Encoding.UTF8.GetBytes(string body.[i]))
+                    i <- i + 1
+                elif isOctal body.[i + 1] then
+                    let digits = body.Substring(i + 1) |> Seq.takeWhile isOctal |> Seq.truncate 3 |> Seq.toArray |> System.String
+                    bytes.Add(byte (System.Convert.ToInt32(digits, 8) &&& 0xFF))
+                    i <- i + 1 + digits.Length
+                else
+                    let c =
+                        match body.[i + 1] with
+                        | 'n' -> '\n' | 't' -> '\t' | 'r' -> '\r' | 'a' -> '\a' | 'b' -> '\b' | 'f' -> '\f' | 'v' -> '\v'
+                        | other -> other
+                    bytes.Add(byte c)
+                    i <- i + 2
+            System.Text.Encoding.UTF8.GetString(bytes.ToArray())
+
     let parse (unified: string) : ParsedDiff =
         let mutable file: string option = None
         let mutable newLine = 0
@@ -80,8 +106,8 @@ module Diff =
                     oldLeft <- oldLeft - 1
                     newLeft <- newLeft - 1
             elif line.StartsWith "+++ " then
-                let path = line.Substring(4).Split('\t').[0]
-                file <- if path = "/dev/null" then None elif path.StartsWith "b/" then Some(path.Substring 2) else Some path
+                let path = unquote (line.Substring(4).Split('\t').[0])
+                file <-if path = "/dev/null" then None elif path.StartsWith "b/" then Some(path.Substring 2) else Some path
             else
                 let m = hunkHeader.Match line
                 if m.Success then
