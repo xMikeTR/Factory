@@ -27,6 +27,8 @@
     <Compile Include="Qa.fs" />
     <Compile Include="HandoverClosure.fs" />
     <Compile Include="Regeneration.fs" />
+    <Compile Include="Proof.fsi" />
+    <Compile Include="Proof.fs" />
     <Compile Include="Merge.fs" />
     <Compile Include="Work.fs" />
     <Compile Include="Scheduler.fs" />

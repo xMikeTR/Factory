@@ -104,7 +104,7 @@ public class AcsToolPolicyTests
     {
         var policy = AcsToolPolicy.Load(AcsToolPolicy.DefaultDirectory);
 
-        Assert.Equal([Roles.Diagnosis, Roles.Implementer, Roles.Planner, Roles.Qa, Roles.Repro, Roles.Reviewer, Roles.TaskPlanner, Roles.TestAuthor, Roles.UxJudge], policy.Roles.Order());
+        Assert.Equal([Roles.Diagnosis, Roles.Implementer, JiraTransitionGate.Role, Roles.Planner, Roles.Qa, Roles.Repro, Roles.Reviewer, Roles.TaskPlanner, Roles.TestAuthor, Roles.UxJudge], policy.Roles.Order());
     }
 
     private static readonly string[] EveryTool =
