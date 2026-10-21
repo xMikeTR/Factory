@@ -1,0 +1,20 @@
+# source: hand-authored
+# mlang is parked: this is the compiled shape a `jira.transition` policy would take. When mlang can express
+# "requires a Proof for (ticket, pushed commit) with an approval", regenerate this file from it and the header
+# becomes '# source: mlang@<version>'. Gap: AGT conditions compare against literals only, so the harness
+# computes `proof_covers_commit` (a Proof for this ticket at the pushed commit exists) and passes it in args.
+apiVersion: governance.toolkit/v1
+version: "1"
+name: s2-jira-gate
+description: "Which Jira transitions an agent may make. ReadyForQA needs a Proof; the rest are human decisions."
+scope: agent
+default_action: deny
+rules:
+  - name: allow-start
+    condition: "tool_name == 'jira.transition' and args.to == 'InProgress'"
+    action: allow
+    priority: 10
+  - name: allow-ready-for-qa-with-proof
+    condition: "tool_name == 'jira.transition' and args.to == 'ReadyForQA' and args.proof_covers_commit == 'true'"
+    action: allow
+    priority: 10
