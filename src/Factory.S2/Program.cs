@@ -21,6 +21,7 @@ using static Factory.S2.ServiceWiring;
 // factory-s2 metrics --registry ../registry [--repo .] [--base main]   S4 work metrics: throughput, lead time, human wait, deferrals, re-check rate, escapes
 // factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
 // factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
+// factory-s2 gate-shadow --cases cases.json [--repo .]   the QA gate's jira.transition policy against recorded kit decisions: logs what it would allow or deny (nothing enforced) and lists where it disagrees with the kit
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
 // factory-s2 ci-report --repo . --run-id <id> --check "<CI check>" --log <file | -> [--file a.cs,b.cs | --task T-001] [--commit sha]   a CI failure after the run ended, blamed on the tasks whose write paths own the files; then run --repair <id> (at most FACTORY_MAX_FIX_ROUNDS rounds, default 2)
 // factory-s2 verify --repo . --run-id <id> --check "T-001: <check name>" --by <you> [--outcome done|deferred] [--note "why"]   records a manual check; run again with --run-id <id> to reach the merge (Tiered: --by must be an approver; deferred needs --note)
@@ -326,6 +327,16 @@ try
             if (opts.TryGetValue("registry", out var registry) && !opts.ContainsKey("no-report"))
                 await Factory.Harness.Registry.ItemBudgetReport.WriteAsync(registry, readings, DateTimeOffset.UtcNow, CancellationToken.None);
             return readings.Any(r => r.Status.IsExceeded) ? 2 : 0;
+        }
+
+        case "gate-shadow":
+        {
+            var settings = FactorySettings.FromEnvironment(opts.GetValueOrDefault("repo") ?? ".", null, null);
+            var gate = new JiraTransitionGate(AcsToolPolicy.Load(Environment.GetEnvironmentVariable("FACTORY_POLICY_DIR") ?? AcsToolPolicy.DefaultDirectory),
+                new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")), enforce: false);
+            var rows = await GateShadow.RunAsync(gate, "gate-shadow-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss"), await File.ReadAllTextAsync(Required(opts, "cases")));
+            Console.Write(GateShadow.Render(rows));
+            return rows.All(r => r.Agrees) ? 0 : 2;
         }
 
         case "intake":
