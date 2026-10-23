@@ -18,8 +18,8 @@ public sealed record DockerSandboxOptions(
 
 /// One container per team: the worktree bind-mounted at its own host path (so paths in
 /// commands and output mean the same thing inside and out), the host uid/gid, resource limits,
-/// and --network none. The network is attached only for the restore window at start, and only
-/// when RestoreGate passes the worktree's restore inputs.
+/// and --network none for its whole life. The restore window is a separate short-lived container on the
+/// bridge, started only when RestoreGate passes the worktree's restore inputs.
 /// Nothing from the host environment crosses: docker exec gets the given env and a fixed few.
 public sealed class DockerSandbox : ICommandSandbox
 {
@@ -31,11 +31,8 @@ public sealed class DockerSandbox : ICommandSandbox
     private readonly string _worktree;
     private readonly string _nuget;
 
-    private readonly string _network;
-
-    private DockerSandbox(string container, string worktree, string nuget, string network)
+    private DockerSandbox(string container, string worktree, string nuget)
     {
-        _network = network;
         _container = container;
         _worktree = worktree;
         _nuget = nuget;
@@ -66,13 +63,9 @@ public sealed class DockerSandbox : ICommandSandbox
         var team = Sanitize(teamId);
         var name = $"s2-{team[..Math.Min(24, team.Length)]}-{Guid.NewGuid():N}";
         var user = $"{await IdAsync("-u", ct)}:{await IdAsync("-g", ct)}";
-        await DockerAsync(ct, "run", "-d", "--rm", "--name", name,
-            "--network", o.Network ?? "none", "--memory", o.Memory, "--cpus", o.Cpus.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            "--pids-limit", o.Pids.ToString(), "--security-opt", "no-new-privileges", "--cap-drop", "ALL",
-            "--user", user, "--tmpfs", "/tmp:exec,mode=1777",
-            "-v", $"{worktree}:{worktree}", "-v", $"{o.NuGetCacheDir}:/nuget",
-            "-w", worktree, o.Image, "sleep", "infinity");
-        var sandbox = new DockerSandbox(name, worktree, "/nuget", o.Network ?? "none");
+        await DockerAsync(ct, [.. new[] { "run", "-d", "--rm", "--name", name, "--network", o.Network ?? "none" },
+            .. LimitArgs(o, user, worktree, o.NuGetCacheDir), o.Image, "sleep", "infinity"]);
+        var sandbox = new DockerSandbox(name, worktree, "/nuget");
         try
         {
             if (o.RestoreOnStart)
@@ -82,7 +75,7 @@ public sealed class DockerSandbox : ICommandSandbox
                 else if (plan.Projects.Count > 0 || plan.NpmDirs.Count > 0)
                 {
                     sandbox.Restored = plan.Projects;
-                    sandbox.Restore = await sandbox.RestoreWindowAsync(RestoreGate.FullCommand(plan), ct);
+                    sandbox.Restore = await sandbox.RestoreWindowAsync(RestoreGate.FullCommand(plan), user, o, ct);
                     if (sandbox.Restore.Succeeded && plan.NpmDirs.Count > 0)
                     {
                         var allowed = o.NpmRebuild ?? [];
@@ -115,27 +108,38 @@ public sealed class DockerSandbox : ICommandSandbox
         var secs = Math.Max(1, (int)Math.Ceiling(timeout.TotalSeconds));
         args.AddRange([_container, "timeout", "-k", "5", secs.ToString(), "bash", "-c", command]);
 
-        var r = await ProcessRunner.RunAsync("docker", args, dir, timeout + TimeSpan.FromSeconds(15), ct: ct, inheritEnvironment: false,
+        var r = await ProcessRunner.RunAsync(ContainerEngine.Name, args, dir, timeout + TimeSpan.FromSeconds(15), ct: ct, inheritEnvironment: false,
             env: DockerCliEnv());
         var timedOut = r.TimedOut || ((r.ExitCode == 124 || r.ExitCode == 137) && r.Duration >= timeout);
         return timedOut ? r with { ExitCode = 124, TimedOut = true } : r;
     }
 
-    private async Task<ProcessResult> RestoreWindowAsync(string command, CancellationToken ct)
+    /// The restore runs in its own short-lived container on the bridge, sharing the worktree and the NuGet cache; this container
+    /// keeps its network (none) the whole time. Podman cannot swap a container off `none`, and this works the same on Docker.
+    private async Task<ProcessResult> RestoreWindowAsync(string command, string user, DockerSandboxOptions o, CancellationToken ct)
     {
-        // "none" is exclusive: swap it for the bridge for the restore, then swap back.
-        await DockerAsync(ct, "network", "disconnect", _network, _container);
+        var name = $"{_container}-restore";
+        var secs = Math.Max(1, (int)Math.Ceiling(RestoreTimeout.TotalSeconds));
+        var args = new List<string> { "run", "--rm", "--name", name, "--network", RestoreNetwork };
+        args.AddRange(LimitArgs(o, user, _worktree, o.NuGetCacheDir));
+        foreach (var (k, v) in BaseEnv()) { args.Add("-e"); args.Add($"{k}={v}"); }
+        args.AddRange([o.Image, "timeout", "-k", "5", secs.ToString(), "bash", "-c", command]);
         try
         {
-            await DockerAsync(ct, "network", "connect", RestoreNetwork, _container);
-            return await RunAsync(command, _worktree, RestoreTimeout, new Dictionary<string, string>(), ct);
+            return await ProcessRunner.RunAsync(ContainerEngine.Name, args, _worktree, RestoreTimeout + TimeSpan.FromSeconds(15), ct: ct,
+                inheritEnvironment: false, env: DockerCliEnv());
         }
-        finally
-        {
-            await DockerAsync(CancellationToken.None, check: false, "network", "disconnect", "--force", RestoreNetwork, _container);
-            await DockerAsync(CancellationToken.None, "network", "connect", _network, _container);
-        }
+        finally { await DockerAsync(CancellationToken.None, check: false, "rm", "-f", name); }
     }
+
+    /// Limits, user and mounts shared by the team container and the restore container.
+    private static string[] LimitArgs(DockerSandboxOptions o, string user, string worktree, string nugetDir) =>
+    [
+        "--memory", o.Memory, "--cpus", o.Cpus.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        "--pids-limit", o.Pids.ToString(), "--security-opt", "no-new-privileges", "--cap-drop", "ALL",
+        "--user", user, "--tmpfs", "/tmp:exec,mode=1777",
+        "-v", $"{worktree}:{worktree}", "-v", $"{nugetDir}:/nuget", "-w", worktree,
+    ];
 
     private IEnumerable<KeyValuePair<string, string>> BaseEnv() =>
     [
@@ -151,7 +155,7 @@ public sealed class DockerSandbox : ICommandSandbox
 
     /// What a person sees when a container could not be removed: which one, the command that removes it, and docker's first line.
     public static string RemovalWarning(string container, string dockerError) =>
-        $"warning: could not remove sandbox container {container}; remove it with `docker rm -f {container}`. {dockerError.Split('\n')[0]}";
+        $"warning: could not remove sandbox container {container}; remove it with `{ContainerEngine.Name} rm -f {container}`. {dockerError.Split('\n')[0]}";
 
     private static string Sanitize(string s) => new(s.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray());
 
@@ -162,7 +166,7 @@ public sealed class DockerSandbox : ICommandSandbox
     private static Dictionary<string, string> DockerCliEnv()
     {
         var env = new Dictionary<string, string>();
-        foreach (var name in new[] { "PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG" })
+        foreach (var name in new[] { "PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "CONTAINER_HOST", "CONTAINER_CONNECTION", "XDG_RUNTIME_DIR" })
             if (Environment.GetEnvironmentVariable(name) is { } v) env[name] = v;
         return env;
     }
@@ -171,8 +175,8 @@ public sealed class DockerSandbox : ICommandSandbox
 
     internal static async Task DockerAsync(CancellationToken ct, bool check, params string[] args)
     {
-        var r = await ProcessRunner.RunAsync("docker", args, Environment.CurrentDirectory, DockerTimeout, DockerCliEnv(), ct, inheritEnvironment: false);
-        if (check && !r.Succeeded) throw new InvalidOperationException($"docker {string.Join(' ', args.Take(3))} failed:\n{r.Tail()}");
+        var r = await ProcessRunner.RunAsync(ContainerEngine.Name, args, Environment.CurrentDirectory, DockerTimeout, DockerCliEnv(), ct, inheritEnvironment: false);
+        if (check && !r.Succeeded) throw new InvalidOperationException($"{ContainerEngine.Name} {string.Join(' ', args.Take(3))} failed:\n{r.Tail()}");
     }
 }
 
@@ -198,4 +202,10 @@ public sealed class DockerSandboxFactory(DockerSandboxOptions options, ILedger? 
                 })), ct);
         return sandbox;
     }
+}
+
+/// The engine CLI is Podman unless FACTORY_CONTAINER_ENGINE names another (e.g. docker).
+public static class ContainerEngine
+{
+    public static string Name => Environment.GetEnvironmentVariable("FACTORY_CONTAINER_ENGINE") is { Length: > 0 } e ? e : "podman";
 }
