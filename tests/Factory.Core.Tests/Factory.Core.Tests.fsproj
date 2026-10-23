@@ -16,6 +16,7 @@
     <Compile Include="JiraMirrorTests.fs" />
     <Compile Include="ItemBudgetTests.fs" />
     <Compile Include="ProofTests.fs" />
+    <Compile Include="AssertionGuardTests.fs" />
     <Compile Include="SuiteTests.fs" />
     <Compile Include="MetricsTests.fs" />
     <Compile Include="BoardTests.fs" />

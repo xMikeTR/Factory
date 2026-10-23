@@ -134,4 +134,21 @@ public class FitnessGateTests
         Assert.Equal("data must not call the engine", v.Rule.Why);
         Assert.Empty(await QualityGate.ForbiddenAsync(h.Services.Git, wt, TeamHarness.RunId, [], CancellationToken.None));
     }
+
+    [Fact]
+    public async Task A_test_file_that_asserts_less_than_on_the_integration_branch_is_reported()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        const string path = "tests/Pricing.Tests/GuardTests.cs";
+        Directory.CreateDirectory(Path.Combine(wt, "tests/Pricing.Tests"));
+        await File.WriteAllTextAsync(Path.Combine(wt, path), "Assert.True(a);\nAssert.True(b);\n");
+        await h.Services.Git.CommitAllAsync(wt, "two assertions", CancellationToken.None);
+        await h.GitIn(h.Services.Git.IntegrationPath(TeamHarness.RunId), "merge", "--ff-only", Factory.S2.Git.GitWorkspace.TeamBranch(TeamHarness.RunId, "team-x"));
+        Assert.Empty(await QualityGate.AssertionsAsync(h.Services.Git, wt, TeamHarness.RunId, CancellationToken.None));
+
+        await File.WriteAllTextAsync(Path.Combine(wt, path), "Assert.True(a);\n");
+
+        Assert.Equal([new AssertionDrop(path, 2, 1)], await QualityGate.AssertionsAsync(h.Services.Git, wt, TeamHarness.RunId, CancellationToken.None));
+    }
 }

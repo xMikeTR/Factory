@@ -809,7 +809,11 @@ internal sealed class TaskLoop(
         .. (await QualityGate.ForbiddenAsync(svc.Git, worktree, runId, policy.Forbid, ct)).Select(RuleLine),
         .. (await TsGate.CheckAsync(svc.Sandboxes, svc.Git, worktree, runId, policy.Forbid, ct)).Select(RuleLine),
         .. (await NamespaceGate.CheckAsync(svc.Sandboxes, svc.Git, worktree, runId, policy.ForbidNamespaces, ct)).Select(RuleLine),
+        .. (await QualityGate.AssertionsAsync(svc.Git, worktree, runId, ct)).Select(AssertionLine),
     ];
+
+    private static string AssertionLine(AssertionDrop d) =>
+        $"- {d.File}: {d.After} assertions, {d.Before} on the integration branch; tests must not get weaker (restore them, or add ones that check the new behaviour)";
 
     private static string FitnessLine(FitnessViolation v) =>
         $"- {v.Edge.Source} references {v.Edge.Target}: {v.FromElement.Value} may not depend on {v.ToElement.Value} (no such relationship in the model)";

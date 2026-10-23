@@ -23,6 +23,7 @@
     <Compile Include="Quality.fs" />
     <Compile Include="Fitness.fs" />
     <Compile Include="UiGuard.fs" />
+    <Compile Include="AssertionGuard.fs" />
     <Compile Include="Mutation.fs" />
     <Compile Include="Qa.fs" />
     <Compile Include="HandoverClosure.fs" />

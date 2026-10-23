@@ -2,6 +2,7 @@ using Factory.Core;
 using Factory.Harness.Sandbox;
 using Factory.S2.Git;
 using Microsoft.FSharp.Collections;
+using Microsoft.FSharp.Core;
 
 namespace Factory.S2.Quality;
 
@@ -86,6 +87,20 @@ public static class QualityGate
         }
         var judge = (IEnumerable<CodeEdge> edges) => Fitness.violations(handover.Elements, handover.Relationships, Core.ToList(edges));
         return (judge(before), judge(current));
+    }
+
+    /// Test files the task touched that assert less than they did on the integration branch (deleted ones count as zero).
+    public static async Task<IReadOnlyList<AssertionDrop>> AssertionsAsync(GitWorkspace git, string worktree, string runId, CancellationToken ct)
+    {
+        var files = new List<Tuple<string, FSharpOption<string>, FSharpOption<string>>>();
+        foreach (var p in (await git.TaskPathsAsync(worktree, runId, ct)).Where(AssertionGuard.isTestFile))
+        {
+            var full = Path.Combine(worktree, p);
+            var now = File.Exists(full) ? FSharpOption<string>.Some(await File.ReadAllTextAsync(full, ct)) : FSharpOption<string>.None;
+            var before = await git.BaseFileAsync(worktree, runId, p, ct) is { } old ? FSharpOption<string>.Some(old) : FSharpOption<string>.None;
+            files.Add(Tuple.Create(p, before, now));
+        }
+        return AssertionGuard.check(Core.ToList(files)).ToList();
     }
 
     /// Project references the diff added or changed that a hand-written rule in the policy forbids, minus those the baseline already had.
