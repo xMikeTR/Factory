@@ -211,7 +211,7 @@ Used by structural-centrality-guard to determine escalation threshold.
 | Model provider | HTTPS | Out | Anthropic API, or APIM -> LiteLLM | `FACTORY_PROVIDER=anthropic|openai`; key never reaches sandbox, ledger or traces |
 | GitHub | gh CLI | Out/In | GitHub | PR create, `/approve` and `/verified` comments from the allow-list, squash merge; dry-run writes to `.factory/runs/<id>/` |
 | git | CLI | Out | target repo | integration branch, worktrees under the state dir |
-| Docker Engine | CLI | Out | factory-s2-runner | container per team, `--network none` apart from the restore window, opened only when RestoreGate passes; sources pinned to nuget.org |
+| Podman / Docker Engine (`FACTORY_CONTAINER_ENGINE`, default podman) | CLI | Out | factory-s2-runner | container per team, `--network none` for its whole life; the restore runs in a separate short-lived container on the bridge, started only when RestoreGate passes; sources pinned to nuget.org |
 | Laya | HTTP `/decide` | Out | Laya sidecar | optional (`FACTORY_LAYA_URL`); heuristic fallback, decider ledgered |
 | Langfuse / OTLP | OTLP | Out | Langfuse | only when `OTEL_EXPORTER_OTLP_ENDPOINT` set; content off unless `FACTORY_OTEL_CAPTURE_CONTENT=1` |
 | PObserve | CLI in the runner image | Out | PObserve | `pobserve-check <specs> <Spec> <logs>` via `FACTORY_POBSERVE_CMD`; exit 2 spec violation, 4 parse error |

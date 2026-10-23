@@ -88,11 +88,11 @@ public class StrykerDockerTests
             await using var sandbox = await env.Sandboxes.ForTeamAsync("qa-net", root, default);
             var found = await sandbox.RunAsync("getent hosts db", root, TimeSpan.FromSeconds(30), new Dictionary<string, string>(), default);
             Assert.Equal(0, found.ExitCode);
-            var nets = await ProcessRunner.RunAsync("docker", ["network", "ls", "--format", "{{.Name}}", "--filter", "name=s2-qa-"], root, TimeSpan.FromSeconds(30));
+            var nets = await ProcessRunner.RunAsync(ContainerEngine.Name, ["network", "ls", "--format", "{{.Name}}", "--filter", "name=s2-qa-"], root, TimeSpan.FromSeconds(30));
             network = nets.Output.Trim();
             Assert.NotEmpty(network);
         }
-        var after = await ProcessRunner.RunAsync("docker", ["network", "ls", "--format", "{{.Name}}", "--filter", "name=s2-qa-"], root, TimeSpan.FromSeconds(30));
+        var after = await ProcessRunner.RunAsync(ContainerEngine.Name, ["network", "ls", "--format", "{{.Name}}", "--filter", "name=s2-qa-"], root, TimeSpan.FromSeconds(30));
         Assert.DoesNotContain(network.Split('\n')[0], after.Output);
     }
 

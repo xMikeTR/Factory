@@ -11,7 +11,7 @@ public class DockerRemovalWarningTests
         var w = DockerSandbox.RemovalWarning("s2-team-1", "docker rm -f s2-team-1 failed:\nCannot connect to the Docker daemon\nmore");
 
         Assert.Contains("s2-team-1", w);
-        Assert.Contains("`docker rm -f s2-team-1`", w);
+        Assert.Contains($"`{ContainerEngine.Name} rm -f s2-team-1`", w);
         Assert.Contains("failed:", w);
         Assert.DoesNotContain("Cannot connect", w);
     }

@@ -175,10 +175,10 @@ task's writes and revert them. Other settings (`FACTORY_MAX_TURNS`, `FACTORY_COM
 `FACTORY_POBSERVE_CMD`, …) are listed in `FactorySettings.FromEnvironment`.
 
 Commands run in a per-team Docker container (`FACTORY_SANDBOX=docker`, the default) built
-from `docker/runner` with the Docker Engine CLI: `docker/runner/build.sh` (image
+from `docker/runner` with Podman (default) or Docker (`FACTORY_CONTAINER_ENGINE=docker`): `docker/runner/build.sh` (image
 `factory-s2-runner`, override with `FACTORY_RUNNER_IMAGE`). The worktree is mounted at its own
 path and the container runs as you with `--network none`, no capabilities, and memory/CPU/pid
-limits. The network is attached only while `dotnet restore` runs at start (ledgered at stage
+limits, and never gets a network. `dotnet restore` runs at start in a separate short-lived container on the bridge that shares the worktree and NuGet cache (ledgered at stage
 `restore`), once per project file on disk, from nuget.org only. Before it opens, every restore input
 changed since HEAD is checked against an allow-list (packages, project references, compile items,
 plain properties); anything else (targets, imports, custom SDKs, nuget.config, .props/.targets)
