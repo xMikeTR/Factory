@@ -26,7 +26,9 @@ let allDoneWhen =
               yield [ a; b ]
               for c in allChecks do yield [ a; b; c ] ]
 
-let facts = { Commit = Some "abc1234"; OnMain = Some true; GateRuns = [ { Gate = "dotnet test"; Commit = Some "abc1234"; Passed = true; Dirty = false } ]; Ticks = [] }
+let facts = { Commit = Some "abc1234"; OnMain = Some true; GateRuns = [ { Gate = "dotnet test"; Commit = Some "abc1234"; Passed = true; Dirty = false } ]; Ticks = []; ParityRuns = []; ParityScenarios = [] }
+let parityItem v = created { draft with DoneWhen = [ "gate", "dotnet test"; "parity", v ] }
+let parityRun s outcome = { Scenario = s; Commit = "abc1234"; Outcome = outcome }
 
 let tests: (string * (unit -> unit)) list =
     [ "work: a repo item and a non-repo item are valid", fun () ->
@@ -79,6 +81,33 @@ let tests: (string * (unit -> unit)) list =
           let none = { facts with Commit = None; OnMain = None; GateRuns = [] }
           check (Result.isError (Evidence.create item none)) "unticked"
           check (Result.isOk (Evidence.create item { none with Ticks = [ "checklist:audience named"; "review:Dana" ] })) "ticked"
+      // ---------- parity: a recorded parity_result at the done commit, never a claim ----------
+      "work: a parity entry names a scenario or all, and only a repo item has one", fun () ->
+          check (match (parityItem "quote-list").DoneWhen.ToList with [ Gate _; Parity "quote-list" ] -> true | _ -> false) "scenario"
+          equal "parity:all" (Check.key (Parity "all")) "key"
+          check (List.contains (BlankCheck(2, "parity")) (errorsOf { draft with DoneWhen = [ "gate", "g"; "parity", " " ] })) "blank"
+          check (List.contains ParityWithoutRepo (errorsOf { docDraft with DoneWhen = [ "checklist", "c"; "parity", "all" ] })) "not a repo item"
+          check (List.contains RepoWithoutGate (errorsOf { draft with DoneWhen = [ "parity", "all" ] })) "parity is not a gate"
+      "evidence: parity needs a passing result for the scenario at the done commit", fun () ->
+          let item = parityItem "quote-list"
+          check (Result.isOk (Evidence.create item { facts with ParityRuns = [ parityRun "quote-list" ParityPass ] })) "pass"
+          check (Result.isError (Evidence.create item facts)) "never recorded"
+          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "quote-list" ParityFail ] })) "fail"
+          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "quote-list" ParityCouldNotRun ] })) "could not run is not a pass"
+          check (Result.isError (Evidence.create item { facts with ParityRuns = [ { parityRun "quote-list" ParityPass with Commit = "other" } ] })) "other commit"
+          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "other-screen" ParityPass ] })) "other scenario"
+      "evidence: the last parity result for a scenario at the commit decides", fun () ->
+          let item = parityItem "quote-list"
+          check (Result.isOk (Evidence.create item { facts with ParityRuns = [ parityRun "quote-list" ParityFail; parityRun "quote-list" ParityPass ] })) "pass last"
+          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "quote-list" ParityPass; parityRun "quote-list" ParityFail ] })) "fail last"
+      "evidence: parity all needs every registry scenario to pass, and fails when there are none", fun () ->
+          let item = parityItem "all"
+          let scenarios = [ "a"; "b" ]
+          check (Result.isOk (Evidence.create item { facts with ParityScenarios = scenarios; ParityRuns = [ parityRun "a" ParityPass; parityRun "b" ParityPass ] })) "all pass"
+          match Evidence.create item { facts with ParityScenarios = scenarios; ParityRuns = [ parityRun "a" ParityPass ] } with
+          | Error es -> check (es |> List.exists (fun e -> e.Contains "b")) $"names the missing scenario: %A{es}"
+          | Ok _ -> failwith "b never ran"
+          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "a" ParityPass ] })) "no scenarios in the registry"
       // ---------- state machine ----------
       "state: the happy path", fun () ->
           let ev = match Evidence.create repoItem facts with Ok e -> e | Error es -> failwithf "%A" es

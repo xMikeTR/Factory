@@ -22,7 +22,7 @@ public static class JiraMirrorReport
         var registry = await WorkRegistryReader.ReadAsync(registryPath, ct);
         var onMain = await WorkDigestReport.OnMainAsync(registry, repoPath, baseBranch, ct);
         var candidates = Board.candidates(
-            ListModule.OfSeq(registry.Items),
+            ListModule.OfSeq(registry.Items), ListModule.OfSeq(registry.ParityScenarios),
             ListModule.OfSeq(registry.Facts.Select(f => Tuple.Create(f.Ts, f.Fact))),
             FuncConvert.FromFunc<string, FSharpOption<bool>>(c =>
                 onMain.GetValueOrDefault(c) is { } b ? FSharpOption<bool>.Some(b) : FSharpOption<bool>.None));

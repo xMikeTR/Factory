@@ -45,7 +45,7 @@ public static class WorkDigestReport
         var items = ListModule.OfSeq(registry.Items);
         var facts = ListModule.OfSeq(registry.Facts.Select(f => Tuple.Create(f.Ts, f.Fact)));
         var input = new SchedulerInput(
-            Board.candidates(items, facts, FuncConvert.FromFunc<string, FSharpOption<bool>>(c =>
+            Board.candidates(items, ListModule.OfSeq(registry.ParityScenarios), facts, FuncConvert.FromFunc<string, FSharpOption<bool>>(c =>
                 onMain.GetValueOrDefault(c) is { } b ? FSharpOption<bool>.Some(b) : FSharpOption<bool>.None)),
             Board.wipLimit(facts, defaultWip), FSharpOption<Budget>.None, Board.stale(facts));
         return Scheduler.plan(input);
