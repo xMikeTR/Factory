@@ -22,14 +22,10 @@ npx playwright install chromium
 export FACTORY_DESIGNC_DIR=$PWD
 ```
 
-Set the two environments in the registry's `designc.json`:
-
-```json
-"parity": {
-  "legacy": { "baseUrl": "<LEGACY DEV URL>" },
-  "next":   { "baseUrl": "<NEW APP TEST ENV URL>" }
-}
-```
+Set the two URLs on the work VM, in designc's Set up, where the legacy reference is already set. They are stored
+in the registry's `designc.json`: the legacy dev URL on the legacy reference (or `parity.legacy.baseUrl`), and the
+new app's test environment in `parity.next.baseUrl`. S2 holds no URLs: `factory-s2 parity` lets designc's recorder
+read them, and `--base-url` overrides the new app's URL for one run (for example, a commit served locally).
 
 The new app's test environment is the only place where `--allow-writes` would ever be acceptable. S2 never passes
 it, and nothing passes it against legacy.
