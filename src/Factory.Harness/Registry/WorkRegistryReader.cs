@@ -11,7 +11,8 @@ namespace Factory.Harness.Registry;
 public sealed record WorkRegistry(
     IReadOnlyList<WorkItem> Items,
     IReadOnlyList<string> Problems,
-    IReadOnlyList<(long Ts, LedgerFact Fact)> Facts);
+    IReadOnlyList<(long Ts, LedgerFact Fact)> Facts,
+    IReadOnlyList<string> ParityScenarios);
 
 /// Reads designc's `work/<id>.yaml` (format owned by Designc, not forked here) through
 /// `WorkItem.create`, and the `ledger/*.jsonl` rows the work digest cares about.
@@ -46,7 +47,7 @@ public static class WorkRegistryReader
             var (item, own) = Check(d, requirements, ids);
             if (item is null) problems.AddRange(own); else items.Add(item);
         }
-        return new WorkRegistry(items, problems, await FactsAsync(registryPath, ct));
+        return new WorkRegistry(items, problems, await FactsAsync(registryPath, ct), await ParityScenariosAsync(registryPath, problems, ct));
     }
 
     /// The item when nothing is wrong with it, else the problems (requirement, elements, dependencies, then WorkItem.create's own).
@@ -63,6 +64,28 @@ public static class WorkRegistryReader
         var made = WorkItemModule.create(d);
         if (made.IsError) own.AddRange(made.ErrorValue.Select(e => WorkErrorModule.describe(d.Id, e)));
         return own.Count > 0 ? (null, own) : (made.ResultValue, own);
+    }
+
+    /// The ids of `parity/scenarios/*.yaml` (designc's format; only the id is read here), what "parity: all" means.
+    private static async Task<IReadOnlyList<string>> ParityScenariosAsync(string registryPath, List<string> problems, CancellationToken ct)
+    {
+        var ids = new List<string>();
+        var dir = Path.Combine(registryPath, "parity", "scenarios");
+        if (!Directory.Exists(dir)) return ids;
+        foreach (var file in Directory.GetFiles(dir, "*.yaml").OrderBy(f => f, StringComparer.Ordinal))
+        {
+            try
+            {
+                var m = Yaml.Deserialize<Dictionary<string, object?>>(await File.ReadAllTextAsync(file, ct)) ?? [];
+                if (m.GetValueOrDefault("id")?.ToString() is { Length: > 0 } id) ids.Add(id);
+                else problems.Add($"parity/scenarios/{Path.GetFileName(file)}: has no id; parity: all leaves it out.");
+            }
+            catch (Exception e) when (e is YamlDotNet.Core.YamlException or InvalidCastException)
+            {
+                problems.Add($"parity/scenarios/{Path.GetFileName(file)}: not readable ({e.Message}); parity: all leaves it out.");
+            }
+        }
+        return ids;
     }
 
     private static async Task<Dictionary<string, HashSet<string>>> RequirementsAsync(string registryPath, List<string> problems, CancellationToken ct)
@@ -172,6 +195,8 @@ public static class WorkRegistryReader
                         OptLong(r, "limit_tokens"), OptLong(r, "spent_tokens"),
                         O("reason")),
                 "escape" when S("id") is { } e => LedgerFact.NewEscapeRecorded(e, O("origin")),
+                "parity_result" when S("scenario") is { } sc && S("commit") is { } pc && ParityOutcomeModule.parse(S("outcome") ?? "") is { } po =>
+                    LedgerFact.NewParityResult(sc, pc, po.Value),
                 "wip_limit_changed" when r.TryGetProperty("limit", out var l) && l.TryGetInt32(out var n) => LedgerFact.NewWipLimitChanged(n),
                 _ => null,
             };

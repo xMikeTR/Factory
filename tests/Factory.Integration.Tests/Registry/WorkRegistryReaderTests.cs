@@ -131,6 +131,29 @@ public class WorkRegistryReaderTests
     }
 
     [Fact]
+    public async Task Parity_scenario_ids_and_parity_result_rows_are_read()
+    {
+        var root = Registry(new()
+        {
+            ["requirements/REQ-1.yaml"] = Requirement,
+            ["work/W-1.yaml"] = Work.Replace("- gate: dotnet test", "- gate: dotnet test\n  - parity: all"),
+            ["parity/scenarios/quote-list.yaml"] = "id: quote-list\nsteps:\n  - goto: {path: /quotes}\n",
+            ["parity/scenarios/broken.yaml"] = "steps: []\n",
+            ["ledger/pipeline.jsonl"] =
+                """{"kind":"parity_result","scenario":"quote-list","commit":"abc1234","outcome":"could_not_run","failures":[],"ts":2,"by":"factory-s2"}""" + "\n"
+                + """{"kind":"parity_result","scenario":"quote-list","commit":"abc1234","outcome":"maybe","ts":3,"by":"factory-s2"}""" + "\n",
+        });
+
+        var reg = await WorkRegistryReader.ReadAsync(root, CancellationToken.None);
+
+        Assert.Equal(["quote-list"], reg.ParityScenarios);
+        Assert.Contains("parity/scenarios/broken.yaml: has no id; parity: all leaves it out.", reg.Problems);
+        Assert.Contains(Factory.Core.Check.NewParity("all"), Assert.Single(reg.Items).DoneWhen.ToList);
+        var row = Assert.IsType<Factory.Core.LedgerFact.ParityResult>(Assert.Single(reg.Facts).Fact); // an unknown outcome is not a fact
+        Assert.Equal(("quote-list", "abc1234", Factory.Core.ParityOutcome.ParityCouldNotRun), (row.scenario, row.commit, row.outcome));
+    }
+
+    [Fact]
     public async Task Recheck_and_escape_rows_reach_the_metrics()
     {
         var root = Registry(new()

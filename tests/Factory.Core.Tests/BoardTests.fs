@@ -21,7 +21,7 @@ let private onMain (_: string) = Some true
 
 let private plan facts =
     let input =
-        { Candidates = Board.candidates items facts onMain
+        { Candidates = Board.candidates items [] facts onMain
           WipLimit = Board.wipLimit facts 2
           Budget = None
           Stale = Board.stale facts }
@@ -51,9 +51,28 @@ let tests: (string * (unit -> unit)) list =
               | Error es -> failwithf "%A" es
           let state evidence =
               let facts = [ 1L, ItemFrozen("W-R", "h-R", "r1"); 2L, ItemPulled "W-R"; 3L, ItemDone("W-R", None, evidence) ]
-              (Board.candidates [ reviewed ] facts onMain |> List.exactlyOne).State
+              (Board.candidates [ reviewed ] [] facts onMain |> List.exactlyOne).State
           check (match state [] with WorkState.Done _ -> false | _ -> true) "no tick"
           check (match state [ "checklist:numbers match the treaty" ] with WorkState.Done _ -> true | _ -> false) "ticked"
+      "board: a parity item is Done only with a passing parity_result at the done commit, recorded before item_done", fun () ->
+          let p =
+              match
+                  WorkItem.create
+                      { Id = "W-P"; Requirement = Some "REQ-1"; Elements = [ "W-P" ]; Repo = None; Target = None
+                        DependsOn = []; Writes = []; DoneWhen = [ "gate", "dotnet test"; "parity", "all" ] }
+              with
+              | Ok i -> i
+              | Error es -> failwithf "%A" es
+          let state parity =
+              let facts =
+                  [ 1L, ItemFrozen("W-P", "h-P", "r1"); 2L, ItemPulled "W-P"; 3L, ItemGate("W-P", "dotnet test", true, Some "abc1234", false) ]
+                  @ parity @ [ 5L, ItemDone("W-P", Some "abc1234", []) ]
+              (Board.candidates [ p ] [ "quote-list" ] (List.sortBy fst facts) onMain |> List.exactlyOne).State
+          let isDone = function WorkState.Done _ -> true | _ -> false
+          check (isDone (state [ 4L, ParityResult("quote-list", "abc1234", ParityPass) ])) "passed"
+          check (not (isDone (state []))) "never recorded"
+          check (not (isDone (state [ 4L, ParityResult("quote-list", "abc1234", ParityCouldNotRun) ]))) "could not run"
+          check (not (isDone (state [ 6L, ParityResult("quote-list", "abc1234", ParityPass) ]))) "recorded after the done row"
       "board: a stale re-check defers the item with its reasons until it is frozen again", fun () ->
           let facts = [ frozen "W-C" 1L; 2L, ItemRecheck("W-C", true, [ "Pricing moved" ]) ]
           match (plan facts).Deferred with

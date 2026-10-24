@@ -22,6 +22,8 @@ type LedgerFact =
     | ItemBudgetReading of item: string * status: string * limitTokens: int64 option * spentTokens: int64 option * reason: string option
     /// A bug closed at intake, with designc's origin (spec_gap | design_error | translation_error | gate_gap).
     | EscapeRecorded of id: string * origin: string option
+    /// A parity scenario replayed on the new app at the commit the recorder ran against (`parity_result`).
+    | ParityResult of scenario: string * commit: string * outcome: ParityOutcome
 
 type DigestState =
     | InBacklog
