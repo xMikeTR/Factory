@@ -21,6 +21,7 @@ using static Factory.S2.ServiceWiring;
 // factory-s2 metrics --registry ../registry [--repo .] [--base main]   S4 work metrics: throughput, lead time, human wait, deferrals, re-check rate, escapes
 // factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
 // factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
+// factory-s2 parity --registry ../registry --item W-1 [--repo .] [--designc <dir>|FACTORY_DESIGNC_DIR] [--base-url <new app>] [--adapter web|fixture:<file>]   designc's recorder on the next side at the clean HEAD (appends parity_result), then parity-decisions; exit 0 pass, 1 fail, 3 could not run, 2 error
 // factory-s2 parity-decisions --registry ../registry   one open needs_decision (A build like legacy / B ask the PO) per scenario whose latest parity_result failed; exit 2 when any was raised
 // factory-s2 gate-shadow --cases cases.json [--repo .]   the QA gate's jira.transition policy against recorded kit decisions: logs what it would allow or deny (nothing enforced) and lists where it disagrees with the kit
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
@@ -330,6 +331,34 @@ try
             return readings.Any(r => r.Status.IsExceeded) ? 2 : 0;
         }
 
+        case "parity":
+        {
+            // designc's recorder replays every parity scenario on the new app, labelled with the repo's HEAD, and appends
+            // the parity_result rows itself; then uncovered failures become needs_decision rows. Work VM only.
+            var repo = Path.GetFullPath(opts.GetValueOrDefault("repo") ?? ".");
+            var designc = opts.GetValueOrDefault("designc") ?? Environment.GetEnvironmentVariable("FACTORY_DESIGNC_DIR")
+                ?? throw new ArgumentException("--designc <designc app dir> (or FACTORY_DESIGNC_DIR) is required");
+            var git = new Factory.S2.Git.GitWorkspace(repo, Path.Combine(repo, ".factory"));
+            if ((await git.ChangedPathsAsync(repo, CancellationToken.None)).Count > 0)
+            {
+                Console.Error.WriteLine("the repo has uncommitted changes: parity is recorded against a commit, so commit first");
+                return 2;
+            }
+            var registry = Path.GetFullPath(Required(opts, "registry"));
+            var check = new Factory.Harness.Registry.ParityCheck(registry, await git.HeadAsync(repo, CancellationToken.None),
+                Required(opts, "item"), opts.GetValueOrDefault("base-url"), opts.GetValueOrDefault("adapter"));
+            var (recorded, output) = await Factory.Harness.Registry.ParityRecorder.RecordAsync(designc, check, CancellationToken.None);
+            Console.Write(output);
+            if (recorded == Factory.Harness.Registry.ParityRecording.Error)
+            {
+                Console.Error.WriteLine("parity recorder error (no baseline, bad scenario or the app did not open): nothing judged");
+                return 2;
+            }
+            var raised = await Factory.Harness.Registry.ParityDecisionReport.RaiseAsync(registry, DateTimeOffset.UtcNow, CancellationToken.None);
+            Console.WriteLine($"parity {recorded} at {check.Commit[..Math.Min(8, check.Commit.Length)]}; {raised} needs_decision raised");
+            return recorded switch { Factory.Harness.Registry.ParityRecording.Pass => 0, Factory.Harness.Registry.ParityRecording.Fail => 1, _ => 3 };
+        }
+
         case "parity-decisions":
         {
             // One open needs_decision per scenario whose latest parity_result failed: build it like legacy, or ask the PO.
@@ -447,7 +476,7 @@ try
         }
 
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|parity-decisions|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|parity|parity-decisions|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
             return 2;
     }
 }
