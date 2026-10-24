@@ -24,8 +24,8 @@ export FACTORY_DESIGNC_DIR=$PWD
 
 The two URLs are given on the work VM. S2 holds none. Today, pass them per run with `--base-url`: the legacy dev URL
 to designc's recorder for baselines, and the new app's test environment to `factory-s2 parity`. designc also reads
-`parity.legacy.baseUrl` / `parity.next.baseUrl` from the registry's `designc.json`, but that file is committed.
-(Proposed, not built: setting them in designc's Set up, with the legacy URL on the legacy reference.)
+`parity.legacy.baseUrl` / `parity.next.baseUrl` from the registry's `designc.json`, but leave them out: that file is
+committed, and the new app's address belongs to whoever deploys it.
 
 The new app's test environment is the only place where `--allow-writes` would ever be acceptable. S2 never passes
 it, and nothing passes it against legacy.
