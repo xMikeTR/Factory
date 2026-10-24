@@ -207,6 +207,33 @@ type ParityRun =
       Commit: string
       Outcome: ParityOutcome }
 
+/// One entry of a parity_result's failures: a difference no acceptance criterion or bound decision covers.
+type ParityFailure =
+    { Step: int
+      Key: string
+      Kind: string
+      Msg: string }
+
+[<RequireQualifiedAccess>]
+module ParityDecision =
+    /// The question a failed parity run puts to a person: build the difference out like legacy, or ask the PO for a
+    /// business decision that covers it (an acceptance locator for an added or changed element, `removes` for a removed one).
+    let raise (scenario: string) (commit: string) (item: string option) (failures: ParityFailure list) : NeedsDecision =
+        let short = if commit.Length > 7 then commit.Substring(0, 7) else commit
+        let forItem = match item with Some i -> $" for {i}" | None -> ""
+        let first = failures |> List.truncate 3 |> List.map (fun f -> f.Msg) |> String.concat "; "
+        { Question = $"Parity {scenario} failed at {short}{forItem}: {failures.Length} uncovered difference(s) from legacy. First: {first}. Build it like legacy, or ask the PO for a business decision?"
+          Elements = []
+          Source = "parity"
+          Options =
+            [ { Id = "A"
+                Summary = "Build it like legacy"
+                Consequence = $"the difference is treated as a missing behaviour; the item is reworked until parity {scenario} passes" }
+              { Id = "B"
+                Summary = "Ask the PO for a business decision"
+                Consequence = "the PO binds a decision (removes: for a removed element) or an acceptance criterion names the added or changed one; parity is re-run with it as an exception" } ]
+          Recommended = Some "A" }
+
 /// What is known when someone says a work item is done.
 type EvidenceFacts =
     { Commit: string option

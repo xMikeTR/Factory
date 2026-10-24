@@ -48,6 +48,7 @@ factory-s2 qa                  --repo . --run-id <id>                      follo
 factory-s2 digest              --registry r [--last-look ms] [--wip 3] [--notify-state f]
 factory-s2 pull-plan | metrics --registry r                                read-only reports
 factory-s2 budget              --repo . [--registry r] [--no-report]       exit 2 when exceeded; `run` then exits 4
+factory-s2 parity-decisions    --registry r                                needs_decision per failed parity scenario; exit 2 when raised
 factory-s2 intake              --registry r --id BUG-1 --spec ... --origin ... --ref ...
 factory-s2 jira-mirror         --registry r [--snapshot jira.json | JIRA_URL/JIRA_TOKEN] [--apply]
 factory-s2 ux-review           --repo . --handover h [--judge [--item W-1 --registry r --threshold 3.5]]

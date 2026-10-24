@@ -108,6 +108,15 @@ let tests: (string * (unit -> unit)) list =
           | Error es -> check (es |> List.exists (fun e -> e.Contains "b")) $"names the missing scenario: %A{es}"
           | Ok _ -> failwith "b never ran"
           check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "a" ParityPass ] })) "no scenarios in the registry"
+      "parity: an uncovered difference asks to build it like legacy or ask the PO, naming the first failures", fun () ->
+          let f n = { Step = n; Key = $"button:Save#{n}"; Kind = "missing"; Msg = $"step {n}: button Save is missing" }
+          let nd = ParityDecision.raise "quote-list" "abc1234def" (Some "W-1") [ f 1; f 2; f 3; f 4 ]
+          equal [ "A"; "B" ] (nd.Options |> List.map (fun o -> o.Id)) "two options"
+          equal [] (NeedsDecision.optionErrors nd.Options nd.Recommended) "a valid choice"
+          check (nd.Options.[0].Summary.Contains "like legacy" && nd.Options.[1].Summary.Contains "PO") $"%A{nd.Options}"
+          check (nd.Question.Contains "quote-list" && nd.Question.Contains "abc1234" && nd.Question.Contains "W-1" && nd.Question.Contains "4 uncovered") nd.Question
+          check (nd.Question.Contains "step 3:" && not (nd.Question.Contains "step 4:")) "only the first three failures"
+          equal "parity" nd.Source "source"
       // ---------- state machine ----------
       "state: the happy path", fun () ->
           let ev = match Evidence.create repoItem facts with Ok e -> e | Error es -> failwithf "%A" es

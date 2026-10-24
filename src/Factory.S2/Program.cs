@@ -21,6 +21,7 @@ using static Factory.S2.ServiceWiring;
 // factory-s2 metrics --registry ../registry [--repo .] [--base main]   S4 work metrics: throughput, lead time, human wait, deferrals, re-check rate, escapes
 // factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
 // factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
+// factory-s2 parity-decisions --registry ../registry   one open needs_decision (A build like legacy / B ask the PO) per scenario whose latest parity_result failed; exit 2 when any was raised
 // factory-s2 gate-shadow --cases cases.json [--repo .]   the QA gate's jira.transition policy against recorded kit decisions: logs what it would allow or deny (nothing enforced) and lists where it disagrees with the kit
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
 // factory-s2 ci-report --repo . --run-id <id> --check "<CI check>" --log <file | -> [--file a.cs,b.cs | --task T-001] [--commit sha]   a CI failure after the run ended, blamed on the tasks whose write paths own the files; then run --repair <id> (at most FACTORY_MAX_FIX_ROUNDS rounds, default 2)
@@ -329,6 +330,15 @@ try
             return readings.Any(r => r.Status.IsExceeded) ? 2 : 0;
         }
 
+        case "parity-decisions":
+        {
+            // One open needs_decision per scenario whose latest parity_result failed: build it like legacy, or ask the PO.
+            var raised = await Factory.Harness.Registry.ParityDecisionReport.RaiseAsync(
+                Required(opts, "registry"), DateTimeOffset.UtcNow, CancellationToken.None);
+            Console.WriteLine(raised == 0 ? "no new uncovered parity differences" : $"{raised} needs_decision raised for failed parity scenarios");
+            return raised == 0 ? 0 : 2;
+        }
+
         case "gate-shadow":
         {
             var settings = FactorySettings.FromEnvironment(opts.GetValueOrDefault("repo") ?? ".", null, null);
@@ -437,7 +447,7 @@ try
         }
 
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|parity-decisions|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
             return 2;
     }
 }
