@@ -46,10 +46,12 @@
     "item_budget",
     "item_judge",
     "run_started",
-    "run_ended"
+    "run_ended",
+    "parity_result"
   ],
   "rules": [
     "fail_needs_evidence",
+    "failures_shape",
     "budget_shape",
     "usage_shape",
     "by_role_shape",
@@ -694,6 +696,37 @@
       "enums": {},
       "types": {},
       "rules": []
+    },
+    "parity_result": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "scenario",
+        "commit",
+        "outcome",
+        "failures"
+      ],
+      "optional": [
+        "item",
+        "report"
+      ],
+      "enums": {
+        "outcome": [
+          "pass",
+          "fail",
+          "could_not_run"
+        ]
+      },
+      "types": {
+        "scenario": "string",
+        "commit": "string|null",
+        "outcome": "string",
+        "failures": "array",
+        "item": "string",
+        "report": "string"
+      },
+      "rules": [
+        "failures_shape"
+      ]
     },
     "run_ended": {
       "stream": "pipeline.jsonl",
