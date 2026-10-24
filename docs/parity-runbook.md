@@ -22,10 +22,10 @@ npx playwright install chromium
 export FACTORY_DESIGNC_DIR=$PWD
 ```
 
-Set the two URLs on the work VM, in designc's Set up, where the legacy reference is already set. They are stored
-in the registry's `designc.json`: the legacy dev URL on the legacy reference (or `parity.legacy.baseUrl`), and the
-new app's test environment in `parity.next.baseUrl`. S2 holds no URLs: `factory-s2 parity` lets designc's recorder
-read them, and `--base-url` overrides the new app's URL for one run (for example, a commit served locally).
+The two URLs are given on the work VM. S2 holds none. Today, pass them per run with `--base-url`: the legacy dev URL
+to designc's recorder for baselines, and the new app's test environment to `factory-s2 parity`. designc also reads
+`parity.legacy.baseUrl` / `parity.next.baseUrl` from the registry's `designc.json`, but that file is committed.
+(Proposed, not built: setting them in designc's Set up, with the legacy URL on the legacy reference.)
 
 The new app's test environment is the only place where `--allow-writes` would ever be acceptable. S2 never passes
 it, and nothing passes it against legacy.
@@ -35,7 +35,7 @@ it, and nothing passes it against legacy.
 Record legacy once per scenario, and again when legacy changes:
 
 ```sh
-node scripts/parity-record.js --registry <registry> --scenario all --side legacy
+node scripts/parity-record.js --registry <registry> --scenario all --side legacy --base-url <legacy dev URL>
 ```
 
 S2 never writes `parity/scenarios/` or `parity/baselines/`.
@@ -46,7 +46,7 @@ S2 never writes `parity/scenarios/` or `parity/baselines/`.
 2. Run, from a clean checkout at that commit:
 
    ```sh
-   factory-s2 parity --registry <registry> --item W-1 --repo <new app repo> [--base-url <url>]
+   factory-s2 parity --registry <registry> --item W-1 --repo <new app repo> --base-url <new app test env URL>
    ```
 
 | Exit | Meaning | Next |
