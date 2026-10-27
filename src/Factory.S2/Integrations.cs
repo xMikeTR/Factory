@@ -11,6 +11,13 @@ public interface IPullRequests
     Task EnableAutoMergeAsync(string url, CancellationToken ct);
 }
 
+/// A real PR host (not dry-run) that can say a person merged the run's PR: `factory-s2 close` asks it.
+public interface IMergedPullRequests
+{
+    /// The url of the merged PR from `head`, or null when none is merged.
+    Task<string?> MergedPullRequestAsync(string head, CancellationToken ct);
+}
+
 /// A PR host whose comments carry approvals (`/approve <reason>`, `/verified <check>`). Tiered
 /// mode reads them on every run: too few parks the run, enough merges it. Without this the
 /// merge-approval port asks a human instead (dry-run).
@@ -22,7 +29,7 @@ public interface IApprovalComments
 
 /// GitHub via the gh CLI, authenticated as the operator. Who may approve is the policy's
 /// allow-list (Merge.approvals), never "whoever commented".
-public sealed class GhCliPullRequests(string repoPath) : IPullRequests, IApprovalComments
+public sealed class GhCliPullRequests(string repoPath) : IPullRequests, IApprovalComments, IMergedPullRequests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(2);
 
@@ -41,7 +48,6 @@ public sealed class GhCliPullRequests(string repoPath) : IPullRequests, IApprova
 
     public Task MergeAsync(string url, CancellationToken ct) => Gh(ct, "pr", "merge", url, "--squash");
 
-    /// The url of the merged PR from `head`, or null when none is merged.
     public async Task<string?> MergedPullRequestAsync(string head, CancellationToken ct)
     {
         var url = await Gh(ct, "pr", "list", "--head", head, "--state", "merged", "--json", "url", "--jq", ".[0].url");
@@ -71,6 +77,53 @@ public sealed class GhCliPullRequests(string repoPath) : IPullRequests, IApprova
     {
         var r = await ProcessRunner.RunAsync("gh", args, repoPath, Timeout, ct: ct);
         if (!r.Succeeded) throw new InvalidOperationException($"gh {string.Join(' ', args)} failed:\n{r.Tail()}");
+        return r.Output.Trim();
+    }
+}
+
+/// Azure DevOps Repos via the az CLI (azure-devops extension), signed in as the operator. The organisation,
+/// project and repository come from the repo's origin remote (az's --detect), so nothing about them is configured.
+/// No approval comments: tiered mode on Azure DevOps asks at the console, as dry-run does.
+public sealed class AzCliPullRequests(string repoPath, string az = "az") : IPullRequests, IMergedPullRequests
+{
+    private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(2);
+
+    /// Azure DevOps refuses a PR description over 4000 characters.
+    public const int MaxDescription = 4000;
+
+    /// "<repository web url>/pullrequest/<id>" for the first PR of a list or a created one.
+    private const string UrlOf = "join('/pullrequest/', [repository.webUrl, to_string(pullRequestId)])";
+
+    public async Task<string> EnsurePullRequestAsync(string head, string baseBranch, string title, string body, CancellationToken ct)
+    {
+        var existing = await Az(ct, "repos", "pr", "list", "--source-branch", head, "--status", "active", "--query", $"[0].{UrlOf}", "-o", "tsv");
+        if (!string.IsNullOrWhiteSpace(existing)) return existing;
+        return await Az(ct, "repos", "pr", "create", "--source-branch", head, "--target-branch", baseBranch,
+            "--title", title, "--description", Description(body), "--query", UrlOf, "-o", "tsv");
+    }
+
+    public Task EnableAutoMergeAsync(string url, CancellationToken ct) =>
+        Az(ct, "repos", "pr", "update", "--id", IdOf(url), "--auto-complete", "true", "--squash", "true");
+
+    public async Task<string?> MergedPullRequestAsync(string head, CancellationToken ct)
+    {
+        var url = await Az(ct, "repos", "pr", "list", "--source-branch", head, "--status", "completed", "--query", $"[0].{UrlOf}", "-o", "tsv");
+        return string.IsNullOrWhiteSpace(url) ? null : url;
+    }
+
+    /// The body as is when it fits, else cut with a note pointing at the full one in the run folder.
+    public static string Description(string body)
+    {
+        const string cut = "\n\n(cut to fit Azure DevOps; the full body is in the run's ledger and .factory/runs/<id>/)";
+        return body.Length <= MaxDescription ? body : body[..(MaxDescription - cut.Length)] + cut;
+    }
+
+    public static string IdOf(string url) => url.TrimEnd('/')[(url.TrimEnd('/').LastIndexOf('/') + 1)..];
+
+    private async Task<string> Az(CancellationToken ct, params string[] args)
+    {
+        var r = await ProcessRunner.RunAsync(az, args, repoPath, Timeout, ct: ct);
+        if (!r.Succeeded) throw new InvalidOperationException($"az {string.Join(' ', args)} failed:\n{r.Tail()}");
         return r.Output.Trim();
     }
 }

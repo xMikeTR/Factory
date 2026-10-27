@@ -113,8 +113,8 @@ export FACTORY_PROVIDER=anthropic ANTHROPIC_API_KEY=&lt;key&gt;
 
 dotnet run --project src/Factory.S2 -- run \
   --handover &lt;registry&gt;/handovers/&lt;id&gt;/handover.json \
-  --repo &lt;target repo&gt; --registry &lt;registry&gt; [--base main] [--github]</pre>
-<p>The reviewer and QA must run on a different model family from the author. Start-up refuses otherwise; with one provider only, <code>FACTORY_REVIEWER_SAME_FAMILY=allow</code> allows dry-run merges and stamps the reviews as same-family. Without <code>--github</code>, pull requests are written under <code>.factory/runs/&lt;id&gt;/</code> instead of opened.</p>
+  --repo &lt;target repo&gt; --registry &lt;registry&gt; [--base main] [--github | --azdo]</pre>
+<p>The reviewer and QA must run on a different model family from the author. Start-up refuses otherwise; with one provider only, <code>FACTORY_REVIEWER_SAME_FAMILY=allow</code> allows dry-run merges and stamps the reviews as same-family. <code>--azdo</code> opens them on Azure DevOps through the az CLI (with the <code>azure-devops</code> extension, logged in; the organisation, project and repo come from the <code>origin</code> remote). Without either, pull requests are written under <code>.factory/runs/&lt;id&gt;/</code> instead of opened.</p>
 
 <h3>Agent contracts</h3>
 <p>If the design has agents, designc can compile a contract for each (Design sidebar, Agent contracts) and copy the compiled files into the handover at freeze. S2 reads them: <code>FACTORY_CONTRACTS=warn</code> (the default) names agents that have none, <code>require</code> refuses to start a run, <code>off</code> ignores them. S2 does not yet enforce the policy while a run is going; that is still to do.</p>
@@ -128,7 +128,7 @@ dotnet run --project src/Factory.S2 -- run \
 <tr><td><code>digest --registry r</code></td><td>What needs you, what failed, what finished.</td></tr>
 <tr><td><code>pull-plan</code>, <code>metrics</code></td><td>Read-only reports over the registry.</td></tr>
 <tr><td><code>qa --repo . --run-id &lt;id&gt;</code></td><td>Follow-up QA without an author.</td></tr>
-<tr><td><code>close --repo . --run-id &lt;id&gt;</code></td><td>After you merge a <code>ready_for_review</code> run: confirms the merge, re-runs the integration checks on the merged commit, and closes the handover when they pass.</td></tr>
+<tr><td><code>close --repo . --run-id &lt;id&gt; [--github | --azdo]</code></td><td>After you merge a <code>ready_for_review</code> run: confirms the merge, re-runs the integration checks on the merged commit, and closes the handover when they pass.</td></tr>
 </table>
 <p>Every run leaves <code>.factory/runs/&lt;id&gt;/result.json</code> saying how it ended (<code>ready_for_review</code>, <code>parked</code>, <code>failed</code>, <code>integration_failed</code>, <code>refused</code>, and so on).</p>
 
