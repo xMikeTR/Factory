@@ -10,12 +10,12 @@ using Core = Factory.Core.Core;
 /// base checkout, never a task worktree, so no agent edits the policy that judges its own merge.
 ///
 ///   merge:
-///     enforcement: auto | tiered      # FACTORY_MERGE_ENFORCEMENT overrides
+///     enforcement: review | auto | tiered  # FACTORY_MERGE_ENFORCEMENT overrides
 ///     approvers: [alice, bob]         # FACTORY_MERGE_APPROVERS (comma-separated) overrides
 ///     autoMergeMaxRisk: low | medium | high
 ///     autoMergeMaxChangedLines: 400
 ///
-/// A missing file is the default (auto: merge on green). An unknown value is rejected.
+/// A missing file is the default (review: the run ends at the PR, a person merges). An unknown value is rejected.
 public static class MergePolicyFile
 {
     public const string RelativePath = ".factory/policy.yaml";
@@ -45,17 +45,18 @@ public static class MergePolicyFile
         var d = Core.DefaultMergePolicy;
         var errors = new List<string>();
 
-        var mode = env.GetValueOrDefault("FACTORY_MERGE_ENFORCEMENT") ?? m.Enforcement ?? "auto";
+        var mode = env.GetValueOrDefault("FACTORY_MERGE_ENFORCEMENT") ?? m.Enforcement ?? "review";
         var approvers = env.TryGetValue("FACTORY_MERGE_APPROVERS", out var a)
             ? a.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
             : m.Approvers ?? [];
         MergeEnforcement? enforcement = mode.ToLowerInvariant() switch
         {
+            "review" => MergeEnforcement.Review,
             "auto" => MergeEnforcement.Auto,
             "tiered" => MergeEnforcement.NewTiered(ListModule.OfSeq(approvers)),
             _ => null,
         };
-        if (enforcement is null) errors.Add($"merge.enforcement: '{mode}' is not auto|tiered");
+        if (enforcement is null) errors.Add($"merge.enforcement: '{mode}' is not review|auto|tiered");
 
         RiskLevel? risk = (m.AutoMergeMaxRisk?.ToLowerInvariant()) switch
         {

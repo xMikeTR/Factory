@@ -494,7 +494,7 @@ public class S2WorkflowTests
 
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
 
-        Assert.Equal("merged", result?.Status);
+        Assert.Equal("ready_for_review", result?.Status);
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "integration_verify" && e.Outcome == "no_suite");
     }
 
@@ -619,7 +619,7 @@ public class S2WorkflowTests
         model.Enqueue(Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
 
-        Assert.Equal("merged", result?.Status);
+        Assert.Equal("ready_for_review", result?.Status);
         Assert.Equal(0, model.Remaining);
         Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "drafted");       // plan reused, not redrafted
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.TaskId == "T-001" && e.Stage == "verify");          // verified once
@@ -635,7 +635,7 @@ public class S2WorkflowTests
         // a third run is a no-op on tasks: everything replays
         model.Enqueue();
         var again = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
-        Assert.Equal("merged", again?.Status);
+        Assert.Equal("ready_for_review", again?.Status);
         Assert.Single(h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001"), e => e.Outcome == "Passed");
         Assert.Single((await h.GitIn(integration, "log", "--format=%s")).Output.Split('\n'), l => l.StartsWith("T-001:"));
     }

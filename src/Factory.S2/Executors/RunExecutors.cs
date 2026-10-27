@@ -367,7 +367,7 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
         await ApplyMergeActionAsync(msg.RunId, action, verdict, github, comments, url, branch, teams, context, cancellationToken);
     }
 
-    /// Carries out what the merge policy decided: park, block, wait for approval, merge now or enable auto-merge.
+    /// Carries out what the merge policy decided: stop at the PR, park, block, wait for approval, merge now or enable auto-merge.
     private async Task ApplyMergeActionAsync(string runId, MergeAction action, MergeVerdict verdict, IApprovalComments? github,
         IReadOnlyList<PrComment> comments, string url, string branch, List<Team> teams, IWorkflowContext context, CancellationToken cancellationToken)
     {
@@ -375,6 +375,11 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
         var blocks = verdict.Blocks.Select(Core.DescribeBlock).ToArray();
         switch (action)
         {
+            case { IsOpenForReview: true }:
+                // The factory never merges in review mode: the run ends at the PR and a person merges it.
+                await context.SendMessageAsync(new RunFinished(runId, "ready_for_review",
+                    github is null ? $"merge {branch} into {s.BaseBranch} yourself ({url})" : url), cancellationToken: cancellationToken);
+                break;
             case MergeAction.Blocked when verdict.Blocks.All(b => b.IsManualVerifyPending):
                 // Nothing failed: the run waits on a person doing a check, so it parks and says how to record it.
                 await context.SendMessageAsync(new RunFinished(runId, "parked", ManualWait(runId, teams, verdict.Blocks)), cancellationToken: cancellationToken);

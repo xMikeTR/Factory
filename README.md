@@ -135,7 +135,7 @@ with no commit gets the same baseline). A folder that holds files but is not a g
 refused and left untouched.
 
 Every run leaves `.factory/runs/<id>/result.json` (`run`, `status`, `reason`, `exitCode`, `at`) saying
-how the last attempt ended, on every exit path: the workflow's own status (`merged`, `parked`,
+how the last attempt ended, on every exit path: the workflow's own status (`ready_for_review`, `merged`, `parked`,
 `failed`, `integration_failed`, `error`, ...), `refused` (budget, nothing to repair), `no_result`,
 or, with `exitCode` null, `rejected` (a deterministic check), `cancelled` (Ctrl+C) and `failed` (a
 crash, with the exception type). A resume replaces it.
@@ -236,15 +236,18 @@ checkout, never a task worktree):
 
 ```yaml
 merge:
-  enforcement: auto            # default; auto = merge on green, tiered = the tier decides approvals
+  enforcement: review          # default; review = never merge, the run ends at the PR;
+                               # auto = merge on green; tiered = the tier decides approvals
   approvers: [alice, bob]
   autoMergeMaxRisk: low
   autoMergeMaxChangedLines: 400
 ```
 
 `FACTORY_MERGE_ENFORCEMENT` and `FACTORY_MERGE_APPROVERS` (comma-separated) override the file.
-Blocks (a scope leak, a protected path changed, a pending manual check) stop the merge in both
-modes; the run ends `merge_blocked` with the blocks in the PR body.
+In review mode a green run ends `ready_for_review` (exit 0) with the PR url, or without
+`--github` with the integration branch to merge yourself; the factory never merges. The handover
+stays open until the merge. Blocks (a scope leak, a protected path changed, a pending manual
+check) stop the run in every mode; it ends `merge_blocked` with the blocks in the PR body.
 
 In tiered mode with `--github`, approvals are PR comments from the allow-listed `approvers`:
 `/approve <reason>` (one per approver; a lone approver meets two approvals with two distinct

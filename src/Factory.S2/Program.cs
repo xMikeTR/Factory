@@ -153,7 +153,7 @@ try
             Console.WriteLine(result is null ? "run ended without a result" : RunReport.Line(result));
             return result is null
                 ? new RunOutcome("no_result", "run ended without a result", 1)
-                : new RunOutcome(result.Status, result.Detail, result.Status switch { "merged" or "auto_merge_enabled" => 0, "parked" => 3, _ => 1 });
+                : new RunOutcome(result.Status, result.Detail, result.Status switch { "merged" or "auto_merge_enabled" or "ready_for_review" => 0, "parked" => 3, _ => 1 });
             }, Ended);
         }
 
