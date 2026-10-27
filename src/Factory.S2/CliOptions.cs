@@ -48,6 +48,16 @@ public static class CliOptions
         warn.WriteLine($"warning: no compiled contract for {string.Join(", ", uncovered)} (FACTORY_CONTRACTS=require refuses this)");
     }
 
+    /// `--github` (gh CLI) or `--azdo` (az CLI, Azure DevOps Repos); null for neither, a dry run. Both is refused.
+    public static IMergedPullRequests? PullRequestHost(Dictionary<string, string> opts, string repoPath) =>
+        (opts.ContainsKey("github"), opts.ContainsKey("azdo")) switch
+        {
+            (true, true) => throw new ArgumentException("--github and --azdo are exclusive: name the one PR host the repo uses"),
+            (true, false) => new GhCliPullRequests(repoPath),
+            (false, true) => new AzCliPullRequests(repoPath),
+            _ => null,
+        };
+
     public static string Required(Dictionary<string, string> opts, string name) =>
         opts.TryGetValue(name, out var v) ? v : throw new ArgumentException($"--{name} is required");
 

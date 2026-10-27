@@ -41,7 +41,7 @@ has been made yet.
 
 ```
 factory-s2 validate|dispatch   --handover h.json --plan plan.json         deterministic, no agents
-factory-s2 run                 --handover <h|dir> --repo . [--registry r] [--base main] [--run-id id] [--github]
+factory-s2 run                 --handover <h|dir> --repo . [--registry r] [--base main] [--run-id id] [--github | --azdo]
                                [--since <run>] [--repair <integration_failed run> [--diagnose]]
 factory-s2 rerun               --handover <h|dir> --plan p.json --task T-001 [--k 3] --repo .
 factory-s2 qa                  --repo . --run-id <id>                      follow-up QA, no author
@@ -89,7 +89,7 @@ src/Factory.S2/          C#: the MAF workflow
   Teams/Briefs.cs        turn briefs, rebuilt from plan + handover + ledger every turn
   Git/GitWorkspace.cs    integration branch, one worktree per team, serialised idempotent merges
   Verify/VerifyRunner.cs verify blocks; cleanup always runs; a failed cleanup counts as a failure
-  Integrations.cs        GitHub (gh CLI) / dry-run PRs; console human channel
+  Integrations.cs        GitHub (gh CLI) / Azure DevOps (az CLI) / dry-run PRs; console human channel
 prompts/                 planner, task-planner and executor system prompts (reviewed like code)
 schemas/                 plan and handover JSON Schemas
 sql/ledger.sql           Postgres ledger + System 4 starter views
@@ -108,7 +108,7 @@ dotnet run --project src/Factory.S2 -- dispatch --handover examples/pricing-v3/h
 #   wave 0: team-T-001 [T-001, T-004]      (both write under src/Quotes.Data)
 #   wave 1: team-T-002 [T-002], team-T-003 [T-003]   (parallel)
 
-# 3. A real run in a target repo (PRs are written to .factory/runs/<id>/ unless --github)
+# 3. A real run in a target repo (PRs are written to .factory/runs/<id>/ unless --github or --azdo)
 export FACTORY_GATEWAY_URL=https://<apim>/litellm/v1 FACTORY_GATEWAY_KEY=<per-user key>
 export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MODEL_SMALL=<alias>
 #   or the native Anthropic client (public API unless FACTORY_GATEWAY_URL is set; models default
@@ -126,7 +126,7 @@ export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MOD
 #   FACTORY_CONTRACTS=warn (default) names agents with none, require refuses to start, off ignores.
 #   S2 reads and checks them only; enforcing the policy at run time is not built yet.
 dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/pricing-v3/handover.json \
-    --repo <target repo> --registry <registry repo> [--base main] [--github] [--run-id <id to resume>]
+    --repo <target repo> --registry <registry repo> [--base main] [--github | --azdo] [--run-id <id to resume>]
 ```
 
 A brand-new project needs no repository first: when `--repo` is missing or an empty folder, `run`
@@ -244,19 +244,19 @@ merge:
 ```
 
 `FACTORY_MERGE_ENFORCEMENT` and `FACTORY_MERGE_APPROVERS` (comma-separated) override the file.
-In review mode a green run ends `ready_for_review` (exit 0) with the PR url, or without
-`--github` with the integration branch to merge yourself; the factory never merges. The handover
+In review mode a green run ends `ready_for_review` (exit 0) with the PR url, or without a
+PR host with the integration branch to merge yourself; the factory never merges. The handover
 stays open until you record the merge:
 
 ```bash
-dotnet run --project src/Factory.S2 -- close --repo <target repo> --run-id <id> [--registry <registry repo>] [--github] [--by <you>]
+dotnet run --project src/Factory.S2 -- close --repo <target repo> --run-id <id> [--registry <registry repo>] [--github | --azdo] [--by <you>]
 ```
 
-`close` confirms the merge (with `--github` the PR is merged; without, the integration branch is in
+`close` confirms the merge (with a PR host the PR is merged or completed; without, the integration branch is in
 the base branch, or after a squash merge `--by` says you merged it). The base may have moved since
 integration verify, so it runs the integration suite, PObserve, the frozen acceptance specs and the
 token lint again (as configured) on the merged commit
-(`origin/<base>` after a fetch with `--github`). Green: it logs the merge and closes the handover
+(`origin/<base>` after a fetch with a PR host). Green: it logs the merge and closes the handover
 in the registry. Red: it logs the failures and refuses; the handover stays open until the base is
 fixed and `close` passes. The decision checks are not re-run: they check the registry's models,
 not the code. Once the merge is recorded the run is complete and `close` removes its worktrees and local
@@ -269,6 +269,13 @@ In tiered mode with `--github`, approvals are PR comments from the allow-listed 
 reasons, recorded `single_operator: true` on the Merge ledger row) and `/verified T-001: <check>`
 to record a manual check as done. Too few approvals parks the run (`parked: awaiting_approval
 <url>`, exit 3); re-run with `--run-id` after commenting. Without `--github` the console asks.
+
+`--azdo` uses Azure DevOps Repos through the az CLI: install `az` with the `azure-devops`
+extension and log in (`az login`, or `AZURE_DEVOPS_EXT_PAT`). The organisation, project and repo
+come from the repo's `origin` remote, so nothing about them is configured here. Runs push the
+integration branch and open (or reuse) a PR; auto mode sets auto-complete with squash; `close`
+finds the completed PR. Azure DevOps has no approval-comment path yet, so tiered approvals ask at
+the console. PR descriptions over Azure DevOps' 4000-character limit are cut with a note.
 
 Opt-in live test (opens and closes a real PR):
 `FACTORY_LIVE_GITHUB=xMikeTR/pricing-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`

@@ -347,7 +347,7 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
         var deferred = ManualChecks.Deferred(policy.Enforcement, manual);
 
         var branch = GitWorkspace.IntegrationBranch(msg.RunId);
-        if (svc.PullRequests is GhCliPullRequests) await svc.Git.PushAsync(branch, cancellationToken);
+        if (svc.PullRequests is GhCliPullRequests or AzCliPullRequests) await svc.Git.PushAsync(branch, cancellationToken);
 
         var url = await svc.PullRequests.EnsurePullRequestAsync(branch, s.BaseBranch,
             $"[factory] {handover.Id}: {teams.Sum(t => t.Tasks.Length)} tasks", PullRequestBody(msg.RunId, handover, teams, verdict, deferred, lines, await ReviewSectionAsync(msg.RunId, cancellationToken) + await InstallScriptsSectionAsync(msg.RunId, cancellationToken) + await QualitySectionAsync(msg.RunId, cancellationToken)), cancellationToken);
@@ -378,7 +378,7 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
             case { IsOpenForReview: true }:
                 // The factory never merges in review mode: the run ends at the PR and a person merges it.
                 await context.SendMessageAsync(new RunFinished(runId, "ready_for_review",
-                    github is null ? $"merge {branch} into {s.BaseBranch} yourself ({url})" : url), cancellationToken: cancellationToken);
+                    svc.PullRequests is DryRunPullRequests ? $"merge {branch} into {s.BaseBranch} yourself ({url})" : url), cancellationToken: cancellationToken);
                 break;
             case MergeAction.Blocked when verdict.Blocks.All(b => b.IsManualVerifyPending):
                 // Nothing failed: the run waits on a person doing a check, so it parks and says how to record it.
@@ -404,7 +404,7 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
                 await context.SendMessageAsync(new MergeApprovalRequest(runId, url, approval.tier.ToString(), verdict.Reasons.ToArray()),
                     cancellationToken: cancellationToken);
                 break;
-            case { IsMergeNow: true } when github is null:
+            case { IsMergeNow: true } when svc.PullRequests is DryRunPullRequests:
                 // No PR host can merge: a person merges the branch and says so, so the run never claims a merge that did not happen.
                 await context.SendMessageAsync(new MergeApprovalRequest(runId, url, verdict.Tier.ToString(),
                     [$"no pull request host: merge {branch} into {s.BaseBranch} yourself", .. verdict.Reasons]), cancellationToken: cancellationToken);
