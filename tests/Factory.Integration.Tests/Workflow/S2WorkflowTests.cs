@@ -483,6 +483,31 @@ public class S2WorkflowTests
         Assert.Contains("--run-id", result.Detail);
     }
 
+    /// Review mode, the default: the run stops at the PR and only `close` records the person's merge.
+    [Fact]
+    public async Task A_review_run_ends_ready_for_review_and_close_records_the_merge_only_once_the_branch_is_merged()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        RunScript(model, h.Handover);
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+        Assert.Equal("ready_for_review", result?.Status);
+        Assert.DoesNotContain(h.Rows(LedgerKinds.Merge), e => e.Outcome == "merged");
+
+        var branch = GitWorkspace.IntegrationBranch(TeamHarness.RunId);
+        var baseBranch = h.Services.Settings.BaseBranch;
+        Task<string?> Merged(CancellationToken ct) => RunClose.BranchMergedAsync(h.Repo, branch, baseBranch, ct);
+
+        Assert.Contains("not in the base branch", await RunClose.RecordAsync(h.Services.Ledger, TeamHarness.RunId, Merged, null, canState: true, default));
+        Assert.Contains("not merged yet", await RunClose.RecordAsync(h.Services.Ledger, TeamHarness.RunId, _ => Task.FromResult<string?>(null), "mike", canState: false, default));
+
+        Assert.True((await h.GitIn(h.Repo, "merge", "--no-ff", "-m", "merge", branch)).Succeeded);
+        Assert.Null(await RunClose.RecordAsync(h.Services.Ledger, TeamHarness.RunId, Merged, null, canState: true, default));
+        Assert.Single(h.Rows(LedgerKinds.Merge), e => e is { Stage: "close", Outcome: "merged" });
+        Assert.Contains("already closed", await RunClose.RecordAsync(h.Services.Ledger, TeamHarness.RunId, Merged, null, canState: true, default));
+    }
+
     /// A new repo names no suite and has no test project yet: `dotnet test` at its root would be MSB1003. There is
     /// nothing to run, which is not the code failing; the task's own red-green checks have already gated it.
     [Fact]
