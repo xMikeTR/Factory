@@ -98,7 +98,7 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
     /// report says failed, each resolved to a frozen path. A non-zero exit with no readable report is
     /// itself a failure (the specs could not run), never a pass.
     public async Task<(VerifyOutcome Outcome, IReadOnlyList<Factory.Harness.Verify.PlaywrightReport.Failure> Failures)> AcceptanceAsync(
-        string runId, string command, string worktree, IReadOnlyCollection<string> frozenPaths, CancellationToken ct)
+        string runId, string command, string worktree, IReadOnlyCollection<string> frozenPaths, CancellationToken ct, string stage = "integration_verify")
     {
         var report = Path.Combine(worktree, AcceptanceReportPath);
         var dir = Path.GetDirectoryName(report)!;
@@ -121,7 +121,7 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
             var outcome = ToOutcome("acceptance", r);
             // a report that exists but cannot be read says nothing, so a zero exit does not stand as a pass
             if (outcome.ExitCode == 0 && (failures.Count > 0 || unreadable)) outcome = new VerifyOutcome(outcome.Name, 1, outcome.DurationMs, outcome.OutputTail);
-            await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.Verify,
+            await ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Verify,
                 Outcome: outcome.ExitCode == 0 ? "passed" : "failed",
                 Payload: JsonSerializer.Serialize(new { name = "acceptance", command, ExitCode = outcome.ExitCode, ms = outcome.DurationMs,
                     failing = failures.Select(f => f.File), tail = r.Tail(2000) })), ct);
@@ -173,7 +173,7 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
     /// Runs the token lint once (deterministic, no browser). The report path is passed as $FACTORY_LINT_REPORT
     /// so the command can aim `--output-file` at it. A non-zero exit with no readable report is a failure.
     public async Task<(VerifyOutcome Outcome, IReadOnlyList<Factory.Core.LintViolation> Violations)> TokenLintAsync(
-        string runId, string command, string worktree, CancellationToken ct)
+        string runId, string command, string worktree, CancellationToken ct, string stage = "integration_verify")
     {
         var report = Path.Combine(worktree, TokenLintReportPath);
         var dir = Path.GetDirectoryName(report)!;
@@ -195,7 +195,7 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
             }
             var outcome = ToOutcome("token lint", r);
             if (outcome.ExitCode == 0 && (violations.Count > 0 || unreadable)) outcome = new VerifyOutcome(outcome.Name, 1, outcome.DurationMs, outcome.OutputTail);
-            await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.Verify,
+            await ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Verify,
                 Outcome: outcome.ExitCode == 0 ? "passed" : "failed",
                 Payload: JsonSerializer.Serialize(new { name = "token lint", command, ExitCode = outcome.ExitCode, ms = outcome.DurationMs,
                     violations = violations.Count, tail = r.Tail(2000) })), ct);

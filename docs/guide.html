@@ -20,13 +20,13 @@
 <body>
 <main>
 <h1>designc and factory-s2: getting started</h1>
-<p class="note">designc (System 1) is the desktop app where you design. factory-s2 (System 2) is the pipeline that turns a frozen design into merged code. They share files, not a server: the design folder (also called the registry) and its ledger.</p>
+<p class="note">designc (System 1) is the desktop app where you design. factory-s2 (System 2) is the pipeline that turns a frozen design into a pull request for you to merge. They share files, not a server: the design folder (also called the registry) and its ledger.</p>
 <p class="note">The design folder holds the model, requirements, decisions and ledger as plain files. It can sit inside your code repo (for example <code>design/</code>) or beside it, and a new empty folder is fine.</p>
 <nav><a href="#idea">The idea</a><a href="#first">First 10 minutes</a><a href="#terms">Terms</a><a href="#s1">Using designc</a><a href="#s2">Running factory-s2</a><a href="#loop">The whole loop</a><a href="#safety">What is guarded</a><a href="#more">Where to read more</a></nav>
 
 <h2 id="idea">The idea</h2>
 <p>The design is the source of truth and code is a build output. Models propose; deterministic checks and people decide. An agent never writes anything without a policy check, and writes need a person's approval.</p>
-<pre>designc (you design)  ──freeze──►  handover  ──►  factory-s2 (plans, builds, verifies, merges)
+<pre>designc (you design)  ──freeze──►  handover  ──►  factory-s2 (plans, builds, verifies, opens a PR)
         ▲                                                         │
         └──────────── ledger (append-only events) ◄───────────────┘</pre>
 
@@ -128,8 +128,9 @@ dotnet run --project src/Factory.S2 -- run \
 <tr><td><code>digest --registry r</code></td><td>What needs you, what failed, what finished.</td></tr>
 <tr><td><code>pull-plan</code>, <code>metrics</code></td><td>Read-only reports over the registry.</td></tr>
 <tr><td><code>qa --repo . --run-id &lt;id&gt;</code></td><td>Follow-up QA without an author.</td></tr>
+<tr><td><code>close --repo . --run-id &lt;id&gt;</code></td><td>After you merge a <code>ready_for_review</code> run: confirms the merge, re-runs the integration checks on the merged commit, and closes the handover when they pass.</td></tr>
 </table>
-<p>Every run leaves <code>.factory/runs/&lt;id&gt;/result.json</code> saying how it ended (<code>merged</code>, <code>parked</code>, <code>failed</code>, <code>integration_failed</code>, <code>refused</code>, and so on).</p>
+<p>Every run leaves <code>.factory/runs/&lt;id&gt;/result.json</code> saying how it ended (<code>ready_for_review</code>, <code>parked</code>, <code>failed</code>, <code>integration_failed</code>, <code>refused</code>, and so on).</p>
 
 <h3>Turning the levers</h3>
 <p>These environment variables have these defaults (from <code>FactorySettings</code>):</p>
@@ -142,7 +143,7 @@ dotnet run --project src/Factory.S2 -- run \
 <tr><td><code>FACTORY_BASE_BRANCH</code></td><td>main</td><td>Branch to merge into.</td></tr>
 <tr><td><code>FACTORY_STATE_DIR</code></td><td>&lt;repo&gt;/.factory</td><td>Where runs are kept.</td></tr>
 <tr><td><code>FACTORY_SANDBOX</code></td><td>docker</td><td>Comma-separated fallback chain (docker, local).</td></tr>
-<tr><td><code>FACTORY_MERGE_ENFORCEMENT</code></td><td>auto</td><td><code>auto</code> or <code>tiered</code>; also settable in the merge policy file.</td></tr>
+<tr><td><code>FACTORY_MERGE_ENFORCEMENT</code></td><td>review</td><td><code>review</code> (never merge: the run ends at the PR), <code>auto</code> or <code>tiered</code>; also settable in the merge policy file.</td></tr>
 <tr><td><code>FACTORY_PLAYWRIGHT_CLI</code></td><td>on</td><td>Set to <code>0</code> to stop the implementer using the browser tool.</td></tr>
 </table>
 <p class="note">Start with tight limits and loosen them as the numbers justify it. Per-repo policy lives in <code>.factory/</code> files (integration, merge, quality, npm, UI contract); see the factory-s2 README and <code>ARCHITECTURE.md</code>.</p>
@@ -153,7 +154,7 @@ dotnet run --project src/Factory.S2 -- run \
 <li>Freeze a handover (whole model, or one work item for a scoped slice).</li>
 <li>Dispatch it to factory-s2 with <code>run</code>.</li>
 <li>If the pipeline needs a human answer, it writes a <code>needs_decision</code> to the ledger. Open Build or the Work digest in designc and answer with a decision.</li>
-<li>When the pipeline merges, check evidence in Build. A work item is Done only with a passing gate at a commit on main; an agent's claim is never enough.</li>
+<li>When the run ends <code>ready_for_review</code>, review the PR and merge it yourself, then run <code>close</code>. Check evidence in Build. A work item is Done only with a passing gate at a commit on main; an agent's claim is never enough.</li>
 <li>Extract the code map to see drift, and use Improve to classify escapes.</li>
 </ol>
 
