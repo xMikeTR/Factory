@@ -424,20 +424,28 @@ try
 
         case "close":
         {
-            // A person merged a review-mode run's PR; confirm the merge and record it so the registry closes the handover.
+            // A person merged a review-mode run's PR: confirm the merge, run the suite on the merged commit, record it so the registry closes the handover.
             var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
             var runId = Required(opts, "run-id");
-            var ledger = new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl"));
-            var branch = GitWorkspace.IntegrationBranch(runId);
             var github = opts.ContainsKey("github");
-            var why = await RunClose.RecordAsync(ledger, runId,
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            var services = Services(settings, runId, env, new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+            var branch = GitWorkspace.IntegrationBranch(runId);
+            var why = await RunClose.RecordAsync(services.Ledger, runId,
                 async ct => github
                     ? await new GhCliPullRequests(settings.RepoPath).MergedPullRequestAsync(branch, ct) is { } url ? $"pr {url}" : null
                     : await RunClose.BranchMergedAsync(settings.RepoPath, branch, settings.BaseBranch, ct),
+                async ct =>
+                {
+                    // Merged on GitHub: the merged commit is origin's base, not the local one.
+                    if (github) await services.Git.FetchAsync(settings.BaseBranch, ct);
+                    return await RunClose.CheckMergedAsync(services, runId, github ? $"origin/{settings.BaseBranch}" : settings.BaseBranch, ct);
+                },
                 opts.GetValueOrDefault("by"), canState: !github, CancellationToken.None);
             if (why is null && Directory.Exists(settings.RegistryPath))
-                await Factory.Harness.Registry.RegistryProgress.SyncAsync(ledger, settings.RegistryPath, runId,
-                    Factory.Harness.Registry.HandoverRef.From(Core.ParseHandover(File.ReadAllText(settings.HandoverCopyPath(runId)))), CancellationToken.None);
+                await Factory.Harness.Registry.RegistryProgress.SyncAsync(services.Ledger, settings.RegistryPath, runId,
+                    Factory.Harness.Registry.HandoverRef.From(services.LoadHandover(runId)), CancellationToken.None);
             Console.WriteLine(why is null ? $"run {runId}: merge recorded; the handover is closed" : $"not recorded: {why}");
             return why is null ? 0 : 1;
         }

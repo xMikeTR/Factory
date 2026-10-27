@@ -348,6 +348,10 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     public Task PushAsync(string branch, CancellationToken ct) =>
         GitAsync(repoPath, ct, "push", "--force-with-lease", "origin", branch);
 
+    /// Brings origin/{branch} up to date, e.g. the base branch a PR was merged into on GitHub.
+    public Task FetchAsync(string branch, CancellationToken ct) =>
+        GitAsync(repoPath, ct, "fetch", "origin", branch);
+
     private async Task<bool> BranchExistsAsync(string branch, CancellationToken ct) =>
         (await GitAsync(repoPath, ct, check: false, "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}")).ExitCode == 0;
 

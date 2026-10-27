@@ -76,15 +76,16 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
     /// Commands that are not tied to one task: decision checks from the registry, the full
     /// test suite on the integration branch, PObserve over the resulting logs.
     /// `decision` is set for a bound decision's check, so the row projects to designc's checks.jsonl.
+    /// `stage` labels the ledger row: "integration_verify", or "close" for the suite on the merged commit.
     public async Task<VerifyOutcome> RunCommandAsync(string runId, string name, string command, string workDir, TimeSpan timeout, CancellationToken ct,
-        string? decision = null)
+        string? decision = null, string stage = "integration_verify")
     {
         await using var sandbox = await sandboxes.ForTeamAsync("integration", workDir, ct);
         // A decision check names the registry's own venv, which in the container is not the one it was built for.
         var run = decision is not null && sandbox.Kind == "docker" ? HostVenv.InContainer(command) : command;
         var r = await sandbox.RunAsync(run, workDir, timeout, new Dictionary<string, string> { ["FACTORY_RUN_ID"] = runId }, ct);
         var outcome = ToOutcome(name, r);
-        await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.Verify, Decision: decision,
+        await ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Verify, Decision: decision,
             Outcome: r.Succeeded ? "passed" : "failed",
             Payload: JsonSerializer.Serialize(new { name, command = run, declared = run == command ? null : command, ExitCode = outcome.ExitCode, ms = outcome.DurationMs, sandbox = sandbox.Kind, tail = r.Tail(2000) })), ct);
         return outcome;

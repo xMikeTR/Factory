@@ -253,8 +253,12 @@ dotnet run --project src/Factory.S2 -- close --repo <target repo> --run-id <id> 
 ```
 
 `close` confirms the merge (with `--github` the PR is merged; without, the integration branch is in
-the base branch, or after a squash merge `--by` says you merged it), logs it, and closes the
-handover in the registry on the decision checks integration verify ran. Blocks (a scope leak, a protected path changed, a pending manual
+the base branch, or after a squash merge `--by` says you merged it). The base may have moved since
+integration verify, so it runs the integration suite (and PObserve) again on the merged commit
+(`origin/<base>` after a fetch with `--github`). Green: it logs the merge and closes the handover
+in the registry. Red: it logs the failures and refuses; the handover stays open until the base is
+fixed and `close` passes. The decision checks are not re-run: they check the registry's models,
+not the code. Blocks (a scope leak, a protected path changed, a pending manual
 check) stop the run in every mode; it ends `merge_blocked` with the blocks in the PR body.
 
 In tiered mode with `--github`, approvals are PR comments from the allow-listed `approvers`:
