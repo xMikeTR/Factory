@@ -222,4 +222,15 @@ public class VerifyRunnerTests : IDisposable
         (outcome, _) = await Runner.AcceptanceAsync("run-1", $"mkdir -p .factory-results && echo '{{\"suites\":[]}}' > {VerifyRunner.AcceptanceReportPath}", _dir, [], default);
         Assert.Equal(0, outcome.ExitCode);
     }
+
+    /// `close` runs the same commands on the merged commit; their rows say so, apart from integration verify's.
+    [Fact]
+    public async Task Commands_run_at_close_are_ledgered_at_stage_close()
+    {
+        await Runner.RunCommandAsync("run-1", "integration tests", "true", _dir, TimeSpan.FromMinutes(1), default, stage: "close");
+        await Runner.AcceptanceAsync("run-1", $"mkdir -p .factory-results && echo '{{\"suites\":[]}}' > {VerifyRunner.AcceptanceReportPath}", _dir, [], default, stage: "close");
+        await Runner.TokenLintAsync("run-1", "true", _dir, default, stage: "close");
+
+        Assert.Equal(["close", "close", "close"], _ledger.Events.Where(e => e.Kind == LedgerKinds.Verify).Select(e => e.Stage));
+    }
 }

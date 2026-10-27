@@ -483,6 +483,50 @@ public class S2WorkflowTests
         Assert.Contains("--run-id", result.Detail);
     }
 
+    /// Review mode, the default: the run stops at the PR and only `close` records the person's merge, once the
+    /// integration suite passes on the merged commit.
+    [Fact]
+    public async Task A_review_run_ends_ready_for_review_and_close_records_the_merge_only_once_merged_and_green()
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        RunScript(model, h.Handover);
+
+        var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
+        Assert.Equal("ready_for_review", result?.Status);
+        Assert.DoesNotContain(h.Rows(LedgerKinds.Merge), e => e.Outcome == "merged");
+
+        var branch = GitWorkspace.IntegrationBranch(TeamHarness.RunId);
+        var baseBranch = h.Services.Settings.BaseBranch;
+        Task<string?> Merged(CancellationToken ct) => RunClose.BranchMergedAsync(h.Repo, branch, baseBranch, ct);
+        Task<RunClose.MergedCheck> Green(CancellationToken ct) => RunClose.CheckMergedAsync(h.Services, TeamHarness.RunId, baseBranch, ct);
+        Task<RunClose.MergedCheck> Red(CancellationToken ct) => Task.FromResult(new RunClose.MergedCheck("abc123", "integration tests: exit 1"));
+        Task<string?> Close(Func<CancellationToken, Task<string?>> merged, Func<CancellationToken, Task<RunClose.MergedCheck>> check, string? by = null, bool canState = true) =>
+            RunClose.RecordAsync(h.Services.Ledger, TeamHarness.RunId, merged, check, by, canState, default);
+
+        Assert.Contains("not in the base branch", await Close(Merged, Green));
+        Assert.Contains("not merged yet", await Close(_ => Task.FromResult<string?>(null), Green, "mike", canState: false));
+
+        Assert.True((await h.GitIn(h.Repo, "merge", "--no-ff", "-m", "merge", branch)).Succeeded);
+        Assert.Contains("fails its integration suite", await Close(Merged, Red));                // base moved and broke it: stays open
+        Assert.False(await RunClose.CleanUpAsync(h.Services.Ledger, h.Services.Git, TeamHarness.RunId, default)); // not complete: kept
+        Assert.Single(h.Rows(LedgerKinds.Merge), e => e is { Stage: "close", Outcome: "merged_failing" });
+
+        Assert.Null(await Close(Merged, Green));
+        Assert.Single(h.Rows(LedgerKinds.Verify), e => e is { Stage: "close", Outcome: "passed" });  // the suite ran on the merged commit
+        var head = (await h.GitIn(h.Repo, "rev-parse", baseBranch)).Output.Trim();
+        Assert.Contains(head, Assert.Single(h.Rows(LedgerKinds.Merge), e => e is { Stage: "close", Outcome: "merged" }).Payload);
+        Assert.Contains("already closed", await Close(Merged, Green));
+
+        // complete, so cleaned: no worktree, no local factory/<run>/* branch; the run folder stays as its record
+        Assert.True(Directory.Exists(h.Services.Git.IntegrationPath(TeamHarness.RunId)));
+        Assert.True(await RunClose.CleanUpAsync(h.Services.Ledger, h.Services.Git, TeamHarness.RunId, default));
+        Assert.False(Directory.Exists(h.Services.Git.IntegrationPath(TeamHarness.RunId)));
+        Assert.Equal("", (await h.GitIn(h.Repo, "branch", "--list", $"factory/{TeamHarness.RunId}/*")).Output.Trim());
+        Assert.True(Directory.Exists(h.Services.Settings.RunDir(TeamHarness.RunId)));
+        Assert.True(await RunClose.CleanUpAsync(h.Services.Ledger, h.Services.Git, TeamHarness.RunId, default));   // idempotent
+    }
+
     /// A new repo names no suite and has no test project yet: `dotnet test` at its root would be MSB1003. There is
     /// nothing to run, which is not the code failing; the task's own red-green checks have already gated it.
     [Fact]
@@ -494,7 +538,7 @@ public class S2WorkflowTests
 
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
 
-        Assert.Equal("merged", result?.Status);
+        Assert.Equal("ready_for_review", result?.Status);
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "integration_verify" && e.Outcome == "no_suite");
     }
 
@@ -619,7 +663,7 @@ public class S2WorkflowTests
         model.Enqueue(Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
 
-        Assert.Equal("merged", result?.Status);
+        Assert.Equal("ready_for_review", result?.Status);
         Assert.Equal(0, model.Remaining);
         Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Outcome == "drafted");       // plan reused, not redrafted
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.TaskId == "T-001" && e.Stage == "verify");          // verified once
@@ -635,7 +679,7 @@ public class S2WorkflowTests
         // a third run is a no-op on tasks: everything replays
         model.Enqueue();
         var again = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
-        Assert.Equal("merged", again?.Status);
+        Assert.Equal("ready_for_review", again?.Status);
         Assert.Single(h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001"), e => e.Outcome == "Passed");
         Assert.Single((await h.GitIn(integration, "log", "--format=%s")).Output.Split('\n'), l => l.StartsWith("T-001:"));
     }

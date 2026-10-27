@@ -180,7 +180,7 @@ public static class RegistryLedgerProjector
     /// An S2 run status -> designc's run_ended status and reason (required unless succeeded).
     private static (string Status, string? Reason) RunEnd(string s2Status, string? detail) => s2Status switch
     {
-        "merged" or "auto_merge_enabled" => ("succeeded", null),
+        "merged" or "auto_merge_enabled" or "ready_for_review" => ("succeeded", null),
         "parked" or "cancelled" => (s2Status, string.IsNullOrWhiteSpace(detail) ? s2Status : detail),
         _ => ("failed", string.IsNullOrWhiteSpace(detail) ? s2Status : $"{s2Status}: {detail}"),
     };
@@ -240,12 +240,15 @@ public static class RegistryLedgerProjector
     }
 
     /// Run statuses that end the run for good. "parked" waits on a needs-decision and "error" is
-    /// the host failing; both resume under the same run id, so the handover stays open.
+    /// the host failing; both resume under the same run id, so the handover stays open. So does
+    /// "ready_for_review" until `factory-s2 close` records the person's merge (a Merge row, stage "close").
     private static readonly string[] Merged = ["merged", "auto_merge_enabled"];
 
     private static (DateTimeOffset, RegistryEvent)? HandoverClosed(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
     {
         var finished = run.LastOrDefault(e => e.Kind == LedgerKinds.Run);
+        if (finished?.Outcome == "ready_for_review")
+            finished = run.SkipWhile(e => e != finished).FirstOrDefault(e => e is { Kind: LedgerKinds.Merge, Stage: "close", Outcome: "merged" });
         // Only a merge ends a handover: any other end can be resumed with --run-id, and abandoning is a person's call in designc.
         if (finished?.Outcome is null || !Merged.Contains(finished.Outcome)) return null;
         var results = run

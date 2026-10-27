@@ -19,12 +19,12 @@ public class MergePolicyFileTests
     private static readonly IReadOnlyDictionary<string, string> NoEnv = new Dictionary<string, string>();
 
     [Fact]
-    public void No_policy_file_is_the_auto_default()
+    public void No_policy_file_is_the_review_default()
     {
         var policy = MergePolicyFile.Load(RepoWith(null), NoEnv);
 
         Assert.Equal(Core.DefaultMergePolicy, policy);
-        Assert.True(policy.Enforcement.IsAuto);
+        Assert.True(policy.Enforcement.IsReview);
     }
 
     [Fact]

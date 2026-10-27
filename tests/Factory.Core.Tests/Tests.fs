@@ -491,11 +491,15 @@ let tests: (string * (unit -> unit)) list =
           let v = Merge.decide Merge.defaultPolicy { Teams = [ team ]; Handover = h; ChangedLines = 40; ChangedFiles = [ "src/PricingApi/Q.cs" ] }
           equal AutoMerge v.Tier "tier"
           equal [] v.Blocks "no blocks"
-      "merge: every block stops the merge in both modes", fun () ->
+      "merge: every block stops the merge in every mode", fun () ->
           for block in [ ScopeLeak "x"; ProtectedPathChanged ".github/x"; ManualVerifyPending "T-001: eyeball" ] do
-              for mode in [ Auto; Tiered [ "alice" ] ] do
+              for mode in [ Review; Auto; Tiered [ "alice" ] ] do
                   let v = { Tier = AutoMerge; Reasons = []; Blocks = [ block ] }
                   equal (MergeAction.Blocked [ block ]) (Merge.action { Merge.defaultPolicy with Enforcement = mode } v) $"{block} {mode}"
+      "merge: review mode, the default, never merges: green ends at the PR whatever the tier", fun () ->
+          equal Review Merge.defaultPolicy.Enforcement "default"
+          for tier in [ AutoMerge; OneApproval; TwoApprovals ] do
+              equal MergeAction.OpenForReview (Merge.action Merge.defaultPolicy { Tier = tier; Reasons = []; Blocks = [] }) $"{tier}"
       "merge: auto mode merges on green whatever the tier", fun () ->
           let v = { Tier = TwoApprovals; Reasons = [ "high risk" ]; Blocks = [] }
           equal MergeAction.MergeNow (Merge.action { Merge.defaultPolicy with Enforcement = Auto } v) "auto"

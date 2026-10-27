@@ -254,6 +254,18 @@ public class RegistryLedgerProjectorTests
             Assert.Null(Closed([.. Run(), D2Passes(13), Finished(14, status)]));
     }
 
+    /// Review mode: the run ends at the PR and the handover stays open until `factory-s2 close` records the person's merge.
+    [Fact]
+    public void A_run_ready_for_review_closes_its_handover_only_once_the_merge_is_recorded()
+    {
+        var closed = At(20, new(RunId, "S2", "close", LedgerKinds.Merge, Outcome: "merged", Payload: """{"how":"pr https://x/pull/1","by":null}"""));
+        var failing = At(19, new(RunId, "S2", "close", LedgerKinds.Merge, Outcome: "merged_failing", Payload: """{"how":"pr https://x/pull/1"}"""));
+        Assert.Null(Closed([.. Run(), D2Passes(13), Finished(14, "ready_for_review")]));
+        Assert.Null(Closed([.. Run(), D2Passes(13), Finished(14, "ready_for_review"), failing]));     // merged code red: stays open
+        Assert.Equal("delivered", Closed([.. Run(), D2Passes(13), Finished(14, "ready_for_review"), closed]));
+        Assert.Equal("abandoned", Closed([.. Run(), Finished(14, "ready_for_review"), closed]));            // D-0002 failed
+    }
+
     private static LedgerEvent Started(int second) => At(second, new(RunId, "S2", "start", LedgerKinds.RunStarted));
 
     private static LedgerEvent Ended(int second, string status, string detail) => At(second, new(RunId, "S2", "finalize", LedgerKinds.Run,
