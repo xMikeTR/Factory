@@ -84,6 +84,23 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
         });
     }
 
+    /// A closed run's checkouts and local branches (factory/{run}/*). The ledger and .factory/runs/{run} stay as its
+    /// record, and remote branches are left alone. Idempotent.
+    public async Task RemoveRunAsync(string runId, CancellationToken ct)
+    {
+        var root = Path.Combine(stateDir, "worktrees", runId);
+        if (Directory.Exists(root))
+        {
+            foreach (var dir in Directory.GetDirectories(root))
+                await GitAsync(repoPath, ct, check: false, "worktree", "remove", "--force", dir);
+            Directory.Delete(root, recursive: true);
+        }
+        await GitAsync(repoPath, ct, "worktree", "prune");
+        var branches = await GitAsync(repoPath, ct, "for-each-ref", "--format=%(refname:short)", $"refs/heads/factory/{runId}/");
+        foreach (var branch in branches.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            await GitAsync(repoPath, ct, "branch", "-D", branch);
+    }
+
     /// Build output: never a changed path, never committed, never work, even when a commit already tracks it.
     /// A fixed list; nothing an agent writes widens it.
     public static bool IsBuildCache(string path) => path.Split('/').Any(BuildCaches.Contains);
@@ -347,6 +364,10 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
 
     public Task PushAsync(string branch, CancellationToken ct) =>
         GitAsync(repoPath, ct, "push", "--force-with-lease", "origin", branch);
+
+    /// Brings origin/{branch} up to date, e.g. the base branch a PR was merged into on GitHub.
+    public Task FetchAsync(string branch, CancellationToken ct) =>
+        GitAsync(repoPath, ct, "fetch", "origin", branch);
 
     private async Task<bool> BranchExistsAsync(string branch, CancellationToken ct) =>
         (await GitAsync(repoPath, ct, check: false, "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}")).ExitCode == 0;

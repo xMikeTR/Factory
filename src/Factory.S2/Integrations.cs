@@ -41,6 +41,13 @@ public sealed class GhCliPullRequests(string repoPath) : IPullRequests, IApprova
 
     public Task MergeAsync(string url, CancellationToken ct) => Gh(ct, "pr", "merge", url, "--squash");
 
+    /// The url of the merged PR from `head`, or null when none is merged.
+    public async Task<string?> MergedPullRequestAsync(string head, CancellationToken ct)
+    {
+        var url = await Gh(ct, "pr", "list", "--head", head, "--state", "merged", "--json", "url", "--jq", ".[0].url");
+        return string.IsNullOrWhiteSpace(url) ? null : url;
+    }
+
     public async Task<IReadOnlyList<PrComment>> CommentsAsync(string url, CancellationToken ct)
     {
         return ParseComments(await Gh(ct, "pr", "view", url, "--json", "comments"));

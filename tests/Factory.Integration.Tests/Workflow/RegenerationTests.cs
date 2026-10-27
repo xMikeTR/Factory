@@ -78,7 +78,7 @@ public class RegenerationTests
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
             new StartRun(TeamHarness.RunId, handoverPath, Since: PreviousRun), new ApprovingHuman(), default);
 
-        Assert.True(result?.Status == "merged", $"{result?.Status}: {result?.Detail}"); // the default policy, auto, with no PR host: a person merges
+        Assert.True(result?.Status == "ready_for_review", $"{result?.Status}: {result?.Detail}"); // the default policy, review: the run ends at the PR
         Assert.Equal(0, model.Remaining);
 
         var regeneration = Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Stage == "regenerate");
@@ -126,7 +126,7 @@ public class RegenerationTests
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
             new StartRun(TeamHarness.RunId, handoverPath, Since: PreviousRun), new ApprovingHuman(), default);
 
-        Assert.True(result?.Status == "merged", $"{result?.Status}: {result?.Detail}");
+        Assert.True(result?.Status == "ready_for_review", $"{result?.Status}: {result?.Detail}");
         var regeneration = Assert.Single(h.Rows(LedgerKinds.Plan), e => e.Stage == "regenerate");
         Assert.Equal($"repair of {PreviousRun}: 1 of 2 tasks re-run", regeneration.Outcome);
         Assert.DoesNotContain(h.Rows(LedgerKinds.TaskEvent), e => e.TaskId == "T-002");
