@@ -509,6 +509,7 @@ public class S2WorkflowTests
 
         Assert.True((await h.GitIn(h.Repo, "merge", "--no-ff", "-m", "merge", branch)).Succeeded);
         Assert.Contains("fails its integration suite", await Close(Merged, Red));                // base moved and broke it: stays open
+        Assert.False(await RunClose.CleanUpAsync(h.Services.Ledger, h.Services.Git, TeamHarness.RunId, default)); // not complete: kept
         Assert.Single(h.Rows(LedgerKinds.Merge), e => e is { Stage: "close", Outcome: "merged_failing" });
 
         Assert.Null(await Close(Merged, Green));
@@ -516,6 +517,14 @@ public class S2WorkflowTests
         var head = (await h.GitIn(h.Repo, "rev-parse", baseBranch)).Output.Trim();
         Assert.Contains(head, Assert.Single(h.Rows(LedgerKinds.Merge), e => e is { Stage: "close", Outcome: "merged" }).Payload);
         Assert.Contains("already closed", await Close(Merged, Green));
+
+        // complete, so cleaned: no worktree, no local factory/<run>/* branch; the run folder stays as its record
+        Assert.True(Directory.Exists(h.Services.Git.IntegrationPath(TeamHarness.RunId)));
+        Assert.True(await RunClose.CleanUpAsync(h.Services.Ledger, h.Services.Git, TeamHarness.RunId, default));
+        Assert.False(Directory.Exists(h.Services.Git.IntegrationPath(TeamHarness.RunId)));
+        Assert.Equal("", (await h.GitIn(h.Repo, "branch", "--list", $"factory/{TeamHarness.RunId}/*")).Output.Trim());
+        Assert.True(Directory.Exists(h.Services.Settings.RunDir(TeamHarness.RunId)));
+        Assert.True(await RunClose.CleanUpAsync(h.Services.Ledger, h.Services.Git, TeamHarness.RunId, default));   // idempotent
     }
 
     /// A new repo names no suite and has no test project yet: `dotnet test` at its root would be MSB1003. There is
