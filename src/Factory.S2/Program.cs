@@ -14,7 +14,7 @@ using static Factory.S2.ServiceWiring;
 
 // factory-s2 validate --handover h.json --plan plan.json      deterministic, no agents, no git
 // factory-s2 dispatch --handover h.json --plan plan.json      prints teams and waves
-// factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github] [--since <previous run id>] [--repair <integration_failed run id> [--diagnose]]
+// factory-s2 run --handover <h.json | designc handover dir> --repo . [--registry ../registry] [--base main] [--run-id id] [--github | --azdo] [--since <previous run id>] [--repair <integration_failed run id> [--diagnose]]
 // factory-s2 qa --repo . --run-id <id> [--base main]   follow-up QA: the run's protected tests, measured again, no author
 // factory-s2 digest --registry ../registry [--repo .] [--base main] [--last-look <epoch ms>] [--wip 3] [--notify-state <file>: print NOTIFY for new Needs/Failed rows only]   Needs decision / Failed a gate / Done / Waiting
 // factory-s2 pull-plan --registry ../registry [--repo .] [--base main] [--wip 3]   what the scheduler would pull now and why the rest waits (nothing is pulled)
@@ -85,9 +85,8 @@ try
             // Traces leave the process only when OTEL_EXPORTER_OTLP_ENDPOINT is set (Langfuse or any
             // OTLP collector); disposing the provider at the end of the run flushes them.
             using var tracing = FactoryTelemetry.CreateTracerProvider(env);
-            var services = Services(settings, runId, env, opts.ContainsKey("github")
-                ? new GhCliPullRequests(settings.RepoPath)
-                : new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+            var services = Services(settings, runId, env, PullRequestHost(opts, settings.RepoPath) as IPullRequests
+                ?? new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
 
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -427,22 +426,22 @@ try
             // A person merged a review-mode run's PR: confirm the merge, run the suite on the merged commit, record it so the registry closes the handover.
             var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
             var runId = Required(opts, "run-id");
-            var github = opts.ContainsKey("github");
+            var host = PullRequestHost(opts, settings.RepoPath);
             var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
                 .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
             var services = Services(settings, runId, env, new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
             var branch = GitWorkspace.IntegrationBranch(runId);
             var why = await RunClose.RecordAsync(services.Ledger, runId,
-                async ct => github
-                    ? await new GhCliPullRequests(settings.RepoPath).MergedPullRequestAsync(branch, ct) is { } url ? $"pr {url}" : null
+                async ct => host is not null
+                    ? await host.MergedPullRequestAsync(branch, ct) is { } url ? $"pr {url}" : null
                     : await RunClose.BranchMergedAsync(settings.RepoPath, branch, settings.BaseBranch, ct),
                 async ct =>
                 {
-                    // Merged on GitHub: the merged commit is origin's base, not the local one.
-                    if (github) await services.Git.FetchAsync(settings.BaseBranch, ct);
-                    return await RunClose.CheckMergedAsync(services, runId, github ? $"origin/{settings.BaseBranch}" : settings.BaseBranch, ct);
+                    // Merged on the PR host: the merged commit is origin's base, not the local one.
+                    if (host is not null) await services.Git.FetchAsync(settings.BaseBranch, ct);
+                    return await RunClose.CheckMergedAsync(services, runId, host is not null ? $"origin/{settings.BaseBranch}" : settings.BaseBranch, ct);
                 },
-                opts.GetValueOrDefault("by"), canState: !github, CancellationToken.None);
+                opts.GetValueOrDefault("by"), canState: host is null, CancellationToken.None);
             if (why is null && Directory.Exists(settings.RegistryPath))
                 await Factory.Harness.Registry.RegistryProgress.SyncAsync(services.Ledger, settings.RegistryPath, runId,
                     Factory.Harness.Registry.HandoverRef.From(services.LoadHandover(runId)), CancellationToken.None);

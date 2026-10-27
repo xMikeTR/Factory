@@ -44,7 +44,7 @@ C4Container
   Person(eng, "Engineer", "Runs factory-s2; approves merges (/approve comments or console)")
   System_Ext(s1, "System 1 (Designc)", "Freezes handovers; resolves needs-decisions in the registry")
   System_Ext(llm, "Model provider", "Anthropic API, or APIM -> LiteLLM (OpenAI-compatible)")
-  System_Ext(gh, "GitHub", "PRs, approval comments, merge via gh CLI")
+  System_Ext(gh, "GitHub / Azure DevOps", "PRs via gh or az CLI; approval comments and merge on GitHub")
   System_Ext(otel, "Langfuse / OTLP collector", "Traces (optional)")
   Container(cli, "factory-s2 CLI", "C# / MAF", "validate | dispatch | run [--since] | rerun; hosts the S2 workflow")
   Container(harness, "Factory.Harness", "C# library", "Agents, tool policy (ACS), configurator, ledger, sandbox, registry I/O, telemetry")
@@ -117,8 +117,8 @@ C4Container
 | `Factory.S2/Verify/*` | Verify entries in the sandbox, each from the tree as found, cleanup always, JUnit parsing, baseline/regression | `VerifyRunner`, `VerifyOutcome`, `JUnit` | TaskLoop, IntegrationVerify | Sandbox, GitWorkspace |
 | `Factory.S2/Quality/*` | C# adapters (Roslyn syntax metrics, Cobertura join, csproj edges) and the task-diff gate; policy from `.factory/policy.yaml` `quality:` (`QualityPolicyFile`; UI guard: `quality.ui` + `UiContractFile`) | `CSharpMetrics`, `Cobertura`, `CsprojEdges`, `QualityGate`, `StrykerReport`, `IMutationRunner`, `EslintMetrics`, `IQaRunner`, `QaGate`, `UiInventory`, `UiGate`, `TsImportEdges`, `TsGate` | TaskLoop (`QualityOutcomeAsync`, `check_quality`) | GitWorkspace, Roslyn |
 | `Factory.S2/Git/GitWorkspace.cs` | Integration branch, worktree per team, stash, leave-as-found, idempotent merges | `GitWorkspace` | TeamRunner, TaskRerun, VerifyRunner, executors | git |
-| `Factory.S2/RunClose.cs` | `factory-s2 close`: confirms a person merged a `ready_for_review` run, re-runs the integration suite on the merged commit, and logs the merge when green, so the handover closes | `RunClose` | Program, RegistryLedgerProjector (reads its row) | git, gh CLI, sandbox |
-| `Factory.S2/Integrations.cs` | PRs (gh / dry-run), approval comments, human channel | `IPullRequests`, `IApprovalComments`, `GhCliPullRequests`, `IHumanChannel` | MergeExecutor, WorkflowHost, Program | GitHub (gh CLI) |
+| `Factory.S2/RunClose.cs` | `factory-s2 close`: confirms a person merged a `ready_for_review` run, re-runs the integration suite on the merged commit, and logs the merge when green, so the handover closes | `RunClose` | Program, RegistryLedgerProjector (reads its row) | git, gh / az CLI, sandbox |
+| `Factory.S2/Integrations.cs` | PRs (gh / az / dry-run), approval comments, merged-PR lookup, human channel | `IPullRequests`, `IApprovalComments`, `IMergedPullRequests`, `GhCliPullRequests`, `AzCliPullRequests`, `IHumanChannel` | MergeExecutor, WorkflowHost, Program | GitHub (gh CLI), Azure DevOps (az CLI) |
 | `Factory.S2/HandoverInput.cs` | `--handover` file or Designc dir -> frozen JSON | `HandoverInput` | Program | Registry |
 | `Factory.S2/FactoryServices.cs` | Settings from env, run-dir paths, service bag, re-validating loaders | `FactorySettings`, `FactoryServices`, `RegenerationFile` | every executor, TeamRunner, TaskRerun, Program | env vars |
 | `docker/runner` | Runner image (`build.sh`) | — | DockerSandbox (by image name) | Docker |
@@ -211,12 +211,13 @@ Used by structural-centrality-guard to determine escalation threshold.
 | System 1 registry | Files (git repo) | In/Out | Designc registry | Reads `handovers/<id>/` (hash-checked; elements, code areas, risk, relationships and events from Designc's `elements.json`, schema `designc.handover.elements/1` or `/2`); appends the S2 projection to `ledger.jsonl`; needs-decisions raised there with `payload.options`, resolved with `payload.option` and/or `payload.note` |
 | Model provider | HTTPS | Out | Anthropic API, or APIM -> LiteLLM | `FACTORY_PROVIDER=anthropic|openai`; key never reaches sandbox, ledger or traces |
 | GitHub | gh CLI | Out/In | GitHub | PR create, `/approve` and `/verified` comments from the allow-list, squash merge; dry-run writes to `.factory/runs/<id>/` |
+| Azure DevOps | az CLI (`azure-devops` extension) | Out/In | Azure DevOps | PR create/reuse, auto-complete with squash, completed-PR lookup at `close`; org/project/repo from the `origin` remote |
 | git | CLI | Out | target repo | integration branch, worktrees under the state dir |
 | Podman / Docker Engine (`FACTORY_CONTAINER_ENGINE`, default podman) | CLI | Out | factory-s2-runner | container per team, `--network none` for its whole life; the restore runs in a separate short-lived container on the bridge, started only when RestoreGate passes; sources pinned to nuget.org |
 | Laya | HTTP `/decide` | Out | Laya sidecar | optional (`FACTORY_LAYA_URL`); heuristic fallback, decider ledgered |
 | Langfuse / OTLP | OTLP | Out | Langfuse | only when `OTEL_EXPORTER_OTLP_ENDPOINT` set; content off unless `FACTORY_OTEL_CAPTURE_CONTENT=1` |
 | PObserve | CLI in the runner image | Out | PObserve | `pobserve-check <specs> <Spec> <logs>` via `FACTORY_POBSERVE_CMD`; exit 2 spec violation, 4 parse error |
-| Human | Console / RequestPort | In/Out | — | merge approval without `--github` |
+| Human | Console / RequestPort | In/Out | — | merge approval without `--github` (and on `--azdo`) |
 
 ## Domain Rules Extracted
 
