@@ -259,7 +259,9 @@ token lint again (as configured) on the merged commit
 (`origin/<base>` after a fetch with `--github`). Green: it logs the merge and closes the handover
 in the registry. Red: it logs the failures and refuses; the handover stays open until the base is
 fixed and `close` passes. The decision checks are not re-run: they check the registry's models,
-not the code. Blocks (a scope leak, a protected path changed, a pending manual
+not the code. Once the merge is recorded the run is complete and `close` removes its worktrees and local
+`factory/<id>/*` branches (again on any later `close`, if that was interrupted); the ledger and
+`.factory/runs/<id>/` stay as its record, and remote branches are left alone. Blocks (a scope leak, a protected path changed, a pending manual
 check) stop the run in every mode; it ends `merge_blocked` with the blocks in the PR body.
 
 In tiered mode with `--github`, approvals are PR comments from the allow-listed `approvers`:

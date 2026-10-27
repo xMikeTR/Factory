@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
+using Factory.S2.Git;
 using Factory.S2.Teams;
 using Factory.S2.Verify;
 
@@ -49,6 +50,16 @@ public static class RunClose
         await ledger.AppendAsync(new LedgerEvent(runId, "S2", "close", LedgerKinds.Merge, Outcome: "merged",
             Payload: JsonSerializer.Serialize(new { how, commit = check.Commit, by = string.IsNullOrWhiteSpace(by) ? null : by.Trim() })), ct);
         return null;
+    }
+
+    /// A run whose merge is recorded is complete: its worktrees and local branches go. True when it was cleaned.
+    public static async Task<bool> CleanUpAsync(ILedger ledger, GitWorkspace git, string runId, CancellationToken ct)
+    {
+        var closed = false;
+        await foreach (var e in ledger.ReadAsync(runId, ct))
+            if (e is { Kind: LedgerKinds.Merge, Stage: "close", Outcome: "merged" }) closed = true;
+        if (closed) await git.RemoveRunAsync(runId, ct);
+        return closed;
     }
 
     /// Without a PR host: the integration branch is merged when it is an ancestor of the base (a merge, not a squash).
