@@ -5,9 +5,10 @@ type MergeTier =
     | OneApproval
     | TwoApprovals
 
-/// Auto: merge on green, the tier is only reported. Tiered: the tier decides how many of the
-/// approvers must approve before the merge.
+/// Review: never merge; the run ends at the PR and a person merges it. Auto: merge on green, the
+/// tier is only reported. Tiered: the tier decides how many of the approvers must approve before the merge.
 type MergeEnforcement =
+    | Review
     | Auto
     | Tiered of approvers: string list
 
@@ -38,6 +39,7 @@ type MergeVerdict =
 
 [<RequireQualifiedAccess>]
 type MergeAction =
+    | OpenForReview
     | MergeNow
     | AwaitApproval of tier: MergeTier * approvers: string list
     | Blocked of MergeBlock list
@@ -67,7 +69,7 @@ type ManualRecord = { Check: string; By: string; Outcome: ManualOutcome }
 module Merge =
 
     let defaultPolicy =
-        { Enforcement = Auto
+        { Enforcement = Review
           AutoMergeMaxRisk = Low
           AutoMergeMaxChangedLines = 400 }
 
@@ -133,6 +135,7 @@ module Merge =
     let action (policy: MergePolicy) (verdict: MergeVerdict) : MergeAction =
         match verdict.Blocks, policy.Enforcement with
         | (_ :: _) as blocks, _ -> MergeAction.Blocked blocks
+        | [], Review -> MergeAction.OpenForReview
         | [], Auto -> MergeAction.MergeNow
         | [], Tiered _ when verdict.Tier = AutoMerge -> MergeAction.MergeNow
         | [], Tiered approvers -> MergeAction.AwaitApproval(verdict.Tier, approvers)
@@ -179,10 +182,11 @@ module Merge =
         { verdict with Blocks = verdict.Blocks |> List.filter (function ManualVerifyPending c -> not (verified.Contains c) | _ -> true) }
 
     /// The manual records that count, the latest per check: in Tiered mode only an approver's,
-    /// in Auto mode anyone's who gave a name.
+    /// in Review and Auto mode anyone's who gave a name.
     let countedManual (enforcement: MergeEnforcement) (records: ManualRecord list) : ManualRecord list =
         let may (by: string) =
             match enforcement with
+            | Review
             | Auto -> by.Trim() <> ""
             | Tiered approvers -> allowed approvers by
         records |> List.filter (fun r -> may r.By) |> List.groupBy (fun r -> r.Check) |> List.map (snd >> List.last)

@@ -19,7 +19,7 @@ turns it into merged code in a target repo:
 - Deterministic verify decides pass or fail: red evidence, green, a stashed-implementation run and
   a pass-to-pass check.
 - Integration verify runs the whole suite, PObserve and each bound decision's checks.
-- A merge policy (auto or tiered, with hard blocks) merges, or opens the PR.
+- A merge policy (review by default, auto or tiered, with hard blocks) opens the PR; review stops there for a person to merge.
 
 Every step is written to the run ledger and projected into the registry ledger for System 4. Agents
 propose; deterministic code decides. The canonical domain vocabulary is
@@ -91,7 +91,7 @@ C4Container
 | `Factory.Core/UiGuard.fs` | UI regression rule: contract/baseline items gone (or tests now skipped) and not authorised are violations | `UiItem`, `UiItemKind`, `UiViolation`, `UiGuard` | UiGate | — |
 | `Factory.Core/HandoverClosure.fs` | Handover outcome: delivered only when merged and every decision check passed | `HandoverOutcome` | Interop, RegistryLedgerProjector | — |
 | `Factory.Core/Regeneration.fs` | Re-frozen handover vs plan: changed decisions -> tasks to re-run | `Regeneration` | Interop, S2 (Dispatcher, TeamRunner) | — |
-| `Factory.Core/Merge.fs` | Merge tier (max over rules), enforcement (auto/tiered), hard blocks | `MergeTier`, `MergePolicy`, `MergeEnforcement`, `MergeBlock`, `MergeVerdict` | Interop, MergePolicyFile, MergeExecutor | — |
+| `Factory.Core/Merge.fs` | Merge tier (max over rules), enforcement (review/auto/tiered), hard blocks | `MergeTier`, `MergePolicy`, `MergeEnforcement`, `MergeBlock`, `MergeVerdict` | Interop, MergePolicyFile, MergeExecutor | — |
 | `Factory.Core/Json.fs` | Plan/handover/dispatch/task-event codecs | — | Interop | — |
 | `Factory.Core/Interop.fs` | C#-friendly facade | `Core`, `PlanValidation`, `FactoryRejectedException` | Harness, S2 | — |
 | `Factory.Harness/FactoryAgents.cs` | Builds every agent: provider client per tier, governed tool calls, gen_ai spans | `GatewayOptions`, `ModelProvider`, `AgentScope`, `FactoryAgents` | S2 executors, TaskLoop | Anthropic API / OpenAI-compatible gateway |
@@ -241,7 +241,7 @@ Used by structural-centrality-guard to determine escalation threshold.
 | The Implementer may hand broken tests back to the TestAuthor (`Ready(Implementer) -> Ready(TestAuthor)`); shares the turn budget and needs a new red run | `TaskState.fs` `ReturnedToTestAuthor`, `TaskLoop` | Business rule | instead of parking on a needs-decision |
 | `ValidatedPlan` only constructible by `PlanValidator.validate` | `PlanValidator.fs` | Invariant | internal ctor |
 | Every task needs ≥1 automated verify under its testWrites or a protected path; every bound decision covered | `PlanValidator.fs` | Business rule | "nothing done without a check" |
-| Merge: blocks (scope leak, protected path, pending manual check) stop both modes; auto merges on green; tiered needs approvals by tier | `Merge.fs` | Business rule | thresholds in `.factory/policy.yaml` (400 lines, low risk) |
+| Merge: blocks (scope leak, protected path, pending manual check) stop every mode; review (default) never merges, the run ends `ready_for_review` at the PR; auto merges on green; tiered needs approvals by tier | `Merge.fs` | Business rule | thresholds in `.factory/policy.yaml` (400 lines, low risk) |
 | Handover delivered only when merged and every check of every bound decision passed | `HandoverClosure.fs` | Business rule | projected to the registry |
 | Regeneration re-runs a task only if it covers or touches the elements of a changed decision | `Regeneration.fs` | Business rule | element-only changes and dependents do not re-run |
 | An agent's needs-decision offers ≥2 options (single capital-letter ids, summary, consequence; recommended must be one of them); a resolution naming an option never offered keeps the run parked | `TaskState.fs` `NeedsDecision.optionErrors`/`answer`, `ScopedWorkspace.RaiseNeedsDecision`, `RunExecutors` | Contract | the designer picks instead of composing an answer; harness-raised NDs (configurator, environment) have no options |
