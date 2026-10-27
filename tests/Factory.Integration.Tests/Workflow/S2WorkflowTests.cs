@@ -483,9 +483,10 @@ public class S2WorkflowTests
         Assert.Contains("--run-id", result.Detail);
     }
 
-    /// Review mode, the default: the run stops at the PR and only `close` records the person's merge.
+    /// Review mode, the default: the run stops at the PR and only `close` records the person's merge, once the
+    /// integration suite passes on the merged commit.
     [Fact]
-    public async Task A_review_run_ends_ready_for_review_and_close_records_the_merge_only_once_the_branch_is_merged()
+    public async Task A_review_run_ends_ready_for_review_and_close_records_the_merge_only_once_merged_and_green()
     {
         var model = new ScriptedChatClient();
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
@@ -498,14 +499,23 @@ public class S2WorkflowTests
         var branch = GitWorkspace.IntegrationBranch(TeamHarness.RunId);
         var baseBranch = h.Services.Settings.BaseBranch;
         Task<string?> Merged(CancellationToken ct) => RunClose.BranchMergedAsync(h.Repo, branch, baseBranch, ct);
+        Task<RunClose.MergedCheck> Green(CancellationToken ct) => RunClose.CheckMergedAsync(h.Services, TeamHarness.RunId, baseBranch, ct);
+        Task<RunClose.MergedCheck> Red(CancellationToken ct) => Task.FromResult(new RunClose.MergedCheck("abc123", "integration tests: exit 1"));
+        Task<string?> Close(Func<CancellationToken, Task<string?>> merged, Func<CancellationToken, Task<RunClose.MergedCheck>> check, string? by = null, bool canState = true) =>
+            RunClose.RecordAsync(h.Services.Ledger, TeamHarness.RunId, merged, check, by, canState, default);
 
-        Assert.Contains("not in the base branch", await RunClose.RecordAsync(h.Services.Ledger, TeamHarness.RunId, Merged, null, canState: true, default));
-        Assert.Contains("not merged yet", await RunClose.RecordAsync(h.Services.Ledger, TeamHarness.RunId, _ => Task.FromResult<string?>(null), "mike", canState: false, default));
+        Assert.Contains("not in the base branch", await Close(Merged, Green));
+        Assert.Contains("not merged yet", await Close(_ => Task.FromResult<string?>(null), Green, "mike", canState: false));
 
         Assert.True((await h.GitIn(h.Repo, "merge", "--no-ff", "-m", "merge", branch)).Succeeded);
-        Assert.Null(await RunClose.RecordAsync(h.Services.Ledger, TeamHarness.RunId, Merged, null, canState: true, default));
-        Assert.Single(h.Rows(LedgerKinds.Merge), e => e is { Stage: "close", Outcome: "merged" });
-        Assert.Contains("already closed", await RunClose.RecordAsync(h.Services.Ledger, TeamHarness.RunId, Merged, null, canState: true, default));
+        Assert.Contains("fails its integration suite", await Close(Merged, Red));                // base moved and broke it: stays open
+        Assert.Single(h.Rows(LedgerKinds.Merge), e => e is { Stage: "close", Outcome: "merged_failing" });
+
+        Assert.Null(await Close(Merged, Green));
+        Assert.Single(h.Rows(LedgerKinds.Verify), e => e is { Stage: "close", Outcome: "passed" });  // the suite ran on the merged commit
+        var head = (await h.GitIn(h.Repo, "rev-parse", baseBranch)).Output.Trim();
+        Assert.Contains(head, Assert.Single(h.Rows(LedgerKinds.Merge), e => e is { Stage: "close", Outcome: "merged" }).Payload);
+        Assert.Contains("already closed", await Close(Merged, Green));
     }
 
     /// A new repo names no suite and has no test project yet: `dotnet test` at its root would be MSB1003. There is
