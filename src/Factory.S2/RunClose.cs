@@ -58,7 +58,8 @@ public static class RunClose
         return r.Succeeded ? $"{branch} in {baseBranch}" : null;
     }
 
-    /// The integration suite and PObserve, as integration verify runs them, on a throwaway checkout of `commitish`.
+    /// The integration suite, PObserve, the frozen acceptance specs and the token lint, as integration verify runs
+    /// them, on a throwaway checkout of `commitish`. Failures blame no task: after a merge they are the base's too.
     public static async Task<MergedCheck> CheckMergedAsync(FactoryServices svc, string runId, string commitish, CancellationToken ct)
     {
         var s = svc.Settings;
@@ -69,6 +70,12 @@ public static class RunClose
             outcomes.Add(await svc.Verify.RunCommandAsync(runId, "integration tests", suite.Item, checkout.Path, timeout, ct, stage: "close"));
         if (s.PObserveCommand is { } pobserve)
             outcomes.Add(await svc.Verify.RunCommandAsync(runId, "PObserve", pobserve, checkout.Path, timeout, ct, stage: "close"));
+        var handover = svc.LoadHandover(runId);
+        if (!handover.AcceptanceSpecs.IsEmpty)
+            outcomes.Add((await svc.Verify.AcceptanceAsync(runId, s.AcceptanceCommand, checkout.Path,
+                handover.AcceptanceSpecs.Select(a => a.Path).ToList(), ct, stage: "close")).Outcome);
+        if (s.TokenLintCommand is { } lint && Microsoft.FSharp.Core.FSharpOption<string>.get_IsSome(handover.DesignTokens))
+            outcomes.Add((await svc.Verify.TokenLintAsync(runId, lint, checkout.Path, ct, stage: "close")).Outcome);
         var failed = outcomes.Where(o => o.ExitCode != 0).ToList();
         return new MergedCheck(await svc.Git.HeadAsync(checkout.Path, ct), failed.Count == 0 ? null : Briefs.Failures(failed));
     }

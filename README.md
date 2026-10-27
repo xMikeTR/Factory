@@ -254,7 +254,8 @@ dotnet run --project src/Factory.S2 -- close --repo <target repo> --run-id <id> 
 
 `close` confirms the merge (with `--github` the PR is merged; without, the integration branch is in
 the base branch, or after a squash merge `--by` says you merged it). The base may have moved since
-integration verify, so it runs the integration suite (and PObserve) again on the merged commit
+integration verify, so it runs the integration suite, PObserve, the frozen acceptance specs and the
+token lint again (as configured) on the merged commit
 (`origin/<base>` after a fetch with `--github`). Green: it logs the merge and closes the handover
 in the registry. Red: it logs the failures and refuses; the handover stays open until the base is
 fixed and `close` passes. The decision checks are not re-run: they check the registry's models,
