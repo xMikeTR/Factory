@@ -24,21 +24,21 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     {
         var path = Path.GetFullPath(repoPath);
         var isRepo = Directory.Exists(Path.Combine(path, ".git")) || File.Exists(Path.Combine(path, ".git"));
-        if (isRepo && (await GitAsync(path, ct, check: false, "rev-parse", "--verify", "--quiet", "HEAD")).ExitCode == 0) return null;
+        if (isRepo && (await RawGitAsync(path, ct, check: false, "rev-parse", "--verify", "--quiet", "HEAD")).ExitCode == 0) return null;
         if (!isRepo && Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any())
             throw new Factory.Core.FactoryRejectedException($"cannot use {path} as the repository",
                 [$"{path} holds files but is not a git repository: run git init and commit them, or point --repo at an empty or new folder"]);
 
         Directory.CreateDirectory(path);
-        if (isRepo) await GitAsync(path, ct, "symbolic-ref", "HEAD", $"refs/heads/{baseBranch}");
-        else await GitAsync(path, ct, "init", "-q", "-b", baseBranch);
+        if (isRepo) await RawGitAsync(path, ct, "symbolic-ref", "HEAD", $"refs/heads/{baseBranch}");
+        else await RawGitAsync(path, ct, "init", "-q", "-b", baseBranch);
         var ignore = Path.Combine(path, ".gitignore");
         if (!File.Exists(ignore))
         {
             await File.WriteAllTextAsync(ignore, string.Concat(BuildCaches.Order(StringComparer.Ordinal).Select(d => d + "/\n")), ct);
-            await GitAsync(path, ct, "add", "--", ".gitignore");
+            await RawGitAsync(path, ct, "add", "--", ".gitignore");
         }
-        await GitAsync(path, ct, "-c", "user.name=factory-s2", "-c", "user.email=factory-s2@localhost.invalid",
+        await RawGitAsync(path, ct, "-c", "user.name=factory-s2", "-c", "user.email=factory-s2@localhost.invalid",
             "commit", "-q", "--allow-empty", "-m", "Empty baseline for a new project (factory-s2)");
         return isRepo ? $"{path} had no commit: added an empty baseline on {baseBranch}"
             : $"created {path} as a git repository with an empty baseline on {baseBranch}";
@@ -372,12 +372,53 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     private async Task<bool> BranchExistsAsync(string branch, CancellationToken ct) =>
         (await GitAsync(repoPath, ct, check: false, "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}")).ExitCode == 0;
 
-    private static Task<ProcessResult> GitAsync(string dir, CancellationToken ct, params string[] args) =>
+    private Task<ProcessResult> GitAsync(string dir, CancellationToken ct, params string[] args) =>
         GitAsync(dir, ct, check: true, args);
 
-    private static async Task<ProcessResult> GitAsync(string dir, CancellationToken ct, bool check, params string[] args)
+    private async Task<ProcessResult> GitAsync(string dir, CancellationToken ct, bool check, params string[] args)
     {
-        var r = await ProcessRunner.RunAsync("git", args, dir, GitTimeout, ct: ct);
+        await CheckGitLinkAsync(dir, ct);
+        return await RawGitAsync(dir, ct, check, args);
+    }
+
+    /// A sandbox can write everything in its worktree, the .git link included, and git runs here on the host: a link to a
+    /// git directory the sandbox wrote would run that directory's hooks and config outside the container. So a worktree
+    /// must still link into this repository's own worktrees folder, which is not mounted in any sandbox.
+    private async Task CheckGitLinkAsync(string dir, CancellationToken ct)
+    {
+        var root = Path.GetFullPath(Path.Combine(stateDir, "worktrees")) + Path.DirectorySeparatorChar;
+        var full = Path.GetFullPath(dir);
+        if (!full.StartsWith(root, StringComparison.Ordinal) || !Directory.Exists(full)) return;
+
+        var link = Path.Combine(full, ".git");
+        var info = new FileInfo(link);
+        var text = info.Exists && info.LinkTarget is null ? await File.ReadAllTextAsync(link, ct) : "";
+        var worktrees = Path.Combine(await GitCommonDirAsync(ct), "worktrees") + Path.DirectorySeparatorChar;
+        if (!text.StartsWith("gitdir: ", StringComparison.Ordinal)
+            || !Path.GetFullPath(text["gitdir: ".Length..].Trim(), full).StartsWith(worktrees, StringComparison.Ordinal))
+            throw new InvalidOperationException($"{link} no longer links into {worktrees}: refusing to run git there");
+    }
+
+    private string? _gitCommonDir;
+
+    private async Task<string> GitCommonDirAsync(CancellationToken ct)
+    {
+        if (_gitCommonDir is null)
+        {
+            var r = await RawGitAsync(repoPath, ct, check: true, "rev-parse", "--path-format=absolute", "--git-common-dir");
+            _gitCommonDir = Path.GetFullPath(r.Output.Trim());
+        }
+        return _gitCommonDir;
+    }
+
+    private static Task<ProcessResult> RawGitAsync(string dir, CancellationToken ct, params string[] args) =>
+        RawGitAsync(dir, ct, check: true, args);
+
+    /// No hooks and no fsmonitor, whatever the config says: a repository's core.hooksPath can point at tracked files, which
+    /// agents write. The factory's own gates stand in for a repository's hooks.
+    private static async Task<ProcessResult> RawGitAsync(string dir, CancellationToken ct, bool check, params string[] args)
+    {
+        var r = await ProcessRunner.RunAsync("git", ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", .. args], dir, GitTimeout, ct: ct);
         if (check && !r.Succeeded)
             throw new InvalidOperationException($"git {string.Join(' ', args)} failed in {dir}:\n{r.Tail()}");
         return r;

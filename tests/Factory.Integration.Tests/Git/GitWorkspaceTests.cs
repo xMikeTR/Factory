@@ -156,4 +156,48 @@ public class GitWorkspaceTests
         await File.WriteAllTextAsync(Path.Combine(wt, "tests/Pricing.Data.Tests/obj/a.cache"), "z\n");
         Assert.Equal("", await git.DiffSinceAsync(wt, tree, CancellationToken.None));
     }
+
+    private static void WriteHook(string path, string marker)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, $"#!/bin/sh\necho ran > '{marker}'\n");
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    [Theory]
+    [InlineData(false)] // .git still a file, naming a git directory the sandbox wrote
+    [InlineData(true)]  // .git swapped for a directory
+    public async Task A_git_link_replaced_from_the_sandbox_stops_git_before_its_hook_or_config_runs(bool asDirectory)
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        var marker = Path.Combine(Path.GetTempPath(), $"hook-{Guid.NewGuid():N}");
+        var evil = Path.Combine(wt, asDirectory ? ".git" : ".evil");
+        File.Delete(Path.Combine(wt, ".git"));
+        Directory.CreateDirectory(Path.Combine(evil, "refs"));
+        Directory.CreateDirectory(Path.Combine(evil, "objects"));
+        await File.WriteAllTextAsync(Path.Combine(evil, "HEAD"), "ref: refs/heads/x\n");
+        await File.WriteAllTextAsync(Path.Combine(evil, "config"), $"[core]\n\tfsmonitor = {Path.Combine(evil, "hooks/pre-commit")}\n");
+        WriteHook(Path.Combine(evil, "hooks/pre-commit"), marker);
+        if (!asDirectory) await File.WriteAllTextAsync(Path.Combine(wt, ".git"), "gitdir: .evil\n");
+
+        var e = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Services.Git.ChangedPathsAsync(wt, CancellationToken.None));
+        Assert.Contains(".git", e.Message);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => h.Services.Git.CommitAllAsync(wt, "x", CancellationToken.None));
+        Assert.False(File.Exists(marker));
+    }
+
+    [Fact]
+    public async Task A_hook_the_worktree_can_write_does_not_run_when_the_factory_commits()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        var marker = Path.Combine(Path.GetTempPath(), $"hook-{Guid.NewGuid():N}");
+        await h.GitIn(wt, "config", "core.hooksPath", ".hooks"); // a repository using tracked hooks, as husky does
+        WriteHook(Path.Combine(wt, ".hooks/pre-commit"), marker);
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs"), "// changed\n");
+
+        Assert.True(await h.Services.Git.CommitAllAsync(wt, "work", CancellationToken.None));
+        Assert.False(File.Exists(marker));
+    }
 }
