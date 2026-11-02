@@ -13,7 +13,7 @@ public class RegistryLedgerProjectorTests
     private const string RunId = "run-1";
     private static readonly Limits Limits = new(5, 3);
     private static BoundDecision Decision(string id, string check) => new(DecisionId.NewDecisionId(id), "statement",
-        ListModule.Empty<ElementId>(), ListModule.OfSeq([new DecisionCheck("p", check)]));
+        ListModule.Empty<ElementId>(), ListModule.OfSeq([DecisionCheckModule.create("p", check, Microsoft.FSharp.Core.FSharpOption<string>.None)]));
 
     private static readonly HandoverRef Handover = new("20261007-c4d072ba",
         [Decision("D-0001", "p check -tc tcOptimistic"), Decision("D-0002", "p check -tc tcDedupe")]);
