@@ -68,4 +68,137 @@ public class ContextSourceTests
         Assert.Equal("file", missed.Source);
         Assert.Contains(reasonMentions, missed.Reason);
     }
+
+    // ---- Step 2: the stub ----
+
+    [Fact]
+    public async Task No_source_returns_no_bundle()
+    {
+        var missed = Assert.IsType<BundleFetch.Missed>(await new NoContextSource().FetchAsync(Request(), default));
+        Assert.Equal("none", missed.Source);
+    }
+
+    // ---- Step 3: the file in the handover folder ----
+
+    private static string TempDir()
+    {
+        var d = Path.Combine(Path.GetTempPath(), "ctx-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(d);
+        return d;
+    }
+
+    [Fact]
+    public async Task The_file_source_reads_bundles_role_json_in_the_handover_folder()
+    {
+        var dir = TempDir();
+        Directory.CreateDirectory(Path.Combine(dir, "bundles"));
+        File.WriteAllText(Path.Combine(dir, "bundles", "builder.json"), Example);
+
+        var fetched = Assert.IsType<BundleFetch.Fetched>(await new FileContextSource(dir).FetchAsync(Request(), default));
+        Assert.StartsWith("sha256:1956c88a", fetched.Bundle.BundleId);
+    }
+
+    [Fact]
+    public async Task The_file_source_misses_when_the_file_is_absent_for_the_role_or_is_not_a_bundle()
+    {
+        var dir = TempDir();
+        Directory.CreateDirectory(Path.Combine(dir, "bundles"));
+        File.WriteAllText(Path.Combine(dir, "bundles", "builder.json"), Example);
+        File.WriteAllText(Path.Combine(dir, "bundles", "reviewer.json"), "{ nope");
+        var source = new FileContextSource(dir);
+
+        Assert.IsType<BundleFetch.Missed>(await source.FetchAsync(Request("tester"), default));          // no tester.json
+        var bad = Assert.IsType<BundleFetch.Missed>(await source.FetchAsync(Request("reviewer"), default)); // not JSON
+        Assert.Equal("file", bad.Source);
+        Assert.IsType<BundleFetch.Missed>(await new FileContextSource(Path.Combine(dir, "nowhere")).FetchAsync(Request(), default));
+    }
+
+    [Theory]
+    [InlineData("../builder")]
+    [InlineData("a/b")]
+    public async Task The_file_source_never_reads_outside_bundles_whatever_the_role(string role)
+    {
+        var dir = TempDir();
+        File.WriteAllText(Path.Combine(dir, "builder.json"), Example);
+        Assert.IsType<BundleFetch.Missed>(await new FileContextSource(dir).FetchAsync(Request(role), default));
+    }
+
+    // ---- Step 4: the CLI arguments ----
+
+    [Fact]
+    public void The_cli_is_asked_for_the_role_and_every_key_part_that_is_known_and_json()
+    {
+        var args = DesigncCliContextSource.Arguments("/d/scripts/designc-core.js", "/reg", Request());
+
+        Assert.Equal(["/d/scripts/designc-core.js", "bundle", "--registry", "/reg", "--role", "builder",
+            "--handover", "20261102-abcd1234", "--item", "W-tags", "--task", "T-1",
+            "--element", "Tags/Tags API", "--element", "Tags/Tags UI", "--json"], args);
+    }
+
+    [Fact]
+    public void Absent_key_parts_are_left_out()
+    {
+        var args = DesigncCliContextSource.Arguments("s.js", "/reg", new(null, null, null, "builder", []));
+        Assert.Equal(["s.js", "bundle", "--registry", "/reg", "--role", "builder", "--json"], args);
+    }
+
+    // ---- Step 5: running the CLI ----
+
+    private static string FakeNode(string body)
+    {
+        var dir = TempDir();
+        var script = Path.Combine(dir, "node");
+        File.WriteAllText(script, "#!/bin/sh\n[ \"$1\" = warm-up ] && exit 0\n" + body.Replace("\r", ""));
+        File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        // A parallel fork can hold a just-written script open for a moment (ETXTBSY); one successful exec ends that window.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(script, "warm-up") { RedirectStandardOutput = true })!;
+                p.WaitForExit();
+                break;
+            }
+            catch (System.ComponentModel.Win32Exception) when (attempt < 50) { Thread.Sleep(10); }
+        }
+        return script;
+    }
+
+    private static DesigncCliContextSource Cli(string node, TimeSpan? timeout = null) =>
+        new("/designc/scripts/designc-core.js", "/reg", node, timeout ?? TimeSpan.FromSeconds(20));
+
+    [Fact]
+    public async Task The_cli_source_parses_stdout_and_ignores_stderr()
+    {
+        var dir = TempDir();
+        var json = Path.Combine(dir, "out.json");
+        File.WriteAllText(json, Example);
+        var node = FakeNode($"echo 'a warning' >&2\ncat '{json}'");
+
+        var fetched = Assert.IsType<BundleFetch.Fetched>(await Cli(node).FetchAsync(Request(), default));
+        Assert.StartsWith("sha256:1956c88a", fetched.Bundle.BundleId);
+    }
+
+    [Fact]
+    public async Task The_cli_source_misses_on_a_failed_exit_even_with_json_on_stdout()
+    {
+        var dir = TempDir();
+        var json = Path.Combine(dir, "out.json");
+        File.WriteAllText(json, Example);
+        var missed = Assert.IsType<BundleFetch.Missed>(await Cli(FakeNode($"cat '{json}'\nexit 2")).FetchAsync(Request(), default));
+        Assert.Equal("designc", missed.Source);
+        Assert.Contains("exit 2", missed.Reason);
+    }
+
+    [Fact]
+    public async Task The_cli_source_misses_on_garbage_output_a_hang_and_a_missing_node()
+    {
+        Assert.IsType<BundleFetch.Missed>(await Cli(FakeNode("echo not json")).FetchAsync(Request(), default));
+
+        var hang = Assert.IsType<BundleFetch.Missed>(await Cli(FakeNode("sleep 30"), TimeSpan.FromMilliseconds(300)).FetchAsync(Request(), default));
+        Assert.Contains("timed out", hang.Reason);
+
+        var gone = Assert.IsType<BundleFetch.Missed>(await Cli("/no/such/node").FetchAsync(Request(), default));
+        Assert.Equal("designc", gone.Source);
+    }
 }
