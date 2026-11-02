@@ -148,6 +148,7 @@ public class TraceReaderTests
         Assert.Equal(2, rows.Count);
         Assert.All(rows, r => Assert.Empty(DesigncSchema.Validate(r.Line)));
         Assert.All(rows, r => Assert.Equal("pipeline.jsonl", r.Stream));
+        Assert.All(rows, r => Assert.Equal(r.Stream, RegistryStreams.Of("trace"))); // else the fold drops them
     }
 
     [Fact]

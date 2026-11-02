@@ -41,6 +41,7 @@ public static class RegistryLedgerProjector
             else if (e.Kind == LedgerKinds.Verify && e.Decision is not null && Check(e) is { } check) rows.Add((e.Ts, check));
         }
         rows.AddRange(AcceptanceFailures(run, handover));
+        rows.AddRange(Outcomes(run));
         if (HandoverClosed(run, handover) is { } closed) rows.Add(closed);
         // Stable: ties keep source order.
         return rows.OrderBy(r => r.Ts).Select(r => r.Row).ToList();
@@ -313,6 +314,46 @@ public static class RegistryLedgerProjector
             }));
         }
     }
+
+    /// Run ends that are a verdict on the work, and the evidence kind designc's `outcome.ref` names. Other failed ends
+    /// (a rejected plan, a crash, qa_unrunnable) say nothing about the code, so they stay run_ended only.
+    private static readonly Dictionary<string, string> RunVerdicts = new()
+    {
+        ["integration_failed"] = "integration",
+        ["integration_unrunnable"] = "integration",
+        ["qa_failed"] = "qa",
+    };
+
+    /// designc's `outcome`: a verdict that arrives after a task's trace. A CI failure reported with `ci-report` names its
+    /// task and check; an integration or QA failure at Finalize is on the whole run (ref id: the run, whose ledger holds the evidence).
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> Outcomes(IReadOnlyList<LedgerEvent> run)
+    {
+        foreach (var e in run)
+        {
+            if (e.Kind == LedgerKinds.CiFailed && e.TaskId is not null && e.Payload is not null)
+            {
+                using var doc = TryParse(e.Payload);
+                if (doc is null || Prop(doc.RootElement, "check")?.GetString() is not { Length: > 0 } check) continue;
+                var commit = Prop(doc.RootElement, "commit") is { ValueKind: JsonValueKind.String } c && c.GetString() is { Length: > 0 } sha ? sha : null;
+                yield return (e.Ts, OutcomeRow(e, "ci_failed", "ci", check, e.TaskId, commit));
+            }
+            else if (e.Kind == LedgerKinds.Run && e.TaskId is null && e.Outcome is { } status && RunVerdicts.TryGetValue(status, out var refKind))
+                yield return (e.Ts, OutcomeRow(e, status, refKind, e.RunId, null, null));
+        }
+    }
+
+    private static RegistryEvent OutcomeRow(LedgerEvent e, string cause, string refKind, string refId, string? task, string? commit) =>
+        Row(Pipeline, "outcome", e, w =>
+        {
+            w.WriteString("run", e.RunId);
+            if (task is not null) w.WriteString("task", task);
+            w.WriteString("cause", cause);
+            w.WriteStartObject("ref");
+            w.WriteString("kind", refKind);
+            w.WriteString("id", refId);
+            w.WriteEndObject();
+            if (commit is not null) w.WriteString("commit", commit);
+        });
 
     /// Run statuses that end the run for good. "parked" waits on a needs-decision and "error" is
     /// the host failing; both resume under the same run id, so the handover stays open. So does

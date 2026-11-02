@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Registry;
 
 namespace Factory.S2;
 
@@ -36,6 +37,9 @@ public static class CiReport
         foreach (var id in blamed)
             await svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "ci", LedgerKinds.CiFailed, TaskId: id, Outcome: "failed",
                 Payload: JsonSerializer.Serialize(new { check, log = tail, files, commit })), ct);
+        // The run has ended, so nothing else will sync it: the failure reaches designc as an `outcome` now.
+        if (Directory.Exists(svc.Settings.RegistryPath))
+            await RegistryProgress.SyncAsync(svc.Ledger, svc.Settings.RegistryPath, runId, HandoverRef.From(svc.LoadHandover(runId)), svc.Settings.TaskLimits, ct);
         return null;
     }
 }
