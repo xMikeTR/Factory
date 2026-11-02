@@ -20,6 +20,8 @@ public static class RegistryStreams
         ["ui_acceptance_failed"] = "pipeline.jsonl",
         ["item_budget"] = "pipeline.jsonl",
         ["item_judge"] = "pipeline.jsonl",
+        ["trace"] = "pipeline.jsonl",
+        ["outcome"] = "pipeline.jsonl",
         ["check"] = "checks.jsonl",
         ["item_gate"] = "checks.jsonl",
         ["handover_closed"] = "designc.jsonl",

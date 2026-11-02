@@ -53,6 +53,22 @@ public class CiReportTests
     }
 
     [Fact]
+    public async Task A_recorded_failure_reaches_the_registry_as_an_outcome_on_the_blamed_task()
+    {
+        using var h = await HarnessAsync();
+        Directory.CreateDirectory(h.Services.Settings.RegistryPath);
+
+        Assert.Null(await CiReport.RecordAsync(h.Services, Run, "unit tests", "log", ["src/Pricing.Api/Quote.cs"], null, "abc1234", default));
+
+        var line = Assert.Single(File.ReadAllLines(Path.Combine(h.Services.Settings.RegistryPath, "ledger", "pipeline.jsonl")), l => l.Contains("\"kind\":\"outcome\""));
+        Assert.Empty(DesigncSchema.Validate(line));
+        var row = JsonDocument.Parse(line).RootElement;
+        Assert.Equal("T-002", row.GetProperty("task").GetString());
+        Assert.Equal("ci_failed", row.GetProperty("cause").GetString());
+        Assert.Equal("unit tests", row.GetProperty("ref").GetProperty("id").GetString());
+    }
+
+    [Fact]
     public async Task A_test_file_is_blamed_on_the_task_whose_tests_it_is()
     {
         using var h = await HarnessAsync();

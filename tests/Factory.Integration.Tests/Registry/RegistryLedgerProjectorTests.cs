@@ -276,6 +276,8 @@ public class RegistryLedgerProjectorTests
     {
         var rows = RegistryLedgerProjector.Project(run, Handover, Limits);
         foreach (var e in rows) Assert.Empty(DesigncSchema.Validate(e.Line));
+        // The fold drops a kind it has no stream for, so every projected row must have one.
+        Assert.All(rows, e => Assert.Equal(e.Stream, RegistryStreams.Of(JsonDocument.Parse(e.Line).RootElement.GetProperty("kind").GetString()!)));
         Assert.All(rows.Where(e => e.Line.Contains($"\"kind\":\"{kind}\"")), e => Assert.Equal(DesigncSchema.StreamOf(kind), e.Stream));
         return rows.Select(Row).Where(r => r["kind"].GetString() == kind).ToList();
     }
@@ -321,5 +323,62 @@ public class RegistryLedgerProjectorTests
     public void A_task_row_names_its_run_so_designc_counts_only_the_latest_as_spend()
     {
         Assert.All(Rows(Run(), "task"), r => Assert.Equal(RunId, r["run"].GetString()));
+    }
+
+    private static LedgerEvent CiFailed(int second, string task, string check, string? commit) => At(second, new(RunId, "S2", "ci", LedgerKinds.CiFailed,
+        TaskId: task, Outcome: "failed", Payload: JsonSerializer.Serialize(new { check, log = "boom", files = new[] { "src/a.cs" }, commit })));
+
+    [Fact]
+    public void A_ci_failure_reported_after_the_run_is_an_outcome_on_the_task_it_names_with_the_check_as_ref()
+    {
+        var run = Run();
+        run.Add(Ended(16, "merged", "PR #12 merged"));
+        run.Add(CiFailed(40, "T-001", "e2e", "abc123"));
+        run.Add(CiFailed(41, "T-002", "lint", null));
+
+        var outcomes = Rows(run, "outcome");
+
+        Assert.Equal(2, outcomes.Count);
+        Assert.Equal(RunId, outcomes[0]["run"].GetString());
+        Assert.Equal("T-001", outcomes[0]["task"].GetString());
+        Assert.Equal("ci_failed", outcomes[0]["cause"].GetString());
+        Assert.Equal("ci", outcomes[0]["ref"].GetProperty("kind").GetString());
+        Assert.Equal("e2e", outcomes[0]["ref"].GetProperty("id").GetString());
+        Assert.Equal("abc123", outcomes[0]["commit"].GetString());
+        Assert.Equal(T0.AddSeconds(40).ToUnixTimeMilliseconds(), outcomes[0]["ts"].GetInt64());
+        Assert.False(outcomes[1].ContainsKey("commit"));
+    }
+
+    [Fact]
+    public void An_integration_or_qa_verdict_ends_the_run_as_a_run_level_outcome_after_every_trace()
+    {
+        foreach (var (status, kind) in new[] { ("integration_failed", "integration"), ("integration_unrunnable", "integration"), ("qa_failed", "qa") })
+        {
+            var run = Run();
+            run.Add(Ended(16, status, "detail"));
+
+            var rows = RegistryLedgerProjector.Project(run, Handover, Limits).Select(Row).ToList();
+            var outcome = Assert.Single(rows, r => r["kind"].GetString() == "outcome");
+
+            Assert.Equal(status, outcome["cause"].GetString());
+            Assert.Equal(kind, outcome["ref"].GetProperty("kind").GetString());
+            Assert.Equal(RunId, outcome["ref"].GetProperty("id").GetString());
+            Assert.False(outcome.ContainsKey("task"));
+            // designc reads a task's final cause as the latest outcome after its trace row.
+            Assert.All(rows.Where(r => r["kind"].GetString() == "trace"), t => Assert.True(t["ts"].GetInt64() <= outcome["ts"].GetInt64()));
+        }
+    }
+
+    [Fact]
+    public void Run_ends_that_are_not_a_verdict_on_the_work_are_no_outcome()
+    {
+        foreach (var status in new[] { "merged", "parked", "qa_unrunnable", "plan_rejected", "cancelled" })
+        {
+            var run = Run();
+            run.Add(Ended(16, status, "detail"));
+            Assert.Empty(Rows(run, "outcome"));
+        }
+        // A task's own Run row is a rerun marker, not a verdict.
+        Assert.Empty(Rows([.. Run(), At(17, new(RunId, "S2", "rerun", LedgerKinds.Run, TaskId: "T-001", Outcome: "integration_failed"))], "outcome"));
     }
 }
