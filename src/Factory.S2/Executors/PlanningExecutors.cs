@@ -1,3 +1,4 @@
+using Factory.Harness.Registry;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Factory.Core;
@@ -31,7 +32,9 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
         var handoverCopy = svc.Settings.HandoverCopyPath(msg.RunId);
         if (!File.Exists(handoverCopy)) File.Copy(msg.HandoverPath, handoverCopy);
         var handover = svc.LoadHandover(msg.RunId); // fail fast on a malformed package
-        await svc.LogAsync(msg.RunId, "start", LedgerKinds.RunStarted, ct: cancellationToken); // a resume is a new attempt
+        // A resume is a new attempt, and names the procedures it runs with: each trace says which prompts and policies ran it.
+        await svc.LogAsync(msg.RunId, "start", LedgerKinds.RunStarted,
+            payload: Procedures.RunStartedPayload(Procedures.Fingerprint(AppContext.BaseDirectory, svc.Settings.RepoPath)), ct: cancellationToken);
 
         // Regeneration: start from the previous run's plan, stamped with this freeze. The validator
         // still decides; if the plan no longer fits the handover, the planner redrafts as usual.
