@@ -79,7 +79,7 @@ src/Factory.Harness/     C#: shared by all agent hosts
   ScopedWorkspace.cs     agent tools; refuses writes outside the task's `writes` itself
   ToolPolicy.cs          IToolPolicy + role allow-list (in-code double)
   Governance/AcsToolPolicy.cs  IToolPolicy over AGT's PolicyEngine; one policies/s2/<role>.yaml per role
-  Configurator.cs        IConfigurator + heuristic default (Jev / Laya slot in behind it)
+  Configurator.cs        IConfigurator + heuristic default (Jev / an HTTP router slot in behind it)
   Ledger.cs              LedgerEvent, ILedger, JSONL implementation
   ProcessRunner.cs       shell commands with timeouts and process-tree kill
 src/Factory.S2/          C#: the MAF workflow
@@ -145,12 +145,12 @@ redacts it). Opt-in live check on real Claude models (Sonnet plans, Haiku acts; 
 ledgered and the key is absent from the ledger and the state dir):
 `FACTORY_LIVE_ANTHROPIC=1 ANTHROPIC_API_KEY=<key> dotnet test tests/Factory.Integration.Tests --filter LiveAnthropic`.
 
-Turn routing: by default `HeuristicConfigurator`. With `FACTORY_LAYA_URL` set (run
-`python3 tools/laya-sidecar/server.py`), Laya decides when its confidence is at least
-`FACTORY_LAYA_MIN_CONFIDENCE` (default 0.7); if the sidecar is down, unsure or garbled, the
-heuristic decides. Each `configurator` ledger row names the decider and why. Laya's own call is
-bound in one function, `tools/laya-sidecar/laya_adapter.py`; until then the sidecar answers 503.
-Sidecar tests: `cd tools/laya-sidecar && python3 -m unittest test_server`.
+Turn routing: by default `HeuristicConfigurator`. With `FACTORY_ROUTER_URL` set (run
+`python3 tools/router-sidecar/server.py`), the router decides when its confidence is at least
+`FACTORY_ROUTER_MIN_CONFIDENCE` (default 0.7); if the sidecar is down, unsure or garbled, the
+heuristic decides. Each `configurator` ledger row names the decider and why. A routing model is
+bound in one function, `tools/router-sidecar/router_adapter.py`; none is bound yet, so the sidecar
+answers 503. Sidecar tests: `cd tools/router-sidecar && python3 -m unittest test_server`.
 
 Traces: a run is one OTel trace (`run <id>`, then `task <id>` per task, then a gen_ai `chat`
 span per model call and an `execute_tool` span per tool call); every ledger row carries its

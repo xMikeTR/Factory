@@ -33,7 +33,7 @@ propose; deterministic code decides. The canonical domain vocabulary is
 | Harness | C# library | net9.0; Microsoft.Agents.AI(.OpenAI) 1.15.0, Anthropic 12.49.0, Microsoft.AgentGovernance [5.0.0], OpenTelemetry 1.19.1, YamlDotNet 18.1.0 |
 | Host | C# console app, MAF workflows | Microsoft.Agents.AI.Workflows 1.15.0 |
 | Sandbox image | Docker Engine CLI, `docker/runner` | .NET 9 SDK, JDK 17, P 3.1.0, PObserve CLI built from p-org/P@260da928 |
-| Sidecar / parser | Python 3 (Laya sidecar), Java 17 (PObserve parser) | — |
+| Sidecar / parser | Python 3 (router sidecar), Java 17 (PObserve parser) | — |
 | Tests | F# console runner (Core), xUnit 2.9.2 (integration; Docker and live tests opt-in) | `dotnet run --project tests/Factory.Core.Tests`, `dotnet test tests/Factory.Integration.Tests` |
 
 ## C4 Level 2 — Container Diagram
@@ -50,7 +50,7 @@ C4Container
   Container(harness, "Factory.Harness", "C# library", "Agents, tool policy (ACS), configurator, ledger, sandbox, registry I/O, telemetry")
   Container(core, "Factory.Core", "F# library", "Paths, plan validation, dispatch, task state, evidence, regression, merge, closure, regeneration, codecs")
   Container(sandbox, "factory-s2-runner", "Docker container per team", "Agent and verify commands; network none apart from the gated restore; pobserve-check")
-  Container(laya, "Laya sidecar", "Python HTTP", "Turn routing (optional; heuristic fallback)")
+  Container(router, "Router sidecar", "Python HTTP", "Turn routing (optional; heuristic fallback)")
   ContainerDb(ledger, "Run ledger", "JSONL (Postgres DDL drafted)", "Append-only run events, replayed on resume")
   ContainerDb(registry, "Registry", "git repo (Designc)", "Handovers, ledger.jsonl projection, needs-decisions")
   ContainerDb(repo, "Target repo", "git + worktrees", "Integration branch, one worktree per team, .factory/policy.yaml")
@@ -62,7 +62,7 @@ C4Container
   Rel(harness, core, "Domain types")
   Rel(harness, llm, "Chat")
   Rel(harness, sandbox, "docker exec")
-  Rel(harness, laya, "POST /decide")
+  Rel(harness, router, "POST /decide")
   Rel(harness, otel, "OTLP spans")
   Rel(cli, repo, "git worktree/commit/merge")
   Rel(cli, gh, "PRs, comments, merge")
@@ -99,7 +99,7 @@ C4Container
 | `Factory.Harness/ToolPolicy.cs` | Role allow-list (fallback and contract double) | `IToolPolicy`, `RoleAllowListPolicy`, `Roles` | FactoryAgents, AcsToolPolicy | — |
 | `Factory.Harness/Governance/AcsToolPolicy.cs` | AGT/ACS policy per role from `policies/s2/*.yaml` | `AcsToolPolicy` | Program | Microsoft.AgentGovernance |
 | `Factory.Harness/TurnBudget.cs`, `ToolResultTrimmer.cs` | Per-turn tool-call cap (warn 12, stop 15, `check_quality` exempt); stubs tool results older than the last 5 in what the model sees | `TurnBudget`, `TrimmingChatClient` | FactoryAgents, TaskLoop | — |
-| `Factory.Harness/Configurator.cs` | plan/act/escalate + tier: heuristic, Laya, fallback | `IConfigurator`, `HeuristicConfigurator`, `LayaConfigurator`, `FallbackConfigurator` | TaskLoop, Program | Laya sidecar (HTTP) |
+| `Factory.Harness/Configurator.cs` | plan/act/escalate + tier: heuristic, HTTP router, fallback | `IConfigurator`, `HeuristicConfigurator`, `HttpConfigurator`, `FallbackConfigurator` | TaskLoop, Program | Router sidecar (HTTP) |
 | `Factory.Harness/ScopedWorkspace.cs` | Agent tools; refuses writes outside the phase's paths; runs commands in the sandbox | `ScopedWorkspace`, `TurnSignals` (incl. `submit_approach`, `Capped`) | TaskLoop, Planner | File system, sandbox |
 | `Factory.Harness/Sandbox/*` | Command sandbox: Docker container per team (default) or scrubbed local | `ISandboxFactory`, `ICommandSandbox`, `DockerSandbox`, `LocalSandbox`, `RestoreGate`, `HeavyGate`, `GatedSandboxFactory` | ScopedWorkspace, VerifyRunner, TeamRunner, Program | Docker Engine CLI |
 | `Factory.Quality.FSharp/FSharpMetrics.fs` | F# quality adapter: FSharp.Compiler.Service parse (syntax only) to neutral `FunctionMetrics` (cyclomatic from if/loops/match clauses/`&&`/`||`); own project so the compiler dependency stays out of Core; depends on Core only | `FSharpMetrics.measure` | `QualityGate` | FSharp.Compiler.Service 43.8.400 (pins FSharp.Core 8.0.400) |
@@ -123,7 +123,7 @@ C4Container
 | `Factory.S2/FactoryServices.cs` | Settings from env, run-dir paths, service bag, re-validating loaders | `FactorySettings`, `FactoryServices`, `RegenerationFile` | every executor, TeamRunner, TaskRerun, Program | env vars |
 | `docker/runner` | Runner image (`build.sh`) | — | DockerSandbox (by image name) | Docker |
 | `tools/pobserve-parser` | `EventLineParser` (`pobserve <event> <payload> key=<id>` -> P events, one partition per key), `pobserve-check` | — | runner image, `FACTORY_POBSERVE_CMD` | PObserve CLI |
-| `tools/laya-sidecar` | `/decide` HTTP sidecar; `laya_adapter.py` is the one binding point | — | LayaConfigurator | Laya |
+| `tools/router-sidecar` | `/decide` HTTP sidecar; `router_adapter.py` is the one binding point (none bound yet) | — | HttpConfigurator | Routing model (unbound) |
 | `policies/s2/*.yaml` | ACS policies per role (`planner`, `task-planner`, `reviewer`, `test-author`, `implementer`) | — | AcsToolPolicy | — |
 
 ## Module Dependency Diagram
@@ -179,7 +179,7 @@ graph TD
   Harness --> Core
   S2 --> Harness
   S2 --> Core
-  Configurator -. HTTP .-> Laya["tools/laya-sidecar"]
+  Configurator -. HTTP .-> Router["tools/router-sidecar"]
   Sandbox -. docker .-> Runner["docker/runner (+ pobserve-check)"]
   CoreTests["Factory.Core.Tests"] --> Core
   IntTests["Factory.Integration.Tests"] --> S2
@@ -214,7 +214,7 @@ Used by structural-centrality-guard to determine escalation threshold.
 | Azure DevOps | az CLI (`azure-devops` extension) | Out/In | Azure DevOps | PR create/reuse, auto-complete with squash, completed-PR lookup at `close`; org/project/repo from the `origin` remote |
 | git | CLI | Out | target repo | integration branch, worktrees under the state dir |
 | Podman / Docker Engine (`FACTORY_CONTAINER_ENGINE`, default podman) | CLI | Out | factory-s2-runner | container per team, `--network none` for its whole life; the restore runs in a separate short-lived container on the bridge, started only when RestoreGate passes; sources pinned to nuget.org |
-| Laya | HTTP `/decide` | Out | Laya sidecar | optional (`FACTORY_LAYA_URL`); heuristic fallback, decider ledgered |
+| Router | HTTP `/decide` | Out | Router sidecar | optional (`FACTORY_ROUTER_URL`); heuristic fallback, decider ledgered |
 | Langfuse / OTLP | OTLP | Out | Langfuse | only when `OTEL_EXPORTER_OTLP_ENDPOINT` set; content off unless `FACTORY_OTEL_CAPTURE_CONTENT=1` |
 | PObserve | CLI in the runner image | Out | PObserve | `pobserve-check <specs> <Spec> <logs>` via `FACTORY_POBSERVE_CMD`; exit 2 spec violation, 4 parse error |
 | Human | Console / RequestPort | In/Out | — | merge approval without `--github` (and on `--azdo`) |

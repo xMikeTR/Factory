@@ -4,7 +4,7 @@ import unittest
 import urllib.error
 import urllib.request
 
-import laya_adapter
+import router_adapter
 import server
 
 CTX = {"taskId": "T-001", "turnsTaken": 3, "verifyAttempts": 1, "hasApproachNote": True,
@@ -18,7 +18,7 @@ class SidecarTests(unittest.TestCase):
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.addCleanup(self.srv.server_close)
         self.addCleanup(self.srv.shutdown)
-        self.addCleanup(setattr, server.Handler, "decide", staticmethod(laya_adapter.decide))
+        self.addCleanup(setattr, server.Handler, "decide", staticmethod(router_adapter.decide))
 
     def post(self, body):
         req = urllib.request.Request(self.url + "/decide", data=body, method="POST",
@@ -32,17 +32,17 @@ class SidecarTests(unittest.TestCase):
     def use(self, decide):
         server.Handler.decide = staticmethod(decide)
 
-    def test_without_laya_decide_is_503_so_the_heuristic_decides(self):
+    def test_without_a_router_decide_is_503_so_the_heuristic_decides(self):
         status, body = self.post(json.dumps(CTX).encode())
         self.assertEqual(503, status)
-        self.assertIn("laya", body["error"])
+        self.assertIn("router", body["error"])
 
-    def test_a_bound_laya_answer_is_passed_through(self):
+    def test_a_bound_router_answer_is_passed_through(self):
         self.use(lambda ctx: {"kind": "plan", "tier": "frontier", "reason": f"re-plan {ctx['taskId']}", "confidence": 0.8, "extra": 1})
         status, body = self.post(json.dumps(CTX).encode())
         self.assertEqual((200, {"kind": "plan", "tier": "frontier", "reason": "re-plan T-001", "confidence": 0.8}), (status, body))
 
-    def test_a_bad_laya_answer_is_502(self):
+    def test_a_bad_router_answer_is_502(self):
         self.use(lambda ctx: {"kind": "dance", "tier": "frontier", "reason": "", "confidence": 0.8})
         self.assertEqual(502, self.post(json.dumps(CTX).encode())[0])
 
