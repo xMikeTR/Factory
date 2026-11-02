@@ -1,16 +1,16 @@
-"""Laya sidecar for System 2's LayaConfigurator.
+"""Routing sidecar for System 2's HttpConfigurator.
 
-    python3 tools/laya-sidecar/server.py [--port 8765]    then FACTORY_LAYA_URL=http://127.0.0.1:8765/
+    python3 tools/router-sidecar/server.py [--port 8765]    then FACTORY_ROUTER_URL=http://127.0.0.1:8765/
 
-GET  /health  -> 200 {"laya": "available"|"unavailable", "detail": ...}
-POST /decide  TurnContext JSON -> 200 decision | 400 bad request | 503 Laya unavailable | 502 bad Laya answer
+GET  /health  -> 200 {"router": "available"|"unavailable", "detail": ...}
+POST /decide  TurnContext JSON -> 200 decision | 400 bad request | 503 no router | 502 bad router answer
 Binds to loopback only. No secrets pass through it: the TurnContext is counters and a task id.
 """
 import argparse
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import laya_adapter
+import router_adapter
 
 KINDS = {"plan", "act", "escalate"}
 TIERS = {"frontier", "standard", "small"}
@@ -44,7 +44,7 @@ def check_decision(d):
 
 
 class Handler(BaseHTTPRequestHandler):
-    decide = staticmethod(laya_adapter.decide)
+    decide = staticmethod(router_adapter.decide)
 
     def _send(self, status, body):
         data = json.dumps(body).encode()
@@ -60,9 +60,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.decide({"taskId": "health", "turnsTaken": 0, "verifyAttempts": 0, "hasApproachNote": False,
                          "lastVerifyFailed": False, "turnsWithoutChange": 0})
-            self._send(200, {"laya": "available"})
-        except laya_adapter.LayaUnavailable as e:
-            self._send(200, {"laya": "unavailable", "detail": str(e)})
+            self._send(200, {"router": "available"})
+        except router_adapter.RouterUnavailable as e:
+            self._send(200, {"router": "unavailable", "detail": str(e)})
 
     def do_POST(self):
         if self.path != "/decide":
@@ -76,10 +76,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": err})
         try:
             d = self.decide(ctx)
-        except laya_adapter.LayaUnavailable as e:
+        except router_adapter.RouterUnavailable as e:
             return self._send(503, {"error": str(e)})
         if err := check_decision(d):
-            return self._send(502, {"error": f"laya answered badly: {err}"})
+            return self._send(502, {"error": f"router answered badly: {err}"})
         self._send(200, {k: d[k] for k in ("kind", "tier", "reason", "confidence")})
 
     def log_message(self, fmt, *args):  # keep stdout quiet; System 2 ledgers every decision
@@ -94,5 +94,5 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=8765)
     server = serve(p.parse_args().port)
-    print(f"laya-sidecar on http://127.0.0.1:{server.server_address[1]}/", flush=True)
+    print(f"router-sidecar on http://127.0.0.1:{server.server_address[1]}/", flush=True)
     server.serve_forever()
