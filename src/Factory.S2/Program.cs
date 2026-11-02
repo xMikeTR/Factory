@@ -444,7 +444,7 @@ try
                 opts.GetValueOrDefault("by"), canState: host is null, CancellationToken.None);
             if (why is null && Directory.Exists(settings.RegistryPath))
                 await Factory.Harness.Registry.RegistryProgress.SyncAsync(services.Ledger, settings.RegistryPath, runId,
-                    Factory.Harness.Registry.HandoverRef.From(services.LoadHandover(runId)), CancellationToken.None);
+                    Factory.Harness.Registry.HandoverRef.From(services.LoadHandover(runId)), settings.TaskLimits, CancellationToken.None);
             Console.WriteLine(why is null ? $"run {runId}: merge recorded; the handover is closed" : $"not recorded: {why}");
             // Complete (now or by an earlier close): its worktrees and local branches go; the ledger and run folder stay.
             if (await RunClose.CleanUpAsync(services.Ledger, services.Git, runId, CancellationToken.None))

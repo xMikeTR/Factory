@@ -63,12 +63,12 @@ public class AcceptanceVerifyTests
                 Outcome: "failed", Payload: """{"ac":"AC-0107","spec":"tests/acceptance/quote-form/AC-0107.spec.ts","commit":"abcdef1234"}""") { TraceId = null },
         };
 
-        var rows = RegistryLedgerProjector.Project(run, handover);
+        var rows = RegistryLedgerProjector.Project(run, handover, new Factory.Core.Limits(8, 3));
 
         var row = Assert.Single(rows);
         Assert.Equal("pipeline.jsonl", row.Stream);
         Assert.Empty(DesigncSchema.Validate(row.Line));
         Assert.Contains("\"task\":\"W-1\"", row.Line);
-        Assert.Empty(RegistryLedgerProjector.Project(run, new HandoverRef("20261013-aa", [])));
+        Assert.Empty(RegistryLedgerProjector.Project(run, new HandoverRef("20261013-aa", []), new Factory.Core.Limits(8, 3)));
     }
 }

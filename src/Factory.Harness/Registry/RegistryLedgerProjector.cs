@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Factory.Core;
 using Microsoft.FSharp.Collections;
+using Microsoft.FSharp.Core;
 
 namespace Factory.Harness.Registry;
 
@@ -25,11 +26,14 @@ public static class RegistryLedgerProjector
     private const string Pipeline = "pipeline.jsonl";
     private const string Checks = "checks.jsonl";
 
-    public static IReadOnlyList<RegistryEvent> Project(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    /// `limits`: the run's task limits; a task's end (and so its cause and trace) is replayed with them, as a resume does.
+    public static IReadOnlyList<RegistryEvent> Project(IReadOnlyList<LedgerEvent> run, HandoverRef handover, Limits limits)
     {
         var rows = new List<(DateTimeOffset Ts, RegistryEvent Row)>();
+        var traces = TraceReader.Read(run, limits).ToDictionary(t => t.Task);
         rows.AddRange(Attempts(run, handover));
-        rows.AddRange(Tasks(run, handover));
+        rows.AddRange(Tasks(run, handover, traces));
+        rows.AddRange(Traces(run, traces));
         rows.AddRange(AsBuiltEdges(run));
         foreach (var e in run)
         {
@@ -43,7 +47,7 @@ public static class RegistryLedgerProjector
     }
 
     /// One row per task: its latest state, turn count and tokens so far.
-    private static IEnumerable<(DateTimeOffset, RegistryEvent)> Tasks(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> Tasks(IReadOnlyList<LedgerEvent> run, HandoverRef handover, IReadOnlyDictionary<string, TaskTrace> traces)
     {
         var groups = run.Where(e => e.TaskId is not null).GroupBy(e => e.TaskId!).ToList();
         var planners = run.Where(e => e.Kind == LedgerKinds.Plan && e.TaskId is null).ToList();
@@ -57,7 +61,9 @@ public static class RegistryLedgerProjector
             yield return (last.Ts, Row(Pipeline, "task", last, w =>
             {
                 w.WriteString("task", task.Key);
-                w.WriteString("status", Status(last.Outcome));
+                var status = Status(last.Outcome);
+                w.WriteString("status", status);
+                if (traces.TryGetValue(task.Key, out var trace) && TaskRowCause(status, trace.End) is { } cause) w.WriteString("cause", cause);
                 // The elements.json id (System/Container/Component) of the task's first element: designc's cost forecast keys on it.
                 if (task.LastOrDefault(e => e.Kind == LedgerKinds.TaskEvent && e.Element is not null)?.Element is { } element) w.WriteString("element", element);
                 w.WriteNumber("turns", turns.Count);
@@ -70,6 +76,65 @@ public static class RegistryLedgerProjector
                 w.WriteString("run", last.RunId);
             }));
         }
+    }
+
+    /// designc's `trace`: one per ended task (a blocked one too; the latest per run and task wins), at the task's last state change.
+    /// bundle_id is null until tasks get a context bundle; what the task did goes under payload.actions (not in designc's shape).
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> Traces(IReadOnlyList<LedgerEvent> run, IReadOnlyDictionary<string, TaskTrace> traces)
+    {
+        foreach (var t in traces.Values)
+        {
+            var last = run.Last(e => e.TaskId == t.Task && e.Kind == LedgerKinds.TaskEvent);
+            yield return (last.Ts, Row(Pipeline, "trace", last, w =>
+            {
+                w.WriteString("run", t.Run);
+                w.WriteString("task", t.Task);
+                w.WriteString("outcome", t.End.Outcome.IsTracePassed ? "passed" : t.End.Outcome.IsTraceFailed ? "failed" : "blocked");
+                if (OptionModule.IsSome(t.End.Cause)) w.WriteString("cause", Factory.Core.Core.CauseToLedger(t.End.Cause.Value));
+                if (OptionModule.IsSome(t.BundleId)) w.WriteString("bundle_id", t.BundleId.Value); else w.WriteNull("bundle_id");
+                w.WriteStartArray("models");
+                foreach (var m in t.Models) w.WriteStringValue(m);
+                w.WriteEndArray();
+                w.WriteStartArray("procedures");
+                foreach (var p in t.Procedures)
+                {
+                    w.WriteStartObject();
+                    w.WriteString("id", p.Id);
+                    w.WriteString("version", p.Version);
+                    w.WriteString("hash", p.Hash);
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+                w.WriteNumber("tokens_in", t.TokensIn);
+                w.WriteNumber("tokens_out", t.TokensOut);
+                if (OptionModule.IsSome(t.TraceId)) w.WriteString("trace_id", t.TraceId.Value);
+                if (OptionModule.IsSome(t.Jira)) w.WriteString("jira", t.Jira.Value);
+            }, p =>
+            {
+                p.WriteStartObject("actions");
+                p.WriteNumber("turns", t.Actions.Turns);
+                p.WriteNumber("tool_calls", t.Actions.ToolCalls);
+                p.WriteNumber("verify_attempts", t.Actions.VerifyAttempts);
+                p.WriteNumber("review_rounds", t.Actions.ReviewRounds);
+                p.WriteNumber("scope_reverts", t.Actions.ScopeReverts);
+                p.WriteEndObject();
+            }));
+        }
+    }
+
+    /// The cause a task row may carry: designc pairs stalled and abandoned with failed, parked with blocked and a failed gate
+    /// with either. A task parked after its review rounds ran out projects as running, so its cause stays on the trace only.
+    public static string? TaskRowCause(string status, TaskEnd end)
+    {
+        if (!OptionModule.IsSome(end.Cause)) return null;
+        var cause = Factory.Core.Core.CauseToLedger(end.Cause.Value);
+        var fits = end.Cause.Value switch
+        {
+            { IsStalled: true } or { IsAbandoned: true } => status == "failed",
+            { IsParked: true } => status == "blocked",
+            _ => status is "failed" or "blocked",
+        };
+        return fits ? cause : null;
     }
 
     /// The planner works before any task exists: its run-level rows have no task, so they are shared over the tasks

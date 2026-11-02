@@ -47,6 +47,12 @@ public static class DesigncSchema
                 errors.Add($"{kind}.usage: must be a list of {{model, turns, tokens_in, tokens_out}}");
             else if (rule == "by_role_shape" && ev.TryGetProperty("by_role", out var byRole) && !ByRoleOk(byRole))
                 errors.Add($"{kind}.by_role: must be a list of {{role, turns, tokens_in, tokens_out}}");
+            else if (rule == "cause_shape" && CauseError(kind, ev) is { } causeError)
+                errors.Add($"{kind}.{causeError}");
+            else if (rule == "trace_shape" && !TraceOk(ev))
+                errors.Add($"{kind}: models must be non-empty strings, procedures {{id, version, hash}}, tokens whole numbers >= 0");
+            else if (rule == "ref_shape" && ev.TryGetProperty("ref", out var reference) && !RefOk(kind, reference))
+                errors.Add($"{kind}.ref: must be {{kind, id}} with a kind this row allows");
         return errors;
     }
 
@@ -86,6 +92,36 @@ public static class DesigncSchema
             u.ValueKind == JsonValueKind.Object
             && u.TryGetProperty("role", out var r) && r.ValueKind == JsonValueKind.String && r.GetString()!.Length > 0
             && new[] { "turns", "tokens_in", "tokens_out" }.All(k => u.TryGetProperty(k, out var n) && n.ValueKind == JsonValueKind.Number && n.TryGetInt64(out var w) && w >= 0));
+
+    /// ledger.py cause_shape: the cause's spelling, and the status (a trace's outcome) it needs.
+    private static string? CauseError(string kind, JsonElement ev)
+    {
+        if (!ev.TryGetProperty("cause", out var c)) return null;
+        var status = ev.TryGetProperty(kind == "trace" ? "outcome" : "status", out var st) && st.ValueKind == JsonValueKind.String ? st.GetString() : null;
+        var cause = c.ValueKind == JsonValueKind.String ? c.GetString()! : "";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(cause, "^(stalled|abandoned|parked|gate_failed:[a-z0-9_.-]+)$")) return "cause: not a cause";
+        if (cause is "stalled" or "abandoned" && status != "failed") return $"cause: {cause} needs status failed";
+        if (cause == "parked" && status != "blocked") return "cause: parked needs status blocked";
+        if (cause.StartsWith("gate_failed:") && status is not ("failed" or "blocked")) return "cause: gate_failed needs status failed or blocked";
+        return null;
+    }
+
+    private static bool TraceOk(JsonElement ev)
+    {
+        static bool Text(JsonElement o, string k) => o.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String && v.GetString()!.Length > 0;
+        if (ev.TryGetProperty("models", out var ms) && ms.ValueKind == JsonValueKind.Array
+            && !ms.EnumerateArray().All(m => m.ValueKind == JsonValueKind.String && m.GetString()!.Length > 0)) return false;
+        if (ev.TryGetProperty("procedures", out var ps) && ps.ValueKind == JsonValueKind.Array
+            && !ps.EnumerateArray().All(p => p.ValueKind == JsonValueKind.Object && Text(p, "id") && Text(p, "version") && Text(p, "hash"))) return false;
+        return new[] { "tokens_in", "tokens_out" }.All(k => !ev.TryGetProperty(k, out var n) || n.ValueKind == JsonValueKind.Number && n.TryGetInt64(out var w) && w >= 0);
+    }
+
+    private static bool RefOk(string kind, JsonElement r)
+    {
+        string[] kinds = kind switch { "outcome" => ["ci", "qa", "parity", "integration"], "escape" => ["jira"], _ => [] };
+        return r.ValueKind == JsonValueKind.Object && r.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.String && kinds.Contains(k.GetString())
+            && r.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String && id.GetString()!.Length > 0;
+    }
 
     private static long Count(JsonElement u, string k) => u.TryGetProperty(k, out var n) && n.TryGetInt64(out var w) ? w : 0;
 

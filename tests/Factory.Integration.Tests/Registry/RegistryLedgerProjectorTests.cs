@@ -11,6 +11,7 @@ namespace Factory.Integration.Tests.Registry;
 public class RegistryLedgerProjectorTests
 {
     private const string RunId = "run-1";
+    private static readonly Limits Limits = new(5, 3);
     private static BoundDecision Decision(string id, string check) => new(DecisionId.NewDecisionId(id), "statement",
         ListModule.Empty<ElementId>(), ListModule.OfSeq([new DecisionCheck("p", check)]));
 
@@ -53,8 +54,8 @@ public class RegistryLedgerProjectorTests
     [Fact]
     public void Two_projections_of_the_same_run_are_byte_identical()
     {
-        var first = RegistryLedgerProjector.Project(Run(), Handover);
-        var second = RegistryLedgerProjector.Project(Run(), Handover);
+        var first = RegistryLedgerProjector.Project(Run(), Handover, Limits);
+        var second = RegistryLedgerProjector.Project(Run(), Handover, Limits);
 
         Assert.NotEmpty(first);
         Assert.Equal(first.Select(e => e.Stream + "\n" + e.Line), second.Select(e => e.Stream + "\n" + e.Line));
@@ -68,16 +69,16 @@ public class RegistryLedgerProjectorTests
         run.Add(At(41, new(RunId, "S2", "verify", LedgerKinds.Verify, Decision: "D-0009", Outcome: "passed", Payload: "{broken")));
         run.Add(At(42, new(RunId, "S2", "verify", LedgerKinds.AsBuiltEdge, Payload: "<<")));
 
-        var rows = RegistryLedgerProjector.Project(run, Handover);
+        var rows = RegistryLedgerProjector.Project(run, Handover, Limits);
 
         Assert.DoesNotContain(rows, r => r.Line.Contains("D-0009"));
-        Assert.Equal(RegistryLedgerProjector.Project(Run(), Handover).Count, rows.Count);
+        Assert.Equal(RegistryLedgerProjector.Project(Run(), Handover, Limits).Count, rows.Count);
     }
 
     [Fact]
     public void Every_row_validates_against_the_designc_schema_is_kept_by_its_gate_and_lands_in_its_kinds_stream()
     {
-        foreach (var e in RegistryLedgerProjector.Project(Run(), Handover))
+        foreach (var e in RegistryLedgerProjector.Project(Run(), Handover, Limits))
         {
             Assert.Empty(DesigncSchema.Validate(e.Line));
             Assert.True(DesigncSchema.KeptByGate(e.Line), e.Line);
@@ -94,7 +95,7 @@ public class RegistryLedgerProjectorTests
         run.Add(At(0, new(RunId, "S2", "plan", LedgerKinds.Plan, Outcome: "drafted", Model: "frontier", TokensIn: 1000, TokensOut: 100)));
         run.Add(At(1, new(RunId, "S2", "plan", LedgerKinds.Plan, Outcome: "drafted", Model: "frontier", TokensIn: 501, TokensOut: 50)));
 
-        var rows = RegistryLedgerProjector.Project(run, Handover).Select(Row).Where(r => r["kind"].GetString() == "task").ToList();
+        var rows = RegistryLedgerProjector.Project(run, Handover, Limits).Select(Row).Where(r => r["kind"].GetString() == "task").ToList();
 
         Assert.Equal(400 + 751, rows.Single(r => r["task"].GetString() == "T-001")["tokens_in"].GetInt64());
         Assert.Equal(50 + 750, rows.Single(r => r["task"].GetString() == "T-002")["tokens_in"].GetInt64());
@@ -119,7 +120,7 @@ public class RegistryLedgerProjectorTests
             At(7, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-002", TeamId: "team-2", Outcome: "Passed")),
         };
 
-        var rows = RegistryLedgerProjector.Project(run, Handover).Select(Row).Where(r => r["kind"].GetString() == "task").ToList();
+        var rows = RegistryLedgerProjector.Project(run, Handover, Limits).Select(Row).Where(r => r["kind"].GetString() == "task").ToList();
 
         Assert.Equal("""[{"role":"s2-planner","turns":1,"tokens_in":501,"tokens_out":50},{"role":"s2-task-planner","turns":1,"tokens_in":200,"tokens_out":20},{"role":"s2-test-author","turns":2,"tokens_in":400,"tokens_out":40}]""",
             rows.Single(r => r["task"].GetString() == "T-001")["by_role"].GetRawText());
@@ -138,7 +139,7 @@ public class RegistryLedgerProjectorTests
             At(4, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Standard", TokensIn: 100, TokensOut: 10, Payload: """{"role":"s2-test-author"}""")),
         };
 
-        var task = RegistryLedgerProjector.Project(run, Handover).Select(Row).Single(r => r["kind"].GetString() == "task");
+        var task = RegistryLedgerProjector.Project(run, Handover, Limits).Select(Row).Single(r => r["kind"].GetString() == "task");
 
         Assert.Equal("""[{"role":"s2-implementer","turns":2,"tokens_in":600,"tokens_out":60,"cold":1},{"role":"s2-test-author","turns":1,"tokens_in":100,"tokens_out":10}]""",
             task["by_role"].GetRawText());
@@ -147,7 +148,7 @@ public class RegistryLedgerProjectorTests
     [Fact]
     public void Each_element_pair_the_code_crosses_without_a_relationship_is_one_asbuilt_edge_row_per_run()
     {
-        var edges = RegistryLedgerProjector.Project(Run(), Handover).Where(e => Row(e)["kind"].GetString() == "asbuilt_edge").ToList();
+        var edges = RegistryLedgerProjector.Project(Run(), Handover, Limits).Where(e => Row(e)["kind"].GetString() == "asbuilt_edge").ToList();
 
         Assert.Equal(["api->db", "web->db"], edges.Select(e => Row(e)["from"].GetString() + "->" + Row(e)["to"].GetString()));
         Assert.All(edges, e => Assert.Equal("pipeline.jsonl", e.Stream));
@@ -157,7 +158,7 @@ public class RegistryLedgerProjectorTests
     [Fact]
     public void Tasks_needs_decisions_and_decision_checks_are_projected()
     {
-        var rows = RegistryLedgerProjector.Project(Run(), Handover).Select(Row).ToList();
+        var rows = RegistryLedgerProjector.Project(Run(), Handover, Limits).Select(Row).ToList();
 
         var t1 = Assert.Single(rows, r => r["kind"].GetString() == "task" && r["task"].GetString() == "T-001");
         Assert.Equal("passed", t1["status"].GetString());
@@ -195,10 +196,10 @@ public class RegistryLedgerProjectorTests
     [Fact]
     public void A_rows_event_id_depends_only_on_its_content()
     {
-        var before = RegistryLedgerProjector.Project(Run(), Handover);
+        var before = RegistryLedgerProjector.Project(Run(), Handover, Limits);
         var later = Run();
         later.Add(At(20, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-002", TeamId: "team-2", Outcome: "Passed")));
-        var after = RegistryLedgerProjector.Project(later, Handover);
+        var after = RegistryLedgerProjector.Project(later, Handover, Limits);
 
         Assert.Equal(before.Count, before.Select(e => e.EventId).Distinct().Count());
         var unchanged = before.Where(e => !e.Line.Contains("\"T-002\"") || e.Line.Contains("needs_decision")).ToList();
@@ -210,7 +211,7 @@ public class RegistryLedgerProjectorTests
     public async Task Writing_twice_appends_each_row_once()
     {
         var registry = Path.Combine(Path.GetTempPath(), "s2-registry-" + Guid.NewGuid().ToString("N"));
-        var events = RegistryLedgerProjector.Project(Run(), Handover);
+        var events = RegistryLedgerProjector.Project(Run(), Handover, Limits);
 
         await RegistryLedgerWriter.AppendAsync(registry, events, CancellationToken.None);
         await RegistryLedgerWriter.AppendAsync(registry, events, CancellationToken.None);
@@ -228,7 +229,7 @@ public class RegistryLedgerProjectorTests
 
     private static string? Closed(List<LedgerEvent> run)
     {
-        var rows = RegistryLedgerProjector.Project(run, Handover).Where(e => e.Line.Contains("\"kind\":\"handover_closed\"")).ToList();
+        var rows = RegistryLedgerProjector.Project(run, Handover, Limits).Where(e => e.Line.Contains("\"kind\":\"handover_closed\"")).ToList();
         Assert.All(rows, r => { Assert.Equal("designc.jsonl", r.Stream); Assert.True(DesigncSchema.KeptByGate(r.Line), r.Line); });
         return rows.Count == 0 ? null : JsonDocument.Parse(Assert.Single(rows).Line).RootElement.GetProperty("outcome").GetString();
     }
@@ -273,7 +274,7 @@ public class RegistryLedgerProjectorTests
 
     private static List<Dictionary<string, JsonElement>> Rows(List<LedgerEvent> run, string kind)
     {
-        var rows = RegistryLedgerProjector.Project(run, Handover);
+        var rows = RegistryLedgerProjector.Project(run, Handover, Limits);
         foreach (var e in rows) Assert.Empty(DesigncSchema.Validate(e.Line));
         Assert.All(rows.Where(e => e.Line.Contains($"\"kind\":\"{kind}\"")), e => Assert.Equal(DesigncSchema.StreamOf(kind), e.Stream));
         return rows.Select(Row).Where(r => r["kind"].GetString() == kind).ToList();
