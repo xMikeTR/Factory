@@ -57,4 +57,16 @@ let tests: (string * (unit -> unit)) list =
       "trace: no bundle is explicit, not missing", fun () ->
           match Trace.build (input EndPassed) with
           | Some t -> equal None t.BundleId "no bundle"
-          | None -> failwith "expected a trace" ]
+          | None -> failwith "expected a trace" 
+      "trace: replaying a task's events gives its end and the verify and review rounds it took", fun () ->
+          let limits = { MaxTurns = 5; MaxVerifyAttempts = 3 }
+          let stalled = Trace.replayed limits [ TurnStarted Standard; TurnEnded; Abandon "not making progress" ]
+          equal (Ok { End = EndFailed(Abandoned "not making progress"); VerifyAttempts = 0; ReviewRounds = 0 }) stalled "abandoned"
+          let parked = Trace.replayed limits [ TurnStarted Standard; NeedsDecisionRaised(nd "agent") ]
+          equal (Ok { End = EndBlocked "agent"; VerifyAttempts = 0; ReviewRounds = 0 }) parked "parked"
+          let going = Trace.replayed limits [ TurnStarted Standard ]
+          equal (Ok { End = InFlight; VerifyAttempts = 0; ReviewRounds = 0 }) going "in flight"
+          let outOfTurns = Trace.replayed { MaxTurns = 1; MaxVerifyAttempts = 3 } [ TurnStarted Standard; TurnEnded; TurnStarted Standard ]
+          equal (Ok { End = EndFailed(TurnBudgetExhausted 1); VerifyAttempts = 0; ReviewRounds = 0 }) outOfTurns "turn budget"
+      "trace: an illegal sequence is an error, not a guess", fun () ->
+          check (Result.isError (Trace.replayed { MaxTurns = 5; MaxVerifyAttempts = 3 } [ TurnEnded ])) "illegal" ]

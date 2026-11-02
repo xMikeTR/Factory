@@ -127,8 +127,22 @@ type TaskTrace =
       TokensIn: int64
       TokensOut: int64 }
 
+/// A task's end and the rounds it took, rebuilt from its ledger events.
+type ReplayedTask =
+    { End: EndState
+      VerifyAttempts: int
+      ReviewRounds: int }
+
 [<RequireQualifiedAccess>]
 module Trace =
+    /// Replays with the run's limits, as a resume does. Passed carries no Progress, so the rounds are counted from the events.
+    let replayed (limits: Limits) (events: TaskEvent list) : Result<ReplayedTask, TransitionError> =
+        TaskState.replay limits events
+        |> Result.map (fun state ->
+            { End = EndState.ofTaskState state
+              VerifyAttempts = events |> List.sumBy (function VerifyCompleted _ -> 1 | _ -> 0)
+              ReviewRounds = events |> List.sumBy (function ReviewCompleted _ -> 1 | _ -> 0) })
+
     /// None while the task is still in flight: a trace is written when the task ends (a blocked end is not final).
     let build (i: TraceInput) : TaskTrace option =
         TaskEnd.classify i.LastDecisionEscalated i.End

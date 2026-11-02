@@ -46,18 +46,14 @@ public static class RegistryLedgerProjector
     private static IEnumerable<(DateTimeOffset, RegistryEvent)> Tasks(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
     {
         var groups = run.Where(e => e.TaskId is not null).GroupBy(e => e.TaskId!).ToList();
-        // The planner works before any task exists: its run-level rows have no task, so share them over the tasks (the first takes the remainder).
         var planners = run.Where(e => e.Kind == LedgerKinds.Plan && e.TaskId is null).ToList();
-        long planIn = planners.Sum(e => e.TokensIn ?? 0), planOut = planners.Sum(e => e.TokensOut ?? 0);
-        var shared = groups.Count(g => g.Any(e => e.Kind == LedgerKinds.TaskEvent && e.Outcome is not null));
-        var index = 0;
+        var shares = PlannerShares(run);
         foreach (var task in groups)
         {
             var last = task.LastOrDefault(e => e.Kind == LedgerKinds.TaskEvent);
             if (last?.Outcome is null) continue;
             var turns = task.Where(e => e.Kind == LedgerKinds.Turn).ToList();
-            var share = index++;
-            long ownIn = planIn / shared + (share == 0 ? planIn % shared : 0), ownOut = planOut / shared + (share == 0 ? planOut % shared : 0);
+            var (share, ownIn, ownOut) = shares[task.Key];
             yield return (last.Ts, Row(Pipeline, "task", last, w =>
             {
                 w.WriteString("task", task.Key);
@@ -74,6 +70,20 @@ public static class RegistryLedgerProjector
                 w.WriteString("run", last.RunId);
             }));
         }
+    }
+
+    /// The planner works before any task exists: its run-level rows have no task, so they are shared over the tasks
+    /// that have a task row, in first-seen order (the first takes the remainder). The trace counts tokens the same way.
+    internal static IReadOnlyDictionary<string, (int Index, long In, long Out)> PlannerShares(IReadOnlyList<LedgerEvent> run)
+    {
+        var planners = run.Where(e => e.Kind == LedgerKinds.Plan && e.TaskId is null).ToList();
+        long planIn = planners.Sum(e => e.TokensIn ?? 0), planOut = planners.Sum(e => e.TokensOut ?? 0);
+        var tasks = run.Where(e => e.TaskId is not null).GroupBy(e => e.TaskId!)
+            .Where(g => g.LastOrDefault(e => e.Kind == LedgerKinds.TaskEvent)?.Outcome is not null).Select(g => g.Key).ToList();
+        var shares = new Dictionary<string, (int, long, long)>();
+        for (var i = 0; i < tasks.Count; i++)
+            shares[tasks[i]] = (i, planIn / tasks.Count + (i == 0 ? planIn % tasks.Count : 0), planOut / tasks.Count + (i == 0 ? planOut % tasks.Count : 0));
+        return shares;
     }
 
     /// designc's task `usage`: one entry per tier and model, in the order first used, with cache_read and cache_write when any turn had them. A turn row with no model_id
