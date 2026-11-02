@@ -1,6 +1,7 @@
 using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Registry;
+using Factory.Integration.Tests.Support;
 using Xunit;
 
 namespace Factory.Integration.Tests.Registry;
@@ -95,7 +96,7 @@ public class TraceReaderTests
     {
         var run = Run();
         var traces = TraceReader.Read(run, Limits);
-        var rows = RegistryLedgerProjector.Project(run, Handover)
+        var rows = RegistryLedgerProjector.Project(run, Handover, Limits)
             .Where(r => r.Line.Contains("\"kind\":\"task\""))
             .Select(r => System.Text.Json.JsonDocument.Parse(r.Line).RootElement)
             .ToDictionary(r => r.GetProperty("task").GetString()!);
@@ -132,5 +133,57 @@ public class TraceReaderTests
 
         Assert.Empty(t.Procedures);
         Assert.Equal(2, t.Actions.Turns);
+    }
+
+    private static List<System.Text.Json.JsonElement> Projected(List<LedgerEvent> run, string kind) =>
+        RegistryLedgerProjector.Project(run, Handover, Limits)
+            .Select(r => System.Text.Json.JsonDocument.Parse(r.Line).RootElement)
+            .Where(r => r.GetProperty("kind").GetString() == kind).ToList();
+
+    [Fact]
+    public void The_projection_writes_one_trace_row_per_ended_task_and_each_validates_against_designc()
+    {
+        var rows = RegistryLedgerProjector.Project(Run(), Handover, Limits).Where(r => r.Line.Contains("\"kind\":\"trace\"")).ToList();
+
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.Empty(DesigncSchema.Validate(r.Line)));
+        Assert.All(rows, r => Assert.Equal("pipeline.jsonl", r.Stream));
+    }
+
+    [Fact]
+    public void A_trace_row_carries_outcome_cause_no_bundle_procedures_and_its_actions_under_payload()
+    {
+        var stalled = Assert.Single(Projected(Run(), "trace"), r => r.GetProperty("task").GetString() == "T-001");
+
+        Assert.Equal("failed", stalled.GetProperty("outcome").GetString());
+        Assert.Equal("stalled", stalled.GetProperty("cause").GetString());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, stalled.GetProperty("bundle_id").ValueKind);
+        Assert.Equal(["claude-a"], stalled.GetProperty("models").EnumerateArray().Select(m => m.GetString()));
+        Assert.Equal("sha256:aa", stalled.GetProperty("procedures")[0].GetProperty("hash").GetString());
+        Assert.Equal("trace-1", stalled.GetProperty("trace_id").GetString());
+        var actions = stalled.GetProperty("payload").GetProperty("actions");
+        Assert.Equal(1, actions.GetProperty("turns").GetInt32());
+        Assert.Equal(4, actions.GetProperty("tool_calls").GetInt32());
+        Assert.Equal(1, actions.GetProperty("scope_reverts").GetInt32());
+    }
+
+    [Fact]
+    public void The_task_row_names_its_cause()
+    {
+        var tasks = Projected(Run(), "task").ToDictionary(r => r.GetProperty("task").GetString()!);
+
+        Assert.Equal("stalled", tasks["T-001"].GetProperty("cause").GetString());
+        Assert.Equal("parked", tasks["T-002"].GetProperty("cause").GetString());
+        Assert.False(tasks["T-003"].TryGetProperty("cause", out _));
+    }
+
+    [Fact]
+    public void A_cause_the_task_rows_status_cannot_carry_is_left_off_it()
+    {
+        var reviewParked = new TaskEnd(TraceOutcome.TraceBlocked, Microsoft.FSharp.Core.FSharpOption<TraceCause>.Some(TraceCause.NewGateFailed("review")));
+
+        Assert.Null(RegistryLedgerProjector.TaskRowCause("running", reviewParked)); // parked after review shows as running today
+        Assert.Equal("gate_failed:review", RegistryLedgerProjector.TaskRowCause("blocked", reviewParked));
+        Assert.Null(RegistryLedgerProjector.TaskRowCause("passed", new TaskEnd(TraceOutcome.TracePassed, Microsoft.FSharp.Core.FSharpOption<TraceCause>.None)));
     }
 }

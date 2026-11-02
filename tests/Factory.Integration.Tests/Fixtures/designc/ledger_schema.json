@@ -47,7 +47,9 @@
     "item_judge",
     "run_started",
     "run_ended",
-    "parity_result"
+    "parity_result",
+    "trace",
+    "outcome"
   ],
   "rules": [
     "fail_needs_evidence",
@@ -56,6 +58,9 @@
     "usage_shape",
     "by_role_shape",
     "suite_run_shape",
+    "cause_shape",
+    "trace_shape",
+    "ref_shape",
     "fail_needs_note",
     "hash_not_blank",
     "ended_needs_reason",
@@ -241,13 +246,18 @@
         "caught_by",
         "source",
         "traces",
-        "origin"
+        "origin",
+        "ref",
+        "run"
       ],
       "enums": {},
-      "types": {},
+      "types": {
+        "run": "string"
+      },
       "rules": [
         "caught_by_member",
-        "origin_member"
+        "origin_member",
+        "ref_shape"
       ]
     },
     "escape_classified": {
@@ -697,6 +707,36 @@
       "types": {},
       "rules": []
     },
+    "outcome": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "run",
+        "cause",
+        "ref"
+      ],
+      "optional": [
+        "task",
+        "commit"
+      ],
+      "enums": {
+        "cause": [
+          "ci_failed",
+          "qa_failed",
+          "integration_failed",
+          "integration_unrunnable",
+          "parity_failed"
+        ]
+      },
+      "types": {
+        "run": "string",
+        "task": "string",
+        "cause": "string",
+        "commit": "string"
+      },
+      "rules": [
+        "ref_shape"
+      ]
+    },
     "parity_result": {
       "stream": "pipeline.jsonl",
       "required": [
@@ -840,7 +880,8 @@
         "handover",
         "run",
         "usage",
-        "by_role"
+        "by_role",
+        "cause"
       ],
       "enums": {
         "status": [
@@ -853,7 +894,52 @@
       "types": {},
       "rules": [
         "usage_shape",
-        "by_role_shape"
+        "by_role_shape",
+        "cause_shape"
+      ]
+    },
+    "trace": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "run",
+        "task",
+        "outcome",
+        "bundle_id",
+        "models",
+        "procedures",
+        "tokens_in",
+        "tokens_out"
+      ],
+      "optional": [
+        "cause",
+        "trace_id",
+        "jira",
+        "cost"
+      ],
+      "enums": {
+        "outcome": [
+          "passed",
+          "failed",
+          "blocked"
+        ]
+      },
+      "types": {
+        "run": "string",
+        "task": "string",
+        "outcome": "string",
+        "bundle_id": "string|null",
+        "models": "array",
+        "procedures": "array",
+        "tokens_in": "number",
+        "tokens_out": "number",
+        "cause": "string",
+        "trace_id": "string",
+        "jira": "string",
+        "cost": "number"
+      },
+      "rules": [
+        "cause_shape",
+        "trace_shape"
       ]
     },
     "trace_review": {

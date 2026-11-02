@@ -23,7 +23,7 @@ public class RegistryProgressTests : IDisposable
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-    private RegistryProgressLedger Ledger(Func<string, HandoverRef>? handover = null) => new(_inner, Registry, handover ?? (_ => Handover));
+    private RegistryProgressLedger Ledger(Func<string, HandoverRef>? handover = null) => new(_inner, Registry, handover ?? (_ => Handover), new Factory.Core.Limits(5, 3));
 
     private List<JsonElement> Pipeline(string kind)
     {

@@ -20,7 +20,7 @@ public static class ServiceWiring
     /// S2's own ledger, projecting each attempt start, task state change and end onto the registry as it happens.
     public static ILedger ProgressLedger(FactorySettings settings) => new Factory.Harness.Registry.RegistryProgressLedger(
         new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")), settings.RegistryPath,
-        id => Factory.Harness.Registry.HandoverRef.From(Factory.Core.Core.ParseHandover(File.ReadAllText(settings.HandoverCopyPath(id)))));
+        id => Factory.Harness.Registry.HandoverRef.From(Factory.Core.Core.ParseHandover(File.ReadAllText(settings.HandoverCopyPath(id)))), settings.TaskLimits);
 
     public static FactoryServices Services(FactorySettings settings, string runId, Dictionary<string, string> env, IPullRequests pullRequests)
     {

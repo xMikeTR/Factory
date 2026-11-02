@@ -6,14 +6,14 @@ public static class RegistryProgress
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
-    public static async Task SyncAsync(ILedger ledger, string registryPath, string runId, HandoverRef handover, CancellationToken ct)
+    public static async Task SyncAsync(ILedger ledger, string registryPath, string runId, HandoverRef handover, Factory.Core.Limits limits, CancellationToken ct)
     {
         await Gate.WaitAsync(ct);
         try
         {
             var run = new List<LedgerEvent>();
             await foreach (var e in ledger.ReadAsync(runId, ct)) run.Add(e);
-            await RunLedgerStream.AppendAsync(registryPath, runId, RegistryLedgerProjector.Project(run, handover), ct);
+            await RunLedgerStream.AppendAsync(registryPath, runId, RegistryLedgerProjector.Project(run, handover, limits), ct);
             await LedgerFold.RunAsync(registryPath, ct);
         }
         finally { Gate.Release(); }
@@ -23,7 +23,7 @@ public static class RegistryProgress
 /// An ILedger that, after an attempt starts, a task changes state or the attempt ends, projects the run
 /// onto the registry so designc's Build view moves with it. The event is always logged first; projecting
 /// is best effort and never fails the run (no registry folder, or no handover copy yet, projects nothing).
-public sealed class RegistryProgressLedger(ILedger inner, string registryPath, Func<string, HandoverRef> handover) : ILedger
+public sealed class RegistryProgressLedger(ILedger inner, string registryPath, Func<string, HandoverRef> handover, Factory.Core.Limits limits) : ILedger
 {
     private static readonly HashSet<string> Progress = [LedgerKinds.RunStarted, LedgerKinds.TaskEvent, LedgerKinds.Run, LedgerKinds.RunAborted];
 
@@ -31,7 +31,7 @@ public sealed class RegistryProgressLedger(ILedger inner, string registryPath, F
     {
         await inner.AppendAsync(e, ct);
         if (!Progress.Contains(e.Kind) || !Directory.Exists(registryPath)) return;
-        try { await RegistryProgress.SyncAsync(inner, registryPath, e.RunId, handover(e.RunId), ct); }
+        try { await RegistryProgress.SyncAsync(inner, registryPath, e.RunId, handover(e.RunId), limits, ct); }
         catch (Exception x) when (x is not OperationCanceledException)
         {
             Console.Error.WriteLine($"registry progress not written ({x.GetType().Name}: {x.Message}); Finalize writes it again");

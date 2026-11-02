@@ -525,7 +525,7 @@ internal sealed class FinalizeExecutor(FactoryServices svc) : Executor("Finalize
         await svc.LogAsync(msg.RunId, "finalize", LedgerKinds.Run, outcome: msg.Status, payload: JsonSerializer.Serialize(msg), ct: cancellationToken);
         if (Directory.Exists(svc.Settings.RegistryPath))
         {
-            await RegistryProgress.SyncAsync(svc.Ledger, svc.Settings.RegistryPath, msg.RunId, HandoverRef.From(svc.LoadHandover(msg.RunId)), cancellationToken);
+            await RegistryProgress.SyncAsync(svc.Ledger, svc.Settings.RegistryPath, msg.RunId, HandoverRef.From(svc.LoadHandover(msg.RunId)), svc.Settings.TaskLimits, cancellationToken);
         }
         await context.YieldOutputAsync(msg, cancellationToken);
     }
