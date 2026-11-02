@@ -26,7 +26,25 @@ public class AzCliPullRequestsTests : IDisposable
             esac
             """.Replace("\r", ""));
         File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        WarmUp(script);
         return new AzCliPullRequests(_dir, script);
+    }
+
+    /// Another test starting a process while this script was being written can still hold it open for writing for a moment
+    /// (between its fork and exec), and exec then fails with ETXTBSY. Once one exec succeeds that window has passed.
+    private void WarmUp(string script)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(script) { RedirectStandardOutput = true })!;
+                p.WaitForExit();
+                break;
+            }
+            catch (System.ComponentModel.Win32Exception) when (attempt < 50) { Thread.Sleep(10); }
+        }
+        File.Delete(Log); // the warm-up call is not one of the test's calls
     }
 
     private List<string[]> Calls() => File.ReadAllLines(Log).Select(l => l.Split('\x1f', StringSplitOptions.RemoveEmptyEntries)).ToList();
