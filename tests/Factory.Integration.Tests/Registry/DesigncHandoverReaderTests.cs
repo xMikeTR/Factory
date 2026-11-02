@@ -144,4 +144,43 @@ public class DesigncHandoverReaderTests
 
         Assert.Contains(e.Errors, x => x.Contains("handover.yaml is not readable"));
     }
+
+    /// Rewrites D-0001's checks and re-hashes it in the manifest, as a freeze would.
+    private static async Task<string> WithChecks(string checksYaml)
+    {
+        var dir = FixtureCopy();
+        var file = Path.Combine(dir, "decisions", "D-0001.yaml");
+        var text = (await File.ReadAllTextAsync(file)).Replace("checks:\n  - p check -tc tcOptimistic\n", checksYaml);
+        await File.WriteAllTextAsync(file, text);
+        var manifest = Path.Combine(dir, "handover.yaml");
+        await File.WriteAllTextAsync(manifest, (await File.ReadAllTextAsync(manifest)).Replace("83d766859d21cb09", DesigncHandoverReader.Hash16(text)));
+        return dir;
+    }
+
+    /// designc records/1: a check is the command string, or {id, run} with id optional; a missing id is chk- + the first 8 hex of hash16(trimmed run).
+    [Fact]
+    public async Task A_check_is_a_command_or_an_id_and_run_and_every_check_gets_designcs_id()
+    {
+        var dir = await WithChecks("checks:\n  - p check -tc tcOptimistic\n  - { id: quotes.lock, run: \"p check -tc tcDedupe\" }\n  - { run: \"  dotnet test  \" }\n");
+
+        var checks = Assert.Single((await Load(dir)).Decisions).Checks.ToList();
+
+        Assert.Equal(["p check -tc tcOptimistic", "p check -tc tcDedupe", "dotnet test"], checks.Select(c => c.Run));
+        Assert.Equal(["p", "p", "script"], checks.Select(c => c.Kind));
+        Assert.Equal(
+            ["chk-" + DesigncHandoverReader.Hash16("p check -tc tcOptimistic")[..8], "quotes.lock", "chk-" + DesigncHandoverReader.Hash16("dotnet test")[..8]],
+            checks.Select(c => c.CheckId));
+    }
+
+    [Theory]
+    [InlineData("checks:\n  - { id: x }\n")]                          // no run
+    [InlineData("checks:\n  - { run: \"p check\", kind: p }\n")]        // a key records/1 does not allow
+    [InlineData("checks:\n  - { id: \"has space\", run: \"p check\" }\n")] // id outside [A-Za-z0-9._-]
+    public async Task A_check_object_that_is_not_id_and_run_rejects_the_handover(string checksYaml)
+    {
+        var dir = await WithChecks(checksYaml);
+
+        var e = await Assert.ThrowsAsync<FactoryRejectedException>(() => Load(dir));
+        Assert.Contains(e.Errors, m => m.Contains("D-0001") && m.Contains("check"));
+    }
 }

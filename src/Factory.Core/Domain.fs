@@ -37,7 +37,26 @@ type ElementSpec =
       /// never linked by a task and never written. True for every element of a design handover.
       InScope: bool }
 
-type DecisionCheck = { Kind: string; Run: string }
+/// designc's hash16: two FNV-1a passes over the UTF-16 units, 16 hex. Fingerprints frozen files and names checks.
+[<RequireQualifiedAccess>]
+module Hash16 =
+    let private fnv (s: string) (seed: uint32) =
+        let mutable h = seed
+        for c in s do
+            h <- (h ^^^ uint32 c) * 16777619u
+        h.ToString("x8")
+
+    let compute (s: string) = fnv s 2166136261u + fnv s 2654435769u
+
+/// CheckId: designc records/1's id, given ({id, run}) or derived from the command: chk- + the first 8 hex of hash16(trimmed run).
+type DecisionCheck = { Kind: string; Run: string; CheckId: string }
+
+[<RequireQualifiedAccess>]
+module DecisionCheck =
+    let idOf (run: string) = "chk-" + (Hash16.compute (run.Trim())).Substring(0, 8)
+
+    let create (kind: string) (run: string) (id: string option) =
+        { Kind = kind; Run = run; CheckId = id |> Option.defaultWith (fun () -> idOf run) }
 
 type BoundDecision =
     { Id: DecisionId

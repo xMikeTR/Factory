@@ -99,7 +99,8 @@ module Json =
             arr path o "checks"
             |> List.map (fun (p, c) ->
                 let co = obj p c
-                { Kind = str p co "kind"; Run = str p co "run" }) }
+                // A handover.json written before check ids had none: derive it as designc does.
+                DecisionCheck.create (str p co "kind") (str p co "run") (optStr co "id")) }
 
     let parseHandover (text: string) : Result<Handover, string list> =
         run text (fun o ->
@@ -223,7 +224,7 @@ module Json =
             node [ "id", JsonValue.Create d.Id.Value
                    "statement", JsonValue.Create d.Statement
                    "binds", strArr (d.Binds |> List.map (fun b -> b.Value))
-                   "checks", JsonArray(d.Checks |> List.map (fun c -> node [ "kind", JsonValue.Create c.Kind; "run", JsonValue.Create c.Run ]) |> Array.ofList) ]
+                   "checks", JsonArray(d.Checks |> List.map (fun c -> node [ "kind", JsonValue.Create c.Kind; "run", JsonValue.Create c.Run; "id", JsonValue.Create c.CheckId ]) |> Array.ofList) ]
         let root =
             node [ "id", JsonValue.Create h.Id
                    "digest", JsonValue.Create h.Digest
