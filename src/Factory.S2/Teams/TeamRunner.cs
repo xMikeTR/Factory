@@ -382,11 +382,13 @@ internal sealed class TaskLoop(
         _contextRole = role;
         var request = new BundleRequest(handover.Id, null, _taskId, role, task.Elements.Select(e => e.Value).ToList());
         var fetch = await svc.Context.FetchAsync(request, ct);
+        _bundle = svc.InjectContext && fetch is BundleFetch.Fetched f ? f.Bundle : null;
         await svc.LogAsync(runId, "context", LedgerKinds.Context, fetch is BundleFetch.Fetched ? "fetched" : "missed",
             ContextRecording.Payload(role, fetch), _teamId, _taskId, ct);
     }
 
     private string? _contextRole;
+    private ContextBundle? _bundle; // the phase's bundle when injection is on; null otherwise
 
     private async Task<TaskState> PlanTurnAsync(TaskState state, ModelTier tier, CancellationToken ct)
     {
@@ -763,7 +765,7 @@ internal sealed class TaskLoop(
             : $"These changes were outside your writes and were reverted: {_reverted}\n\n{_lastFailures}".TrimEnd();
         if (_repair is not null) failures = $"{_repair}\n\n{failures}".TrimEnd();
         if (_handoff is not null) failures = $"{_handoff}\n\n{failures}".TrimEnd();
-        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context);
+        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context, _bundle);
     }
 
     private bool InScope(string path, IEnumerable<PathPattern> writable) =>

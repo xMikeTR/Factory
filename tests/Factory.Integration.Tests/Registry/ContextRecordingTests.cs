@@ -62,4 +62,12 @@ public class ContextRecordingTests
         Assert.Throws<ArgumentException>(() => ContextRecording.Source("designc", dir: null, script: null, registry: "/r"));
         Assert.Throws<ArgumentException>(() => ContextRecording.Source("mcp", dir: null, script: null, registry: "/r"));
     }
+
+    [Fact]
+    public void Injection_is_off_unless_asked_for()
+    {
+        Assert.False(ContextRecording.Inject(null));
+        Assert.False(ContextRecording.Inject("0"));
+        Assert.True(ContextRecording.Inject("1"));
+    }
 }

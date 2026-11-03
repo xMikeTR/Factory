@@ -62,6 +62,42 @@ public sealed partial record ContextBundle(
         }
     }
 
+    /// The part of the bundle an agent reads: its procedures, then the parity verdicts and conflicts for the key's nodes.
+    /// Empty when there is nothing to say. Decisions and requirements are already in the handover, so they are not repeated.
+    public string Render()
+    {
+        var sb = new StringBuilder();
+        if (Procedures.Count > 0)
+        {
+            sb.AppendLine("## Procedures to follow (designc)");
+            foreach (var p in Procedures)
+            {
+                sb.AppendLine().AppendLine($"### {p.Title} (`{p.Id}`, version {p.Version})");
+                for (var i = 0; i < p.Steps.Count; i++) sb.AppendLine($"{i + 1}. {p.Steps[i]}");
+            }
+        }
+        using var doc = JsonDocument.Parse(Json);
+        var facts = new List<string>();
+        if (doc.RootElement.TryGetProperty("verdicts", out var vs) && vs.ValueKind == JsonValueKind.Array)
+            foreach (var v in vs.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Object))
+            {
+                var node = Str(v, "node_id");
+                var verdict = Str(v, "verdict");
+                var conflict = Strings(v, "conflict") ?? [];
+                if (node is null || (verdict is null && conflict.Count == 0)) continue;
+                var line = $"- `{node}`: {verdict ?? "no verdict"}";
+                if (conflict.Count > 0) line += $" (records disagree: {string.Join("; ", conflict)})";
+                facts.Add(line);
+            }
+        if (facts.Count > 0)
+        {
+            if (sb.Length > 0) sb.AppendLine();
+            sb.AppendLine("## Parity facts (designc)");
+            foreach (var f in facts) sb.AppendLine(f);
+        }
+        return sb.ToString();
+    }
+
     /// designc's rule: "sha256:" + sha256 of the canonical JSON (keys sorted at every level, no whitespace) of every field but bundle_id.
     public static string ComputeId(JsonElement root)
     {

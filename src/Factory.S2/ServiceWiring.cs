@@ -87,7 +87,8 @@ public static class ServiceWiring
             mutation: new StrykerRunner(sandboxes),
             qa: qa,
             context: ContextRecording.Source(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_SOURCE"),
-                Environment.GetEnvironmentVariable("FACTORY_CONTEXT_DIR"), Environment.GetEnvironmentVariable("FACTORY_DESIGNC_CORE"), settings.RegistryPath));
+                Environment.GetEnvironmentVariable("FACTORY_CONTEXT_DIR"), Environment.GetEnvironmentVariable("FACTORY_DESIGNC_CORE"), settings.RegistryPath),
+            injectContext: ContextRecording.Inject(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_INJECT")));
         return built;
     }
 }
