@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -54,8 +56,72 @@ public sealed partial record ContextBundle(
                     return Miss($"procedure {procedures.Count} needs id, version, a 16-hex hash, title and steps");
                 procedures.Add(new BundleProcedure(pid, version, hash, title, steps));
             }
+            var computed = ComputeId(root);
+            if (computed != id) return Miss($"bundle_id does not match its content (computed {computed})");
             return new BundleFetch.Fetched(new ContextBundle(id, role!, handover, elements, procedures, json));
         }
+    }
+
+    /// designc's rule: "sha256:" + sha256 of the canonical JSON (keys sorted at every level, no whitespace) of every field but bundle_id.
+    public static string ComputeId(JsonElement root)
+    {
+        var sb = new StringBuilder();
+        Canonical(root, sb, skipBundleId: true);
+        return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
+    }
+
+    // Matches JS: keys in UTF-16 code unit order, JSON.stringify string escaping, numbers as written.
+    private static void Canonical(JsonElement v, StringBuilder sb, bool skipBundleId = false)
+    {
+        switch (v.ValueKind)
+        {
+            case JsonValueKind.Object:
+                sb.Append('{');
+                var first = true;
+                foreach (var p in v.EnumerateObject().Where(p => !(skipBundleId && p.Name == "bundle_id")).OrderBy(p => p.Name, StringComparer.Ordinal))
+                {
+                    if (!first) sb.Append(',');
+                    first = false;
+                    Quote(p.Name, sb);
+                    sb.Append(':');
+                    Canonical(p.Value, sb);
+                }
+                sb.Append('}');
+                break;
+            case JsonValueKind.Array:
+                sb.Append('[');
+                var i = 0;
+                foreach (var e in v.EnumerateArray()) { if (i++ > 0) sb.Append(','); Canonical(e, sb); }
+                sb.Append(']');
+                break;
+            case JsonValueKind.String: Quote(v.GetString()!, sb); break;
+            default: sb.Append(v.GetRawText()); break;
+        }
+    }
+
+    private static void Quote(string s, StringBuilder sb)
+    {
+        sb.Append('"');
+        for (var i = 0; i < s.Length; i++)
+        {
+            var c = s[i];
+            switch (c)
+            {
+                case '"': sb.Append("\\\""); break;
+                case '\\': sb.Append("\\\\"); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    var lone = char.IsSurrogate(c) && !(char.IsHighSurrogate(c) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1])) && !(char.IsLowSurrogate(c) && i > 0 && char.IsHighSurrogate(s[i - 1]));
+                    if (c < 0x20 || lone) sb.Append("\\u").Append(((int)c).ToString("x4"));
+                    else sb.Append(c);
+                    break;
+            }
+        }
+        sb.Append('"');
     }
 
     private static string? Str(JsonElement o, string name) =>
