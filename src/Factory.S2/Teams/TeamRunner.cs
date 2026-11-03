@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Factory.Core;
 using Factory.S2.Verify;
 using Factory.Harness;
+using Factory.Harness.Registry;
 using Factory.Harness.Policy;
 using Factory.Harness.Telemetry;
 using Factory.S2.Quality;
@@ -354,6 +355,7 @@ internal sealed class TaskLoop(
             return await ApplyAsync(state, TaskEvent.VerifyRequested, ct);
         }
 
+        await EnsureContextAsync(phase.IsTestAuthor, ct);
         var decision = await svc.Configurator.DecideAsync(new TurnContext(
             _taskId, progress.Turns, progress.VerifyAttempts, _approachNote is not null, _lastVerifyFailed, _turnsWithoutChange), ct);
         await svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "configurator", LedgerKinds.Configurator,
@@ -370,6 +372,21 @@ internal sealed class TaskLoop(
             _ => throw new InvalidOperationException($"unknown turn kind {decision.Kind}"),
         };
     }
+
+    /// Asks for the bundle of the phase now holding the pen, once per phase per process, and records the answer (or the
+    /// miss) on a `context` row. A source never throws; a run without a bundle carries on (trace bundle_id null).
+    private async Task EnsureContextAsync(bool testAuthor, CancellationToken ct)
+    {
+        var role = ContextRecording.Role(testAuthor);
+        if (_contextRole == role) return;
+        _contextRole = role;
+        var request = new BundleRequest(handover.Id, null, _taskId, role, task.Elements.Select(e => e.Value).ToList());
+        var fetch = await svc.Context.FetchAsync(request, ct);
+        await svc.LogAsync(runId, "context", LedgerKinds.Context, fetch is BundleFetch.Fetched ? "fetched" : "missed",
+            ContextRecording.Payload(role, fetch), _teamId, _taskId, ct);
+    }
+
+    private string? _contextRole;
 
     private async Task<TaskState> PlanTurnAsync(TaskState state, ModelTier tier, CancellationToken ct)
     {

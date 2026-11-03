@@ -1,5 +1,6 @@
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Registry;
 using Factory.Harness.Governance;
 using Factory.Harness.Policy;
 using Factory.Harness.Sandbox;
@@ -84,7 +85,9 @@ public static class ServiceWiring
             pullRequests,
             new AgentReviewer(agents, gateways.ReviewerIndependence, settings.CommandAllowList),
             mutation: new StrykerRunner(sandboxes),
-            qa: qa);
+            qa: qa,
+            context: ContextRecording.Source(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_SOURCE"),
+                Environment.GetEnvironmentVariable("FACTORY_CONTEXT_DIR"), Environment.GetEnvironmentVariable("FACTORY_DESIGNC_CORE"), settings.RegistryPath));
         return built;
     }
 }

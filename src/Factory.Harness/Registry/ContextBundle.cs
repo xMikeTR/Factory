@@ -16,7 +16,7 @@ public sealed record BundleProcedure(string Id, string Version, string Hash, str
 /// bundle_id recompute (2b) and for the agent's context (2d).
 public sealed partial record ContextBundle(
     string BundleId, string Role, string? Handover, IReadOnlyList<string> Elements,
-    IReadOnlyList<BundleProcedure> Procedures, string Json)
+    IReadOnlyList<BundleProcedure> Procedures, string Json, string Source)
 {
     public const string Schema = "designc.context.bundle/1";
 
@@ -58,7 +58,7 @@ public sealed partial record ContextBundle(
             }
             var computed = ComputeId(root);
             if (computed != id) return Miss($"bundle_id does not match its content (computed {computed})");
-            return new BundleFetch.Fetched(new ContextBundle(id, role!, handover, elements, procedures, json));
+            return new BundleFetch.Fetched(new ContextBundle(id, role!, handover, elements, procedures, json, source));
         }
     }
 
