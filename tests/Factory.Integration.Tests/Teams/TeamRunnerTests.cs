@@ -1,5 +1,6 @@
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Registry;
 using Factory.Harness.Policy;
 using Factory.Integration.Tests.Support;
 using Microsoft.Extensions.AI;
@@ -55,6 +56,48 @@ public class TeamRunnerTests
         Assert.True(File.Exists(Path.Combine(integration, NewFile)));
         var log = await h.GitIn(integration, "log", "--format=%s");
         Assert.Contains("T-001: title", log.Output);
+    }
+
+    private sealed class StubContext(Func<BundleRequest, BundleFetch> answer) : IContextSource
+    {
+        public List<BundleRequest> Asked { get; } = [];
+        public Task<BundleFetch> FetchAsync(BundleRequest request, CancellationToken ct) { Asked.Add(request); return Task.FromResult(answer(request)); }
+    }
+
+    [Fact]
+    public async Task Each_phase_asks_for_its_roles_bundle_and_the_answer_or_the_miss_is_ledgered_without_stopping_the_run()
+    {
+        var model = new ScriptedChatClient(
+            Call("list_files", new { directory = "src/Pricing.Data" }), Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+        var context = new StubContext(r => new BundleFetch.Missed("designc", "timed out"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), context: context);
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Equal(["test-author", "implementer"], context.Asked.Select(r => r.Role).Distinct());
+        Assert.All(context.Asked, r => { Assert.Equal("T-001", r.Task); Assert.Equal(h.Handover.Id, r.Handover); });
+        var rows = h.Rows(LedgerKinds.Context).ToList();
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => { Assert.Equal("missed", r.Outcome); Assert.Equal("T-001", r.TaskId); Assert.Contains("timed out", r.Payload); });
+    }
+
+    [Fact]
+    public async Task With_no_context_source_the_run_asks_for_nothing_but_records_the_miss()
+    {
+        var model = new ScriptedChatClient(
+            Call("list_files", new { directory = "src/Pricing.Data" }), Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "x" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "y" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.All(h.Rows(LedgerKinds.Context), r => Assert.Contains("\"source\":\"none\"", r.Payload));
     }
 
     /// A check that generates files (p compile, test logs) under testWrites: they are output,
