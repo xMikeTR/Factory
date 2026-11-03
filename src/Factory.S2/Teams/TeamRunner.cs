@@ -95,6 +95,7 @@ internal sealed class TaskLoop(
     {
         // Every ledger row and model call below lands in this span's trace (LedgerEvent.TraceId).
         using var span = FactoryTelemetry.StartTask(runId, _teamId, task);
+        _span = span;
         var state = Core.Replay(_limits, await TaskPayloadsAsync(ct));
 
         // Crashed between Passed and the commit: the leftovers are this task's work, but only commit
@@ -382,12 +383,14 @@ internal sealed class TaskLoop(
         _contextRole = role;
         var request = new BundleRequest(handover.Id, null, _taskId, role, task.Elements.Select(e => e.Value).ToList());
         var fetch = await svc.Context.FetchAsync(request, ct);
+        if (fetch is BundleFetch.Fetched fetched) FactoryTelemetry.RecordBundle(_span, fetched.Bundle.BundleId);
         _bundle = svc.InjectContext && fetch is BundleFetch.Fetched f ? f.Bundle : null;
         await svc.LogAsync(runId, "context", LedgerKinds.Context, fetch is BundleFetch.Fetched ? "fetched" : "missed",
             ContextRecording.Payload(role, fetch), _teamId, _taskId, ct);
     }
 
     private string? _contextRole;
+    private System.Diagnostics.Activity? _span;
     private ContextBundle? _bundle; // the phase's bundle when injection is on; null otherwise
 
     private async Task<TaskState> PlanTurnAsync(TaskState state, ModelTier tier, CancellationToken ct)
