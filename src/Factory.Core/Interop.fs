@@ -91,3 +91,25 @@ type Core =
     /// The answer for the agent, from the designer's chosen option and note (either may be null).
     static member AnswerDecision(nd: NeedsDecision, option: string, note: string) : Result<string, string> =
         NeedsDecision.answer nd (Option.ofObj option) (Option.ofObj note)
+
+    /// A task's end and rounds from its ledger payloads, replayed with the run's limits (as a resume does).
+    static member ReplayTrace(limits: Limits, payloads: string seq) : ReplayedTask =
+        let events =
+            payloads
+            |> Seq.map (fun p ->
+                match Json.decodeTaskEvent p with
+                | Ok e -> e
+                | Error es -> raise (FactoryRejectedException("unreadable task event in ledger", Array.ofList es)))
+            |> List.ofSeq
+        match Trace.replayed limits events with
+        | Ok r -> r
+        | Error e -> raise (InvalidOperationException($"ledger replay hit an illegal transition: {e.Event} in state {e.State}"))
+
+    /// The task's trace; null while the task is still in flight.
+    static member BuildTrace(input: TraceInput) : TaskTrace =
+        match Trace.build input with
+        | Some t -> t
+        | None -> Unchecked.defaultof<TaskTrace>
+
+    /// designc's spelling: stalled | parked | abandoned | gate_failed:<gate>.
+    static member CauseToLedger(cause: TraceCause) : string = TraceCause.toLedger cause

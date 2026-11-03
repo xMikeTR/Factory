@@ -1,5 +1,6 @@
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Registry;
 using Factory.Harness.Governance;
 using Factory.Harness.Policy;
 using Factory.Harness.Sandbox;
@@ -20,7 +21,7 @@ public static class ServiceWiring
     /// S2's own ledger, projecting each attempt start, task state change and end onto the registry as it happens.
     public static ILedger ProgressLedger(FactorySettings settings) => new Factory.Harness.Registry.RegistryProgressLedger(
         new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")), settings.RegistryPath,
-        id => Factory.Harness.Registry.HandoverRef.From(Factory.Core.Core.ParseHandover(File.ReadAllText(settings.HandoverCopyPath(id)))));
+        id => Factory.Harness.Registry.HandoverRef.From(Factory.Core.Core.ParseHandover(File.ReadAllText(settings.HandoverCopyPath(id)))), settings.TaskLimits);
 
     public static FactoryServices Services(FactorySettings settings, string runId, Dictionary<string, string> env, IPullRequests pullRequests)
     {
@@ -51,13 +52,13 @@ public static class ServiceWiring
             "allowlist" => new RoleAllowListPolicy(),
             var other => throw new ArgumentException($"FACTORY_TOOL_POLICY: '{other}' is not acs|allowlist"),
         };
-        // Laya routes turns when FACTORY_LAYA_URL points at tools/laya-sidecar and it is confident
+        // A router decides turns when FACTORY_ROUTER_URL points at tools/router-sidecar and it is confident
         // enough; otherwise (and always when unset) the heuristic decides. The ledger names who did.
-        IConfigurator configurator = Environment.GetEnvironmentVariable("FACTORY_LAYA_URL") is { Length: > 0 } laya
+        IConfigurator configurator = Environment.GetEnvironmentVariable("FACTORY_ROUTER_URL") is { Length: > 0 } router
             ? new FallbackConfigurator(
-                new LayaConfigurator(new HttpClient { BaseAddress = new Uri(laya), Timeout = TimeSpan.FromSeconds(5) }),
+                new HttpConfigurator(new HttpClient { BaseAddress = new Uri(router), Timeout = TimeSpan.FromSeconds(5) }),
                 new HeuristicConfigurator(),
-                double.Parse(Environment.GetEnvironmentVariable("FACTORY_LAYA_MIN_CONFIDENCE") ?? "0.7", System.Globalization.CultureInfo.InvariantCulture))
+                double.Parse(Environment.GetEnvironmentVariable("FACTORY_ROUTER_MIN_CONFIDENCE") ?? "0.7", System.Globalization.CultureInfo.InvariantCulture))
             : new HeuristicConfigurator();
         var git = new GitWorkspace(settings.RepoPath, settings.StateDir);
         var gateways = ModelGateways.FromEnvironment(env, mergesAreDryRun: pullRequests is DryRunPullRequests);
@@ -84,7 +85,10 @@ public static class ServiceWiring
             pullRequests,
             new AgentReviewer(agents, gateways.ReviewerIndependence, settings.CommandAllowList),
             mutation: new StrykerRunner(sandboxes),
-            qa: qa);
+            qa: qa,
+            context: ContextRecording.Source(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_SOURCE"),
+                Environment.GetEnvironmentVariable("FACTORY_CONTEXT_DIR"), Environment.GetEnvironmentVariable("FACTORY_DESIGNC_CORE"), settings.RegistryPath),
+            injectContext: ContextRecording.Inject(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_INJECT")));
         return built;
     }
 }

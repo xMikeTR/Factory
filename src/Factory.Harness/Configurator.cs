@@ -21,13 +21,13 @@ public sealed record TurnContext(
     int TurnsWithoutChange);
 
 /// The System III role: routes each turn (plan, act, escalate) and picks a model tier.
-/// It suggests; the task state machine still owns budgets. Jev / Laya go behind this interface.
+/// It suggests; the task state machine still owns budgets. Jev or an HTTP router go behind this interface.
 public interface IConfigurator
 {
     ValueTask<ConfiguratorDecision> DecideAsync(TurnContext ctx, CancellationToken ct = default);
 }
 
-/// Deterministic default until Jev / Laya are calibrated against ledger outcomes.
+/// Deterministic default until Jev or a router is calibrated against ledger outcomes.
 /// Every decision it makes is logged, which is the calibration data set for replacing it.
 public sealed class HeuristicConfigurator(int stallTurns = 2) : IConfigurator
 {
@@ -49,11 +49,11 @@ public sealed class HeuristicConfigurator(int stallTurns = 2) : IConfigurator
     }
 }
 
-/// Client for tools/laya-sidecar: POST /decide with the TurnContext, answer
+/// Client for tools/router-sidecar (or anything serving the same contract): POST /decide with the TurnContext, answer
 /// {kind: plan|act|escalate, tier: frontier|standard|small, reason, confidence}.
 /// Throws when the sidecar is down, answers non-2xx, or answers something it cannot read;
 /// FallbackConfigurator turns that into a heuristic decision.
-public sealed class LayaConfigurator(HttpClient http) : IConfigurator
+public sealed class HttpConfigurator(HttpClient http) : IConfigurator
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -81,7 +81,7 @@ public sealed class LayaConfigurator(HttpClient http) : IConfigurator
             "small" => ModelTier.Small,
             var t => throw new InvalidDataException($"tier '{t}' is not frontier|standard|small"),
         };
-        return new(kind, tier, a.Reason ?? "", "laya", a.Confidence);
+        return new(kind, tier, a.Reason ?? "", "router", a.Confidence);
     }
 }
 
@@ -102,7 +102,7 @@ public sealed class FallbackConfigurator(IConfigurator primary, IConfigurator fa
         catch (Exception e) when (e is HttpRequestException or InvalidDataException or JsonException
                                     or NotSupportedException || (e is TaskCanceledException && !ct.IsCancellationRequested))
         {
-            why = $"laya unavailable ({e.GetType().Name}: {e.Message})";
+            why = $"router unavailable ({e.GetType().Name}: {e.Message})";
         }
         var f = await fallback.DecideAsync(ctx, ct);
         return f with { Reason = $"{f.Reason} [{why}]" };

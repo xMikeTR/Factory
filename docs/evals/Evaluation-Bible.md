@@ -263,7 +263,7 @@ Start with the bold rows; add others only when a decision depends on them.
 | Policy denials per run | ACS denials, by rule | Scope pressure; prompt drift | ACS log, ledger |
 | Tool error rate | Failed calls ÷ calls, per tool | Broken tools vs bad usage | Langfuse spans |
 | Cache hit ratio | Cached input tokens ÷ input tokens | Cache control in your harness | Langfuse usage |
-| Configurator accuracy | Jev or Laya choice vs task outcome | Calibrating routing | Ledger |
+| Configurator accuracy | Jev or router choice vs task outcome | Calibrating routing | Ledger |
 | Human wait time | Time runs spend paused at a `RequestPort` | Where you are the bottleneck | MAF checkpoints, ledger |
 | Regeneration drill | Scheduled drill passes or fails | "Code is disposable" holds | Ledger |
 

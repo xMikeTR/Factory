@@ -75,6 +75,14 @@ public class S2WorkflowTests
         Assert.True(File.Exists(prBody));
         Assert.Contains("Merge tier: TwoApprovals", await File.ReadAllTextAsync(prBody));
         Assert.Single(h.Rows(LedgerKinds.Run), e => e.Outcome == "merged");
+
+        // The run's trace: T-001 passed, with the prompts and policies it started with named by hash.
+        var all = new List<LedgerEvent>();
+        await foreach (var e in h.Services.Ledger.ReadAsync(TeamHarness.RunId)) all.Add(e);
+        var trace = Assert.Single(Factory.Harness.Registry.TraceReader.Read(all, new Limits(8, 3)), t => t.Task == "T-001");
+        Assert.True(trace.End.Outcome.IsTracePassed);
+        Assert.Contains(trace.Procedures, p => p.Id == "prompt:implementer" && p.Hash.StartsWith("sha256:"));
+        Assert.Contains(trace.Procedures, p => p.Id == "policy:jira-gate" && p.Version == "1");
     }
 
     [Fact]

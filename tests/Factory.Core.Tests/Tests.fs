@@ -552,8 +552,8 @@ let tests: (string * (unit -> unit)) list =
 
       // ---------- handover closure ----------
       "closure: delivered only when merged and every check of every bound decision passed", fun () ->
-          let d1 = { Id = DecisionId "D-0001"; Statement = "s"; Binds = []; Checks = [ { Kind = "p"; Run = "p check -tc a" }; { Kind = "p"; Run = "p check -tc b" } ] }
-          let d2 = { Id = DecisionId "D-0002"; Statement = "s"; Binds = []; Checks = [ { Kind = "p"; Run = "p check -tc c" } ] }
+          let d1 = { Id = DecisionId "D-0001"; Statement = "s"; Binds = []; Checks = [ DecisionCheck.create "p" "p check -tc a" None; DecisionCheck.create "p" "p check -tc b" None ] }
+          let d2 = { Id = DecisionId "D-0002"; Statement = "s"; Binds = []; Checks = [ DecisionCheck.create "p" "p check -tc c" None ] }
           let r d run passed = { Decision = DecisionId d; Check = run; Passed = passed }
           let all = [ r "D-0001" "p check -tc a" true; r "D-0001" "p check -tc b" true; r "D-0002" "p check -tc c" true ]
           equal HandoverOutcome.Delivered (HandoverClosure.outcome [ d1; d2 ] true all) "all pass"
@@ -844,6 +844,7 @@ let tests: (string * (unit -> unit)) list =
     @ Factory.Core.Tests.UxReviewTests.tests
     @ Factory.Core.Tests.JiraMirrorTests.tests
     @ Factory.Core.Tests.ItemBudgetTests.tests
+    @ Factory.Core.Tests.TraceTests.tests
     @ Factory.Core.Tests.ProofTests.tests
     @ Factory.Core.Tests.AssertionGuardTests.tests
     @ Factory.Core.Tests.SuiteTests.tests

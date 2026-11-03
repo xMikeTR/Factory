@@ -15,7 +15,7 @@ using Core = Factory.Core.Core; // "Core" alone binds to the namespace Factory.C
 /// decisions and lists every file with its hash16. elements.json is Designc's resolved model (its
 /// docs/handover-elements.schema.json), so the DSL is never parsed here; only elements that declare
 /// code are code-backed and appear in the Handover.
-public sealed class DesigncHandoverReader : IHandoverSource
+public sealed partial class DesigncHandoverReader : IHandoverSource
 {
     public async Task<Handover> LoadAsync(string handoverDir, S2Config config, CancellationToken ct)
     {
@@ -205,14 +205,7 @@ public sealed class DesigncHandoverReader : IHandoverSource
         };
 
     /// Designc's hash16 (rules.py / core.js): two 32-bit FNV-1a passes over the UTF-16 code units.
-    public static string Hash16(string s) => Fnv(s, 2166136261u) + Fnv(s, 2654435769u);
-
-    private static string Fnv(string s, uint seed)
-    {
-        var h = seed;
-        foreach (var unit in s) { h ^= unit; h *= 16777619u; }
-        return h.ToString("x8");
-    }
+    public static string Hash16(string s) => Factory.Core.Hash16.compute(s);
 
     private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk, [property: JsonPropertyName("in_scope")] bool? InScope);
     private sealed record RelationshipJson(string From, string To);
@@ -273,11 +266,38 @@ public sealed class DesigncHandoverReader : IHandoverSource
             if (byName.TryGetValue(name, out var el)) binds.Add(ElementId.NewElementId(el));
             else errors.Add($"{id} binds '{name}', which is not an element in the model");
         }
-        var checks = List(yaml, "checks").Select(c => c?.ToString()).OfType<string>()
-            .Where(c => !c.StartsWith("TODO", StringComparison.Ordinal))
-            .Select(c => new DecisionCheck(CheckKind(c), c));
+        var checks = new List<DecisionCheck>();
+        foreach (var (entry, i) in List(yaml, "checks").Select((c, i) => (c, i)))
+        {
+            if (entry is null) continue; // an empty entry was skipped before check objects existed; keep that
+            var (run, checkId, error) = Check(entry);
+            if (run is null) { errors.Add($"decision {id} checks[{i}]: {error}"); continue; }
+            if (run.StartsWith("TODO", StringComparison.Ordinal)) continue;
+            checks.Add(DecisionCheckModule.create(CheckKind(run), run, checkId is null ? FSharpOption<string>.None : FSharpOption<string>.Some(checkId)));
+        }
         return new BoundDecision(DecisionId.NewDecisionId(id), (Str(yaml, "statement") ?? "").Trim(), Core.ToList(binds), Core.ToList(checks));
     }
+
+    /// designc records/1: a check is the command, or {id, run} (run required, id optional, no other keys).
+    private static (string? Run, string? Id, string? Error) Check(object? entry)
+    {
+        switch (entry)
+        {
+            case string run when run.Trim().Length > 0: return (run.Trim(), null, null);
+            case string: return (null, null, "a check needs a command");
+            case Dictionary<object, object?> o:
+                var extra = o.Keys.Select(k => k.ToString()).Where(k => k is not ("id" or "run")).ToList();
+                if (extra.Count > 0) return (null, null, $"a check takes only id and run, not {string.Join(", ", extra)}");
+                if (o.GetValueOrDefault("run") is not string command || command.Trim().Length == 0) return (null, null, "a check object needs a run (the command)");
+                var checkId = o.GetValueOrDefault("id")?.ToString();
+                if (checkId is not null && !CheckIdShape().IsMatch(checkId)) return (null, null, $"check id '{checkId}' must match [A-Za-z0-9._-]+");
+                return (command.Trim(), checkId, null);
+            default: return (null, null, "a check is a command string or {id, run}");
+        }
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z0-9._-]+$")]
+    private static partial System.Text.RegularExpressions.Regex CheckIdShape();
 
     private static List<PathPattern> Patterns(IEnumerable<string> raw, string where, List<string> errors)
     {

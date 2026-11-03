@@ -25,6 +25,50 @@ public class TelemetryContractTests
         Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
         Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
 
+    /// Hands back designc's example whatever role is asked for (the stub is the source, not the check).
+    private sealed class ExampleBundle : Factory.Harness.Registry.IContextSource
+    {
+        public Task<Factory.Harness.Registry.BundleFetch> FetchAsync(Factory.Harness.Registry.BundleRequest r, CancellationToken ct) =>
+            Task.FromResult(Factory.Harness.Registry.ContextBundle.Parse(
+                File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "context-bundle.example.json")),
+                new Factory.Harness.Registry.BundleRequest(null, null, null, "builder", []), "file"));
+    }
+
+    [Fact]
+    public async Task A_task_span_names_the_bundle_it_was_given()
+    {
+        using var spans = new SpanCollector();
+        using var h = await TeamHarness.CreateAsync(PassingScript(), new Limits(8, 3), context: new ExampleBundle());
+
+        await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId)
+            .RunAsync(TeamHarness.TeamOf(Plans.Task("T-001", Plans.Auto("file exists", $"test -f {NewFile}"))), NoAnswers, default);
+
+        Assert.StartsWith("sha256:1956c88a", (string?)Assert.Single(spans.Spans, s => s.OperationName == "task T-001").GetTagItem(FactoryTelemetry.Attr.BundleId));
+    }
+
+    [Fact]
+    public async Task A_task_without_a_bundle_has_no_bundle_tag()
+    {
+        using var spans = new SpanCollector();
+        var task = Plans.Auto("file exists", $"test -f {NewFile}");
+        using var h = await TeamHarness.CreateAsync(PassingScript(), new Limits(8, 3));
+
+        await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId)
+            .RunAsync(TeamHarness.TeamOf(Plans.Covering("T-001", ["D-0042"], task)), NoAnswers, default);
+
+        var span = Assert.Single(spans.Spans, s => s.OperationName == "task T-001");
+        Assert.Null(span.GetTagItem(FactoryTelemetry.Attr.BundleId));
+    }
+
+    [Fact]
+    public void RecordBundle_tags_the_span_with_the_bundle_id()
+    {
+        using var spans = new SpanCollector();
+        using (var a = FactoryTelemetry.Source.StartActivity("task X"))
+            FactoryTelemetry.RecordBundle(a, "sha256:abc");
+        Assert.Equal("sha256:abc", Assert.Single(spans.Spans, s => s.OperationName == "task X").GetTagItem(FactoryTelemetry.Attr.BundleId));
+    }
+
     [Fact]
     public async Task A_task_span_carries_the_attribute_contract_and_the_score()
     {

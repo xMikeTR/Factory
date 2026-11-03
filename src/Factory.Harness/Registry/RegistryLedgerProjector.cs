@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Factory.Core;
 using Microsoft.FSharp.Collections;
+using Microsoft.FSharp.Core;
 
 namespace Factory.Harness.Registry;
 
@@ -25,11 +26,14 @@ public static class RegistryLedgerProjector
     private const string Pipeline = "pipeline.jsonl";
     private const string Checks = "checks.jsonl";
 
-    public static IReadOnlyList<RegistryEvent> Project(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    /// `limits`: the run's task limits; a task's end (and so its cause and trace) is replayed with them, as a resume does.
+    public static IReadOnlyList<RegistryEvent> Project(IReadOnlyList<LedgerEvent> run, HandoverRef handover, Limits limits)
     {
         var rows = new List<(DateTimeOffset Ts, RegistryEvent Row)>();
+        var traces = TraceReader.Read(run, limits).ToDictionary(t => t.Task);
         rows.AddRange(Attempts(run, handover));
-        rows.AddRange(Tasks(run, handover));
+        rows.AddRange(Tasks(run, handover, traces));
+        rows.AddRange(Traces(run, traces));
         rows.AddRange(AsBuiltEdges(run));
         foreach (var e in run)
         {
@@ -37,31 +41,30 @@ public static class RegistryLedgerProjector
             else if (e.Kind == LedgerKinds.Verify && e.Decision is not null && Check(e) is { } check) rows.Add((e.Ts, check));
         }
         rows.AddRange(AcceptanceFailures(run, handover));
+        rows.AddRange(Outcomes(run));
         if (HandoverClosed(run, handover) is { } closed) rows.Add(closed);
         // Stable: ties keep source order.
         return rows.OrderBy(r => r.Ts).Select(r => r.Row).ToList();
     }
 
     /// One row per task: its latest state, turn count and tokens so far.
-    private static IEnumerable<(DateTimeOffset, RegistryEvent)> Tasks(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> Tasks(IReadOnlyList<LedgerEvent> run, HandoverRef handover, IReadOnlyDictionary<string, TaskTrace> traces)
     {
         var groups = run.Where(e => e.TaskId is not null).GroupBy(e => e.TaskId!).ToList();
-        // The planner works before any task exists: its run-level rows have no task, so share them over the tasks (the first takes the remainder).
         var planners = run.Where(e => e.Kind == LedgerKinds.Plan && e.TaskId is null).ToList();
-        long planIn = planners.Sum(e => e.TokensIn ?? 0), planOut = planners.Sum(e => e.TokensOut ?? 0);
-        var shared = groups.Count(g => g.Any(e => e.Kind == LedgerKinds.TaskEvent && e.Outcome is not null));
-        var index = 0;
+        var shares = PlannerShares(run);
         foreach (var task in groups)
         {
             var last = task.LastOrDefault(e => e.Kind == LedgerKinds.TaskEvent);
             if (last?.Outcome is null) continue;
             var turns = task.Where(e => e.Kind == LedgerKinds.Turn).ToList();
-            var share = index++;
-            long ownIn = planIn / shared + (share == 0 ? planIn % shared : 0), ownOut = planOut / shared + (share == 0 ? planOut % shared : 0);
+            var (share, ownIn, ownOut) = shares[task.Key];
             yield return (last.Ts, Row(Pipeline, "task", last, w =>
             {
                 w.WriteString("task", task.Key);
-                w.WriteString("status", Status(last.Outcome));
+                var status = Status(last.Outcome);
+                w.WriteString("status", status);
+                if (traces.TryGetValue(task.Key, out var trace) && TaskRowCause(status, trace.End) is { } cause) w.WriteString("cause", cause);
                 // The elements.json id (System/Container/Component) of the task's first element: designc's cost forecast keys on it.
                 if (task.LastOrDefault(e => e.Kind == LedgerKinds.TaskEvent && e.Element is not null)?.Element is { } element) w.WriteString("element", element);
                 w.WriteNumber("turns", turns.Count);
@@ -74,6 +77,79 @@ public static class RegistryLedgerProjector
                 w.WriteString("run", last.RunId);
             }));
         }
+    }
+
+    /// designc's `trace`: one per ended task (a blocked one too; the latest per run and task wins), at the task's last state change.
+    /// bundle_id is null until tasks get a context bundle; what the task did goes under payload.actions (not in designc's shape).
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> Traces(IReadOnlyList<LedgerEvent> run, IReadOnlyDictionary<string, TaskTrace> traces)
+    {
+        foreach (var t in traces.Values)
+        {
+            var last = run.Last(e => e.TaskId == t.Task && e.Kind == LedgerKinds.TaskEvent);
+            yield return (last.Ts, Row(Pipeline, "trace", last, w =>
+            {
+                w.WriteString("run", t.Run);
+                w.WriteString("task", t.Task);
+                w.WriteString("outcome", t.End.Outcome.IsTracePassed ? "passed" : t.End.Outcome.IsTraceFailed ? "failed" : "blocked");
+                if (OptionModule.IsSome(t.End.Cause)) w.WriteString("cause", Factory.Core.Core.CauseToLedger(t.End.Cause.Value));
+                if (OptionModule.IsSome(t.BundleId)) w.WriteString("bundle_id", t.BundleId.Value); else w.WriteNull("bundle_id");
+                w.WriteStartArray("models");
+                foreach (var m in t.Models) w.WriteStringValue(m);
+                w.WriteEndArray();
+                w.WriteStartArray("procedures");
+                foreach (var p in t.Procedures)
+                {
+                    w.WriteStartObject();
+                    w.WriteString("id", p.Id);
+                    w.WriteString("version", p.Version);
+                    w.WriteString("hash", p.Hash);
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+                w.WriteNumber("tokens_in", t.TokensIn);
+                w.WriteNumber("tokens_out", t.TokensOut);
+                if (OptionModule.IsSome(t.TraceId)) w.WriteString("trace_id", t.TraceId.Value);
+                if (OptionModule.IsSome(t.Jira)) w.WriteString("jira", t.Jira.Value);
+            }, p =>
+            {
+                p.WriteStartObject("actions");
+                p.WriteNumber("turns", t.Actions.Turns);
+                p.WriteNumber("tool_calls", t.Actions.ToolCalls);
+                p.WriteNumber("verify_attempts", t.Actions.VerifyAttempts);
+                p.WriteNumber("review_rounds", t.Actions.ReviewRounds);
+                p.WriteNumber("scope_reverts", t.Actions.ScopeReverts);
+                p.WriteEndObject();
+            }));
+        }
+    }
+
+    /// The cause a task row may carry: designc pairs stalled and abandoned with failed, parked with blocked and a failed gate
+    /// with either. A task parked after its review rounds ran out projects as running, so its cause stays on the trace only.
+    public static string? TaskRowCause(string status, TaskEnd end)
+    {
+        if (!OptionModule.IsSome(end.Cause)) return null;
+        var cause = Factory.Core.Core.CauseToLedger(end.Cause.Value);
+        var fits = end.Cause.Value switch
+        {
+            { IsStalled: true } or { IsAbandoned: true } => status == "failed",
+            { IsParked: true } => status == "blocked",
+            _ => status is "failed" or "blocked",
+        };
+        return fits ? cause : null;
+    }
+
+    /// The planner works before any task exists: its run-level rows have no task, so they are shared over the tasks
+    /// that have a task row, in first-seen order (the first takes the remainder). The trace counts tokens the same way.
+    internal static IReadOnlyDictionary<string, (int Index, long In, long Out)> PlannerShares(IReadOnlyList<LedgerEvent> run)
+    {
+        var planners = run.Where(e => e.Kind == LedgerKinds.Plan && e.TaskId is null).ToList();
+        long planIn = planners.Sum(e => e.TokensIn ?? 0), planOut = planners.Sum(e => e.TokensOut ?? 0);
+        var tasks = run.Where(e => e.TaskId is not null).GroupBy(e => e.TaskId!)
+            .Where(g => g.LastOrDefault(e => e.Kind == LedgerKinds.TaskEvent)?.Outcome is not null).Select(g => g.Key).ToList();
+        var shares = new Dictionary<string, (int, long, long)>();
+        for (var i = 0; i < tasks.Count; i++)
+            shares[tasks[i]] = (i, planIn / tasks.Count + (i == 0 ? planIn % tasks.Count : 0), planOut / tasks.Count + (i == 0 ? planOut % tasks.Count : 0));
+        return shares;
     }
 
     /// designc's task `usage`: one entry per tier and model, in the order first used, with cache_read and cache_write when any turn had them. A turn row with no model_id
@@ -238,6 +314,46 @@ public static class RegistryLedgerProjector
             }));
         }
     }
+
+    /// Run ends that are a verdict on the work, and the evidence kind designc's `outcome.ref` names. Other failed ends
+    /// (a rejected plan, a crash, qa_unrunnable) say nothing about the code, so they stay run_ended only.
+    private static readonly Dictionary<string, string> RunVerdicts = new()
+    {
+        ["integration_failed"] = "integration",
+        ["integration_unrunnable"] = "integration",
+        ["qa_failed"] = "qa",
+    };
+
+    /// designc's `outcome`: a verdict that arrives after a task's trace. A CI failure reported with `ci-report` names its
+    /// task and check; an integration or QA failure at Finalize is on the whole run (ref id: the run, whose ledger holds the evidence).
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> Outcomes(IReadOnlyList<LedgerEvent> run)
+    {
+        foreach (var e in run)
+        {
+            if (e.Kind == LedgerKinds.CiFailed && e.TaskId is not null && e.Payload is not null)
+            {
+                using var doc = TryParse(e.Payload);
+                if (doc is null || Prop(doc.RootElement, "check")?.GetString() is not { Length: > 0 } check) continue;
+                var commit = Prop(doc.RootElement, "commit") is { ValueKind: JsonValueKind.String } c && c.GetString() is { Length: > 0 } sha ? sha : null;
+                yield return (e.Ts, OutcomeRow(e, "ci_failed", "ci", check, e.TaskId, commit));
+            }
+            else if (e.Kind == LedgerKinds.Run && e.TaskId is null && e.Outcome is { } status && RunVerdicts.TryGetValue(status, out var refKind))
+                yield return (e.Ts, OutcomeRow(e, status, refKind, e.RunId, null, null));
+        }
+    }
+
+    private static RegistryEvent OutcomeRow(LedgerEvent e, string cause, string refKind, string refId, string? task, string? commit) =>
+        Row(Pipeline, "outcome", e, w =>
+        {
+            w.WriteString("run", e.RunId);
+            if (task is not null) w.WriteString("task", task);
+            w.WriteString("cause", cause);
+            w.WriteStartObject("ref");
+            w.WriteString("kind", refKind);
+            w.WriteString("id", refId);
+            w.WriteEndObject();
+            if (commit is not null) w.WriteString("commit", commit);
+        });
 
     /// Run statuses that end the run for good. "parked" waits on a needs-decision and "error" is
     /// the host failing; both resume under the same run id, so the handover stays open. So does

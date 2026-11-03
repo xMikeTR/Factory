@@ -2,6 +2,7 @@ using Factory.S2.Quality;
 using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Registry;
 using Factory.Harness.Policy;
 using Factory.Harness.Sandbox;
 using Factory.S2.Git;
@@ -102,7 +103,9 @@ public sealed class FactoryServices(
     IPullRequests pullRequests,
     IReviewer reviewer,
     IMutationRunner? mutation = null,
-    IQaRunner? qa = null)
+    IQaRunner? qa = null,
+    IContextSource? context = null,
+    bool injectContext = false)
 {
     public FactorySettings Settings { get; } = settings;
     public ILedger Ledger { get; } = ledger;
@@ -119,6 +122,10 @@ public sealed class FactoryServices(
     public IMutationRunner? Mutation { get; } = mutation;
     /// QA seam; null means no QA environment (the QA gate is skipped).
     public IQaRunner? Qa { get; } = qa;
+    /// Where a task's context bundle comes from (FACTORY_CONTEXT_SOURCE); none unless chosen. A miss never stops a run.
+    /// FACTORY_CONTEXT_INJECT=1: a fetched bundle is also put into the agent's brief (off: it is only recorded).
+    public bool InjectContext { get; } = injectContext;
+    public IContextSource Context { get; } = context ?? new NoContextSource();
 
     /// Handover and plan are re-read and re-validated from disk at each step rather than carried
     /// in messages: messages stay small and serialisable for checkpoints, and a resumed run

@@ -1,0 +1,111 @@
+{
+  "bundle_id": "sha256:1956c88a2f776703359ec9f6b4eb920a6cc9b0df775270fcdcf8e4871c26be8d",
+  "schema": "designc.context.bundle/1",
+  "key": {
+    "handover": "20261102-abcd1234",
+    "work_item": "W-tags",
+    "task": "T-1",
+    "role": "builder",
+    "elements": [
+      "Tags/Tags API",
+      "Tags/Tags UI"
+    ]
+  },
+  "revision": "r-0badc0de",
+  "commit": "1111111",
+  "jira": [
+    "HRE-7"
+  ],
+  "decisions": [
+    {
+      "id": "sort-server-side",
+      "kind": "technical",
+      "effect": null,
+      "statement": "Tags are sorted by the API, not the browser",
+      "scope": [
+        "el:Tags/Tags API"
+      ],
+      "checks": [
+        {
+          "id": "sort-contract",
+          "run": "npm test -- sort"
+        }
+      ],
+      "enforced_by": [
+        "sort-contract"
+      ],
+      "rationale": "The legacy app sorted on the server; the new one keeps it there."
+    }
+  ],
+  "requirements": [
+    {
+      "id": "HRE-7",
+      "title": "Tags list matches the legacy app",
+      "source": "https://jira.example.com/browse/HRE-7",
+      "version": "3"
+    }
+  ],
+  "verdicts": [
+    {
+      "node_id": "el:Tags/Tags API",
+      "verdict": null,
+      "evidence": [],
+      "records": [],
+      "name": "Tags API",
+      "stale": [
+        "v-api-old"
+      ]
+    },
+    {
+      "node_id": "el:Tags/Tags UI",
+      "verdict": null,
+      "evidence": [],
+      "records": [
+        "v-tags-date-format",
+        "v-tags-list-order"
+      ],
+      "name": "Tags UI",
+      "conflict": [
+        "v-tags-date-format: accepted",
+        "v-tags-list-order: matched"
+      ]
+    },
+    {
+      "node_id": "ui:tags/list",
+      "verdict": "matched",
+      "evidence": [
+        "parity/reports/tags-list.json"
+      ],
+      "records": [
+        "v-tags-list-order"
+      ]
+    },
+    {
+      "node_id": "ui:tags/list/date",
+      "verdict": null,
+      "evidence": [],
+      "records": [
+        "v-tags-date-format-diverged",
+        "v-tags-date-format"
+      ],
+      "conflict": [
+        "v-tags-date-format-diverged: diverged",
+        "v-tags-date-format: accepted"
+      ]
+    }
+  ],
+  "procedures": [
+    {
+      "id": "change-ui-list",
+      "version": "2",
+      "hash": "30fead3d350b4809",
+      "title": "Change a list screen in the Tags UI",
+      "steps": [
+        "Read the parity report for the screen before changing it.",
+        "Keep the date format of the legacy screen unless a bound decision says otherwise.",
+        "Run the acceptance specs for the screen before claiming done."
+      ]
+    }
+  ],
+  "governance": null
+}

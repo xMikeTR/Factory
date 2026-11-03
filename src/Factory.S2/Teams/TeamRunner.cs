@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Factory.Core;
 using Factory.S2.Verify;
 using Factory.Harness;
+using Factory.Harness.Registry;
 using Factory.Harness.Policy;
 using Factory.Harness.Telemetry;
 using Factory.S2.Quality;
@@ -94,6 +95,7 @@ internal sealed class TaskLoop(
     {
         // Every ledger row and model call below lands in this span's trace (LedgerEvent.TraceId).
         using var span = FactoryTelemetry.StartTask(runId, _teamId, task);
+        _span = span;
         var state = Core.Replay(_limits, await TaskPayloadsAsync(ct));
 
         // Crashed between Passed and the commit: the leftovers are this task's work, but only commit
@@ -354,6 +356,7 @@ internal sealed class TaskLoop(
             return await ApplyAsync(state, TaskEvent.VerifyRequested, ct);
         }
 
+        await EnsureContextAsync(phase.IsTestAuthor, ct);
         var decision = await svc.Configurator.DecideAsync(new TurnContext(
             _taskId, progress.Turns, progress.VerifyAttempts, _approachNote is not null, _lastVerifyFailed, _turnsWithoutChange), ct);
         await svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "configurator", LedgerKinds.Configurator,
@@ -370,6 +373,25 @@ internal sealed class TaskLoop(
             _ => throw new InvalidOperationException($"unknown turn kind {decision.Kind}"),
         };
     }
+
+    /// Asks for the bundle of the phase now holding the pen, once per phase per process, and records the answer (or the
+    /// miss) on a `context` row. A source never throws; a run without a bundle carries on (trace bundle_id null).
+    private async Task EnsureContextAsync(bool testAuthor, CancellationToken ct)
+    {
+        var role = ContextRecording.Role(testAuthor);
+        if (_contextRole == role) return;
+        _contextRole = role;
+        var request = new BundleRequest(handover.Id, null, _taskId, role, task.Elements.Select(e => e.Value).ToList());
+        var fetch = await svc.Context.FetchAsync(request, ct);
+        if (fetch is BundleFetch.Fetched fetched) FactoryTelemetry.RecordBundle(_span, fetched.Bundle.BundleId);
+        _bundle = svc.InjectContext && fetch is BundleFetch.Fetched f ? f.Bundle : null;
+        await svc.LogAsync(runId, "context", LedgerKinds.Context, fetch is BundleFetch.Fetched ? "fetched" : "missed",
+            ContextRecording.Payload(role, fetch), _teamId, _taskId, ct);
+    }
+
+    private string? _contextRole;
+    private System.Diagnostics.Activity? _span;
+    private ContextBundle? _bundle; // the phase's bundle when injection is on; null otherwise
 
     private async Task<TaskState> PlanTurnAsync(TaskState state, ModelTier tier, CancellationToken ct)
     {
@@ -746,7 +768,7 @@ internal sealed class TaskLoop(
             : $"These changes were outside your writes and were reverted: {_reverted}\n\n{_lastFailures}".TrimEnd();
         if (_repair is not null) failures = $"{_repair}\n\n{failures}".TrimEnd();
         if (_handoff is not null) failures = $"{_handoff}\n\n{failures}".TrimEnd();
-        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context);
+        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context, _bundle);
     }
 
     private bool InScope(string path, IEnumerable<PathPattern> writable) =>

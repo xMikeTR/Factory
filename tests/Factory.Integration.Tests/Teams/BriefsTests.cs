@@ -123,4 +123,29 @@ public class BriefsTests
         Assert.Contains("never write", brief);
         Assert.DoesNotContain("## Read-only references", Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null).Text);
     }
+
+    private static ContextBundle Bundle()
+    {
+        var json = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "context-bundle.example.json"));
+        return ((BundleFetch.Fetched)ContextBundle.Parse(json, new BundleRequest(null, null, null, "builder", []), "file")).Bundle;
+    }
+
+    [Fact]
+    public async Task A_bundle_adds_its_procedures_and_parity_facts_to_the_stable_part_and_none_leaves_the_brief_as_it_was()
+    {
+        var handover = await new DesigncHandoverReader().LoadAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"),
+            new S2Config([]), CancellationToken.None);
+        var plain = Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null);
+
+        var withBundle = Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null, bundle: Bundle());
+
+        Assert.Equal(plain.Turn, withBundle.Turn);
+        Assert.StartsWith(plain.Stable, withBundle.Stable);
+        Assert.Contains("## Procedures to follow (designc)", withBundle.Stable);
+        Assert.Contains("### Change a list screen in the Tags UI (`change-ui-list`, version 2)", withBundle.Stable);
+        Assert.Contains("1. Read the parity report for the screen before changing it.", withBundle.Stable);
+        Assert.Contains("`ui:tags/list`: matched", withBundle.Stable);
+        Assert.Contains("v-tags-date-format-diverged: diverged", withBundle.Stable);
+        Assert.DoesNotContain("`el:Tags/Tags API`:", withBundle.Stable); // no verdict, no conflict: nothing to say
+    }
 }
