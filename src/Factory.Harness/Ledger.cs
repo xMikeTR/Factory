@@ -53,6 +53,7 @@ public static class LedgerKinds
     public const string Reproduction = "reproduction"; // payload {report, steps}: the s2-repro agent's steps for a reported escape; intake still needs a failing spec
     public const string UxScreenshots = "ux_screenshots"; // payload {command, shots:[{element,state,breakpoint,path}]}: freeze-time screenshots taken for one human review
     public const string UxJudge = "ux_judge";       // element + payload {state, breakpoint, hierarchy, clarity, consistency, note}: a gradient; outcome is always "gradient", never a gate
+    public const string Context = "context";        // task + payload {role, source, bundle_id, procedures:[{id,version,hash}]} or {role, source, missed}: the context bundle the task was given, or why none
     public const string Run = "run";
     public const string RunStarted = "run_started"; // an attempt at the run began (a resume is a new attempt)
     public const string RunAborted = "run_aborted"; // payload {status, detail}: an attempt ended without reaching Finalize (crash, cancel, workflow error)

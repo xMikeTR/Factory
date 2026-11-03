@@ -25,6 +25,7 @@ public static class TraceReader
 
             var turns = task.Where(e => e.Kind == LedgerKinds.Turn).Select(t => new TraceTurn(
                 ModelIdOf(t) ?? t.Model ?? "unknown", t.TokensIn ?? 0, t.TokensOut ?? 0, ToolCallsOf(t))).ToList();
+            var (bundleId, bundleProcedures) = Bundle(task);
             var (_, sharedIn, sharedOut) = shares.TryGetValue(task.Key, out var s) ? s : (0, 0L, 0L);
             var trace = Factory.Core.Core.BuildTrace(new TraceInput(
                 run: task.First().RunId,
@@ -37,15 +38,28 @@ public static class TraceReader
                 scopeReverts: task.Count(e => e.Kind == LedgerKinds.ScopeViolation && e.Outcome == "reverted"),
                 sharedTokensIn: sharedIn,
                 sharedTokensOut: sharedOut,
-                // No context bundle yet (Phase 2): none is recorded as none, not left out.
-                bundleId: FSharpOption<string>.None,
+                // A task with no fetched bundle (none source, a miss, an unreadable row) is recorded as none, not left out.
+                bundleId: Option(bundleId),
                 traceId: Option(task.FirstOrDefault(e => e.TraceId is not null)?.TraceId),
                 jira: Option(jira),
-                procedures: procedures));
+                procedures: ListModule.OfSeq(procedures.Concat(bundleProcedures))));
             if (trace is not null) traces.Add(trace);
         }
         return traces;
     }
+
+    /// The task's latest context row: its bundle_id and procedures (copied as given), or none when it missed or cannot be read.
+    private static (string? Id, List<ProcedureRef> Procedures) Bundle(IEnumerable<LedgerEvent> task) =>
+        Payload(task.LastOrDefault(e => e.Kind == LedgerKinds.Context), p =>
+        {
+            var id = Text(p, "bundle_id");
+            if (id == "") return ((string?)null, new List<ProcedureRef>());
+            var refs = p.TryGetProperty("procedures", out var ps) && ps.ValueKind == JsonValueKind.Array
+                ? ps.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object)
+                    .Select(x => new ProcedureRef(Text(x, "id"), Text(x, "version"), Text(x, "hash"))).Where(r => r.Id != "" && r.Hash != "").ToList()
+                : [];
+            return (id, refs);
+        }, ((string?)null, new List<ProcedureRef>()));
 
     /// The latest attempt's procedures: run_started payload {procedures:[{id, version, hash}]}.
     private static FSharpList<ProcedureRef> Procedures(IReadOnlyList<LedgerEvent> run)

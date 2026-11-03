@@ -187,4 +187,35 @@ public class TraceReaderTests
         Assert.Equal("gate_failed:review", RegistryLedgerProjector.TaskRowCause("blocked", reviewParked));
         Assert.Null(RegistryLedgerProjector.TaskRowCause("passed", new TaskEnd(TraceOutcome.TracePassed, Microsoft.FSharp.Core.FSharpOption<TraceCause>.None)));
     }
+
+    private const string Id1 = "sha256:1956c88a2f776703359ec9f6b4eb920a6cc9b0df775270fcdcf8e4871c26be8d";
+
+    private static LedgerEvent Context(int second, string task, string payload) =>
+        At(second, new(RunId, "S2", "context", LedgerKinds.Context, TaskId: task, Payload: payload));
+
+    [Fact]
+    public void A_fetched_bundle_gives_the_trace_its_id_and_its_procedures_as_given()
+    {
+        var run = Run();
+        run.Add(Context(14, "T-001", $$"""{"role":"builder","source":"file","bundle_id":"{{Id1}}","procedures":[{"id":"change-ui-list","version":"2","hash":"30fead3d350b4809"}]}"""));
+
+        var t = Of(TraceReader.Read(run, Limits), "T-001");
+
+        Assert.Equal(Id1, t.BundleId.Value);
+        Assert.Contains(new ProcedureRef("change-ui-list", "2", "30fead3d350b4809"), t.Procedures);
+        Assert.Contains(new ProcedureRef("prompt:act", "1", "sha256:aa"), t.Procedures);
+        Assert.True(Microsoft.FSharp.Core.OptionModule.IsNone(Of(TraceReader.Read(run, Limits), "T-002").BundleId));
+    }
+
+    [Fact]
+    public void A_missed_bundle_is_none_and_the_latest_context_row_wins()
+    {
+        var run = Run();
+        run.Add(Context(14, "T-001", $$"""{"role":"builder","source":"file","bundle_id":"{{Id1}}","procedures":[]}"""));
+        run.Add(Context(15, "T-001", """{"role":"builder","source":"designc","missed":"timeout"}"""));
+        run.Add(Context(16, "T-002", "{ not json"));
+
+        Assert.True(Microsoft.FSharp.Core.OptionModule.IsNone(Of(TraceReader.Read(run, Limits), "T-001").BundleId));
+        Assert.True(Microsoft.FSharp.Core.OptionModule.IsNone(Of(TraceReader.Read(run, Limits), "T-002").BundleId));
+    }
 }
