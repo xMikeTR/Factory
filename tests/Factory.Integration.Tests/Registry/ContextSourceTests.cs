@@ -69,6 +69,34 @@ public class ContextSourceTests
         Assert.Contains(reasonMentions, missed.Reason);
     }
 
+    [Fact]
+    public void A_tampered_field_makes_the_bundle_id_not_match_and_the_bundle_is_missed()
+    {
+        var tampered = Edit(o => o["procedures"]![0]!["steps"]![0] = "do something else");
+        var missed = Assert.IsType<BundleFetch.Missed>(ContextBundle.Parse(tampered, Request(), "file"));
+        Assert.Contains("bundle_id does not match", missed.Reason);
+    }
+
+    [Fact]
+    public void Key_order_and_whitespace_do_not_change_the_computed_id()
+    {
+        var o = JsonNode.Parse(Example)!.AsObject();
+        var reordered = new JsonObject();
+        foreach (var kv in o.Reverse()) reordered[kv.Key] = kv.Value?.DeepClone();
+        Assert.IsType<BundleFetch.Fetched>(ContextBundle.Parse(reordered.ToJsonString(new() { WriteIndented = true }), Request(), "file"));
+    }
+
+    // Expected value derived from designc's own canonical(): sha256 of the JS JSON.stringify form of this object.
+    [Fact]
+    public void Canonical_form_matches_JS_for_escapes_and_non_ascii()
+    {
+        var json = "{\"b\":[1,true,null,\"<&>'\\u00e9\\u2028\\n\\u0001\"],\"a\":{\"z\":1.5,\"y\":\"q\\\"\\\\\"}}";
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal("sha256:" + JsExpected, ContextBundle.ComputeId(doc.RootElement));
+    }
+
+    private static readonly string JsExpected = "41f85b6edd5d538f5988efed532feb4e7047b5d7403e1af2371acd4062f3b490";
+
     // ---- Step 2: the stub ----
 
     [Fact]
