@@ -28,6 +28,7 @@ public static class FactoryTelemetry
         public const string Element = "factory.element";     // string[]
         public const string Decision = "factory.decision";   // string[]
         public const string Attempt = "factory.attempt";     // verify attempts so far
+        public const string BundleId = "factory.bundle_id"; // the context bundle the task was given (absent: none)
         public const string TaskPassed = "factory.score.task_passed"; // 1 | 0
         public const string LangfuseTags = "langfuse.trace.tags";
         public const string LangfuseSession = "langfuse.session.id";
@@ -59,6 +60,8 @@ public static class FactoryTelemetry
             [Attr.LangfuseTags] = new[] { Tag },
             [Attr.LangfuseSession] = runId,
         });
+
+    public static void RecordBundle(Activity? task, string bundleId) => task?.SetTag(Attr.BundleId, bundleId);
 
     public static void RecordAttempt(Activity? task, int attempt) => task?.SetTag(Attr.Attempt, attempt);
 
