@@ -104,7 +104,8 @@ public sealed class FactoryServices(
     IReviewer reviewer,
     IMutationRunner? mutation = null,
     IQaRunner? qa = null,
-    IContextSource? context = null)
+    IContextSource? context = null,
+    bool injectContext = false)
 {
     public FactorySettings Settings { get; } = settings;
     public ILedger Ledger { get; } = ledger;
@@ -122,6 +123,8 @@ public sealed class FactoryServices(
     /// QA seam; null means no QA environment (the QA gate is skipped).
     public IQaRunner? Qa { get; } = qa;
     /// Where a task's context bundle comes from (FACTORY_CONTEXT_SOURCE); none unless chosen. A miss never stops a run.
+    /// FACTORY_CONTEXT_INJECT=1: a fetched bundle is also put into the agent's brief (off: it is only recorded).
+    public bool InjectContext { get; } = injectContext;
     public IContextSource Context { get; } = context ?? new NoContextSource();
 
     /// Handover and plan are re-read and re-validated from disk at each step rather than carried

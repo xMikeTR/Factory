@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using System.Text;
 using Factory.Core;
+using Factory.Harness.Registry;
 
 namespace Factory.S2.Teams;
 
@@ -18,7 +19,7 @@ public static class Briefs
     public static TaskBrief Task(
         Handover handover, PlannedTask task, IEnumerable<PathPattern> writable,
         string? approachNote, string? lastFailures, string? resolvedDecision,
-        IReadOnlyList<PackFile>? context = null)
+        IReadOnlyList<PackFile>? context = null, ContextBundle? bundle = null)
     {
         var elements = handover.Elements.Where(e => task.Elements.Contains(e.Id)).ToList();
         var decisions = handover.Decisions
@@ -80,6 +81,9 @@ public static class Briefs
                     break;
             }
         }
+
+        // Fixed for the phase, so it belongs to the cached part of the brief.
+        if (bundle?.Render() is { Length: > 0 } rendered) sb.AppendLine().Append(rendered);
 
         var stable = sb.ToString();
         sb.Clear();
