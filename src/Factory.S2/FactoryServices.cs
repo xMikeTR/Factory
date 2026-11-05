@@ -162,7 +162,10 @@ public sealed class FactoryServices(
     public async ValueTask RouteAsync(string runId, Handover handover, IEnumerable<PlannedTask> tasks, bool logRows, CancellationToken ct)
     {
         if (Routing is not { } routing) return;
-        var table = RunRouter.Route(runId, handover, tasks, routing.Catalog, routing.Config);
+        // What the ledgers have shown so far; once routed, the route rows pin the ladders for this run (see EnsureRoutedAsync).
+        var known = routing.Catalog.Select(m => m.Id).ToHashSet();
+        var stats = await LearningReader.StatsAsync(Settings.StateDir, known.Contains, routing.Config.Learning, DateTimeOffset.UtcNow, ct);
+        var table = RunRouter.Route(runId, handover, tasks, routing.Catalog, routing.Config, stats: stats);
         Agents.UseRouting(table, routing.ClientFor);
         _routedRun = runId;
         if (!logRows) return;

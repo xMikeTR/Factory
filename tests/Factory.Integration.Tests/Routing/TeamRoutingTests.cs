@@ -27,6 +27,20 @@ public class TeamRoutingTests
           - { id: g-top, family: gemini, modelName: g-pro, tier: frontier }
         """;
 
+
+    /// Three families, priced: stats only matter when scores differ. Mistral costs ten times as much, so it never wins
+    /// a tier, but it is the family the reviewer is left with (the implementer ladder may span claude and gemini).
+    private const string LearnCatalog = """
+        models:
+          - { id: c-small, modelName: claude-haiku-4-5, tier: small, price: { in: 1, out: 5 } }
+          - { id: c-std, modelName: claude-sonnet-5-5, tier: standard, price: { in: 3, out: 15 } }
+          - { id: c-top, modelName: claude-opus-5-5, tier: frontier, price: { in: 15, out: 75 } }
+          - { id: g-std, family: gemini, modelName: g-mid, tier: standard, price: { in: 3, out: 15 } }
+          - { id: m-small, family: mistral, modelName: m-s, tier: small, price: { in: 10, out: 50 } }
+          - { id: m-std, family: mistral, modelName: m-m, tier: standard, price: { in: 30, out: 150 } }
+          - { id: m-top, family: mistral, modelName: m-t, tier: frontier, price: { in: 150, out: 750 } }
+        """;
+
     private static ScriptedChatClient Model() => new(
         Call("list_files", new { directory = "src/Pricing.Data" }), Say("Approach: add QuoteStatus.cs"),
         Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
@@ -89,5 +103,33 @@ public class TeamRoutingTests
         Assert.Contains("only", e.Message);
         Assert.Contains("not approved for data class", e.Message);
         Assert.Empty(h.Rows(LedgerKinds.Route));
+    }
+
+    [Fact]
+    public async Task Routing_at_run_start_reads_learned_stats_from_the_state_dir_ledger()
+    {
+        var model = Model();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), routing: Setup(LearnCatalog, model) with
+        {
+            Config = RoutingPolicyFile.Load(Path.Combine(Path.GetTempPath(), "none")) with { CanaryShare = 0 },
+        });
+        // history: g-std passed 60 implementer verifies, c-std failed 60 (zero prices tie, so without history the first catalog row, c-std, wins)
+        Directory.CreateDirectory(h.StateDir);
+        var past = new JsonlLedger(Path.Combine(h.StateDir, "ledger.jsonl"));
+        foreach (var (model_id, passed) in new[] { ("g-std", true), ("c-std", false) })
+            for (var i = 0; i < 60; i++)
+            {
+                var run = $"old-{model_id}-{i}";
+                await past.AppendAsync(new LedgerEvent(run, "S2", "route", LedgerKinds.Route, TaskId: "T-9", Payload: JsonSerializer.Serialize(new { role = Roles.Implementer, size = "S" })));
+                await past.AppendAsync(new LedgerEvent(run, "S2", "act", LedgerKinds.Turn, TaskId: "T-9", TokensIn: 1000, TokensOut: 100, Payload: JsonSerializer.Serialize(new { role = Roles.Implementer, model_id })));
+                await past.AppendAsync(new LedgerEvent(run, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-9", Outcome: passed ? "Reviewing" : "Ready", Payload: JsonSerializer.Serialize(new { type = "verify_completed" })));
+            }
+
+        // every run id must follow the history
+        foreach (var run in Enumerable.Range(1, 8).Select(i => $"run-{i}"))
+        {
+            await h.Services.RouteAsync(run, h.Handover, [T001()], logRows: false, default);
+            Assert.Equal("g-std", h.Services.Agents.ModelIdFor(Roles.Implementer, ModelTier.Standard, "T-001"));
+        }
     }
 }
