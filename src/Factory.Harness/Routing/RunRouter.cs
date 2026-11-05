@@ -45,6 +45,39 @@ public static class RunRouter
         (Roles.TaskPlanner, Role.TaskPlanner), (Roles.Reviewer, Role.Reviewer),
     ];
 
+    /// The table a run recorded in its `route` rows, resolved against the catalog. A resume uses this instead of
+    /// routing again, because learned stats move between processes and the ladders must not. Null when the run has
+    /// no route rows or one names a model the catalog no longer has (the caller then routes afresh).
+    public static RouteTable? Rebuild(IEnumerable<LedgerEvent> ledgerRows, IReadOnlyList<ModelEntry> catalog)
+    {
+        var byId = catalog.ToDictionary(m => m.Id);
+        var ladders = new Dictionary<(string, string), FSharpMap<ModelTier, ModelEntry>>();
+        var rows = new List<RouteRow>();
+        foreach (var e in ledgerRows.Where(e => e.Kind == LedgerKinds.Route && e.TaskId is not null && e.Payload is not null))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(e.Payload!);
+                var p = doc.RootElement;
+                var ladder = p.GetProperty("ladder").EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetString()!);
+                var tiers = new List<Tuple<ModelTier, ModelEntry>>();
+                foreach (var (tier, id) in ladder)
+                {
+                    if (!byId.TryGetValue(id, out var model) || !Enum.TryParse<TierName>(tier, out var t)) return null;
+                    tiers.Add(Tuple.Create(t switch { TierName.Small => ModelTier.Small, TierName.Standard => ModelTier.Standard, _ => ModelTier.Frontier }, model));
+                }
+                if (tiers.Count != 3) return null;
+                ladders[(e.TaskId!, p.GetProperty("role").GetString()!)] = MapModule.OfSeq(tiers);
+                rows.Add(new RouteRow(e.TaskId!, p.GetProperty("role").GetString()!, p.GetProperty("size").GetString()!, p.GetProperty("risk").GetString()!,
+                    ladder, [], p.TryGetProperty("canary", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.True));
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException) { return null; }
+        }
+        return rows.Count == 0 ? null : new RouteTable(ladders, rows);
+    }
+
+    private enum TierName { Small, Standard, Frontier }
+
     /// Throws FactoryRejectedException, listing every model's reasons, when a pair has no eligible model, needs a
     /// decision, or is over budget.
     /// `contextChars` is the size of the task's brief; at run start only the task's own text is known, so the default
