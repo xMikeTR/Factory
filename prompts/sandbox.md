@@ -8,7 +8,7 @@ Plan, write and run only what it can run:
   coreutils. Nothing else is installed, and nothing can be installed.
 - A JavaScript or TypeScript repo is tested with its own runner: `node --test`, or the `npm test`
   script it already has, not through a .NET harness (no Jint, no C# wrapper around JavaScript).
-  `npm ci` runs once in the restore window and only from a `package-lock.json`; a repo with no
+  `npm i` runs once in the restore window and only from a `package-lock.json`; a repo with no
   dependencies needs no restore and runs offline.
 - There is no network. `dotnet restore` runs once before the checks with the network on, so
   NuGet packages referenced by the repository's projects are available; nothing else is.
