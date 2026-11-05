@@ -46,8 +46,12 @@ public sealed class RoleAllowListPolicy : IToolPolicy
         [Roles.Diagnosis] = ["read_file", "list_files", "playwright_cli", "submit_diagnosis"],
     };
 
-    public PolicyDecision Evaluate(string role, string toolName, IReadOnlyDictionary<string, object?> args) =>
-        Allowed.TryGetValue(role, out var tools) && tools.Contains(toolName)
-            ? PolicyDecision.Allow()
-            : PolicyDecision.Deny($"role '{role}' may not call '{toolName}'");
+    public PolicyDecision Evaluate(string role, string toolName, IReadOnlyDictionary<string, object?> args)
+    {
+        if (!(Allowed.TryGetValue(role, out var tools) && tools.Contains(toolName)))
+            return PolicyDecision.Deny($"role '{role}' may not call '{toolName}'");
+        if (toolName == "run_command" && args.TryGetValue("command", out var c) && c?.ToString()?.Contains("--no-verify", StringComparison.Ordinal) == true)
+            return PolicyDecision.Deny("--no-verify is not allowed: hooks are not skipped");
+        return PolicyDecision.Allow();
+    }
 }

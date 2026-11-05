@@ -48,6 +48,15 @@ public sealed class AcsToolPolicy : IToolPolicy
         return new AcsToolPolicy(roles);
     }
 
+    /// The engine has no substring operator, so facts a rule needs are computed here and passed in args (as the Jira gate does).
+    private static Dictionary<string, object> DerivedArgs(string toolName, IReadOnlyDictionary<string, object?> args)
+    {
+        var d = args.ToDictionary(kv => kv.Key, kv => kv.Value ?? (object)"");
+        var skips = toolName == "run_command" && args.TryGetValue("command", out var c) && c?.ToString()?.Contains("--no-verify", StringComparison.Ordinal) == true;
+        d["skips_hooks"] = skips ? "true" : "false";
+        return d;
+    }
+
     public PolicyDecision Evaluate(string role, string toolName, IReadOnlyDictionary<string, object?> args)
     {
         if (!_roles.TryGetValue(role, out var p))
@@ -57,7 +66,7 @@ public sealed class AcsToolPolicy : IToolPolicy
         {
             ["role"] = role,
             ["tool_name"] = toolName,
-            ["args"] = args.ToDictionary(kv => kv.Key, kv => kv.Value ?? (object)""),
+            ["args"] = DerivedArgs(toolName, args),
         };
         var d = p.Engine.Evaluate("did:mesh:" + role, context);
         var where = $"{p.File}{(string.IsNullOrEmpty(d.MatchedRule) ? "" : $" rule '{d.MatchedRule}'")} ({p.Source})";
