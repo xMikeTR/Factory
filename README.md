@@ -127,7 +127,13 @@ export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MOD
 #   model: id, modelName, tier (small|standard|frontier), family, capabilities, window, approvedFor, price, prior.
 #   Swap or add models (e.g. the Gemini rows, commented in the file) there; nothing else names a model.
 #   Policy (min tier per risk, size buckets, data class) is the `routing:` section of <repo>/.factory/policy.yaml;
-#   missing means defaults. Each (task, role) is routed once at run start and logged as a `route` ledger row.
+#   missing means defaults. Each (task, role) is routed once at run start and logged as a `route` ledger row;
+#   a resumed run keeps the ladders its route rows recorded. The router learns from the run ledger
+#   (<state dir>/ledger.jsonl): each verify result credits the model of the act turn before it, decayed by age.
+#   Policy keys: canaryShare (0.05: share of pairs whose Standard entry is the Frontier model), halfLifeDays (30),
+#   learnReviewer (false). See what it learned: `factory-s2 router-stats --repo . [--role implementer] [--json]`
+#   (cache: <state dir>/router-stats.json, rebuilt whenever the ledger changes). Catalog prices must be real for
+#   cost to steer routing: rows priced 0 tie, and the first row in the file wins.
 #   Agent contracts: a handover frozen with compiled contracts (designc `contracts/`) lists them;
 #   FACTORY_CONTRACTS=warn (default) names agents with none, require refuses to start, off ignores.
 #   S2 reads and checks them only; enforcing the policy at run time is not built yet.
