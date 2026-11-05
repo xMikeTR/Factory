@@ -21,6 +21,7 @@ using static Factory.S2.ServiceWiring;
 // factory-s2 metrics --registry ../registry [--repo .] [--base main]   S4 work metrics: throughput, lead time, human wait, deferrals, re-check rate, escapes
 // factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
 // factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
+// factory-s2 router-stats --repo . [--role implementer] [--json]   what the run ledgers have taught the model router: successes, failures, mean tokens and cost per success (catalog prices) per model, role and size
 // factory-s2 parity --registry ../registry --item W-1 [--repo .] [--designc <dir>|FACTORY_DESIGNC_DIR] [--base-url <new app>] [--adapter web|fixture:<file>]   designc's recorder on the next side at the clean HEAD (appends parity_result), then parity-decisions; exit 0 pass, 1 fail, 3 could not run, 2 error
 // factory-s2 parity-decisions --registry ../registry   one open needs_decision (A build like legacy / B ask the PO) per scenario whose latest parity_result failed; exit 2 when any was raised
 // factory-s2 gate-shadow --cases cases.json [--repo .]   the QA gate's jira.transition policy against recorded kit decisions: logs what it would allow or deny (nothing enforced) and lists where it disagrees with the kit
@@ -505,8 +506,25 @@ try
             return findings.IsEmpty ? 0 : 1;
         }
 
+        case "router-stats":
+        {
+            // What the run ledgers have taught the router: per model, role and size, with cost per success at catalog prices.
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), null, null);
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            var catalog = Factory.Harness.Policy.CatalogFile.Load(env);
+            if (catalog.Errors.Count > 0) throw new FactoryRejectedException("model catalog is invalid", [.. catalog.Errors]);
+            var routing = Factory.Harness.Policy.RoutingPolicyFile.Load(Path.GetFullPath(Required(opts, "repo")));
+            var known = catalog.Models.Select(m => m.Id).ToHashSet();
+            var stats = await Factory.Harness.Routing.LearningReader.StatsAsync(
+                settings.StateDir, known.Contains, routing.Learning, DateTimeOffset.UtcNow, CancellationToken.None);
+            var rows = Factory.Harness.Routing.RouterStatsReport.Rows(stats, catalog.Models, opts.GetValueOrDefault("role"));
+            Console.Write(Factory.Harness.Routing.RouterStatsReport.Render(rows, opts.ContainsKey("json")));
+            return 0;
+        }
+
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|parity|parity-decisions|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|router-stats|parity|parity-decisions|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
             return 2;
     }
 }
