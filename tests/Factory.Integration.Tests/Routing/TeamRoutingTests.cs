@@ -41,6 +41,20 @@ public class TeamRoutingTests
           - { id: m-top, family: mistral, modelName: m-t, tier: frontier, price: { in: 150, out: 750 } }
         """;
 
+    private static async Task WriteHistoryAsync(string stateDir, string prefix, string good, string bad, int n)
+    {
+        Directory.CreateDirectory(stateDir);
+        var past = new JsonlLedger(Path.Combine(stateDir, "ledger.jsonl"));
+        foreach (var (model_id, passed) in new[] { (good, true), (bad, false) })
+            for (var i = 0; i < n; i++)
+            {
+                var run = $"{prefix}-{model_id}-{i}";
+                await past.AppendAsync(new LedgerEvent(run, "S2", "route", LedgerKinds.Route, TaskId: "T-9", Payload: JsonSerializer.Serialize(new { role = Roles.Implementer, size = "S" })));
+                await past.AppendAsync(new LedgerEvent(run, "S2", "act", LedgerKinds.Turn, TaskId: "T-9", TokensIn: 1000, TokensOut: 100, Payload: JsonSerializer.Serialize(new { role = Roles.Implementer, model_id })));
+                await past.AppendAsync(new LedgerEvent(run, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-9", Outcome: passed ? "Reviewing" : "Ready", Payload: JsonSerializer.Serialize(new { type = "verify_completed" })));
+            }
+    }
+
     private static ScriptedChatClient Model() => new(
         Call("list_files", new { directory = "src/Pricing.Data" }), Say("Approach: add QuoteStatus.cs"),
         Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
@@ -113,17 +127,8 @@ public class TeamRoutingTests
         {
             Config = RoutingPolicyFile.Load(Path.Combine(Path.GetTempPath(), "none")) with { CanaryShare = 0 },
         });
-        // history: g-std passed 60 implementer verifies, c-std failed 60 (zero prices tie, so without history the first catalog row, c-std, wins)
-        Directory.CreateDirectory(h.StateDir);
-        var past = new JsonlLedger(Path.Combine(h.StateDir, "ledger.jsonl"));
-        foreach (var (model_id, passed) in new[] { ("g-std", true), ("c-std", false) })
-            for (var i = 0; i < 60; i++)
-            {
-                var run = $"old-{model_id}-{i}";
-                await past.AppendAsync(new LedgerEvent(run, "S2", "route", LedgerKinds.Route, TaskId: "T-9", Payload: JsonSerializer.Serialize(new { role = Roles.Implementer, size = "S" })));
-                await past.AppendAsync(new LedgerEvent(run, "S2", "act", LedgerKinds.Turn, TaskId: "T-9", TokensIn: 1000, TokensOut: 100, Payload: JsonSerializer.Serialize(new { role = Roles.Implementer, model_id })));
-                await past.AppendAsync(new LedgerEvent(run, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-9", Outcome: passed ? "Reviewing" : "Ready", Payload: JsonSerializer.Serialize(new { type = "verify_completed" })));
-            }
+        // history: g-std passed 60 implementer verifies, c-std failed 60 (without it the two tie on price and coin-flip)
+        await WriteHistoryAsync(h.StateDir, "old", good: "g-std", bad: "c-std", 60);
 
         // every run id must follow the history
         foreach (var run in Enumerable.Range(1, 8).Select(i => $"run-{i}"))
@@ -131,5 +136,25 @@ public class TeamRoutingTests
             await h.Services.RouteAsync(run, h.Handover, [T001()], logRows: false, default);
             Assert.Equal("g-std", h.Services.Agents.ModelIdFor(Roles.Implementer, ModelTier.Standard, "T-001"));
         }
+    }
+
+    [Fact]
+    public async Task A_resumed_run_keeps_the_ladders_its_route_rows_recorded_even_when_the_ledgers_have_since_learned_otherwise()
+    {
+        var model = Model();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), routing: Setup(LearnCatalog, model) with
+        {
+            Config = RoutingPolicyFile.Load(Path.Combine(Path.GetTempPath(), "none")) with { CanaryShare = 0 },
+        });
+        await WriteHistoryAsync(h.StateDir, "a", good: "g-std", bad: "c-std", 60);
+        await h.Services.RouteAsync("run-a", h.Handover, [T001()], logRows: true, default);
+        Assert.Equal("g-std", h.Services.Agents.ModelIdFor(Roles.Implementer, ModelTier.Standard, "T-001"));
+
+        await WriteHistoryAsync(h.StateDir, "b", good: "c-std", bad: "g-std", 400); // the evidence now points the other way
+        await h.Services.RouteAsync("run-b", h.Handover, [T001()], logRows: false, default);
+        Assert.Equal("c-std", h.Services.Agents.ModelIdFor(Roles.Implementer, ModelTier.Standard, "T-001"));
+
+        await h.Services.EnsureRoutedAsync("run-a", default); // a resume: a new process for run-a
+        Assert.Equal("g-std", h.Services.Agents.ModelIdFor(Roles.Implementer, ModelTier.Standard, "T-001"));
     }
 }

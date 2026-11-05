@@ -175,10 +175,23 @@ public sealed class FactoryServices(
                 taskId: row.TaskId, ct: ct);
     }
 
-    /// Routes the stored plan if this process has not yet (first thing of a wave, so a resumed run is routed).
-    public ValueTask EnsureRoutedAsync(string runId, CancellationToken ct) =>
-        Routing is null || _routedRun == runId ? ValueTask.CompletedTask
-            : RouteAsync(runId, LoadHandover(runId), LoadValidatedPlan(runId).Plan.Tasks, logRows: false, ct);
+    /// Makes sure this process has the run's ladders (first thing of a wave, so a resumed run is routed). A run that
+    /// already wrote `route` rows keeps exactly those ladders: learned stats move between processes, the run's
+    /// ladders must not. A run with none (or naming a model the catalog dropped) is routed afresh and logged.
+    public async ValueTask EnsureRoutedAsync(string runId, CancellationToken ct)
+    {
+        if (Routing is not { } routing || _routedRun == runId) return;
+        var recorded = new List<LedgerEvent>();
+        await foreach (var e in Ledger.ReadAsync(runId, ct))
+            if (e.Kind == LedgerKinds.Route) recorded.Add(e);
+        if (RunRouter.Rebuild(recorded, routing.Catalog) is { } table)
+        {
+            Agents.UseRouting(table, routing.ClientFor);
+            _routedRun = runId;
+            return;
+        }
+        await RouteAsync(runId, LoadHandover(runId), LoadValidatedPlan(runId).Plan.Tasks, logRows: true, ct);
+    }
 
     public ValueTask LogAsync(string runId, string stage, string kind, string? outcome = null, string? payload = null,
         string? teamId = null, string? taskId = null, CancellationToken ct = default) =>
