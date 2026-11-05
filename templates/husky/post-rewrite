@@ -1,0 +1,4 @@
+#!/bin/sh
+# $1 is "amend" or "rebase"; only a rebase moves package files under you.
+[ "${1:-}" = rebase ] || exit 0
+exec "$(dirname "$0")/_/install-if-changed.sh" ORIG_HEAD HEAD
