@@ -329,9 +329,14 @@ internal sealed class TaskLoop(
         }
     }
 
-    private ValueTask LogReviewAsync(string outcome, int round, string tree, object detail, CancellationToken ct) =>
-        svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "review", LedgerKinds.Review, TaskId: _taskId, TeamId: _teamId, Outcome: outcome,
-            Payload: JsonSerializer.Serialize(new { round, tree, detail })), ct);
+    private ValueTask LogReviewAsync(string outcome, int round, string tree, object detail, CancellationToken ct)
+    {
+        var payload = JsonSerializer.SerializeToNode(new { round, tree, detail })!.AsObject();
+        // The reviewer always runs at Standard; under FACTORY_ROUTING=catalog the verdict names the model, for learning.
+        if (svc.Agents.ModelIdFor(Roles.Reviewer, ModelTier.Standard, _taskId) is { } modelId) payload["model_id"] = modelId;
+        return svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "review", LedgerKinds.Review, TaskId: _taskId, TeamId: _teamId, Outcome: outcome,
+            Payload: payload.ToJsonString()), ct);
+    }
 
     /// The worktree snapshot taken at this task's last review (null before the first).
     private async Task<string?> LastReviewTreeAsync(CancellationToken ct)
