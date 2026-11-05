@@ -44,6 +44,28 @@ public class VerifyRunnerTests : IDisposable
         Assert.Equal(["timed_out", "no_results"], _ledger.Events.Where(e => e.Stage == "baseline").Select(e => e.Outcome));
     }
 
+    /// `verify.command` in .factory/policy.yaml is the repo's one verdict: run beside the plan's own checks, and a failure fails the task.
+    [Fact]
+    public async Task The_repos_verify_command_runs_beside_the_declared_checks_and_can_fail_the_task()
+    {
+        var plan = Task("T-001", Auto("declared", "true"));
+
+        var ok = await Runner.RunTaskAsync("run-1", "team-T-001", plan, 1, _dir, default, conventionCommand: "true");
+        Assert.Equal([("declared", 0), ("verify", 0)], ok.Select(o => (o.Name, o.ExitCode)));
+
+        var bad = await Runner.RunTaskAsync("run-1", "team-T-001", plan, 2, _dir, default, conventionCommand: "false");
+        Assert.Equal(("verify", 1), (bad[1].Name, bad[1].ExitCode));
+        Assert.Equal("failed", _ledger.Events.Last(e => e.Stage == "verify").Outcome);
+    }
+
+    [Fact]
+    public async Task Without_a_verify_command_nothing_extra_runs()
+    {
+        var outcomes = await Runner.RunTaskAsync("run-1", "team-T-001", Task("T-001", Auto("declared", "true")), 1, _dir, default);
+
+        Assert.Equal(["declared"], outcomes.Select(o => o.Name));
+    }
+
     [Fact]
     public async Task Each_check_starts_from_the_tree_as_found()
     {

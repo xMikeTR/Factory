@@ -34,6 +34,8 @@ public sealed record FactorySettings(
     QualityPolicy? QualityPolicy = null,
     /// From the same file's `npm:` section.
     NpmPolicy? Npm = null,
+    /// From the same file's `verify:` section: the repo's one verify (and parity) script; null is none.
+    VerifyConvention? Verify = null,
     /// .factory/ui-contract.yaml: the UI items a human says must keep working (used when `quality.ui` is on).
     IReadOnlyList<UiItem>? UiContract = null,
     /// Runs the frozen acceptance specs in integration verify (when the handover has any); writes
@@ -68,6 +70,7 @@ public sealed record FactorySettings(
         PObserveCommand: Environment.GetEnvironmentVariable("FACTORY_POBSERVE_CMD"),
         MergePolicy: MergePolicyFile.FromEnvironment(Path.GetFullPath(repo)),
         QualityPolicy: QualityPolicyFile.Load(Path.GetFullPath(repo)),
+        Verify: VerifyPolicyFile.Load(Path.GetFullPath(repo)),
         Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)),
         UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
         AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),
