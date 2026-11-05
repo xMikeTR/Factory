@@ -113,6 +113,29 @@ type RouteOutcome =
     | NeedsDecision of reason: string
     | BudgetExceeded
 
+/// Learned pass/fail counts and token means per model, role, repo and size bucket.
+[<RequireQualifiedAccess>]
+module Stats =
+    /// Adds one attempt: bumps the success or failure count and folds the token counts into the running means.
+    let record (key: StatsKey) (passed: bool) (tokensIn: int) (tokensOut: int) (stats: Stats) : Stats =
+        let c =
+            Map.tryFind key stats
+            |> Option.defaultValue { Successes = 0.0; Failures = 0.0; MeanTokensIn = 0.0; MeanTokensOut = 0.0; Samples = 0 }
+        let n = float c.Samples
+        let mean old x = (old * n + float x) / (n + 1.0)
+        let updated =
+            { Successes = (if passed then c.Successes + 1.0 else c.Successes)
+              Failures = (if passed then c.Failures else c.Failures + 1.0)
+              MeanTokensIn = mean c.MeanTokensIn tokensIn
+              MeanTokensOut = mean c.MeanTokensOut tokensOut
+              Samples = c.Samples + 1 }
+        Map.add key updated stats
+
+    /// Multiplies every success and failure count by the factor, so old evidence fades.
+    /// Token means and sample counts are unchanged.
+    let decay (factor: float) (stats: Stats) : Stats =
+        stats |> Map.map (fun _ c -> { c with Successes = c.Successes * factor; Failures = c.Failures * factor })
+
 [<RequireQualifiedAccess>]
 module Router =
     /// Small < Standard < Frontier. Written out so it does not depend on declaration order.
