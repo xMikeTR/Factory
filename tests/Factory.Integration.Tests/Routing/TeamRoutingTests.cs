@@ -56,6 +56,11 @@ public class TeamRoutingTests
         var ids = h.Rows(LedgerKinds.Turn).Select(t => JsonDocument.Parse(t.Payload!).RootElement.GetProperty("model_id").GetString()).ToList();
         Assert.Equal(3, ids.Count);
         Assert.All(ids, id => Assert.Matches("^(c|g)-(small|std|top)$", id!));
+
+        // the review verdict names the reviewer's model, so learning can credit it
+        var reviews = h.Rows(LedgerKinds.Review).ToList();
+        Assert.NotEmpty(reviews);
+        Assert.All(reviews, r => Assert.Matches("^(c|g)-(small|std|top)$", JsonDocument.Parse(r.Payload!).RootElement.GetProperty("model_id").GetString()!));
     }
 
     [Fact]
