@@ -38,7 +38,7 @@ let private reasons r =
     | Error rs -> rs
 
 let private elem id risk : ElementSpec =
-    { Id = ElementId id; Name = id; CodeAreas = []; Risk = risk; InScope = true }
+    { Id = ElementId id; Name = id; CodeAreas = []; Risk = risk; InScope = true; Repo = None }
 
 let private specHandover: Handover =
     { Id = "h"
@@ -56,7 +56,8 @@ let private specHandover: Handover =
       LoopSpecs = []
       References = []
       Contracts = []
-      Uncovered = [] }
+      Uncovered = []
+      ApiContracts = [] }
 
 let private specConfig: TaskSpecConfig =
     { SmallMaxWrites = 4
@@ -330,6 +331,11 @@ let tests: (string * (unit -> unit)) list =
           equal High (Router.taskSpec specConfig specHandover t Role.Implementer 0 Set.empty).Risk "high wins"
           let low = specTask [ "a" ] 1 0
           equal Low (Router.taskSpec specConfig specHandover low Role.Implementer 0 Set.empty).Risk "low"
+      "router: taskSpec carries the repo of the task's elements, None when the design declares none", fun () ->
+          let h = { specHandover with Elements = [ { elem "a" Low with Repo = Some "Api" }; { elem "b" High with Repo = Some "Ui" } ] }
+          equal (Some "Api") (Router.taskSpec specConfig h (specTask [ "a" ] 1 0) Role.Implementer 0 Set.empty).Repo "api"
+          equal (Some "Ui") (Router.taskSpec specConfig h (specTask [ "b" ] 1 0) Role.Implementer 0 Set.empty).Repo "ui"
+          equal None (Router.taskSpec specConfig specHandover (specTask [ "a" ] 1 0) Role.Implementer 0 Set.empty).Repo "no repos declared"
       "router: taskSpec risk is Low when the task names no known element", fun () ->
           let t = specTask [ "zzz" ] 1 0
           equal Low (Router.taskSpec specConfig specHandover t Role.Implementer 0 Set.empty).Risk "unknown element"

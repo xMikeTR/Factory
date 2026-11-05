@@ -35,7 +35,9 @@ type ElementSpec =
       Risk: RiskLevel
       /// False for an element the item handover carries as context only: known to drift and relationships,
       /// never linked by a task and never written. True for every element of a design handover.
-      InScope: bool }
+      InScope: bool
+      /// The repo the element's code lives in (designc `d.repo`, elements.json `repo`); None when the design declares no repos.
+      Repo: string option }
 
 /// designc's hash16: two FNV-1a passes over the UTF-16 units, 16 hex. Fingerprints frozen files and names checks.
 [<RequireQualifiedAccess>]
@@ -113,7 +115,9 @@ type Handover =
       /// Compiled contracts for the design's agents (handover.yaml `contracts`); empty when the handover has none.
       Contracts: AgentContract list
       /// Design agents (agents.json) that act on their own and have no compiled contract; empty when none, or when the handover lists no agents.
-      Uncovered: string list }
+      Uncovered: string list
+      /// The OpenAPI contract files the handover pins (handover.yaml `contracts_api`); empty when it pins none.
+      ApiContracts: string list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

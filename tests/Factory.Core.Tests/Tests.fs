@@ -427,7 +427,7 @@ let tests: (string * (unit -> unit)) list =
 
       // ---------- fitness ----------
       "fitness: a code edge between two elements must be a modelled relationship, in that direction", fun () ->
-          let el id area = { Id = ElementId id; Name = id; CodeAreas = [ PathPattern.createOrFail area ]; Risk = Low; InScope = true }
+          let el id area = { Id = ElementId id; Name = id; CodeAreas = [ PathPattern.createOrFail area ]; Risk = Low; InScope = true; Repo = None }
           let elements = [ el "api" "src/Api/**"; el "rating" "src/Rating/**"; el "db" "src/Db/**" ]
           let rels = [ { From = ElementId "api"; To = ElementId "rating" } ]
           let edge a b = { Source = a; Target = b }
@@ -846,6 +846,7 @@ let tests: (string * (unit -> unit)) list =
     @ Factory.Core.Tests.ItemBudgetTests.tests
     @ Factory.Core.Tests.RouterTests.tests
     @ Factory.Core.Tests.LearningTests.tests
+    @ Factory.Core.Tests.SplitRepoTests.tests
     @ Factory.Core.Tests.TraceTests.tests
     @ Factory.Core.Tests.ProofTests.tests
     @ Factory.Core.Tests.AssertionGuardTests.tests

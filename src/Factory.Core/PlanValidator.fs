@@ -24,6 +24,10 @@ type PlanError =
     | InvalidTimeout of TaskId * verify: string
     | TestWritesOverlapWrites of TaskId * PathPattern * PathPattern
     | TestWriteOutsideElement of TaskId * PathPattern
+    /// A task's elements live in more than one repo. A task is single-repo; split it.
+    | MixedRepoTask of TaskId * repos: string list
+    /// An element's repo is not one the run was given (--repo Name=path).
+    | UnknownRepo of TaskId * repo: string
     /// An invariant must run something the Implementer cannot edit: a path under TestWrites or a protected path.
     | InvariantNotUnderTestWrites of TaskId * verifyName: string
     /// `pobserve-check` takes exactly <specs-dir> <SpecName> <log file|dir>; anything else exits 1.
@@ -55,6 +59,8 @@ module PlanError =
         | EmptyVerify(t, v) -> $"Task {t.Value}, verify '{v}' has no command or instructions."
         | InvalidTimeout(t, v) -> $"Task {t.Value}, verify '{v}' needs a positive timeoutSeconds."
         | TestWritesOverlapWrites(t, w, tw) -> $"Task {t.Value}: `writes` '{w.Value}' overlaps `testWrites` '{tw.Value}'. Production and test paths must be disjoint: the TestAuthor and the Implementer never edit the same files."
+        | MixedRepoTask(t, rs) -> $"Task {t.Value} links elements from more than one repo (" + String.Join(", ", rs) + "). A task works in one repo: split it into one task per repo."
+        | UnknownRepo(t, r) -> $"Task {t.Value} links an element in repo '{r}', which this run was not given."
         | TestWriteOutsideElement(t, p) -> $"Task {t.Value} has testWrites '{p.Value}', which is outside the code areas of its elements."
         | InvariantNotUnderTestWrites(t, v) -> $"Task {t.Value}, invariant '{v}' runs nothing under the task's testWrites or a protected path, so the Implementer could weaken it. Point its command at the tests it checks."
         | PObserveCheckArity(t, v) -> $"Task {t.Value}, verify '{v}' calls pobserve-check with the wrong number of arguments. It takes exactly three: pobserve-check [--expect-violation] <specs-dir> <SpecName> <log file|dir>, with the logs produced earlier in the same command."
@@ -67,6 +73,18 @@ module PlanError =
 type ValidatedPlan internal (plan: Plan, handover: Handover) =
     member _.Plan = plan
     member _.Handover = handover
+    /// The repo a task works in: derived, never planned. The single repo of its elements; None when the design declares no repos.
+    /// A function and not a field on PlannedTask, because the planner writes PlannedTask and a repo it could set would be
+    /// one more thing to validate; here a plan that passed validation can only have zero or one repo per task.
+    member _.RepoOf(id: TaskId) : string option =
+        plan.Tasks
+        |> List.tryFind (fun t -> t.Id = id)
+        |> Option.bind (fun t ->
+            handover.Elements
+            |> List.filter (fun e -> List.contains e.Id t.Elements)
+            |> List.choose (fun e -> e.Repo)
+            |> List.distinct
+            |> function [ r ] -> Some r | _ -> None)
 
 [<RequireQualifiedAccess>]
 module PlanValidator =
@@ -170,12 +188,17 @@ module PlanValidator =
               if pobserveCheckNegated a.Run then NegatedPObserveCheck(t.Id, a.Name)
           | Manual m -> if isBlank m.Instructions then EmptyVerify(t.Id, m.Name) ]
 
-    let private taskLevel (handover: Handover) (elements: Map<_, _>) (decisions: Map<_, _>) (taskIds: Set<_>) (t: PlannedTask) =
+    let private taskLevel (knownRepos: string list) (handover: Handover) (elements: Map<_, _>) (decisions: Map<_, _>) (taskIds: Set<_>) (t: PlannedTask) =
         let known = t.Elements |> List.choose (fun e -> Map.tryFind e elements)
+        let repos = known |> List.choose (fun (e: ElementSpec) -> e.Repo) |> List.distinct |> List.sort
         // An out-of-scope element is rejected at the link (OutOfScopeElement), so its code areas
         // count here and a write into them is not reported a second time.
         let codeAreas = known |> List.collect (fun e -> e.CodeAreas)
-        [ if t.Writes.IsEmpty then NoWrites t.Id
+        [ if repos.Length > 1 then MixedRepoTask(t.Id, repos)
+          if not knownRepos.IsEmpty then
+              for r in repos do
+                  if not (List.contains r knownRepos) then UnknownRepo(t.Id, r)
+          if t.Writes.IsEmpty then NoWrites t.Id
           if t.Elements.IsEmpty then NoElements t.Id
           if not (t.Verify |> List.exists (function Automated _ -> true | Manual _ -> false)) then NoAutomatedVerify t.Id
           for e in t.Elements do
@@ -205,11 +228,14 @@ module PlanValidator =
           | Some cycle -> DependencyCycle cycle
           | None -> () ]
 
-    let validate (handover: Handover) (plan: Plan) : Result<ValidatedPlan, PlanError list> =
+    /// `knownRepos` is the repo names the run was given (--repo Name=path). Empty means "not checked": a single-repo run.
+    let validateWithRepos (knownRepos: string list) (handover: Handover) (plan: Plan) : Result<ValidatedPlan, PlanError list> =
         let elements = handover.Elements |> List.map (fun e -> e.Id, e) |> Map.ofList
         let decisions = handover.Decisions |> List.map (fun d -> d.Id, d) |> Map.ofList
         let taskIds = plan.Tasks |> List.map (fun t -> t.Id) |> Set.ofList
 
-        match planLevel handover plan @ (plan.Tasks |> List.collect (taskLevel handover elements decisions taskIds)) @ wholePlan handover plan with
+        match planLevel handover plan @ (plan.Tasks |> List.collect (taskLevel knownRepos handover elements decisions taskIds)) @ wholePlan handover plan with
         | [] -> Ok(ValidatedPlan(plan, handover))
         | errors -> Error errors
+
+    let validate (handover: Handover) (plan: Plan) : Result<ValidatedPlan, PlanError list> = validateWithRepos [] handover plan

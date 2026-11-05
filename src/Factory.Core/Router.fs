@@ -262,7 +262,7 @@ module Router =
     /// Builds the router's view of one planned task for one role.
     /// Risk is the highest Risk among the task's elements (Low if none is found). Size is a heuristic from the
     /// number of declared writes plus test writes, because real size is unknown until the work is done; phase 3
-    /// replaces it with learned data. Repo is None until split repos arrive. ContextTokens is the character count
+    /// replaces it with learned data. Repo is the single repo of the task's elements, None when the design declares none. ContextTokens is the character count
     /// of the brief and context bundle over four, which the caller measures. Only the Reviewer excludes families:
     /// the ones the implementer's ladder uses, so the review stays independent.
     let taskSpec
@@ -288,6 +288,13 @@ module Router =
             if writes <= config.SmallMaxWrites then S
             elif writes <= config.MediumMaxWrites then M
             else L
+        // Derived, never planned: the single repo of the task's elements (None when the design declares none).
+        let repo =
+            handover.Elements
+            |> List.filter (fun e -> List.contains e.Id task.Elements)
+            |> List.choose (fun e -> e.Repo)
+            |> List.distinct
+            |> function [ r ] -> Some r | _ -> None
         let needs =
             match role with
             | Role.TestAuthor | Role.Implementer | Role.Qa -> Set.ofList [ ToolUse ]
@@ -296,7 +303,7 @@ module Router =
         let estIn, estOut = config.Estimates role
         { TaskId = task.Id.Value
           Role = role
-          Repo = None
+          Repo = repo
           Needs = needs
           Risk = risk
           DataClass = config.DataClass

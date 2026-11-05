@@ -92,7 +92,8 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             Core.ToList(loopSpecs),
             Core.ToList(references),
             Core.ToList(contracts),
-            Core.ToList(uncovered));
+            Core.ToList(uncovered),
+            Core.ToList(ApiContracts(manifest, files, errors)));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
@@ -161,6 +162,15 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         return refs;
     }
 
+    /// `contracts_api`: OpenAPI files the handover pins. Each must be a frozen file (so it was hash-checked above).
+    /// Not `contracts`, which holds compiled agent policies. Absent in an older handover.
+    private static List<string> ApiContracts(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
+    {
+        var paths = List(manifest, "contracts_api").OfType<string>().ToList();
+        foreach (var c in paths.Where(c => !files.ContainsKey(c))) errors.Add($"handover.yaml: contracts_api '{c}' is not among the frozen files");
+        return paths;
+    }
+
     /// `loop_specs`: each must be one of the frozen `specs`, so the agent's loop never runs a file the gate did not freeze.
     private static List<string> LoopSpecs(Dictionary<string, object?> manifest, List<string> errors)
     {
@@ -207,7 +217,7 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
     /// Designc's hash16 (rules.py / core.js): two 32-bit FNV-1a passes over the UTF-16 code units.
     public static string Hash16(string s) => Factory.Core.Hash16.compute(s);
 
-    private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk, [property: JsonPropertyName("in_scope")] bool? InScope);
+    private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk, [property: JsonPropertyName("in_scope")] bool? InScope, string? Repo = null);
     private sealed record RelationshipJson(string From, string To);
     private sealed record ElementsJson(string? Schema, List<ElementJson>? Elements, List<RelationshipJson>? Relationships, List<string>? Events, List<string>? Reserved);
     private readonly record struct ResolvedModel(List<ElementJson> Elements, List<RelationshipJson> Relationships, List<string> Events, List<string> Reserved);
@@ -249,7 +259,7 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
                 var other => Fail<RiskLevel>($"element '{e.Name}': risk '{other}' is not low, medium or high"),
             };
             var areas = Patterns(e.Code, $"element '{e.Name}' code", errors);
-            if (risk is not null) specs.Add(new ElementSpec(ElementId.NewElementId(e.Id), e.Name, Core.ToList(areas), risk, e.InScope ?? true));
+            if (risk is not null) specs.Add(new ElementSpec(ElementId.NewElementId(e.Id), e.Name, Core.ToList(areas), risk, e.InScope ?? true, string.IsNullOrWhiteSpace(e.Repo) ? FSharpOption<string>.None : FSharpOption<string>.Some(e.Repo)));
         }
         return specs;
 

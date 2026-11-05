@@ -88,7 +88,8 @@ module Json =
           Name = str path o "name"
           CodeAreas = strs path o "codeAreas" |> List.map (pattern $"{path}.codeAreas")
           Risk = risk $"{path}.risk" (str path o "risk")
-          InScope = inScope o }
+          InScope = inScope o
+          Repo = optStr o "repo" }
 
     let private decodeDecision path n =
         let o = obj path n
@@ -134,7 +135,8 @@ module Json =
                 collect (arr "$" o "contracts") (fun p n ->
                     let co = obj p n
                     { Agent = str p co "agent"; Policy = str p co "policy"; Hash = str p co "hash" })
-              Uncovered = strs "$" o "uncovered" })
+              Uncovered = strs "$" o "uncovered"
+              ApiContracts = strs "$" o "apiContracts" })
 
     // ---------- plan ----------
 
@@ -219,7 +221,8 @@ module Json =
                    "name", JsonValue.Create e.Name
                    "codeAreas", strArr (e.CodeAreas |> List.map (fun p -> p.Value))
                    "risk", JsonValue.Create(riskName e.Risk)
-                   "inScope", JsonValue.Create e.InScope ]
+                   "inScope", JsonValue.Create e.InScope
+                   match e.Repo with Some r -> "repo", JsonValue.Create r | None -> () ]
         let decision (d: BoundDecision) =
             node [ "id", JsonValue.Create d.Id.Value
                    "statement", JsonValue.Create d.Statement
@@ -245,7 +248,8 @@ module Json =
                        "references", JsonArray(h.References |> List.map (fun r -> node [ "key", JsonValue.Create r.Key; "kind", JsonValue.Create r.Kind ]) |> Array.ofList)
                    if not h.Contracts.IsEmpty then
                        "contracts", JsonArray(h.Contracts |> List.map (fun c -> node [ "agent", JsonValue.Create c.Agent; "policy", JsonValue.Create c.Policy; "hash", JsonValue.Create c.Hash ]) |> Array.ofList)
-                   if not h.Uncovered.IsEmpty then "uncovered", strArr h.Uncovered ]
+                   if not h.Uncovered.IsEmpty then "uncovered", strArr h.Uncovered
+                   if not h.ApiContracts.IsEmpty then "apiContracts", strArr h.ApiContracts ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     // ---------- task events (the ledger payload a runner replays on resume) ----------
