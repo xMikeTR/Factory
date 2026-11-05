@@ -305,3 +305,12 @@ module Router =
           EstTokensIn = estIn
           EstTokensOut = estOut
           ExcludeFamilies = (if role = Role.Reviewer then implementerFamilies else Set.empty) }
+
+    /// The canary: with probability `share` the ladder's Standard entry is replaced by its Frontier entry, so a cheap
+    /// model that was never tried against the baseline keeps being measured. Always one draw, so a seeded rng
+    /// stays in step. The flag is false when nothing changed (no draw below the share, or Standard already is Frontier).
+    let applyCanary (share: float) (rng: unit -> float) (ladder: Ladder) : Ladder * bool =
+        let draw = rng ()
+        let top = ladder.[Frontier]
+        if draw < share && ladder.[Standard].Id <> top.Id then Map.add Standard top ladder, true
+        else ladder, false

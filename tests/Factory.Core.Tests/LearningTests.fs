@@ -17,6 +17,13 @@ let private known = fun (m: string) -> m <> "ghost"
 let private attribute learnReviewer events = Learning.attribute known learnReviewer events
 let private key model role size : StatsKey = { Model = model; Role = role; Repo = None; Size = size }
 
+let private canaryLadder () : Ladder =
+    let mk id tier : ModelEntry =
+        { Id = id; Family = "claude"; Protocol = AnthropicVertex; ModelName = id; Tier = tier
+          Price = { InPerMTok = 1m; OutPerMTok = 5m }; Caps = Set.empty; ContextWindow = 200000
+          ApprovedFor = Set.ofList [ Public; Internal; Regulated ]; Prior = (1.0, 1.0) }
+    Map [ Small, mk "small" Small; Standard, mk "std" Standard; Frontier, mk "top" Frontier ]
+
 let tests : (string * (unit -> unit)) list =
     [ "learning: a verify pass credits the model of the act turn before it, with that model's tokens",
       fun () ->
@@ -113,4 +120,35 @@ let tests : (string * (unit -> unit)) list =
                     | Routed(ladder, _) -> ladder.[Small].Id
                     | other -> failwith $"unexpected %A{other}" ]
           let goodPicks = picks |> List.filter ((=) "good") |> List.length
-          check (goodPicks >= 45) $"good picked {goodPicks} of 50" ]
+          check (goodPicks >= 45) $"good picked {goodPicks} of 50"
+      "canary: with a share of 1 the standard entry becomes the frontier entry and the flag is set",
+      fun () ->
+          let ladder = canaryLadder ()
+          let l, flag = Router.applyCanary 1.0 (fun () -> 0.99) ladder
+          equal "top" l.[Standard].Id "standard replaced"
+          equal "small" l.[Small].Id "small untouched"
+          equal "top" l.[Frontier].Id "frontier untouched"
+          check flag "canary flag"
+      "canary: a share of 0 never fires, and a draw at or above the share does not fire",
+      fun () ->
+          let ladder = canaryLadder ()
+          let l0, f0 = Router.applyCanary 0.0 (fun () -> 0.0) ladder
+          equal ladder l0 "share 0"
+          check (not f0) "no flag at 0"
+          let l1, f1 = Router.applyCanary 0.05 (fun () -> 0.05) ladder
+          equal ladder l1 "draw == share"
+          check (not f1) "no flag"
+      "canary: when standard already is the frontier model nothing changes and it is not a canary",
+      fun () ->
+          let ladder = canaryLadder () |> Map.add Standard (canaryLadder().[Frontier])
+          let l, flag = Router.applyCanary 1.0 (fun () -> 0.0) ladder
+          equal ladder l "unchanged"
+          check (not flag) "no flag"
+      "canary: over many seeded draws the rate is about the share",
+      fun () ->
+          let rng = Random(5).NextDouble
+          let n = 4000
+          let hits = [ for _ in 1..n -> snd (Router.applyCanary 0.05 rng (canaryLadder ())) ] |> List.filter id |> List.length
+          let rate = float hits / float n
+          check (rate > 0.03 && rate < 0.07) $"rate {rate}" ]
+
