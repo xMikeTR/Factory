@@ -151,3 +151,77 @@ module Router =
         match reasons with
         | [] -> Ok()
         | rs -> Error rs
+
+    let private statsKey (task: TaskSpec) (m: ModelEntry) : StatsKey =
+        { Model = m.Id; Role = task.Role; Repo = task.Repo; Size = task.Size }
+
+    /// What one attempt is expected to cost on this model, in the price's currency. Uses the learned token means
+    /// once there are enough samples, else the task's own estimates.
+    let expectedCost (policy: RoutingPolicy) (stats: Stats) (task: TaskSpec) (m: ModelEntry) : decimal =
+        let tokensIn, tokensOut =
+            match Map.tryFind (statsKey task m) stats with
+            | Some c when c.Samples >= policy.MinSamplesForMeans -> decimal c.MeanTokensIn, decimal c.MeanTokensOut
+            | _ -> decimal task.EstTokensIn, decimal task.EstTokensOut
+        (tokensIn * m.Price.InPerMTok + tokensOut * m.Price.OutPerMTok) / 1000000m
+
+    /// A Thompson draw of the model's pass rate: Beta over learned counts plus the model's prior.
+    /// An unknown key counts as no learned attempts, so only the prior speaks.
+    let successDraw (rng: Rng) (stats: Stats) (task: TaskSpec) (m: ModelEntry) : float =
+        let s, f =
+            match Map.tryFind (statsKey task m) stats with
+            | Some c -> c.Successes, c.Failures
+            | None -> 0.0, 0.0
+        let ps, pf = m.Prior
+        Sampling.beta rng (s + ps + 1.0) (f + pf + 1.0)
+
+    let private allTiers = [ Small; Standard; Frontier ]
+
+    /// Fills every tier from the routed ones: a tier with no pick takes the next routed tier up,
+    /// and above the highest routed tier it takes the highest.
+    let private fill (picks: Map<ModelTier, ModelEntry>) : Ladder =
+        let routed = picks |> Map.toList |> List.sortBy (fst >> tierRank)
+        let highest = routed |> List.last |> snd
+        allTiers
+        |> List.map (fun t ->
+            let pick =
+                routed
+                |> List.tryFind (fun (rt, _) -> tierRank rt >= tierRank t)
+                |> Option.map snd
+                |> Option.defaultValue highest
+            t, pick)
+        |> Map.ofList
+
+    /// Routes one task: a ladder (one catalog model per tier) or a typed refusal.
+    /// Per tier, every eligible model gets one Thompson draw p and the lowest expectedCost / p wins.
+    let route
+        (policy: RoutingPolicy)
+        (rng: Rng)
+        (stats: Stats)
+        (budget: BudgetState)
+        (task: TaskSpec)
+        (catalog: ModelEntry list)
+        : RouteOutcome =
+        match budget with
+        | BudgetState.Blocked -> BudgetExceeded
+        | BudgetState.Downgrade when policy.MinTier task.Risk = Frontier ->
+            NeedsDecision $"budget is in downgrade but risk {task.Risk} needs a Frontier model"
+        | _ ->
+            let checks = catalog |> List.map (fun m -> m, eligible policy budget task m)
+            let eligibleModels = checks |> List.choose (function m, Ok() -> Some m | _ -> None)
+            if List.isEmpty eligibleModels then
+                checks
+                |> List.map (fun (m, r) ->
+                    { Model = m.Id; Reasons = (match r with Error rs -> rs | Ok() -> []) })
+                |> NoEligibleModel
+            else
+                let score m =
+                    let p = max (successDraw rng stats task m) 1e-9
+                    float (expectedCost policy stats task m) / p
+                let picks =
+                    eligibleModels
+                    |> List.map (fun m -> m, score m)
+                    |> List.groupBy (fun (m, _) -> m.Tier)
+                    |> List.map (fun (tier, scored) -> tier, scored |> List.minBy snd |> fst)
+                    |> Map.ofList
+                let warnings = if budget = BudgetState.Soft then [ "budget soft limit reached" ] else []
+                Routed(fill picks, warnings)
