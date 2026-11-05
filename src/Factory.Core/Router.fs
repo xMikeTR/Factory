@@ -113,6 +113,16 @@ type RouteOutcome =
     | NeedsDecision of reason: string
     | BudgetExceeded
 
+/// Settings `Router.taskSpec` needs, loaded from the target repo's `.factory/policy.yaml` `routing:` section.
+type TaskSpecConfig =
+    { /// A task with at most this many writes plus test writes is size S.
+      SmallMaxWrites: int
+      /// Above SmallMaxWrites and at most this many is size M; more is L.
+      MediumMaxWrites: int
+      DataClass: DataClass
+      /// Token estimates (in, out) per role, used until stats have enough samples.
+      Estimates: Role -> int * int }
+
 /// Learned pass/fail counts and token means per model, role, repo and size bucket.
 [<RequireQualifiedAccess>]
 module Stats =
@@ -248,3 +258,50 @@ module Router =
                     |> Map.ofList
                 let warnings = if budget = BudgetState.Soft then [ "budget soft limit reached" ] else []
                 Routed(fill picks, warnings)
+
+    /// Builds the router's view of one planned task for one role.
+    /// Risk is the highest Risk among the task's elements (Low if none is found). Size is a heuristic from the
+    /// number of declared writes plus test writes, because real size is unknown until the work is done; phase 3
+    /// replaces it with learned data. Repo is None until split repos arrive. ContextTokens is the character count
+    /// of the brief and context bundle over four, which the caller measures. Only the Reviewer excludes families:
+    /// the ones the implementer's ladder uses, so the review stays independent.
+    let taskSpec
+        (config: TaskSpecConfig)
+        (handover: Handover)
+        (task: PlannedTask)
+        (role: Role)
+        (contextChars: int)
+        (implementerFamilies: Set<string>)
+        : TaskSpec =
+        let riskRank r =
+            match r with
+            | Low -> 0
+            | Medium -> 1
+            | High -> 2
+        let risk =
+            handover.Elements
+            |> List.filter (fun e -> List.contains e.Id task.Elements)
+            |> List.map (fun e -> e.Risk)
+            |> List.fold (fun acc r -> if riskRank r > riskRank acc then r else acc) Low
+        let writes = task.Writes.Length + task.TestWrites.Length
+        let size =
+            if writes <= config.SmallMaxWrites then S
+            elif writes <= config.MediumMaxWrites then M
+            else L
+        let needs =
+            match role with
+            | Role.TestAuthor | Role.Implementer | Role.Qa -> Set.ofList [ ToolUse ]
+            | Role.Planner | Role.TaskPlanner -> Set.ofList [ StructuredOutput ]
+            | Role.Reviewer -> Set.empty
+        let estIn, estOut = config.Estimates role
+        { TaskId = task.Id.Value
+          Role = role
+          Repo = None
+          Needs = needs
+          Risk = risk
+          DataClass = config.DataClass
+          Size = size
+          ContextTokens = contextChars / 4
+          EstTokensIn = estIn
+          EstTokensOut = estOut
+          ExcludeFamilies = (if role = Role.Reviewer then implementerFamilies else Set.empty) }

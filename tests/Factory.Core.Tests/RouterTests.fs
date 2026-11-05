@@ -37,6 +37,45 @@ let private reasons r =
     | Ok () -> []
     | Error rs -> rs
 
+let private elem id risk : ElementSpec =
+    { Id = ElementId id; Name = id; CodeAreas = []; Risk = risk; InScope = true }
+
+let private specHandover: Handover =
+    { Id = "h"
+      Digest = ""
+      Elements = [ elem "a" Low; elem "b" High ]
+      Decisions = []
+      ProtectedPaths = []
+      EventVocabulary = []
+      Relationships = []
+      AcceptanceSpecs = []
+      WorkItem = None
+      DesignTokens = None
+      DesignVersion = None
+      AcceptanceCriteria = []
+      LoopSpecs = []
+      References = []
+      Contracts = []
+      Uncovered = [] }
+
+let private specConfig: TaskSpecConfig =
+    { SmallMaxWrites = 4
+      MediumMaxWrites = 10
+      DataClass = Internal
+      Estimates = fun _ -> 111, 222 }
+
+let private specTask (elements: string list) (writes: int) (testWrites: int) : PlannedTask =
+    let pats n pre = [ for i in 1..n -> PathPattern.createOrFail $"{pre}{i}/**" ]
+    { Id = TaskId "T-1"
+      Title = ""
+      Instructions = ""
+      Elements = elements |> List.map ElementId
+      Writes = pats writes "src/"
+      TestWrites = pats testWrites "tests/"
+      DependsOn = []
+      Covers = []
+      Verify = [] }
+
 let tests: (string * (unit -> unit)) list =
     [ "router: default policy maps Low to Small, Medium and High to Standard", fun () ->
           equal Small (policy.MinTier Low) "low"
@@ -285,4 +324,42 @@ let tests: (string * (unit -> unit)) list =
                         pick.Id
                     | other -> failwith $"unexpected %A{other}" ]
           let cheapInLast100 = picks |> List.skip 200 |> List.filter ((=) "cheap") |> List.length
-          check (cheapInLast100 >= 80) $"cheap picked {cheapInLast100} of the last 100" ]
+          check (cheapInLast100 >= 80) $"cheap picked {cheapInLast100} of the last 100"
+      "router: taskSpec takes the highest risk among the task's elements", fun () ->
+          let t = specTask [ "a"; "b" ] 1 0
+          equal High (Router.taskSpec specConfig specHandover t Role.Implementer 0 Set.empty).Risk "high wins"
+          let low = specTask [ "a" ] 1 0
+          equal Low (Router.taskSpec specConfig specHandover low Role.Implementer 0 Set.empty).Risk "low"
+      "router: taskSpec risk is Low when the task names no known element", fun () ->
+          let t = specTask [ "zzz" ] 1 0
+          equal Low (Router.taskSpec specConfig specHandover t Role.Implementer 0 Set.empty).Risk "unknown element"
+      "router: taskSpec needs follow the role", fun () ->
+          let t = specTask [ "a" ] 1 0
+          let needs r = (Router.taskSpec specConfig specHandover t r 0 Set.empty).Needs
+          equal (Set.ofList [ ToolUse ]) (needs Role.TestAuthor) "test author"
+          equal (Set.ofList [ ToolUse ]) (needs Role.Implementer) "implementer"
+          equal (Set.ofList [ ToolUse ]) (needs Role.Qa) "qa"
+          equal (Set.ofList [ StructuredOutput ]) (needs Role.Planner) "planner"
+          equal (Set.ofList [ StructuredOutput ]) (needs Role.TaskPlanner) "task planner"
+          equal Set.empty (needs Role.Reviewer) "reviewer"
+      "router: taskSpec size buckets count writes plus test writes", fun () ->
+          let size w tw = (Router.taskSpec specConfig specHandover (specTask [ "a" ] w tw) Role.Implementer 0 Set.empty).Size
+          equal S (size 1 1) "2 writes is S"
+          equal S (size 2 2) "4 writes is S at the boundary"
+          equal M (size 3 2) "5 is M"
+          equal M (size 5 5) "10 is M at the boundary"
+          equal L (size 6 5) "11 is L"
+      "router: taskSpec context tokens are characters over four, estimates come from the role", fun () ->
+          let s = Router.taskSpec specConfig specHandover (specTask [ "a" ] 1 0) Role.Planner 4001 Set.empty
+          equal 1000 s.ContextTokens "4001 chars / 4"
+          equal 111 s.EstTokensIn "planner in"
+          equal 222 s.EstTokensOut "planner out"
+          equal None s.Repo "repo is None until phase 5"
+          equal "T-1" s.TaskId "task id"
+      "router: taskSpec excludes families only for the reviewer", fun () ->
+          let fams = Set.ofList [ "claude" ]
+          let ex r = (Router.taskSpec specConfig specHandover (specTask [ "a" ] 1 0) r 0 fams).ExcludeFamilies
+          equal fams (ex Role.Reviewer) "reviewer"
+          equal Set.empty (ex Role.Implementer) "implementer"
+          equal Set.empty (ex Role.Qa) "qa" ]
+
