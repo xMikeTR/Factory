@@ -28,6 +28,20 @@ public class RunRouterTests
           - { id: g-top, family: gemini, modelName: g-pro, tier: frontier }
         """;
 
+
+    /// Three families, priced: stats only matter when scores differ. Mistral costs ten times as much, so it never wins
+    /// a tier, but it is the family the reviewer is left with (the implementer ladder may span claude and gemini).
+    private const string LearnCatalog = """
+        models:
+          - { id: c-small, modelName: claude-haiku-4-5, tier: small, price: { in: 1, out: 5 } }
+          - { id: c-std, modelName: claude-sonnet-5-5, tier: standard, price: { in: 3, out: 15 } }
+          - { id: c-top, modelName: claude-opus-5-5, tier: frontier, price: { in: 15, out: 75 } }
+          - { id: g-std, family: gemini, modelName: g-mid, tier: standard, price: { in: 3, out: 15 } }
+          - { id: m-small, family: mistral, modelName: m-s, tier: small, price: { in: 10, out: 50 } }
+          - { id: m-std, family: mistral, modelName: m-m, tier: standard, price: { in: 30, out: 150 } }
+          - { id: m-top, family: mistral, modelName: m-t, tier: frontier, price: { in: 150, out: 750 } }
+        """;
+
     [Fact]
     public async Task Every_task_and_per_task_role_gets_a_full_ladder_that_a_rerun_reproduces()
     {
@@ -122,7 +136,7 @@ public class RunRouterTests
 
         foreach (var run in new[] { "run-1", "run-2", "run-3", "run-4" })
         {
-            var table = RunRouter.Route(run, h, [Plans.Task("T-001")], Catalog(TwoFamilies), Config with { CanaryShare = 0 }, stats: stats);
+            var table = RunRouter.Route(run, h, [Plans.Task("T-001")], Catalog(LearnCatalog), Config with { CanaryShare = 0 }, stats: stats);
             Assert.Equal("c-std", table.Find("T-001", Roles.Implementer)![ModelTier.Standard].Id); // the fixture element is Medium risk: Standard is the lowest tier routed
         }
     }
