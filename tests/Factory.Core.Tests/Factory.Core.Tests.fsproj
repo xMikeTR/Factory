@@ -24,6 +24,7 @@
     <Compile Include="ContextQualityTests.fs" />
     <Compile Include="RouterTests.fs" />
     <Compile Include="LearningTests.fs" />
+    <Compile Include="SplitRepoTests.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
 

@@ -45,6 +45,57 @@ public class DesigncHandoverReaderTests
         await Assert.ThrowsAnyAsync<Exception>(() => Load(dir));
     }
 
+    /// Split repos: elements.json may carry `repo` per element and handover.yaml lists `contracts_api` (OpenAPI files, hash-pinned).
+    /// Both are optional, and the key is not `contracts` (compiled agent policies).
+    private static async Task<string> TwoRepoCopy(bool withContract)
+    {
+        var dir = FixtureCopy();
+        var elementsPath = Path.Combine(dir, "elements.json");
+        var json = await File.ReadAllTextAsync(elementsPath);
+        json = json.Replace("\"src/Pricing.Portal/**\"\n      ],", "\"src/Pricing.Portal/**\"\n      ],\n      \"repo\": \"Ui\",")
+                   .Replace("\"id\": \"Pricing Platform/Quotes DB\",", "\"id\": \"Pricing Platform/Quotes DB\",\n      \"repo\": \"Api\",");
+        await File.WriteAllTextAsync(elementsPath, json);
+        var manifestPath = Path.Combine(dir, "handover.yaml");
+        var manifest = await File.ReadAllTextAsync(manifestPath);
+        manifest = System.Text.RegularExpressions.Regex.Replace(manifest, "path: \"elements.json\", hash: [0-9a-f]+", $"path: \"elements.json\", hash: {DesigncHandoverReader.Hash16(json)}");
+        if (withContract)
+        {
+            const string api = "openapi: 3.0.3\ninfo: { title: Pricing, version: 1.0.0 }\npaths: {}\n";
+            Directory.CreateDirectory(Path.Combine(dir, "contracts", "openapi"));
+            await File.WriteAllTextAsync(Path.Combine(dir, "contracts", "openapi", "pricing.yaml"), api);
+            manifest = manifest.Replace("evals: {}\n", "evals: {}\ncontracts_api: [\"contracts/openapi/pricing.yaml\"]\n")
+                + $"  - {{ path: \"contracts/openapi/pricing.yaml\", hash: {DesigncHandoverReader.Hash16(api)} }}\n";
+        }
+        await File.WriteAllTextAsync(manifestPath, manifest);
+        return dir;
+    }
+
+    [Fact]
+    public async Task Elements_carry_their_repo_and_a_pinned_api_contract_is_read()
+    {
+        var h = await Load(await TwoRepoCopy(withContract: true));
+        Assert.Equal("Ui", h.Elements.Single(e => e.Name == "Pricing Portal").Repo.Value);
+        Assert.Equal("Api", h.Elements.Single(e => e.Name == "Quotes DB").Repo.Value);
+        Assert.True(h.Elements.Where(e => e.Name is not ("Pricing Portal" or "Quotes DB")).All(e => e.Repo is null));
+        Assert.Equal(["contracts/openapi/pricing.yaml"], h.ApiContracts);
+        Assert.Empty(h.Contracts); // the agent-policy key is untouched
+    }
+
+    [Fact]
+    public async Task Without_contracts_api_the_handover_pins_no_api_contract()
+    {
+        var h = await Load(await TwoRepoCopy(withContract: false));
+        Assert.Empty(h.ApiContracts);
+    }
+
+    [Fact]
+    public async Task A_changed_api_contract_is_rejected_like_any_frozen_file()
+    {
+        var dir = await TwoRepoCopy(withContract: true);
+        await File.AppendAllTextAsync(Path.Combine(dir, "contracts", "openapi", "pricing.yaml"), "# edited\n");
+        await Assert.ThrowsAnyAsync<Exception>(() => Load(dir));
+    }
+
     [Fact]
     public async Task Fixture_maps_to_the_expected_handover()
     {

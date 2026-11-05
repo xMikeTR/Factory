@@ -4,7 +4,7 @@ open Factory.Core
 open Factory.Core.Tests.Support
 
 let private p = PathPattern.createOrFail
-let private el id name = { Id = ElementId id; Name = name; CodeAreas = [ p "src/**" ]; Risk = Low; InScope = true }
+let private el id name = { Id = ElementId id; Name = name; CodeAreas = [ p "src/**" ]; Risk = Low; InScope = true; Repo = None }
 let private elements = [ el "Pricing/Quote Form" "Quote Form"; el "Pricing/Quote API" "Quote API" ]
 let private task id els =
     { Id = TaskId id; Title = ""; Instructions = ""; Elements = els |> List.map ElementId; Writes = []; TestWrites = []

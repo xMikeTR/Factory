@@ -209,7 +209,7 @@ let tests: (string * (unit -> unit)) list =
           equal 1 plan.Pull.Length "the second does not fit what is left"
           check (plan.Deferred |> List.exists (function _, OverBudget(10L, 5L) -> true | _ -> false)) $"%A{plan.Deferred}"
       "recheck: only the item's own elements count, and what moved is said", fun () ->
-          let el id code risk = { Id = ElementId id; Name = id; CodeAreas = [ p code ]; Risk = risk; InScope = true }
+          let el id code risk = { Id = ElementId id; Name = id; CodeAreas = [ p code ]; Risk = risk; InScope = true; Repo = None }
           let frozen = [ el "UI" "src/UI/**" Low; el "Api" "src/Api/**" Low ]
           let item = [ ElementId "UI" ]
           equal [] (Recheck.reasons item frozen frozen) "same"
