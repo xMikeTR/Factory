@@ -127,3 +127,12 @@ type Core =
     static member RouteTask(policy: RoutingPolicy, seed: int, spec: TaskSpec, catalog: ModelEntry seq) : RouteOutcome =
         let rng = Random(seed)
         Router.route policy rng.NextDouble Map.empty BudgetState.Ok spec (List.ofSeq catalog)
+
+    /// Learning.attribute for C#: events in ledger order, a predicate for catalog model ids.
+    static member Attribute(known: Func<string, bool>, learnReviewer: bool, events: LearnEvent seq) : Attempt list =
+        Learning.attribute known.Invoke learnReviewer (List.ofSeq events)
+
+    /// Learning.fold from empty stats: attempts weighted by age at `now`.
+    static member FoldAttempts(now: DateTime, halfLifeDays: float, attempts: Attempt seq) : Stats =
+        Learning.fold now halfLifeDays Map.empty (List.ofSeq attempts)
+
