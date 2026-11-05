@@ -860,7 +860,7 @@ internal sealed class TaskLoop(
     private ValueTask LogTurnAsync(string stage, string role, ModelTier tier, Microsoft.Extensions.AI.UsageDetails? usage, object detail, CancellationToken ct)
     {
         var payload = JsonSerializer.SerializeToNode(detail)!.AsObject();
-        if (svc.Agents.ModelIdFor(role, tier) is { } modelId) payload["model_id"] = modelId;
+        if (svc.Agents.ModelIdFor(role, tier, _taskId) is { } modelId) payload["model_id"] = modelId;
         var warm = _warmRoles.Contains(role);
         TurnUsage.AddCache(payload, usage, warm);
         if (TurnUsage.Touched(usage)) _warmRoles.Add(role);
