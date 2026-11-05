@@ -198,7 +198,7 @@ internal sealed class TaskLoop(
         List<VerifyOutcome> green;
         await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
         {
-            green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct);
+            green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct, conventionCommand: svc.Settings.Verify?.Command);
             if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
                 && SuiteDiscovery.Plan(svc.Settings.IntegrationTestCommand, worktree) is SuitePlan.Command suite
                 && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, suite.Item, worktree, ct) is { } regressed)

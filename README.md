@@ -256,6 +256,19 @@ merge:
 ```
 
 `FACTORY_MERGE_ENFORCEMENT` and `FACTORY_MERGE_APPROVERS` (comma-separated) override the file.
+
+The same file can name the repo's one verify script:
+
+```yaml
+verify:
+  command: npm run verify      # runs in every task's verify, beside the plan's own checks; a failure fails the task
+  parity: npm run parity       # for the UI parity gate (phase 7c)
+```
+
+One source of truth: the editor hook, the git hooks, CI and the factory all run these same scripts, so what
+passes here passes there. Agents can't skip hooks: `--no-verify` is refused in `run_command`, in the tool
+policies (`policies/s2/*.yaml`) and in this repo's `.claude/settings.json`.
+
 In review mode a green run ends `ready_for_review` (exit 0) with the PR url, or without a
 PR host with the integration branch to merge yourself; the factory never merges. The handover
 stays open until you record the merge:

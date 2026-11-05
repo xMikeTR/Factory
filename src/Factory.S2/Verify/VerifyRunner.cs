@@ -20,7 +20,8 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
     /// A refused restore (RestoreGate) runs nothing: the single outcome carries the gate's reasons.
     /// `stage` labels the ledger row: "verify" (green run), "red_run" or "stash_check".
     public async Task<List<VerifyOutcome>> RunTaskAsync(
-        string runId, string teamId, PlannedTask task, int attempt, string worktree, CancellationToken ct, string stage = "verify")
+        string runId, string teamId, PlannedTask task, int attempt, string worktree, CancellationToken ct, string stage = "verify",
+        string? conventionCommand = null)
     {
         var taskId = task.Id.Value;
         var env = new Dictionary<string, string>
@@ -60,6 +61,11 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
                     break;
             }
         }
+
+        // The repo's own verify script: one more verdict, run against the tree as found like the rest.
+        if (conventionCommand is not null && stage == "verify" && sandbox.RestoreRefusal is null)
+            await using (await git.LeaveAsFoundAsync(worktree, ct))
+                outcomes.Add(ToOutcome("verify", await sandbox.RunAsync(conventionCommand, worktree, TimeSpan.FromMinutes(10), env, ct)));
 
         var passed = outcomes.Count > 0 && outcomes.All(o => o.ExitCode == 0);
         await ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Verify, TaskId: taskId, TeamId: teamId,
