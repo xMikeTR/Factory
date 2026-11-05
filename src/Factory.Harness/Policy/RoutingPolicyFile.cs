@@ -1,4 +1,5 @@
 using Factory.Core;
+using Factory.Harness.Routing;
 using Microsoft.FSharp.Core;
 using YamlDotNet.Serialization;
 
@@ -13,12 +14,18 @@ namespace Factory.Harness.Policy;
 ///     estimates:                                                   # tokens per attempt until stats exist
 ///       implementer: { in: 40000, out: 8000 }                      # planner, taskPlanner, testAuthor, implementer, reviewer, qa
 ///     sizeBuckets: { s: 4, m: 10 }                                 # max writes + testWrites for size S, and for M
+///     canaryShare: 0.05                                            # share of (task, role) pairs whose Standard entry is the Frontier model
+///     halfLifeDays: 30                                             # evidence from the ledger halves in weight every this many days
+///     learnReviewer: false                                         # count reviewer verdicts as evidence (weak)
 ///
 /// The estimate and size-bucket defaults are placeholders until phase 3 has real data. Invalid values are rejected
 /// together, naming the file.
 public static class RoutingPolicyFile
 {
-    public sealed record RoutingConfig(RoutingPolicy Policy, TaskSpecConfig Spec);
+    public sealed record RoutingConfig(RoutingPolicy Policy, TaskSpecConfig Spec, double CanaryShare = 0.05, LearningSettings? LearningOverride = null)
+    {
+        public LearningSettings Learning => LearningOverride ?? new LearningSettings();
+    }
 
     private sealed class Doc { public Section? Routing { get; set; } }
 
@@ -28,6 +35,9 @@ public static class RoutingPolicyFile
         public string? DataClass { get; set; }
         public Dictionary<string, Est>? Estimates { get; set; }
         public Buckets? SizeBuckets { get; set; }
+        public double? CanaryShare { get; set; }
+        public double? HalfLifeDays { get; set; }
+        public bool? LearnReviewer { get; set; }
     }
 
     private sealed class Est { public int In { get; set; } public int Out { get; set; } }
@@ -95,6 +105,11 @@ public static class RoutingPolicyFile
         var med = s.SizeBuckets?.M ?? 10;
         if (small < 0 || med < small) errors.Add("routing.sizeBuckets: need 0 <= s <= m");
 
+        var canary = s.CanaryShare ?? 0.05;
+        if (canary is < 0 or > 1) errors.Add("routing.canaryShare: need 0 <= share <= 1");
+        var halfLife = s.HalfLifeDays ?? 30;
+        if (halfLife <= 0) errors.Add("routing.halfLifeDays: must be > 0");
+
         if (errors.Count > 0) throw new FactoryRejectedException($"{path} is invalid", errors.ToArray());
 
         var policy = new RoutingPolicy(
@@ -102,6 +117,6 @@ public static class RoutingPolicyFile
             Router.defaultPolicy.MinSamplesForMeans);
         var spec = new TaskSpecConfig(small, med, dataClass,
             FuncConvert.FromFunc<Role, Tuple<int, int>>(r => { var (i, o) = est[r]; return Tuple.Create(i, o); }));
-        return new RoutingConfig(policy, spec);
+        return new RoutingConfig(policy, spec, canary, new LearningSettings(halfLife, s.LearnReviewer ?? false));
     }
 }

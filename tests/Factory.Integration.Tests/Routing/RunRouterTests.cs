@@ -105,4 +105,51 @@ public class RunRouterTests
         Assert.Contains(row.Risk, new[] { "Low", "Medium", "High" });
         Assert.Empty(row.Warnings);
     }
+
+    private static StatsKey Key(string model) => new(model, Role.Implementer, Microsoft.FSharp.Core.FSharpOption<string>.None, SizeBucket.S);
+
+    private static Counts Counts(double ok, double bad) => new(ok, bad, 1000, 100, (int)(ok + bad));
+
+    [Fact]
+    public async Task Learned_stats_decide_between_models_of_one_tier()
+    {
+        var h = await HandoverAsync();
+        var stats = Microsoft.FSharp.Collections.MapModule.OfSeq(new[]
+        {
+            Tuple.Create(Key("c-std"), Counts(200, 0)),
+            Tuple.Create(Key("g-std"), Counts(0, 200)),
+        });
+
+        foreach (var run in new[] { "run-1", "run-2", "run-3", "run-4" })
+        {
+            var table = RunRouter.Route(run, h, [Plans.Task("T-001")], Catalog(TwoFamilies), Config with { CanaryShare = 0 }, stats: stats);
+            Assert.Equal("c-std", table.Find("T-001", Roles.Implementer)![ModelTier.Standard].Id); // the fixture element is Medium risk: Standard is the lowest tier routed
+        }
+    }
+
+    [Fact]
+    public async Task A_canary_share_of_one_swaps_standard_for_frontier_and_the_row_says_so()
+    {
+        var h = await HandoverAsync();
+        var table = RunRouter.Route("run-1", h, [Plans.Task("T-001")], Catalog(TwoFamilies), Config with { CanaryShare = 1.0 });
+
+        Assert.All(table.Rows, r => Assert.True(r.Canary));
+        foreach (var r in table.Rows) Assert.Equal(r.Ladder["Frontier"], r.Ladder["Standard"]);
+        Assert.Equal(table.Find("T-001", Roles.Implementer)![ModelTier.Frontier].Id, table.Find("T-001", Roles.Implementer)![ModelTier.Standard].Id);
+    }
+
+    [Fact]
+    public async Task A_canary_share_of_zero_never_swaps_and_the_default_share_is_seeded_so_a_rerun_agrees()
+    {
+        var h = await HandoverAsync();
+        var none = RunRouter.Route("run-1", h, [Plans.Task("T-001")], Catalog(TwoFamilies), Config with { CanaryShare = 0 });
+        Assert.All(none.Rows, r => Assert.False(r.Canary));
+
+        PlannedTask[] many = [.. Enumerable.Range(1, 60).Select(i => Plans.Task($"T-{i:000}"))];
+        var a = RunRouter.Route("run-9", h, many, Catalog(TwoFamilies), Config).Rows.Select(r => r.Canary).ToList();
+        var b = RunRouter.Route("run-9", h, many, Catalog(TwoFamilies), Config).Rows.Select(r => r.Canary).ToList();
+        Assert.Equal(a, b);
+        var rate = a.Count(x => x) / (double)a.Count;
+        Assert.InRange(rate, 0.0, 0.2); // 240 draws at 5%
+    }
 }

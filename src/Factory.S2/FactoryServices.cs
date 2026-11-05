@@ -168,7 +168,7 @@ public sealed class FactoryServices(
         if (!logRows) return;
         foreach (var row in table.Rows)
             await LogAsync(runId, "route", LedgerKinds.Route,
-                payload: JsonSerializer.Serialize(new { role = row.Role, size = row.Size, risk = row.Risk, ladder = row.Ladder, warnings = row.Warnings }),
+                payload: JsonSerializer.Serialize(new { role = row.Role, size = row.Size, risk = row.Risk, ladder = row.Ladder, warnings = row.Warnings, canary = row.Canary }),
                 taskId: row.TaskId, ct: ct);
     }
 

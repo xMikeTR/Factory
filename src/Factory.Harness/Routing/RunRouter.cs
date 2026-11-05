@@ -9,7 +9,7 @@ using Core = Factory.Core.Core;
 /// One ledger `route` row: what a (task, role) pair was routed to. Not in RegistryStreams: designc's contract does
 /// not know the kind, so it goes in the run ledger only.
 public sealed record RouteRow(string TaskId, string Role, string Size, string Risk,
-    IReadOnlyDictionary<string, string> Ladder, IReadOnlyList<string> Warnings);
+    IReadOnlyDictionary<string, string> Ladder, IReadOnlyList<string> Warnings, bool Canary = false);
 
 /// The ladders chosen at run start, found again by (task, role) when an agent for that pair is created.
 public sealed class RouteTable
@@ -50,9 +50,10 @@ public static class RunRouter
     /// `contextChars` is the size of the task's brief; at run start only the task's own text is known, so the default
     /// is title plus instructions (a lower bound: the context bundle is added at turn time).
     public static RouteTable Route(string runId, Handover handover, IEnumerable<PlannedTask> tasks, IReadOnlyList<ModelEntry> catalog,
-        RoutingPolicyFile.RoutingConfig config, Func<PlannedTask, int>? contextChars = null)
+        RoutingPolicyFile.RoutingConfig config, Func<PlannedTask, int>? contextChars = null, FSharpMap<StatsKey, Counts>? stats = null)
     {
         contextChars ??= t => t.Title.Length + t.Instructions.Length;
+        stats ??= MapModule.Empty<StatsKey, Counts>();
         var ladders = new Dictionary<(string, string), FSharpMap<ModelTier, ModelEntry>>();
         var rows = new List<RouteRow>();
         var refusals = new List<string>();
@@ -63,7 +64,7 @@ public static class RunRouter
             foreach (var (name, role) in Routed)
             {
                 var spec = Core.TaskSpecFor(config.Spec, handover, task, role, contextChars(task), implementerFamilies);
-                var outcome = Core.RouteTask(config.Policy, Core.StableSeed($"{runId}|{task.Id.Value}|{name}"), spec, catalog);
+                var (outcome, canary) = Core.RouteTaskLearned(config.Policy, Core.StableSeed($"{runId}|{task.Id.Value}|{name}"), spec, catalog, stats, config.CanaryShare).ToValueTuple();
                 switch (outcome)
                 {
                     case RouteOutcome.Routed routed:
@@ -72,7 +73,7 @@ public static class RunRouter
                         if (role == Role.Implementer)
                             foreach (var kv in ladder) implementerFamilies.Add(kv.Value.Family);
                         rows.Add(new RouteRow(task.Id.Value, name, spec.Size.ToString(), spec.Risk.ToString(),
-                            ladder.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value.Id), [.. routed.warnings]));
+                            ladder.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value.Id), [.. routed.warnings], canary));
                         break;
                     case RouteOutcome.NoEligibleModel none:
                         refusals.Add($"{task.Id.Value} / {name}: no eligible model");
