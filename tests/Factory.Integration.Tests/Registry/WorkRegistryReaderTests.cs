@@ -131,6 +131,23 @@ public class WorkRegistryReaderTests
     }
 
     [Fact]
+    public async Task A_parity_result_row_with_designcs_additive_visual_field_is_still_read_by_its_tier_one_outcome()
+    {
+        var root = Registry(new()
+        {
+            ["requirements/REQ-1.yaml"] = Requirement,
+            ["work/W-1.yaml"] = Work,
+            ["ledger/pipeline.jsonl"] =
+                """{"kind":"parity_result","scenario":"quote-list","commit":"abc1234","outcome":"pass","failures":[],"visual":{"ratio":0.5,"threshold":0.001,"outcome":"fail"},"ts":2,"by":"designc"}""" + "\n",
+        });
+
+        var reg = await WorkRegistryReader.ReadAsync(root, CancellationToken.None);
+
+        var row = Assert.IsType<Factory.Core.LedgerFact.ParityResult>(Assert.Single(reg.Facts).Fact);
+        Assert.Equal(("quote-list", "abc1234", Factory.Core.ParityOutcome.ParityPass), (row.scenario, row.commit, row.outcome));
+    }
+
+    [Fact]
     public async Task Parity_scenario_ids_and_parity_result_rows_are_read()
     {
         var root = Registry(new()
