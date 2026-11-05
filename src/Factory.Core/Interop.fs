@@ -113,3 +113,17 @@ type Core =
 
     /// designc's spelling: stalled | parked | abandoned | gate_failed:<gate>.
     static member CauseToLedger(cause: TraceCause) : string = TraceCause.toLedger cause
+
+    /// A seed that is the same on every machine and run for the same text (unlike string.GetHashCode):
+    /// the first 8 hex of hash16, so a resumed run seeds the router the same way.
+    static member StableSeed(text: string) : int =
+        int (Convert.ToUInt32((Hash16.compute text).Substring(0, 8), 16))
+
+    /// Router.taskSpec with a .NET sequence for the implementer's families.
+    static member TaskSpecFor(config: TaskSpecConfig, handover: Handover, task: PlannedTask, role: Role, contextChars: int, implementerFamilies: string seq) : TaskSpec =
+        Router.taskSpec config handover task role contextChars (Set.ofSeq implementerFamilies)
+
+    /// Router.route with no learned stats and an Ok budget (phase 2), seeded so the same seed gives the same ladder.
+    static member RouteTask(policy: RoutingPolicy, seed: int, spec: TaskSpec, catalog: ModelEntry seq) : RouteOutcome =
+        let rng = Random(seed)
+        Router.route policy rng.NextDouble Map.empty BudgetState.Ok spec (List.ofSeq catalog)
