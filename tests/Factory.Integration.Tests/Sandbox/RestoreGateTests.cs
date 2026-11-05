@@ -96,7 +96,7 @@ public class RestoreGateTests : IDisposable
     private const string Lock = """{ "lockfileVersion": 3, "packages": { "": { "name": "web" } } }""";
 
     [Fact]
-    public async Task A_package_json_with_a_lockfile_is_restored_with_npm_ci()
+    public async Task A_package_json_with_a_lockfile_is_restored_with_npm_i_and_a_lockfile_drift_guard()
     {
         Write("web/package.json", """{ "name": "web", "dependencies": { "react": "^18.2.0" } }""");
         Write("web/package-lock.json", Lock);
@@ -108,7 +108,10 @@ public class RestoreGateTests : IDisposable
         Assert.Equal(["web"], plan.NpmDirs);
         var command = RestoreGate.NpmCommand(plan.NpmDirs);
         Assert.Contains("for d in 'web'", command);
-        Assert.Contains("npm ci --ignore-scripts", command);
+        Assert.Contains("npm i --ignore-scripts", command);
+        Assert.DoesNotContain("npm ci", command);
+        Assert.Contains("cmp -s", command); // the lockfile must come out as it went in
+        Assert.Contains("package-lock.json drifted", command);
         Assert.Contains("--userconfig /etc/factory/npmrc", command);
     }
 

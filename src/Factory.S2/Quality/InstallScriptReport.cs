@@ -16,7 +16,7 @@ public static class InstallScriptReport
             .Distinct().Order().ToList();
         if (skipped.Count == 0) return null;
         var sb = new StringBuilder("### Install scripts\n");
-        sb.AppendLine("These packages have an install script that was not run (`npm ci --ignore-scripts`). If the build needs one, list the package under `npm.rebuild` in `.factory/policy.yaml`:");
+        sb.AppendLine("These packages have an install script that was not run (`npm i --ignore-scripts`). If the build needs one, list the package under `npm.rebuild` in `.factory/policy.yaml`:");
         foreach (var s in skipped) sb.AppendLine($"- {s}");
         return sb.ToString();
     }
