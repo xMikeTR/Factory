@@ -109,7 +109,7 @@ dotnet run --project src/Factory.S2 -- dispatch --handover examples/pricing-v3/h
 #   wave 1: team-T-002 [T-002], team-T-003 [T-003]   (parallel)
 
 # 3. A real run in a target repo (PRs are written to .factory/runs/<id>/ unless --github or --azdo)
-export FACTORY_GATEWAY_URL=https://<apim>/litellm/v1 FACTORY_GATEWAY_KEY=<per-user key>
+export FACTORY_GATEWAY_URL=https://<gateway>/v1 FACTORY_GATEWAY_KEY=<key>   # any OpenAI-compatible gateway
 export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MODEL_SMALL=<alias>
 #   or the native Anthropic client (public API unless FACTORY_GATEWAY_URL is set; models default
 #   to claude-opus-5-5 / claude-sonnet-5-5 / claude-haiku-4-5):
@@ -122,6 +122,12 @@ export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MOD
 #   _GATEWAY_KEY / _MODEL_*, and declare FACTORY_MODEL_FAMILY + FACTORY_REVIEWER_MODEL_FAMILY); start-up
 #   refuses otherwise. With one provider only: FACTORY_REVIEWER_SAME_FAMILY=allow, dry-run merges only
 #   (not --github); those reviews are stamped same-family.
+#   Per-task model routing (Vertex + ADC only): FACTORY_ROUTING=catalog (default `env`: the FACTORY_MODEL_*
+#   variables above, unchanged). Models live in catalog/models.yaml (override: FACTORY_CATALOG=<path>): one row per
+#   model: id, modelName, tier (small|standard|frontier), family, capabilities, window, approvedFor, price, prior.
+#   Swap or add models (e.g. the Gemini rows, commented in the file) there; nothing else names a model.
+#   Policy (min tier per risk, size buckets, data class) is the `routing:` section of <repo>/.factory/policy.yaml;
+#   missing means defaults. Each (task, role) is routed once at run start and logged as a `route` ledger row.
 #   Agent contracts: a handover frozen with compiled contracts (designc `contracts/`) lists them;
 #   FACTORY_CONTRACTS=warn (default) names agents with none, require refuses to start, off ignores.
 #   S2 reads and checks them only; enforcing the policy at run time is not built yet.

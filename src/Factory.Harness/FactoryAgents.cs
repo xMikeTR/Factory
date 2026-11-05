@@ -13,9 +13,9 @@ namespace Factory.Harness;
 /// `vertex` is Claude on Google Vertex AI with Application Default Credentials: no key, no gateway.
 public enum ModelProvider { Anthropic, OpenAICompatible, Vertex }
 
-/// Agents never call a provider directly: APIM -> LiteLLM (per-user key, Langfuse) -> Vertex, over
-/// the OpenAI-compatible protocol; or the native Anthropic client, against the public API or a
-/// gateway that fronts it. Model names are gateway aliases (or Claude model ids for Anthropic),
+/// Agents never call a provider directly: Vertex with Application Default Credentials (Claude via the
+/// Anthropic client, others over Vertex's OpenAI-compatible endpoint), the native Anthropic client, or
+/// an OpenAI-compatible gateway. Model names are config (FACTORY_MODEL_* or catalog/models.yaml),
 /// so routing changes are config, not code. A null Endpoint is the provider's public endpoint.
 /// CacheControl (FACTORY_GATEWAY_CACHE_CONTROL = auto | on | off) puts Anthropic's cache breakpoints on the
 /// OpenAI-compatible wire. Null (auto, the default) sends them to a model whose name says Claude, which caches only
