@@ -21,6 +21,8 @@
   <ItemGroup>
     <!-- Per-role tool policies (AcsToolPolicy.DefaultDirectory), shipped next to every host. -->
     <None Include="../../policies/s2/*.yaml" Link="policies/s2/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The model catalog (Policy/CatalogFile.cs), shipped next to every host; FACTORY_CATALOG overrides the path. -->
+    <None Include="../../catalog/models.yaml" Link="catalog/models.yaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
