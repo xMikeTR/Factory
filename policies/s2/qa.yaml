@@ -21,6 +21,11 @@ rules:
     condition: "tool_name == 'write_file'"
     action: allow
     priority: 10
+  - name: deny-no-verify
+    condition: "tool_name == 'run_command' and args.skips_hooks == 'true'"
+    action: deny
+    message: "--no-verify is not allowed: hooks are not skipped"
+    priority: 100
   - name: allow-run-command
     condition: "tool_name == 'run_command'"
     action: allow

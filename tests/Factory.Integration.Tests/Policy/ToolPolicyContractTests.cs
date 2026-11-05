@@ -39,6 +39,18 @@ public abstract class ToolPolicyContract
         Assert.Equal(MayCall[role], allowed);
     }
 
+    [Theory]
+    [InlineData("git commit --no-verify -m x", false)]
+    [InlineData("git push --no-verify", false)]
+    [InlineData("dotnet test tests/X", true)]
+    public void Run_command_with_no_verify_is_denied_whatever_the_role_may_otherwise_run(string command, bool allowed)
+    {
+        var d = Policy.Evaluate(Roles.Implementer, "run_command", new Dictionary<string, object?> { ["command"] = command });
+
+        Assert.Equal(allowed, d.Allowed);
+        if (!allowed) Assert.Contains("no-verify", d.Reason);
+    }
+
     [Fact]
     public void An_unknown_role_or_tool_is_denied()
     {

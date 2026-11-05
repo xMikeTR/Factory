@@ -346,6 +346,9 @@ public sealed class ScopedWorkspace(
             return $"DENIED: only these commands are allowed: {string.Join(", ", commandAllowList)}";
         if (cmd.IndexOfAny([';', '&', '|', '`', '$', '>', '<']) >= 0)
             return "DENIED: shell operators are not allowed; run one command at a time.";
+        // Hooks are the gate layers' first line: an agent may not skip them.
+        if (cmd.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("--no-verify", StringComparer.Ordinal))
+            return "DENIED: --no-verify is not allowed; fix what the hook reports instead of skipping it.";
 
         // Never on the host environment: the gateway key and tokens must not reach agent commands.
         if (sandbox is null)
