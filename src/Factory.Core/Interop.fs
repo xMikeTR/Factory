@@ -128,6 +128,16 @@ type Core =
         let rng = Random(seed)
         Router.route policy rng.NextDouble Map.empty BudgetState.Ok spec (List.ofSeq catalog)
 
+    /// Router.route with learned stats, then the canary draw from the same seeded rng (after the route draws, so
+    /// the ladder does not depend on the share). The flag says the Standard entry was swapped for Frontier.
+    static member RouteTaskLearned(policy: RoutingPolicy, seed: int, spec: TaskSpec, catalog: ModelEntry seq, stats: Stats, canaryShare: float) : RouteOutcome * bool =
+        let rng = Random(seed)
+        match Router.route policy rng.NextDouble stats BudgetState.Ok spec (List.ofSeq catalog) with
+        | RouteOutcome.Routed(ladder, warnings) ->
+            let ladder', canary = Router.applyCanary canaryShare rng.NextDouble ladder
+            RouteOutcome.Routed(ladder', warnings), canary
+        | other -> other, false
+
     /// Learning.attribute for C#: events in ledger order, a predicate for catalog model ids.
     static member Attribute(known: Func<string, bool>, learnReviewer: bool, events: LearnEvent seq) : Attempt list =
         Learning.attribute known.Invoke learnReviewer (List.ofSeq events)

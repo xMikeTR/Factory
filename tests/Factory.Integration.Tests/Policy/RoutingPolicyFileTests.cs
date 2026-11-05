@@ -81,4 +81,28 @@ public class RoutingPolicyFileTests
         Assert.Contains(e.Errors, x => x.Contains("implementer"));
         Assert.Contains(e.Errors, x => x.Contains("sizeBuckets"));
     }
+
+    [Fact]
+    public void Learning_keys_default_to_five_percent_canary_thirty_day_half_life_and_no_reviewer_learning()
+    {
+        var c = RoutingPolicyFile.Load(RepoWith(null));
+
+        Assert.Equal(0.05, c.CanaryShare);
+        Assert.Equal(30.0, c.Learning.HalfLifeDays);
+        Assert.False(c.Learning.LearnReviewer);
+    }
+
+    [Fact]
+    public void Learning_keys_are_read_and_bad_values_are_rejected_together()
+    {
+        var c = RoutingPolicyFile.Load(RepoWith("routing:\n  canaryShare: 0.2\n  halfLifeDays: 7\n  learnReviewer: true\n"));
+        Assert.Equal(0.2, c.CanaryShare);
+        Assert.Equal(7.0, c.Learning.HalfLifeDays);
+        Assert.True(c.Learning.LearnReviewer);
+
+        var e = Assert.Throws<FactoryRejectedException>(() =>
+            RoutingPolicyFile.Load(RepoWith("routing:\n  canaryShare: 1.5\n  halfLifeDays: 0\n")));
+        Assert.Contains(e.Errors, d => d.Contains("routing.canaryShare"));
+        Assert.Contains(e.Errors, d => d.Contains("routing.halfLifeDays"));
+    }
 }
