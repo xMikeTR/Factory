@@ -234,4 +234,55 @@ let tests: (string * (unit -> unit)) list =
                     | other -> failwith $"unexpected %A{other}" ]
               |> List.filter ((=) "strong")
               |> List.length
-          check (wins >= 160) $"strong prior won {wins} of 200" ]
+          check (wins >= 160) $"strong prior won {wins} of 200"
+      "router: recording an attempt counts the outcome and updates the running token means", fun () ->
+          let key = { Model = "a"; Role = Role.Implementer; Repo = None; Size = M }
+          let stats = Map.empty |> Stats.record key true 1000 100 |> Stats.record key false 3000 300
+          let c = stats.[key]
+          equal 1.0 c.Successes "successes"
+          equal 1.0 c.Failures "failures"
+          equal 2 c.Samples "samples"
+          equal 2000.0 c.MeanTokensIn "mean in"
+          equal 200.0 c.MeanTokensOut "mean out"
+      "router: recording keeps other keys untouched", fun () ->
+          let a = { Model = "a"; Role = Role.Implementer; Repo = None; Size = M }
+          let b = { a with Model = "b" }
+          let stats = Map.empty |> Stats.record a true 10 10 |> Stats.record b false 20 20
+          equal 1.0 stats.[a].Successes "a"
+          equal 0.0 stats.[a].Failures "a failures"
+          equal 1.0 stats.[b].Failures "b"
+      "router: decay halves the counts and keeps the means and samples", fun () ->
+          let key = { Model = "a"; Role = Role.Implementer; Repo = None; Size = M }
+          let stats =
+              Map.empty
+              |> Stats.record key true 1000 100
+              |> Stats.record key true 1000 100
+              |> Stats.record key false 1000 100
+              |> Stats.record key false 1000 100
+              |> Stats.decay 0.5
+          let c = stats.[key]
+          equal 1.0 c.Successes "successes"
+          equal 1.0 c.Failures "failures"
+          equal 4 c.Samples "samples unchanged"
+          equal 1000.0 c.MeanTokensIn "mean in unchanged"
+          equal 100.0 c.MeanTokensOut "mean out unchanged"
+      "router: learning converges on the model with the lower cost per success", fun () ->
+          // cheap: 3/15 per MTok at a 0.9 pass rate; pricey: 6/30 at 0.95. Cost per success favours cheap.
+          let cheap = model "cheap" "claude" Standard [] 200000 allData
+          let pricey = { model "pricey" "gemini" Standard [] 200000 allData with Price = { InPerMTok = 6m; OutPerMTok = 30m } }
+          let truth = Map [ "cheap", 0.9; "pricey", 0.95 ]
+          let routeRng = System.Random(11).NextDouble
+          let outcomeRng = System.Random(12)
+          let mutable stats: Stats = Map.empty
+          let picks =
+              [ for _ in 1..300 ->
+                    match Router.route policy routeRng stats BudgetState.Ok task [ cheap; pricey ] with
+                    | Routed(ladder, _) ->
+                        let pick = ladder.[Standard]
+                        let passed = outcomeRng.NextDouble() < truth.[pick.Id]
+                        let key = { Model = pick.Id; Role = task.Role; Repo = task.Repo; Size = task.Size }
+                        stats <- Stats.record key passed task.EstTokensIn task.EstTokensOut stats
+                        pick.Id
+                    | other -> failwith $"unexpected %A{other}" ]
+          let cheapInLast100 = picks |> List.skip 200 |> List.filter ((=) "cheap") |> List.length
+          check (cheapInLast100 >= 80) $"cheap picked {cheapInLast100} of the last 100" ]
