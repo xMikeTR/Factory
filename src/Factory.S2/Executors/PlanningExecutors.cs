@@ -155,6 +155,8 @@ internal sealed class DispatchExecutor(FactoryServices svc) : Executor("Dispatch
         var json = Core.DispatchJson(dispatch);
         await File.WriteAllTextAsync(svc.Settings.DispatchPath(msg.RunId), json, cancellationToken);
         await svc.LogAsync(msg.RunId, "dispatch", LedgerKinds.Dispatch, outcome: $"{dispatch.Waves.Length} waves", payload: json, ct: cancellationToken);
+        // FACTORY_ROUTING=catalog: every (task, role) is routed once, before any wave; a pair with no eligible model refuses the run
+        await svc.RouteAsync(msg.RunId, svc.LoadHandover(msg.RunId), svc.LoadValidatedPlan(msg.RunId).Plan.Tasks, logRows: true, cancellationToken);
         await RegenerationAsync(msg.RunId, cancellationToken);
 
         await svc.Git.EnsureIntegrationAsync(msg.RunId, svc.Settings.BaseBranch, cancellationToken);

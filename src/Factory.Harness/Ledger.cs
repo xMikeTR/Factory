@@ -38,6 +38,7 @@ public static class LedgerKinds
     public const string TaskEvent = "task";         // payload = encoded F# TaskEvent; replayed on resume
     public const string Turn = "turn";              // one agent turn: model, tokens, tool calls
     public const string ToolCall = "tool_call";     // allowed or denied by policy
+    public const string Route = "route";            // task + payload {role, size, risk, ladder: {tier: modelId}, warnings}: the catalog ladder a (task, role) pair was routed to at run start (FACTORY_ROUTING=catalog). Run ledger only: not in RegistryStreams
     public const string Configurator = "configurator"; // routing decision before a turn: kind, tier, reason
     public const string Verify = "verify";
     public const string NeedsDecision = "needs_decision";

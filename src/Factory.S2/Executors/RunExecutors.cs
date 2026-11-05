@@ -32,6 +32,7 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
 
     private async Task RunWaveAsync(string runId, int index, DecisionAnswer[] answers, IWorkflowContext context, CancellationToken ct)
     {
+        await svc.EnsureRoutedAsync(runId, ct); // a resumed run is a new process: route again (same seed, same ladders)
         var handover = svc.LoadHandover(runId);
         var wave = svc.LoadDispatch(runId).Waves[index];
         var byTask = answers.ToDictionary(a => a.TaskId);
