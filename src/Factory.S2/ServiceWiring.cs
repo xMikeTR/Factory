@@ -1,5 +1,6 @@
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Routing;
 using Factory.Harness.Registry;
 using Factory.Harness.Governance;
 using Factory.Harness.Policy;
@@ -63,6 +64,8 @@ public static class ServiceWiring
         var git = new GitWorkspace(settings.RepoPath, settings.StateDir);
         var gateways = ModelGateways.FromEnvironment(env, mergesAreDryRun: pullRequests is DryRunPullRequests);
         var agents = new FactoryAgents(gateways, toolPolicy, ledger, FactoryTelemetry.CaptureContent(env));
+        // FACTORY_ROUTING=catalog routes each task through the model catalog; unset or `env`: the FACTORY_MODEL_* variables, as before.
+        var routing = RoutingSetup.FromEnvironment(env, settings.RepoPath, gateways);
         // QA runs only for a repo that describes a QA environment (.factory/qa-env.yaml); its requirements are the plan's tasks
         // (default source, until the handover carries requirements of its own).
         FactoryServices? built = null;
@@ -88,7 +91,8 @@ public static class ServiceWiring
             qa: qa,
             context: ContextRecording.Source(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_SOURCE"),
                 Environment.GetEnvironmentVariable("FACTORY_CONTEXT_DIR"), Environment.GetEnvironmentVariable("FACTORY_DESIGNC_CORE"), settings.RegistryPath),
-            injectContext: ContextRecording.Inject(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_INJECT")));
+            injectContext: ContextRecording.Inject(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_INJECT")),
+            routing: routing);
         return built;
     }
 }

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Registry;
+using Factory.Harness.Routing;
 using Factory.Harness.Policy;
 using Factory.Harness.Sandbox;
 using Factory.S2.Git;
@@ -105,7 +106,8 @@ public sealed class FactoryServices(
     IMutationRunner? mutation = null,
     IQaRunner? qa = null,
     IContextSource? context = null,
-    bool injectContext = false)
+    bool injectContext = false,
+    RoutingSetup? routing = null)
 {
     public FactorySettings Settings { get; } = settings;
     public ILedger Ledger { get; } = ledger;
@@ -147,6 +149,33 @@ public sealed class FactoryServices(
         File.Exists(Settings.RegenerationPath(runId))
             ? JsonSerializer.Deserialize<RegenerationFile>(File.ReadAllText(Settings.RegenerationPath(runId)))!.Rerun.ToHashSet()
             : null;
+
+    /// Catalog routing (FACTORY_ROUTING=catalog); null means every model comes from the FACTORY_MODEL_* variables.
+    public RoutingSetup? Routing { get; } = routing;
+
+    private string? _routedRun;
+
+    /// Routes every (task, role) pair of the run once, hands the ladders to the agents, and (when `logRows`) writes one
+    /// `route` ledger row per pair. Throws FactoryRejectedException, listing the reasons, when a pair has no eligible
+    /// model; nothing is written then. A no-op when routing is off. The seed is stable, so a resumed run (a new
+    /// process) routes the same ladders again: it calls this with `logRows: false`.
+    public async ValueTask RouteAsync(string runId, Handover handover, IEnumerable<PlannedTask> tasks, bool logRows, CancellationToken ct)
+    {
+        if (Routing is not { } routing) return;
+        var table = RunRouter.Route(runId, handover, tasks, routing.Catalog, routing.Config);
+        Agents.UseRouting(table, routing.ClientFor);
+        _routedRun = runId;
+        if (!logRows) return;
+        foreach (var row in table.Rows)
+            await LogAsync(runId, "route", LedgerKinds.Route,
+                payload: JsonSerializer.Serialize(new { role = row.Role, size = row.Size, risk = row.Risk, ladder = row.Ladder, warnings = row.Warnings }),
+                taskId: row.TaskId, ct: ct);
+    }
+
+    /// Routes the stored plan if this process has not yet (first thing of a wave, so a resumed run is routed).
+    public ValueTask EnsureRoutedAsync(string runId, CancellationToken ct) =>
+        Routing is null || _routedRun == runId ? ValueTask.CompletedTask
+            : RouteAsync(runId, LoadHandover(runId), LoadValidatedPlan(runId).Plan.Tasks, logRows: false, ct);
 
     public ValueTask LogAsync(string runId, string stage, string kind, string? outcome = null, string? payload = null,
         string? teamId = null, string? taskId = null, CancellationToken ct = default) =>
