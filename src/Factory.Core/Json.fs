@@ -136,7 +136,17 @@ module Json =
                     let co = obj p n
                     { Agent = str p co "agent"; Policy = str p co "policy"; Hash = str p co "hash" })
               Uncovered = strs "$" o "uncovered"
-              ApiContracts = strs "$" o "apiContracts" })
+              ApiContracts = strs "$" o "apiContracts"
+              RequirementRisk =
+                (match optStr o "requirementRisk" with
+                 | Some "low" -> Some Low
+                 | Some "medium" -> Some Medium
+                 | Some "high" | Some "critical" -> Some High
+                 | _ -> None)
+              RequirementDataClass =
+                (match optStr o "requirementDataClass" with
+                 | Some ("public" | "internal" | "regulated" as d) -> Some d
+                 | _ -> None) })
 
     // ---------- plan ----------
 
@@ -249,7 +259,13 @@ module Json =
                    if not h.Contracts.IsEmpty then
                        "contracts", JsonArray(h.Contracts |> List.map (fun c -> node [ "agent", JsonValue.Create c.Agent; "policy", JsonValue.Create c.Policy; "hash", JsonValue.Create c.Hash ]) |> Array.ofList)
                    if not h.Uncovered.IsEmpty then "uncovered", strArr h.Uncovered
-                   if not h.ApiContracts.IsEmpty then "apiContracts", strArr h.ApiContracts ]
+                   if not h.ApiContracts.IsEmpty then "apiContracts", strArr h.ApiContracts
+                   match h.RequirementRisk with
+                   | Some r -> "requirementRisk", JsonValue.Create((match r with Low -> "low" | Medium -> "medium" | High -> "high"))
+                   | None -> ()
+                   match h.RequirementDataClass with
+                   | Some d -> "requirementDataClass", JsonValue.Create d
+                   | None -> () ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     // ---------- task events (the ledger payload a runner replays on resume) ----------

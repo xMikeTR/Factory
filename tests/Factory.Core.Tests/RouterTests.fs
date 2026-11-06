@@ -57,7 +57,9 @@ let private specHandover: Handover =
       References = []
       Contracts = []
       Uncovered = []
-      ApiContracts = [] }
+      ApiContracts = []
+      RequirementRisk = None
+      RequirementDataClass = None }
 
 let private specConfig: TaskSpecConfig =
     { SmallMaxWrites = 4
@@ -331,6 +333,24 @@ let tests: (string * (unit -> unit)) list =
           equal High (Router.taskSpec specConfig specHandover t Role.Implementer 0 Set.empty).Risk "high wins"
           let low = specTask [ "a" ] 1 0
           equal Low (Router.taskSpec specConfig specHandover low Role.Implementer 0 Set.empty).Risk "low"
+      "router: taskSpec prefers the requirement's risk and data class over the element max and config", fun () ->
+          let t = specTask [ "a" ] 1 0
+          let h = { specHandover with RequirementRisk = Some Low; RequirementDataClass = Some "regulated" }
+          let s = Router.taskSpec specConfig h t Role.Implementer 0 Set.empty
+          equal Regulated s.DataClass "requirement data class"
+          equal Low s.Risk "requirement risk applied"
+          equal High (Router.taskSpec specConfig { h with RequirementRisk = Some High } t Role.Implementer 0 Set.empty).Risk "requirement high"
+          equal DataClass.Internal (Router.taskSpec { specConfig with DataClass = DataClass.Internal } specHandover t Role.Implementer 0 Set.empty).DataClass "config when absent"
+      "router: parseHandover reads requirementRisk (critical is high) and ignores unknown values", fun () ->
+          let json = System.IO.File.ReadAllText(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "examples", "pricing-v3", "handover.json"))
+          let withKeys r d = json.TrimEnd().TrimEnd('}') + sprintf ",\"requirementRisk\":\"%s\",\"requirementDataClass\":\"%s\"}" r d
+          let get j = match Json.parseHandover j with Ok h -> h | Error es -> failwithf "%A" es
+          equal (Some High) (get (withKeys "critical" "regulated")).RequirementRisk "critical"
+          equal (Some "regulated") (get (withKeys "low" "regulated")).RequirementDataClass "dc"
+          equal None (get (withKeys "bogus" "bogus")).RequirementRisk "unknown risk"
+          equal None (get json).RequirementDataClass "absent"
+          let back = get (Json.writeHandover (get (withKeys "high" "internal")))
+          equal (Some High, Some "internal") (back.RequirementRisk, back.RequirementDataClass) "round trip"
       "router: taskSpec carries the repo of the task's elements, None when the design declares none", fun () ->
           let h = { specHandover with Elements = [ { elem "a" Low with Repo = Some "Api" }; { elem "b" High with Repo = Some "Ui" } ] }
           equal (Some "Api") (Router.taskSpec specConfig h (specTask [ "a" ] 1 0) Role.Implementer 0 Set.empty).Repo "api"
