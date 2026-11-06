@@ -24,7 +24,8 @@ public static class ServiceWiring
         new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")), settings.RegistryPath,
         id => Factory.Harness.Registry.HandoverRef.From(Factory.Core.Core.ParseHandover(File.ReadAllText(settings.HandoverCopyPath(id)))), settings.TaskLimits);
 
-    public static FactoryServices Services(FactorySettings settings, string runId, Dictionary<string, string> env, IPullRequests pullRequests)
+    public static FactoryServices Services(FactorySettings settings, string runId, Dictionary<string, string> env, IPullRequests pullRequests,
+        Func<string, string, IPullRequests>? repoPullRequests = null)
     {
         var ledger = ProgressLedger(settings);
         // FACTORY_SANDBOX is an ordered list (docker,local); the first that starts is used. Default docker only;
@@ -96,7 +97,9 @@ public static class ServiceWiring
                 Environment.GetEnvironmentVariable("FACTORY_CONTEXT_DIR"), Environment.GetEnvironmentVariable("FACTORY_DESIGNC_CORE"), settings.RegistryPath),
             injectContext: ContextRecording.Inject(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_INJECT")),
             routing: routing,
-            repoGits: repoGits);
+            repoGits: repoGits,
+            repoPullRequests: repoPullRequests is null ? null
+                : (settings.Repos ?? new Dictionary<string, string>()).ToDictionary(r => r.Key, r => repoPullRequests(r.Key, r.Value)));
         return built;
     }
 }

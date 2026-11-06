@@ -95,7 +95,10 @@ try
             // OTLP collector); disposing the provider at the end of the run flushes them.
             using var tracing = FactoryTelemetry.CreateTracerProvider(env);
             var services = Services(settings, runId, env, PullRequestHost(opts, settings.RepoPath) as IPullRequests
-                ?? new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+                ?? new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)),
+                // One PR host per named repo, bound to that repo's path; a dry run writes each repo's PR body in its own folder.
+                (name, path) => PullRequestHost(opts, path) as IPullRequests
+                    ?? new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId, name)));
 
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
