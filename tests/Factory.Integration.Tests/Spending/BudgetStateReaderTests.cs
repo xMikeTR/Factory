@@ -94,4 +94,16 @@ public sealed class BudgetStateReaderTests : IDisposable
         }
         finally { Directory.Delete(repo, recursive: true); }
     }
+
+    [Fact]
+    public async Task A_new_run_is_refused_only_when_the_cost_budget_is_blocked()
+    {
+        await RunOfItemAsync("r1", "W-1", 95m);
+        Assert.Null(await BudgetStateReader.RefusalAsync(_dir, _ledger, Policy(item: 100m), "W-1", Now, default));      // downgrade still runs
+        await RunOfItemAsync("r2", "W-1", 10m);
+        var reason = await BudgetStateReader.RefusalAsync(_dir, _ledger, Policy(item: 100m), "W-1", Now, default);
+        Assert.NotNull(reason);
+        Assert.Contains("W-1", reason);
+        Assert.Contains("raise budget:", reason);
+    }
 }
