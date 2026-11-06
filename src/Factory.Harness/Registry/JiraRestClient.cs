@@ -4,7 +4,8 @@ using System.Text.Json;
 
 namespace Factory.Harness.Registry;
 
-/// Jira's REST API, only what the one-way mirror needs: read an issue's status and move it to a status by name.
+/// Jira Cloud's REST API (v3), only what the one-way mirror needs: read an issue's status, move it to a status by name,
+/// and comment on it.
 /// Auth is a token the user provides (JIRA_URL, JIRA_TOKEN, and JIRA_USER for Cloud's email + API token basic auth;
 /// without JIRA_USER the token is sent as a bearer PAT). The token is never logged and never put in an error message.
 public sealed class JiraRestClient(HttpClient http, string baseUrl, string? user, string token)
@@ -52,5 +53,18 @@ public sealed class JiraRestClient(HttpClient http, string baseUrl, string? user
         using var post = await http.SendAsync(Request(HttpMethod.Post, path, JsonSerializer.Serialize(new { transition = new { id } })), ct);
         post.EnsureSuccessStatusCode();
         return null;
+    }
+
+    /// Adds a comment. Jira Cloud's v3 API takes the body as Atlassian Document Format: one paragraph per line of `text`.
+    public async Task CommentAsync(string key, string text, CancellationToken ct)
+    {
+        var paragraphs = text.Replace("\r\n", "\n").Split('\n')
+            .Select(line => line.Length == 0
+                ? (object)new { type = "paragraph" }
+                : new { type = "paragraph", content = new[] { new { type = "text", text = line } } })
+            .ToArray();
+        var json = JsonSerializer.Serialize(new { body = new { type = "doc", version = 1, content = paragraphs } });
+        using var post = await http.SendAsync(Request(HttpMethod.Post, $"rest/api/3/issue/{Uri.EscapeDataString(key)}/comment", json), ct);
+        post.EnsureSuccessStatusCode();
     }
 }
