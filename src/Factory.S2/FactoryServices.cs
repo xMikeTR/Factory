@@ -119,7 +119,8 @@ public sealed class FactoryServices(
     IContextSource? context = null,
     bool injectContext = false,
     RoutingSetup? routing = null,
-    IReadOnlyDictionary<string, GitWorkspace>? repoGits = null)
+    IReadOnlyDictionary<string, GitWorkspace>? repoGits = null,
+    IReadOnlyDictionary<string, IPullRequests>? repoPullRequests = null)
 {
     public FactorySettings Settings { get; } = settings;
     /// One workspace per named repo (`--repo Api=.. --repo Ui=..`); empty for a single-repo run, where `Git` is the only one.
@@ -142,6 +143,11 @@ public sealed class FactoryServices(
     /// Where agent commands run during a turn (verify uses its own); never the host environment.
     public ISandboxFactory Sandboxes { get; } = sandboxes;
     public IPullRequests PullRequests { get; } = pullRequests;
+    /// The PR host bound to a named repo (a split run opens one PR per repo); the primary's host when the repo has none.
+    public IPullRequests PullRequestsFor(string repo) =>
+        repoPullRequests is not null && repoPullRequests.TryGetValue(repo, out var host) ? host : PullRequests;
+    /// More than one named repo: the merge step opens a PR in each and the factory never merges.
+    public bool IsSplit => RepoGits.Count > 1;
     /// Judges each task's green diff before it can pass; on the reviewer pool, apart from the implementer's.
     public IReviewer Reviewer { get; } = reviewer;
     /// Mutation tool seam; null means no tool is available (the mutation gate is skipped).
