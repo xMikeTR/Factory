@@ -43,6 +43,7 @@
     <Compile Include="ItemBudget.fs" />
     <Compile Include="Sampling.fs" />
     <Compile Include="Router.fs" />
+    <Compile Include="Budget.fs" />
     <Compile Include="Learning.fs" />
     <Compile Include="Trace.fs" />
     <Compile Include="Json.fs" />
