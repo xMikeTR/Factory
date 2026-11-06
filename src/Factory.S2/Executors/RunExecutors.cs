@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Policy;
 using Factory.Harness.Registry;
 using Factory.S2.Git;
 using Factory.S2.Quality;
@@ -160,7 +161,9 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
     private async ValueTask HandleAsync(IntegrationReady msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         var s = svc.Settings;
-        var integration = svc.Git.IntegrationPath(msg.RunId);
+        // A split project verifies each repo; what judges the UI (acceptance specs, tokens, QA) belongs to the Ui repo.
+        var split = svc.RepoGits.Count > 0;
+        var integration = (split && svc.RepoGits.GetValueOrDefault("Ui") is { } uiGit ? uiGit : svc.Git).IntegrationPath(msg.RunId);
         var timeout = TimeSpan.FromMinutes(30);
 
         var frozen = svc.LoadHandover(msg.RunId).AcceptanceSpecs;
@@ -171,7 +174,12 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         }
 
         var outcomes = new List<VerifyOutcome>();
-        if (SuiteDiscovery.Plan(s.IntegrationTestCommand, integration) is SuitePlan.Command suite)
+        if (split)
+        {
+            foreach (var (name, git) in svc.RepoGits.OrderBy(r => r.Key, StringComparer.Ordinal))
+                await RepoSuiteAsync(msg.RunId, name, git, outcomes, timeout, cancellationToken);
+        }
+        else if (SuiteDiscovery.Plan(s.IntegrationTestCommand, integration) is SuitePlan.Command suite)
             outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, "integration tests", suite.Item, integration, timeout, cancellationToken));
         else
             await svc.LogAsync(msg.RunId, "integration_verify", LedgerKinds.Verify, outcome: "no_suite",
@@ -188,11 +196,28 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
 
         await DecisionChecksAsync(msg.RunId, outcomes, timeout, cancellationToken);
 
+        // After both repos' own checks: the contract between them.
+        if (split && s.Contract is { } contract && svc.RepoGits.TryGetValue("Api", out var apiGit) && svc.RepoGits.TryGetValue("Ui", out var uiWs))
+            outcomes.AddRange(await ContractGate.RunAsync(svc.Verify, contract, msg.RunId,
+                apiGit.IntegrationPath(msg.RunId), uiWs.IntegrationPath(msg.RunId), timeout, cancellationToken));
+
         var failed = outcomes.Where(o => o.ExitCode != 0).ToList();
         object next = failed.Count > 0
             ? IntegrationVerdict(msg.RunId, failed)
             : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);
         await context.SendMessageAsync(next, cancellationToken: cancellationToken);
+    }
+
+    /// One repo's full suite in its own integration checkout: that repo's `integration.testCommand`, else discovered.
+    private async Task RepoSuiteAsync(string runId, string repo, GitWorkspace git, List<VerifyOutcome> outcomes, TimeSpan timeout, CancellationToken ct)
+    {
+        var dir = git.IntegrationPath(runId);
+        var command = IntegrationPolicyFile.TestCommand(git.RepoPath) ?? Environment.GetEnvironmentVariable("FACTORY_INTEGRATION_TEST_CMD");
+        if (SuiteDiscovery.Plan(command, dir) is SuitePlan.Command suite)
+            outcomes.Add(await svc.Verify.RunCommandAsync(runId, $"integration tests ({repo})", suite.Item, dir, timeout, ct));
+        else
+            await svc.LogAsync(runId, "integration_verify", LedgerKinds.Verify, outcome: "no_suite",
+                payload: JsonSerializer.Serialize(new { repo, reason = "no integration.testCommand and no test project in the repo" }), ct: ct);
     }
 
     /// The frozen acceptance specs are not the coding agent's to touch: any difference from the

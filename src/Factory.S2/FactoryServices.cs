@@ -55,7 +55,9 @@ public sealed record FactorySettings(
     /// (validated against the handover before a run starts); null or empty is none.
     IReadOnlyDictionary<string, string>? References = null,
     /// `--repo Api=../api --repo Ui=../ui`: repo name to full path. Null or empty is the single-repo form (RepoPath only).
-    IReadOnlyDictionary<string, string>? Repos = null)
+    IReadOnlyDictionary<string, string>? Repos = null,
+    /// From the primary repo's `contract:` section: the breaking-change and client-compile commands of a split project.
+    ContractConvention? Contract = null)
 {
     /// The names the plan validator checks task repos against; empty means unchecked (single repo).
     public string[] RepoNames => Repos is null ? [] : [.. Repos.Keys];
@@ -76,6 +78,7 @@ public sealed record FactorySettings(
         MergePolicy: MergePolicyFile.FromEnvironment(Path.GetFullPath(repo)),
         QualityPolicy: QualityPolicyFile.Load(Path.GetFullPath(repo)),
         Verify: VerifyPolicyFile.Load(Path.GetFullPath(repo)),
+        Contract: ContractPolicyFile.Load(Path.GetFullPath(repo)),
         Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)),
         UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
         AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),

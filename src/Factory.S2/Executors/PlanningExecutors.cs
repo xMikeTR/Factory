@@ -159,7 +159,9 @@ internal sealed class DispatchExecutor(FactoryServices svc) : Executor("Dispatch
         await svc.RouteAsync(msg.RunId, svc.LoadHandover(msg.RunId), svc.LoadValidatedPlan(msg.RunId).Plan.Tasks, logRows: true, cancellationToken);
         await RegenerationAsync(msg.RunId, cancellationToken);
 
-        await svc.Git.EnsureIntegrationAsync(msg.RunId, svc.Settings.BaseBranch, cancellationToken);
+        // A split project cuts an integration branch in every repo; a single-repo run, the one.
+        foreach (var git in svc.RepoGits.Count > 0 ? svc.RepoGits.Values : [svc.Git])
+            await git.EnsureIntegrationAsync(msg.RunId, svc.Settings.BaseBranch, cancellationToken);
         await NextAsync(msg.RunId, 0, dispatch, context, cancellationToken);
     }
 
