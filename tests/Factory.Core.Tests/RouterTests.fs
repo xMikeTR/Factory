@@ -343,12 +343,13 @@ let tests: (string * (unit -> unit)) list =
           equal DataClass.Internal (Router.taskSpec { specConfig with DataClass = DataClass.Internal } specHandover t Role.Implementer 0 Set.empty).DataClass "config when absent"
       "router: parseHandover reads requirementRisk (critical is high) and ignores unknown values", fun () ->
           let json = System.IO.File.ReadAllText(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "examples", "pricing-v3", "handover.json"))
-          let withKeys r d = json.TrimEnd().TrimEnd('}') + sprintf ",\"requirementRisk\":\"%s\",\"requirementDataClass\":\"%s\"}" r d
+          let withKeys r d = json.Replace(",\n  \"requirementRisk\": \"high\",\n  \"requirementDataClass\": \"internal\"", "").TrimEnd().TrimEnd('}') + sprintf ",\"requirementRisk\":\"%s\",\"requirementDataClass\":\"%s\"}" r d
           let get j = match Json.parseHandover j with Ok h -> h | Error es -> failwithf "%A" es
           equal (Some High) (get (withKeys "critical" "regulated")).RequirementRisk "critical"
           equal (Some "regulated") (get (withKeys "low" "regulated")).RequirementDataClass "dc"
           equal None (get (withKeys "bogus" "bogus")).RequirementRisk "unknown risk"
-          equal None (get json).RequirementDataClass "absent"
+          let plain = json.Replace(",\n  \"requirementRisk\": \"high\",\n  \"requirementDataClass\": \"internal\"", "")
+          equal None (get plain).RequirementDataClass "absent"
           let back = get (Json.writeHandover (get (withKeys "high" "internal")))
           equal (Some High, Some "internal") (back.RequirementRisk, back.RequirementDataClass) "round trip"
       "router: taskSpec carries the repo of the task's elements, None when the design declares none", fun () ->
