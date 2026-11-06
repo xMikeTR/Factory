@@ -166,4 +166,32 @@ public class RunRouterTests
         var rate = a.Count(x => x) / (double)a.Count;
         Assert.InRange(rate, 0.0, 0.2); // 240 draws at 5%
     }
+
+    // --- phase 4: the budget state reaches the router ---
+
+    [Fact]
+    public async Task A_downgrade_budget_caps_every_ladder_at_standard_when_the_risk_minimum_allows_it()
+    {
+        var h = await HandoverAsync();
+        var table = RunRouter.Route("run-1", h, [Plans.Task("T-001")], Catalog(TwoFamilies), Config, budget: BudgetState.Downgrade);
+        foreach (var row in table.Rows)
+            Assert.DoesNotContain(row.Ladder.Values, id => id.EndsWith("-top"));      // no frontier model anywhere
+    }
+
+    [Fact]
+    public async Task A_blocked_budget_refuses_the_run_naming_the_budget()
+    {
+        var h = await HandoverAsync();
+        var e = Assert.Throws<FactoryRejectedException>(() =>
+            RunRouter.Route("run-1", h, [Plans.Task("T-001")], Catalog(TwoFamilies), Config, budget: BudgetState.Blocked));
+        Assert.Contains(e.Errors, r => r.Contains("budget exceeded"));
+    }
+
+    [Fact]
+    public async Task A_soft_budget_routes_and_carries_the_warning_on_the_rows()
+    {
+        var h = await HandoverAsync();
+        var table = RunRouter.Route("run-1", h, [Plans.Task("T-001")], Catalog(TwoFamilies), Config, budget: BudgetState.Soft);
+        Assert.All(table.Rows, r => Assert.Contains("budget soft limit reached", r.Warnings));
+    }
 }

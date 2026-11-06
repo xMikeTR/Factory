@@ -4,6 +4,8 @@ using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Registry;
 using Factory.Harness.Routing;
+using Factory.Harness.Spending;
+using Factory.Harness.Policy;
 using Factory.Harness.Policy;
 using Factory.Harness.Sandbox;
 using Factory.S2.Git;
@@ -196,8 +198,14 @@ public sealed class FactoryServices(
         if (Routing is not { } routing) return;
         // What the ledgers have shown so far; once routed, the route rows pin the ladders for this run (see EnsureRoutedAsync).
         var known = routing.Catalog.Select(m => m.Id).ToHashSet();
-        var stats = await LearningReader.StatsAsync(Settings.StateDir, known.Contains, routing.Config.Learning, DateTimeOffset.UtcNow, ct, Settings.RegistryPath);
-        var table = RunRouter.Route(runId, handover, tasks, routing.Catalog, routing.Config, stats: stats);
+        var now = DateTimeOffset.UtcNow;
+        var stats = await LearningReader.StatsAsync(Settings.StateDir, known.Contains, routing.Config.Learning, now, ct, Settings.RegistryPath);
+        // Phase 4: imported prices replace the catalog's placeholders; the item's and the user's spend set the budget state.
+        var (catalog, _) = BudgetStore.ApplyPrices(routing.Catalog, Prices, DateOnly.FromDateTime(now.UtcDateTime));
+        var (budget, budgetWarnings) = await BudgetStateReader.ReadAsync(Settings.StateDir, Ledger, CostBudgetPolicyFile.Load(Settings.RepoPath),
+            handover.WorkItem is { } wi ? wi.Value : null, now, ct);
+        foreach (var w in budgetWarnings) Console.Error.WriteLine("budget: " + w);
+        var table = RunRouter.Route(runId, handover, tasks, catalog, routing.Config, stats: stats, budget: budget);
         Agents.UseRouting(table, routing.ClientFor);
         _routedRun = runId;
         if (!logRows) return;
@@ -207,6 +215,16 @@ public sealed class FactoryServices(
                 payload: JsonSerializer.Serialize(new { role = row.Role, size = row.Size, repo = RepoOfTask(handover, taskList, row.TaskId), risk = row.Risk, ladder = row.Ladder, warnings = row.Warnings, canary = row.Canary }),
                 taskId: row.TaskId, ct: ct);
     }
+
+    /// Imported prices (phase 4), read once per process; empty when nothing was imported, so no cost is recorded.
+    private IReadOnlyList<PriceRow>? _prices;
+    public IReadOnlyList<PriceRow> Prices => _prices ??= BudgetStore.LoadPrices(Settings.StateDir);
+
+    /// The cost of a turn (the model id's catalog model name is what the import prices) at the price in force today; null when the model has no imported price (the row stays cost-less).
+    public decimal? CostOf(string? modelId, Microsoft.Extensions.AI.UsageDetails? usage) =>
+        modelId is null || usage is null ? null
+            : BudgetStore.CostOf(Prices, Routing?.Catalog.FirstOrDefault(m => m.Id == modelId)?.ModelName ?? modelId,
+                usage.InputTokenCount ?? 0, usage.OutputTokenCount ?? 0, DateOnly.FromDateTime(DateTime.UtcNow));
 
     /// The repo a task works in (its elements' single repo, as `ValidatedPlan.RepoOf`); null when none, so the row omits nothing it knows.
     private static string? RepoOfTask(Handover handover, List<PlannedTask> tasks, string taskId)

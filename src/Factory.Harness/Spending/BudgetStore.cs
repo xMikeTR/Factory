@@ -54,12 +54,15 @@ public static class BudgetStore
         effective = p.Effective.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
     });
 
-    public static async Task<IReadOnlyList<PriceRow>> LoadPricesAsync(string stateDir, CancellationToken ct)
+    public static Task<IReadOnlyList<PriceRow>> LoadPricesAsync(string stateDir, CancellationToken ct) => Task.FromResult(LoadPrices(stateDir));
+
+    /// Every price row imported so far (a small file; read when a run starts and when a turn is costed).
+    public static IReadOnlyList<PriceRow> LoadPrices(string stateDir)
     {
         var path = Path.Combine(Dir(stateDir), "prices.jsonl");
         if (!File.Exists(path)) return [];
         var rows = new List<PriceRow>();
-        foreach (var line in await File.ReadAllLinesAsync(path, ct))
+        foreach (var line in File.ReadAllLines(path))
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
             try
