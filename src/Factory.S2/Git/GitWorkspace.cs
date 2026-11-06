@@ -7,8 +7,17 @@ namespace Factory.S2.Git;
 ///   factory/{run}/{team}             one per team, cut from integration at the start of its wave
 /// Worktrees live under {stateDir}/worktrees/{run}/... so parallel teams never share a checkout.
 /// Every method is idempotent so a restarted run can call it again safely.
-public sealed class GitWorkspace(string repoPath, string stateDir)
+///
+/// A split project has one GitWorkspace per repo; `repoName` (Api, Ui) puts that repo's worktrees one level deeper
+/// ({stateDir}/worktrees/{run}/{repoName}/...), so two repos' integration worktrees never share a folder. Branch names are
+/// the same in each repo (they are separate repositories). Null is the single-repo layout, unchanged.
+public sealed class GitWorkspace(string repoPath, string stateDir, string? repoName = null)
 {
+    public string RepoPath { get; } = repoPath;
+    public string? RepoName { get; } = repoName;
+    private string RunRoot(string runId) => repoName is null
+        ? Path.Combine(stateDir, "worktrees", runId) : Path.Combine(stateDir, "worktrees", runId, repoName);
+
     private static readonly TimeSpan GitTimeout = TimeSpan.FromMinutes(5);
     private readonly SemaphoreSlim _mergeLock = new(1, 1);
 
@@ -44,8 +53,8 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
             : $"created {path} as a git repository with an empty baseline on {baseBranch}";
     }
 
-    public string IntegrationPath(string runId) => Path.Combine(stateDir, "worktrees", runId, "integration");
-    public string TeamPath(string runId, string teamId) => Path.Combine(stateDir, "worktrees", runId, teamId);
+    public string IntegrationPath(string runId) => Path.Combine(RunRoot(runId), "integration");
+    public string TeamPath(string runId, string teamId) => Path.Combine(RunRoot(runId), teamId);
 
     public async Task<string> EnsureIntegrationAsync(string runId, string baseBranch, CancellationToken ct)
     {
@@ -75,7 +84,7 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     /// before the run's tasks (the mutation baseline). Removed when disposed.
     public async Task<BaselineCheckout> BaselineCheckoutAsync(string runId, CancellationToken ct, string? branch = null)
     {
-        var path = Path.Combine(stateDir, "worktrees", runId, $"baseline-{Guid.NewGuid():N}");
+        var path = Path.Combine(RunRoot(runId), $"baseline-{Guid.NewGuid():N}");
         await GitAsync(repoPath, ct, "worktree", "add", "--detach", path, branch ?? IntegrationBranch(runId));
         return new BaselineCheckout(path, async () =>
         {
@@ -88,7 +97,7 @@ public sealed class GitWorkspace(string repoPath, string stateDir)
     /// record, and remote branches are left alone. Idempotent.
     public async Task RemoveRunAsync(string runId, CancellationToken ct)
     {
-        var root = Path.Combine(stateDir, "worktrees", runId);
+        var root = RunRoot(runId);
         if (Directory.Exists(root))
         {
             foreach (var dir in Directory.GetDirectories(root))
