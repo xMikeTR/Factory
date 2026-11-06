@@ -83,6 +83,11 @@ try
             };
             var runId = opts.GetValueOrDefault("run-id") ?? (repairOf is null ? $"{DateTime.UtcNow:yyyyMMdd-HHmmss}" : $"{repairOf}-r1");
             Directory.CreateDirectory(settings.StateDir);
+            if (settings.Repos is { Count: > 1 } named)
+            {
+                Directory.CreateDirectory(settings.RunDir(runId));
+                await File.WriteAllTextAsync(settings.ReposPath(runId), System.Text.Json.JsonSerializer.Serialize(named));
+            }
 
             // result.json in the run folder says how this attempt ended and why, whatever the exit path.
             // An attempt that ended without reaching Finalize (crash, Ctrl+C, workflow error) is ended in the registry too.
@@ -439,27 +444,39 @@ try
             var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
             var runId = Required(opts, "run-id");
             var host = PullRequestHost(opts, settings.RepoPath);
+            // A split run's repos were saved by `run`; the primary is the first of them.
+            if (File.Exists(settings.ReposPath(runId)))
+                settings = settings with { Repos = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(settings.ReposPath(runId))) };
             var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
                 .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
             var services = Services(settings, runId, env, new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
             var branch = GitWorkspace.IntegrationBranch(runId);
+            var split = services.IsSplit;
+            async Task<string?> MergedIn(string repoPath, CancellationToken ct) =>
+                PullRequestHost(opts, repoPath) is { } h
+                    ? await h.MergedPullRequestAsync(branch, ct) is { } url ? $"pr {url}" : null
+                    : await RunClose.BranchMergedAsync(repoPath, branch, settings.BaseBranch, ct);
+            var splitMerged = new RunClose.SplitMerged([.. SplitMerge.Order(services.RepoGits.Keys)
+                .Select(n => new RunClose.RepoMerge(n, ct => MergedIn(services.RepoGits[n].RepoPath, ct)))]);
             var why = await RunClose.RecordAsync(services.Ledger, runId,
-                async ct => host is not null
-                    ? await host.MergedPullRequestAsync(branch, ct) is { } url ? $"pr {url}" : null
-                    : await RunClose.BranchMergedAsync(settings.RepoPath, branch, settings.BaseBranch, ct),
+                async ct => split ? await splitMerged.AllAsync(ct)
+                    : host is not null
+                        ? await host.MergedPullRequestAsync(branch, ct) is { } url ? $"pr {url}" : null
+                        : await RunClose.BranchMergedAsync(settings.RepoPath, branch, settings.BaseBranch, ct),
                 async ct =>
                 {
                     // Merged on the PR host: the merged commit is origin's base, not the local one.
+                    if (split) return await RunClose.CheckMergedSplitAsync(services, runId, host is not null, ct);
                     if (host is not null) await services.Git.FetchAsync(settings.BaseBranch, ct);
                     return await RunClose.CheckMergedAsync(services, runId, host is not null ? $"origin/{settings.BaseBranch}" : settings.BaseBranch, ct);
                 },
-                opts.GetValueOrDefault("by"), canState: host is null, CancellationToken.None);
+                opts.GetValueOrDefault("by"), canState: host is null, CancellationToken.None, split ? splitMerged.NotMerged : null);
             if (why is null && Directory.Exists(settings.RegistryPath))
                 await Factory.Harness.Registry.RegistryProgress.SyncAsync(services.Ledger, settings.RegistryPath, runId,
                     Factory.Harness.Registry.HandoverRef.From(services.LoadHandover(runId)), settings.TaskLimits, CancellationToken.None);
             Console.WriteLine(why is null ? $"run {runId}: merge recorded; the handover is closed" : $"not recorded: {why}");
             // Complete (now or by an earlier close): its worktrees and local branches go; the ledger and run folder stay.
-            if (await RunClose.CleanUpAsync(services.Ledger, services.Git, runId, CancellationToken.None))
+            if (await RunClose.CleanUpAsync(services.Ledger, split ? services.RepoGits.Values : [services.Git], runId, CancellationToken.None))
                 Console.WriteLine($"run {runId}: worktrees and local factory/{runId}/* branches removed");
             return why is null ? 0 : 1;
         }
