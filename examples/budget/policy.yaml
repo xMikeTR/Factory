@@ -1,0 +1,9 @@
+# Copy to <target repo>/.factory/policy.yaml. Cost budget (phase 4); every field is optional.
+budget:
+  itemTokens: 2000000     # token limit per work item (`factory-s2 budget` reports against it)
+  itemCost: 50            # per work item, from tokens x imported price
+  userMonthlyCost: 750    # your monthly cap, from the latest spend import
+  softAt: 0.8             # Soft: warn
+  downgradeAt: 0.9        # Downgrade: every ladder capped at Standard
+  maxImportAgeDays: 2     # an older spend import counts as Soft
+  currency: GBP

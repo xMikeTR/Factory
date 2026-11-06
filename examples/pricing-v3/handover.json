@@ -18,5 +18,7 @@
     }
   ],
   "protectedPaths": ["registry/**", ".github/**", "verify/**", "scripts/verify/**"],
-  "eventVocabulary": ["eCommitted"]
+  "eventVocabulary": ["eCommitted"],
+  "requirementRisk": "high",
+  "requirementDataClass": "internal"
 }

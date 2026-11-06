@@ -48,6 +48,8 @@
       }
     },
     "protectedPaths": { "type": "array", "items": { "type": "string" } },
+    "requirementRisk": { "enum": ["low", "medium", "high", "critical"], "description": "optional: the requirement's own risk (designc jira-mapping); the router prefers it over the element max; critical reads as high" },
+    "requirementDataClass": { "enum": ["public", "internal", "regulated"], "description": "optional: the requirement's data class; the router prefers it over the policy's" },
     "eventVocabulary": { "type": "array", "items": { "type": "string" } },
     "relationships": {
       "type": "array",
