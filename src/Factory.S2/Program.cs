@@ -19,7 +19,7 @@ using static Factory.S2.ServiceWiring;
 // factory-s2 digest --registry ../registry [--repo .] [--base main] [--last-look <epoch ms>] [--wip 3] [--notify-state <file>: print NOTIFY for new Needs/Failed rows only]   Needs decision / Failed a gate / Done / Waiting
 // factory-s2 pull-plan --registry ../registry [--repo .] [--base main] [--wip 3]   what the scheduler would pull now and why the rest waits (nothing is pulled)
 // factory-s2 metrics --registry ../registry [--repo .] [--base main]   S4 work metrics: throughput, lead time, human wait, deferrals, re-check rate, escapes
-// factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
+// factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply [--comment] | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
 // factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
 // factory-s2 budget-import --repo . [--prices <file>] [--spend <file>]   vendor-neutral import (CSV or JSON, schemas/budget-import.schema.json): effective-dated prices replace catalog placeholders, spend feeds budget.userMonthlyCost
 // factory-s2 router-stats --repo . [--role implementer] [--json]   what the run ledgers have taught the model router: successes, failures, mean tokens and cost per success (catalog prices) per model, role and size
@@ -278,7 +278,8 @@ try
             // factory-s2 jira-mirror --registry r --snapshot jira.json [--state jira-mirrored.json] [--applied] [--no-flag]
             // snapshot = { "DEMO-7": "In Progress" }, the issues' current statuses. Prints the transitions the ledger implies;
             // S2 writes nothing to Jira. Drift (a status the mirror did not write) is never overwritten and is flagged to a
-            // person (item_awaiting_human) unless --no-flag. --applied records the planned transitions as mirrored.
+            // person (item_awaiting_human) unless --no-flag. --comment: with --apply, each issue moved also gets a comment with the
+            // item's commit and latest gate results; without --apply it prints the comment it would post. --applied records the planned transitions as mirrored.
             // With JIRA_URL + JIRA_TOKEN (+ JIRA_USER for Cloud) set, statuses are read over REST and --apply moves the
             // issues; without them --snapshot is required and nothing is written to Jira (a person or a browser does it).
             var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
@@ -311,9 +312,17 @@ try
             var drift = plan.OfType<Factory.Core.MirrorAction.Drift>().Count();
             if (drift > 0 && !opts.ContainsKey("no-flag"))
                 await Factory.Harness.Registry.JiraMirrorReport.FlagDriftAsync(Required(opts, "registry"), plan, DateTimeOffset.UtcNow, CancellationToken.None);
+            if (opts.ContainsKey("comment") && !opts.ContainsKey("apply"))
+                foreach (var t in plan.OfType<Factory.Core.MirrorAction.Transition>())
+                    Console.WriteLine($"  would comment on {t.key}:\n" + string.Join('\n',
+                        (await Factory.Harness.Registry.JiraMirrorReport.EvidenceAsync(Required(opts, "registry"), t.item, t.target, CancellationToken.None)).Split('\n').Select(l => "    " + l)));
             if (opts.ContainsKey("apply") && rest is not null)
             {
-                var (moved, failed) = await Factory.Harness.Registry.JiraMirrorReport.ApplyAsync(rest, plan, CancellationToken.None);
+                var registryPath = Required(opts, "registry");
+                var (moved, failed) = await Factory.Harness.Registry.JiraMirrorReport.ApplyAsync(rest, plan, CancellationToken.None,
+                    opts.ContainsKey("comment")
+                        ? (t, ct) => Factory.Harness.Registry.JiraMirrorReport.EvidenceAsync(registryPath, t.item, t.target, ct)
+                        : null);
                 foreach (var (k, s) in moved) { mirrored[k] = s; Console.WriteLine($"  moved  {k} -> {s}"); }
                 foreach (var f in failed) Console.Error.WriteLine("  FAILED " + f);
                 await File.WriteAllTextAsync(statePath, System.Text.Json.JsonSerializer.Serialize(mirrored));
