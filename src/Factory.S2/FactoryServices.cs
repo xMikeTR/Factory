@@ -91,6 +91,8 @@ public sealed record FactorySettings(
     public string BrowserVariant => Environment.GetEnvironmentVariable("FACTORY_BROWSER_TOOL") ?? (PlaywrightCli ? "cli" : "none");
 
     public string RunDir(string runId) => Path.Combine(StateDir, "runs", runId);
+    /// The repo map (name -> path) of a split run, written by `run` so `close` knows every repo without being told again.
+    public string ReposPath(string runId) => Path.Combine(RunDir(runId), "repos.json");
     public string PlanPath(string runId) => Path.Combine(RunDir(runId), "plan.json");
     public string DispatchPath(string runId) => Path.Combine(RunDir(runId), "dispatch.json");
     public string HandoverCopyPath(string runId) => Path.Combine(RunDir(runId), "handover.json");
