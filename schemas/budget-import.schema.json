@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "budget-import.schema.json",
+  "title": "factory-s2 budget import",
+  "description": "Vendor-neutral. S2 reads only this; a converter from any billing export writes it. Each file is either a CSV (header row, columns by these names) or a JSON array of objects with the same names. Prices are effective-dated and append-only; a spend import replaces the months it contains.",
+  "$defs": {
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "price": {
+      "type": "object",
+      "required": ["model", "in_per_mtok", "out_per_mtok", "currency", "source", "effective"],
+      "properties": {
+        "model": { "type": "string", "description": "The catalog model name (models.yaml modelName), else its id" },
+        "in_per_mtok": { "type": "number", "minimum": 0 },
+        "out_per_mtok": { "type": "number", "minimum": 0 },
+        "currency": { "type": "string" },
+        "source": { "type": "string", "description": "Where the price came from, e.g. an invoice reference" },
+        "effective": { "$ref": "#/$defs/date" }
+      }
+    },
+    "spend": {
+      "type": "object",
+      "required": ["date", "model", "tokens_in", "tokens_out", "cost"],
+      "properties": {
+        "date": { "$ref": "#/$defs/date" },
+        "model": { "type": "string" },
+        "tokens_in": { "type": "integer", "minimum": 0 },
+        "tokens_out": { "type": "integer", "minimum": 0 },
+        "cost": { "type": "number", "minimum": 0, "description": "In the policy's budget.currency" }
+      }
+    }
+  },
+  "oneOf": [
+    { "title": "prices file", "type": "array", "items": { "$ref": "#/$defs/price" } },
+    { "title": "spend file", "type": "array", "items": { "$ref": "#/$defs/spend" } }
+  ]
+}

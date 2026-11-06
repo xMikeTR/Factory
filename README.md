@@ -134,6 +134,12 @@ export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MOD
 #   learnReviewer (false). See what it learned: `factory-s2 router-stats --repo . [--role implementer] [--json]`
 #   (cache: <state dir>/router-stats.json, rebuilt whenever the ledger changes). Catalog prices must be real for
 #   cost to steer routing: rows priced 0 tie, and the first row in the file wins.
+#   Prices and spend (vendor-neutral, schemas/budget-import.schema.json): `factory-s2 budget-import --repo .
+#   --prices prices.csv --spend spend.csv` (CSV or JSON). Imported prices replace catalog placeholders by model name
+#   (router-stats names the models still on a placeholder) and turn rows then carry `cost`. policy.yaml `budget:`
+#   adds itemCost, userMonthlyCost, softAt (0.8), downgradeAt (0.9), maxImportAgeDays (2), currency: Soft warns,
+#   Downgrade caps every ladder at Standard, Blocked refuses a new run (exit 4); a missing or stale spend import
+#   counts as Soft when userMonthlyCost is set. The worse of the item and user states wins.
 #   Agent contracts: a handover frozen with compiled contracts (designc `contracts/`) lists them;
 #   FACTORY_CONTRACTS=warn (default) names agents with none, require refuses to start, off ignores.
 #   S2 reads and checks them only; enforcing the policy at run time is not built yet.

@@ -21,6 +21,7 @@ using static Factory.S2.ServiceWiring;
 // factory-s2 metrics --registry ../registry [--repo .] [--base main]   S4 work metrics: throughput, lead time, human wait, deferrals, re-check rate, escapes
 // factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
 // factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
+// factory-s2 budget-import --repo . [--prices <file>] [--spend <file>]   vendor-neutral import (CSV or JSON, schemas/budget-import.schema.json): effective-dated prices replace catalog placeholders, spend feeds budget.userMonthlyCost
 // factory-s2 router-stats --repo . [--role implementer] [--json]   what the run ledgers have taught the model router: successes, failures, mean tokens and cost per success (catalog prices) per model, role and size
 // factory-s2 parity --registry ../registry --item W-1 [--repo .] [--designc <dir>|FACTORY_DESIGNC_DIR] [--base-url <new app>] [--adapter web|fixture:<file>]   designc's recorder on the next side at the clean HEAD (appends parity_result), then parity-decisions; exit 0 pass, 1 fail, 3 could not run, 2 error
 // factory-s2 parity-decisions --registry ../registry   one open needs_decision (A build like legacy / B ask the PO) per scenario whose latest parity_result failed; exit 2 when any was raised
@@ -124,6 +125,9 @@ try
                         settings.StateDir, new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")),
                         Factory.Harness.Policy.BudgetPolicyFile.Load(settings.RepoPath), workItem,
                         opts.GetValueOrDefault("registry"), DateTimeOffset.UtcNow, cts.Token);
+                    refusal ??= await Factory.Harness.Spending.BudgetStateReader.RefusalAsync(
+                        settings.StateDir, new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")),
+                        Factory.Harness.Policy.CostBudgetPolicyFile.Load(settings.RepoPath), workItem, DateTimeOffset.UtcNow, cts.Token);
                     if (refusal is not null)
                     {
                         Console.Error.WriteLine("refused: " + refusal);
@@ -538,6 +542,20 @@ try
             return findings.IsEmpty ? 0 : 1;
         }
 
+        case "budget-import":
+        {
+            // The vendor-neutral import (schemas/budget-import.schema.json): prices and/or spend as CSV or JSON files.
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), null, null);
+            if (!opts.ContainsKey("prices") && !opts.ContainsKey("spend")) throw new FactoryRejectedException("nothing to import", ["pass --prices <file> and/or --spend <file>"]);
+            var result = await Factory.Harness.Spending.BudgetStore.ImportAsync(settings.StateDir,
+                opts.TryGetValue("prices", out var pf) ? await File.ReadAllTextAsync(pf) : null,
+                opts.TryGetValue("spend", out var sf) ? await File.ReadAllTextAsync(sf) : null,
+                DateTimeOffset.UtcNow, CancellationToken.None);
+            if (result.Errors.Count > 0) throw new FactoryRejectedException("the budget import is invalid; nothing was imported", [.. result.Errors]);
+            Console.WriteLine($"imported {result.PricesAdded} new price row(s), {result.SpendRows} spend row(s) into {Path.Combine(settings.StateDir, "budget")}");
+            return 0;
+        }
+
         case "router-stats":
         {
             // What the run ledgers have taught the router: per model, role and size, with cost per success at catalog prices.
@@ -550,13 +568,17 @@ try
             var known = catalog.Models.Select(m => m.Id).ToHashSet();
             var stats = await Factory.Harness.Routing.LearningReader.StatsAsync(
                 settings.StateDir, known.Contains, routing.Learning, DateTimeOffset.UtcNow, CancellationToken.None, settings.RegistryPath);
-            var rows = Factory.Harness.Routing.RouterStatsReport.Rows(stats, catalog.Models, opts.GetValueOrDefault("role"));
+            var (priced, unmatched) = Factory.Harness.Spending.BudgetStore.ApplyPrices(
+                catalog.Models, Factory.Harness.Spending.BudgetStore.LoadPrices(settings.StateDir), DateOnly.FromDateTime(DateTime.UtcNow));
+            var rows = Factory.Harness.Routing.RouterStatsReport.Rows(stats, priced, opts.GetValueOrDefault("role"));
             Console.Write(Factory.Harness.Routing.RouterStatsReport.Render(rows, opts.ContainsKey("json")));
+            if (unmatched.Count > 0)
+                Console.Error.WriteLine("placeholder price (no imported price): " + string.Join(", ", unmatched) + "  (factory-s2 budget-import --prices <file>)");
             return 0;
         }
 
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|router-stats|parity|parity-decisions|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|budget-import|router-stats|parity|parity-decisions|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
             return 2;
     }
 }

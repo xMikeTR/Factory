@@ -33,6 +33,15 @@ public static class BudgetStateReader
         return (state, warnings);
     }
 
+    /// The reason a new run for the item is refused (exit 4), or null: only a Blocked cost budget refuses; Soft and Downgrade run.
+    public static async Task<string?> RefusalAsync(string stateDir, ILedger ledger, CostBudgetPolicy policy, string? item, DateTimeOffset now, CancellationToken ct)
+    {
+        var (state, _) = await ReadAsync(stateDir, ledger, policy, item, now, ct);
+        return state == BudgetState.Blocked
+            ? $"{item ?? "the user"} is over its cost budget ({policy.Currency}): raise budget: in .factory/policy.yaml or wait for the next period"
+            : null;
+    }
+
     /// The summed `Cost` of every ledger row of every run whose handover names the item; rows without a cost count as zero.
     public static async Task<decimal> ItemCostAsync(string stateDir, ILedger ledger, string item, CancellationToken ct)
     {
