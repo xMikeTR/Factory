@@ -549,7 +549,7 @@ try
             var routing = Factory.Harness.Policy.RoutingPolicyFile.Load(Path.GetFullPath(Required(opts, "repo")));
             var known = catalog.Models.Select(m => m.Id).ToHashSet();
             var stats = await Factory.Harness.Routing.LearningReader.StatsAsync(
-                settings.StateDir, known.Contains, routing.Learning, DateTimeOffset.UtcNow, CancellationToken.None);
+                settings.StateDir, known.Contains, routing.Learning, DateTimeOffset.UtcNow, CancellationToken.None, settings.RegistryPath);
             var rows = Factory.Harness.Routing.RouterStatsReport.Rows(stats, catalog.Models, opts.GetValueOrDefault("role"));
             Console.Write(Factory.Harness.Routing.RouterStatsReport.Render(rows, opts.ContainsKey("json")));
             return 0;

@@ -11,6 +11,9 @@ type VerifyFact = { Task: string; Passed: bool; Ts: DateTime }
 
 type ReviewFact = { Task: string; Model: string; Approved: bool; Ts: DateTime }
 
+/// The item-level parity verdict for a task's item (7c): did the item's latest parity results (tiers 1 and 2) pass?
+type ParityFact = { Task: string; Passed: bool }
+
 type LearnEvent =
     /// A `route` row: gives the role, size and repo a task's later turns are keyed by.
     | Routed of RouteFact
@@ -20,6 +23,8 @@ type LearnEvent =
     | Verified of VerifyFact
     /// The reviewer's verdict on the task's diff.
     | Reviewed of ReviewFact
+    /// Parity was run for the task's item. Judged after the fact, so its position in the events does not matter.
+    | ParityJudged of ParityFact
 
 /// One piece of evidence: who, whether it passed, tokens spent, when.
 type Attempt = StatsKey * bool * int * int * DateTime
@@ -27,6 +32,10 @@ type Attempt = StatsKey * bool * int * int * DateTime
 /// The ledger is the source of truth: stats are always a fold of the attempts it contains.
 [<RequireQualifiedAccess>]
 module Learning =
+    /// The repo whose tasks parity judges: React that compiles but looks wrong must not credit a cheap model.
+    [<Literal>]
+    let UiRepo = "Ui"
+
     let private isAct role = (role = Role.Implementer || role = Role.TestAuthor)
 
     /// D3: escalation is per turn. Each verify result credits (or debits) the model of the last act turn before it,
@@ -38,6 +47,8 @@ module Learning =
             events
             |> List.choose (function Routed r -> Some((r.Task, r.Role), r) | _ -> None)
             |> Map.ofList
+        let parityFailed =
+            events |> List.choose (function ParityJudged p when not p.Passed -> Some p.Task | _ -> None) |> Set.ofList
         let keyFor task role model =
             if not (known model) then None
             else
@@ -46,7 +57,7 @@ module Learning =
                 |> Option.map (fun r -> { Model = model; Role = role; Repo = r.Repo; Size = r.Size })
         let step (window: Map<string, TurnFact list>, out: Attempt list) event =
             match event with
-            | Routed _ -> window, out
+            | Routed _ | ParityJudged _ -> window, out
             | Turn t when isAct t.Role ->
                 let w = Map.tryFind t.Task window |> Option.defaultValue []
                 Map.add t.Task (t :: w) window, out
@@ -63,7 +74,8 @@ module Learning =
                         let mine = w |> List.filter (fun t -> t.Model = last.Model && t.Role = last.Role)
                         let tin = mine |> List.sumBy (fun t -> t.TokensIn)
                         let tout = mine |> List.sumBy (fun t -> t.TokensOut)
-                        window', (key, v.Passed, tin, tout, v.Ts) :: out
+                        let passed = v.Passed && not (key.Repo = Some UiRepo && Set.contains v.Task parityFailed)
+                        window', (key, passed, tin, tout, v.Ts) :: out
             | Reviewed r when learnReviewer ->
                 match keyFor r.Task Role.Reviewer r.Model with
                 | Some key -> window, (key, r.Approved, 0, 0, r.Ts) :: out

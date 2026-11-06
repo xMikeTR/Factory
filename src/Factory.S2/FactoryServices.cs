@@ -196,15 +196,26 @@ public sealed class FactoryServices(
         if (Routing is not { } routing) return;
         // What the ledgers have shown so far; once routed, the route rows pin the ladders for this run (see EnsureRoutedAsync).
         var known = routing.Catalog.Select(m => m.Id).ToHashSet();
-        var stats = await LearningReader.StatsAsync(Settings.StateDir, known.Contains, routing.Config.Learning, DateTimeOffset.UtcNow, ct);
+        var stats = await LearningReader.StatsAsync(Settings.StateDir, known.Contains, routing.Config.Learning, DateTimeOffset.UtcNow, ct, Settings.RegistryPath);
         var table = RunRouter.Route(runId, handover, tasks, routing.Catalog, routing.Config, stats: stats);
         Agents.UseRouting(table, routing.ClientFor);
         _routedRun = runId;
         if (!logRows) return;
+        var taskList = tasks.ToList();
         foreach (var row in table.Rows)
             await LogAsync(runId, "route", LedgerKinds.Route,
-                payload: JsonSerializer.Serialize(new { role = row.Role, size = row.Size, risk = row.Risk, ladder = row.Ladder, warnings = row.Warnings, canary = row.Canary }),
+                payload: JsonSerializer.Serialize(new { role = row.Role, size = row.Size, repo = RepoOfTask(handover, taskList, row.TaskId), risk = row.Risk, ladder = row.Ladder, warnings = row.Warnings, canary = row.Canary }),
                 taskId: row.TaskId, ct: ct);
+    }
+
+    /// The repo a task works in (its elements' single repo, as `ValidatedPlan.RepoOf`); null when none, so the row omits nothing it knows.
+    private static string? RepoOfTask(Handover handover, List<PlannedTask> tasks, string taskId)
+    {
+        var task = tasks.FirstOrDefault(t => t.Id.Value == taskId);
+        if (task is null) return null;
+        var repos = handover.Elements.Where(e => task.Elements.Contains(e.Id)).Select(e => e.Repo).Where(r => r is not null)
+            .Select(r => r!.Value).Distinct().ToList();
+        return repos.Count == 1 ? repos[0] : null;
     }
 
     /// Makes sure this process has the run's ladders (first thing of a wave, so a resumed run is routed). A run that

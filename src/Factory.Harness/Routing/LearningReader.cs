@@ -14,6 +14,7 @@ public sealed record LearningSettings(double HalfLifeDays = 30, bool LearnReview
 /// is credited to) is the pure `Learning.attribute`; this class only maps rows to its input and caches the result.
 ///
 /// Cache: {stateDir}/router-stats.json holds the attributed attempts, keyed by the ledger's length and `learnReviewer`.
+/// The registry's ledger size is part of the key too (a parity result arriving later changes attribution).
 /// It is a cache only: a missing, unreadable or stale file is rebuilt from the ledger. Decay and the catalog filter
 /// are applied after the cache, so neither is part of its key.
 public static class LearningReader
@@ -21,35 +22,38 @@ public static class LearningReader
     private const string CacheFile = "router-stats.json";
 
     public static async Task<FSharpMap<StatsKey, Counts>> StatsAsync(
-        string stateDir, Func<string, bool> known, LearningSettings settings, DateTimeOffset now, CancellationToken ct)
+        string stateDir, Func<string, bool> known, LearningSettings settings, DateTimeOffset now, CancellationToken ct,
+        string? registryPath = null)
     {
-        var attempts = await AttemptsAsync(stateDir, settings.LearnReviewer, ct);
+        var attempts = await AttemptsAsync(stateDir, settings.LearnReviewer, registryPath, ct);
         return Core.FoldAttempts(now.UtcDateTime, settings.HalfLifeDays, attempts.Where(a => known(a.Item1.Model)));
     }
 
     private sealed record CachedAttempt(string Model, string Role, string? Repo, string Size, bool Passed, int TokensIn, int TokensOut, DateTime Ts);
-    private sealed record Cache(long LedgerBytes, bool LearnReviewer, List<CachedAttempt> Attempts);
+    private sealed record Cache(long LedgerBytes, long RegistryBytes, bool LearnReviewer, List<CachedAttempt> Attempts);
 
-    private static async Task<List<Tuple<StatsKey, bool, int, int, DateTime>>> AttemptsAsync(string stateDir, bool learnReviewer, CancellationToken ct)
+    private static async Task<List<Tuple<StatsKey, bool, int, int, DateTime>>> AttemptsAsync(string stateDir, bool learnReviewer, string? registryPath, CancellationToken ct)
     {
         var ledgerPath = Path.Combine(stateDir, "ledger.jsonl");
         if (!File.Exists(ledgerPath)) return [];
         var bytes = new FileInfo(ledgerPath).Length;
+        var registryBytes = RegistryParity.Bytes(registryPath);
         var cachePath = Path.Combine(stateDir, CacheFile);
 
-        if (ReadCache(cachePath) is { } cache && cache.LedgerBytes == bytes && cache.LearnReviewer == learnReviewer)
+        if (ReadCache(cachePath) is { } cache && cache.LedgerBytes == bytes && cache.RegistryBytes == registryBytes && cache.LearnReviewer == learnReviewer)
             return cache.Attempts.Select(FromCached).ToList();
 
         var events = new List<LearnEvent>();
         await foreach (var row in new JsonlLedger(ledgerPath).ReadAllAsync(ct))
             if (Map(row) is { } e) events.Add(e);
+        events.AddRange(await RegistryParity.JudgeAsync(stateDir, registryPath, events, ct));
         // Everything is attributed here; the catalog filter comes after the cache.
         var attempts = Core.Attribute(_ => true, learnReviewer, events).ToList();
 
         try
         {
             var cached = attempts.Select(ToCached).ToList();
-            await File.WriteAllTextAsync(cachePath, JsonSerializer.Serialize(new Cache(bytes, learnReviewer, cached)), ct);
+            await File.WriteAllTextAsync(cachePath, JsonSerializer.Serialize(new Cache(bytes, registryBytes, learnReviewer, cached)), ct);
         }
         catch (IOException) { /* a cache that cannot be written is only slower */ }
         return attempts.Select(a => Tuple.Create(a.Item1, a.Item2, a.Item3, a.Item4, a.Item5)).ToList();
@@ -78,7 +82,7 @@ public static class LearningReader
         {
             case LedgerKinds.Route:
                 if (Str(e, "role") is { } r && ParseRole(RoleFromName(r)) is { } role && Str(e, "size") is { } s && ParseSize(s) is { } size)
-                    return LearnEvent.NewRouted(new RouteFact(Key(e), role, FSharpOption<string>.None, size));
+                    return LearnEvent.NewRouted(new RouteFact(Key(e), role, Str(e, "repo") is { } repo ? FSharpOption<string>.Some(repo) : FSharpOption<string>.None, size));
                 return null;
             case LedgerKinds.Turn when e.Stage == "act":
                 if (Str(e, "model_id") is { } model && Str(e, "role") is { } tr && ParseRole(RoleFromName(tr)) is { } turnRole)

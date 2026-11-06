@@ -13,6 +13,10 @@ let private turn task role model tin tout min =
 let private verify task passed min = LearnEvent.Verified { Task = task; Passed = passed; Ts = at min }
 let private review task model approved min = LearnEvent.Reviewed { Task = task; Model = model; Approved = approved; Ts = at min }
 
+let private routeIn repo task role size = LearnEvent.Routed { Task = task; Role = role; Repo = Some repo; Size = size }
+let private parity task passed = LearnEvent.ParityJudged { Task = task; Passed = passed }
+let private keyIn repo model role size : StatsKey = { Model = model; Role = role; Repo = Some repo; Size = size }
+
 let private known = fun (m: string) -> m <> "ghost"
 let private attribute learnReviewer events = Learning.attribute known learnReviewer events
 let private key model role size : StatsKey = { Model = model; Role = role; Repo = None; Size = size }
@@ -44,6 +48,19 @@ let tests : (string * (unit -> unit)) list =
       fun () ->
           let r = attribute false [ route "T" Role.TestAuthor S; turn "T" Role.TestAuthor "small" 5 5 1; verify "T" true 2 ]
           equal [ (key "small" Role.TestAuthor S, true, 5, 5, at 2) ] r "test-author key"
+      "learning: a Ui task's verify pass without passing parity counts as a failure, whenever parity was judged",
+      fun () ->
+          let events parityEvents =
+              [ routeIn "Ui" "T" Role.Implementer M; turn "T" Role.Implementer "small" 10 1 1; verify "T" true 2 ] @ parityEvents
+          equal [ (keyIn "Ui" "small" Role.Implementer M, false, 10, 1, at 2) ] (attribute false (events [ parity "T" false ])) "parity failed: debited"
+          equal [ (keyIn "Ui" "small" Role.Implementer M, true, 10, 1, at 2) ] (attribute false (events [ parity "T" true ])) "parity passed: credited"
+          equal [ (keyIn "Ui" "small" Role.Implementer M, true, 10, 1, at 2) ] (attribute false (events [])) "parity not judged yet: as before"
+      "learning: parity does not change the credit of an Api task, nor of a Ui task that already failed verify",
+      fun () ->
+          let api = [ routeIn "Api" "A" Role.Implementer M; turn "A" Role.Implementer "small" 10 1 1; verify "A" true 2; parity "A" false ]
+          equal [ (keyIn "Api" "small" Role.Implementer M, true, 10, 1, at 2) ] (attribute false api) "Api credited"
+          let ui = [ routeIn "Ui" "U" Role.Implementer M; turn "U" Role.Implementer "small" 10 1 1; verify "U" false 2; parity "U" true ]
+          equal [ (keyIn "Ui" "small" Role.Implementer M, false, 10, 1, at 2) ] (attribute false ui) "a verify failure stays a failure"
       "learning: a verify with no act turn before it, or no route row, gives no evidence",
       fun () ->
           equal [] (attribute false [ route "T" Role.Implementer M; verify "T" true 1 ]) "no act turn"
