@@ -49,6 +49,18 @@ public class ScopedWorkspaceTests : IDisposable
         Assert.Equal(["bin.txt", "src/keep.cs"], listed);
     }
 
+    [Theory]
+    [InlineData("git commit --no-verify -m x")]
+    [InlineData("git push --no-verify")]
+    [InlineData("git commit -m x --no-verify")]
+    public async Task The_no_verify_flag_is_refused_even_on_an_allow_listed_command(string command)
+    {
+        var ws = new ScopedWorkspace(_root, [], [], ["git"], new TurnSignals(), new LocalSandbox());
+        var output = await ws.RunCommand(command);
+        Assert.StartsWith("DENIED", output);
+        Assert.Contains("--no-verify", output);
+    }
+
     [Fact]
     public async Task Without_a_sandbox_commands_are_refused()
     {

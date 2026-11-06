@@ -2,6 +2,7 @@ using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Policy;
 using Factory.Harness.Registry;
+using Factory.Harness.Routing;
 using Factory.Harness.Sandbox;
 using Factory.S2;
 using Factory.S2.Quality;
@@ -40,7 +41,7 @@ public sealed class TeamHarness : IDisposable
     /// Finds nothing unless a test queues mutants; consulted only when the quality policy turns mutation on.
     public ScriptedMutationRunner Mutation { get; } = new();
 
-    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string? suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa, IReadOnlyList<string>? commands = null, IContextSource? context = null)
+    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string? suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa, IReadOnlyList<string>? commands = null, IContextSource? context = null, RoutingSetup? routing = null)
     {
         _root = root;
         Repo = Path.Combine(root, "repo");
@@ -58,18 +59,18 @@ public sealed class TeamHarness : IDisposable
             sandboxes,
             pullRequests ?? new DryRunPullRequests(Path.Combine(state, "runs", RunId)),
             Reviewer,
-            Mutation, qa, context);
+            Mutation, qa, context, routing: routing);
     }
 
     /// `suiteCommand` is the integration test command (null: discovered from the repo); "true" writes no results, so there is no
     /// regression baseline and the P2P check is skipped.
     public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits, string? suiteCommand = "true",
-        MergePolicy? mergePolicy = null, IPullRequests? pullRequests = null, QualityPolicy? qualityPolicy = null, IQaRunner? qa = null, IReadOnlyList<string>? commands = null, IContextSource? context = null)
+        MergePolicy? mergePolicy = null, IPullRequests? pullRequests = null, QualityPolicy? qualityPolicy = null, IQaRunner? qa = null, IReadOnlyList<string>? commands = null, IContextSource? context = null, RoutingSetup? routing = null)
     {
         var root = Directory.CreateTempSubdirectory("team-").FullName;
         var repo = Path.Combine(root, "repo");
         await InitRepoAsync(repo);
-        return await WireAsync(root, _ => model, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy, qa, commands, context);
+        return await WireAsync(root, _ => model, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy, qa, commands, context, routing);
     }
 
     /// A real model per tier (opt-in live tests), dry-run merge.
@@ -93,11 +94,11 @@ public sealed class TeamHarness : IDisposable
     }
 
     private static async Task<TeamHarness> WireAsync(string root, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string? suiteCommand,
-        MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa, IReadOnlyList<string>? commands = null, IContextSource? context = null)
+        MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa, IReadOnlyList<string>? commands = null, IContextSource? context = null, RoutingSetup? routing = null)
     {
         var handover = await new DesigncHandoverReader().LoadAsync(
             Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"), S2Config.Default, CancellationToken.None);
-        var h = new TeamHarness(root, handover, models, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy, qa, commands, context);
+        var h = new TeamHarness(root, handover, models, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy, qa, commands, context, routing);
         await h.Services.Git.EnsureIntegrationAsync(RunId, "main", CancellationToken.None);
         return h;
     }

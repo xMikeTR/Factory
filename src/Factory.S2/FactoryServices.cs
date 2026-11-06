@@ -3,6 +3,8 @@ using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
 using Factory.Harness.Registry;
+using Factory.Harness.Routing;
+using Factory.Harness.Spending;
 using Factory.Harness.Policy;
 using Factory.Harness.Sandbox;
 using Factory.S2.Git;
@@ -33,6 +35,8 @@ public sealed record FactorySettings(
     QualityPolicy? QualityPolicy = null,
     /// From the same file's `npm:` section.
     NpmPolicy? Npm = null,
+    /// From the same file's `verify:` section: the repo's one verify (and parity) script; null is none.
+    VerifyConvention? Verify = null,
     /// .factory/ui-contract.yaml: the UI items a human says must keep working (used when `quality.ui` is on).
     IReadOnlyList<UiItem>? UiContract = null,
     /// Runs the frozen acceptance specs in integration verify (when the handover has any); writes
@@ -50,8 +54,15 @@ public sealed record FactorySettings(
     string? ScreenshotCommand = null,
     /// Read-only references by handover key, each bound to an absolute folder outside the repo by `--reference key=path`
     /// (validated against the handover before a run starts); null or empty is none.
-    IReadOnlyDictionary<string, string>? References = null)
+    IReadOnlyDictionary<string, string>? References = null,
+    /// `--repo Api=../api --repo Ui=../ui`: repo name to full path. Null or empty is the single-repo form (RepoPath only).
+    IReadOnlyDictionary<string, string>? Repos = null,
+    /// From the primary repo's `contract:` section: the breaking-change and client-compile commands of a split project.
+    ContractConvention? Contract = null)
 {
+    /// The names the plan validator checks task repos against; empty means unchecked (single repo).
+    public string[] RepoNames => Repos is null ? [] : [.. Repos.Keys];
+
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
         RepoPath: Path.GetFullPath(repo),
         RegistryPath: Path.GetFullPath(registry ?? Env("FACTORY_REGISTRY", Path.Combine(repo, "..", "registry"))),
@@ -67,6 +78,8 @@ public sealed record FactorySettings(
         PObserveCommand: Environment.GetEnvironmentVariable("FACTORY_POBSERVE_CMD"),
         MergePolicy: MergePolicyFile.FromEnvironment(Path.GetFullPath(repo)),
         QualityPolicy: QualityPolicyFile.Load(Path.GetFullPath(repo)),
+        Verify: VerifyPolicyFile.Load(Path.GetFullPath(repo)),
+        Contract: ContractPolicyFile.Load(Path.GetFullPath(repo)),
         Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)),
         UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
         AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),
@@ -79,6 +92,8 @@ public sealed record FactorySettings(
     public string BrowserVariant => Environment.GetEnvironmentVariable("FACTORY_BROWSER_TOOL") ?? (PlaywrightCli ? "cli" : "none");
 
     public string RunDir(string runId) => Path.Combine(StateDir, "runs", runId);
+    /// The repo map (name -> path) of a split run, written by `run` so `close` knows every repo without being told again.
+    public string ReposPath(string runId) => Path.Combine(RunDir(runId), "repos.json");
     public string PlanPath(string runId) => Path.Combine(RunDir(runId), "plan.json");
     public string DispatchPath(string runId) => Path.Combine(RunDir(runId), "dispatch.json");
     public string HandoverCopyPath(string runId) => Path.Combine(RunDir(runId), "handover.json");
@@ -105,17 +120,37 @@ public sealed class FactoryServices(
     IMutationRunner? mutation = null,
     IQaRunner? qa = null,
     IContextSource? context = null,
-    bool injectContext = false)
+    bool injectContext = false,
+    RoutingSetup? routing = null,
+    IReadOnlyDictionary<string, GitWorkspace>? repoGits = null,
+    IReadOnlyDictionary<string, IPullRequests>? repoPullRequests = null)
 {
     public FactorySettings Settings { get; } = settings;
+    /// One workspace per named repo (`--repo Api=.. --repo Ui=..`); empty for a single-repo run, where `Git` is the only one.
+    public IReadOnlyDictionary<string, GitWorkspace> RepoGits { get; } = repoGits ?? new Dictionary<string, GitWorkspace>();
+
+    /// These services with `Git` swapped for the repo's workspace, so a team's runner works in its own repo without
+    /// every call site naming one. A null or unnamed repo (single-repo run) is these services as they are.
+    public FactoryServices ForRepo(string? repo)
+    {
+        if (repo is null || !RepoGits.TryGetValue(repo, out var git)) return this;
+        var copy = (FactoryServices)MemberwiseClone();
+        copy.Git = git;
+        return copy;
+    }
     public ILedger Ledger { get; } = ledger;
     public FactoryAgents Agents { get; } = agents;
     public IConfigurator Configurator { get; } = configurator;
-    public GitWorkspace Git { get; } = git;
+    public GitWorkspace Git { get; private set; } = git;
     public VerifyRunner Verify { get; } = verify;
     /// Where agent commands run during a turn (verify uses its own); never the host environment.
     public ISandboxFactory Sandboxes { get; } = sandboxes;
     public IPullRequests PullRequests { get; } = pullRequests;
+    /// The PR host bound to a named repo (a split run opens one PR per repo); the primary's host when the repo has none.
+    public IPullRequests PullRequestsFor(string repo) =>
+        repoPullRequests is not null && repoPullRequests.TryGetValue(repo, out var host) ? host : PullRequests;
+    /// More than one named repo: the merge step opens a PR in each and the factory never merges.
+    public bool IsSplit => RepoGits.Count > 1;
     /// Judges each task's green diff before it can pass; on the reviewer pool, apart from the implementer's.
     public IReviewer Reviewer { get; } = reviewer;
     /// Mutation tool seam; null means no tool is available (the mutation gate is skipped).
@@ -134,7 +169,7 @@ public sealed class FactoryServices(
 
     public ValidatedPlan LoadValidatedPlan(string runId)
     {
-        var validation = Core.ValidatePlan(LoadHandover(runId), File.ReadAllText(Settings.PlanPath(runId)));
+        var validation = Core.ValidatePlan(LoadHandover(runId), File.ReadAllText(Settings.PlanPath(runId)), Settings.RepoNames);
         return validation.IsValid
             ? validation.Plan
             : throw new FactoryRejectedException("stored plan no longer validates", validation.Errors);
@@ -147,6 +182,76 @@ public sealed class FactoryServices(
         File.Exists(Settings.RegenerationPath(runId))
             ? JsonSerializer.Deserialize<RegenerationFile>(File.ReadAllText(Settings.RegenerationPath(runId)))!.Rerun.ToHashSet()
             : null;
+
+    /// Catalog routing (FACTORY_ROUTING=catalog); null means every model comes from the FACTORY_MODEL_* variables.
+    public RoutingSetup? Routing { get; } = routing;
+
+    private string? _routedRun;
+
+    /// Routes every (task, role) pair of the run once, hands the ladders to the agents, and (when `logRows`) writes one
+    /// `route` ledger row per pair. Throws FactoryRejectedException, listing the reasons, when a pair has no eligible
+    /// model; nothing is written then. A no-op when routing is off. The seed is stable, so a resumed run (a new
+    /// process) routes the same ladders again: it calls this with `logRows: false`.
+    public async ValueTask RouteAsync(string runId, Handover handover, IEnumerable<PlannedTask> tasks, bool logRows, CancellationToken ct)
+    {
+        if (Routing is not { } routing) return;
+        // What the ledgers have shown so far; once routed, the route rows pin the ladders for this run (see EnsureRoutedAsync).
+        var known = routing.Catalog.Select(m => m.Id).ToHashSet();
+        var now = DateTimeOffset.UtcNow;
+        var stats = await LearningReader.StatsAsync(Settings.StateDir, known.Contains, routing.Config.Learning, now, ct, Settings.RegistryPath);
+        // Phase 4: imported prices replace the catalog's placeholders; the item's and the user's spend set the budget state.
+        var (catalog, _) = BudgetStore.ApplyPrices(routing.Catalog, Prices, DateOnly.FromDateTime(now.UtcDateTime));
+        var (budget, budgetWarnings) = await BudgetStateReader.ReadAsync(Settings.StateDir, Ledger, CostBudgetPolicyFile.Load(Settings.RepoPath),
+            handover.WorkItem is { } wi ? wi.Value : null, now, ct);
+        foreach (var w in budgetWarnings) Console.Error.WriteLine("budget: " + w);
+        var table = RunRouter.Route(runId, handover, tasks, catalog, routing.Config, stats: stats, budget: budget);
+        Agents.UseRouting(table, routing.ClientFor);
+        _routedRun = runId;
+        if (!logRows) return;
+        var taskList = tasks.ToList();
+        foreach (var row in table.Rows)
+            await LogAsync(runId, "route", LedgerKinds.Route,
+                payload: JsonSerializer.Serialize(new { role = row.Role, size = row.Size, repo = RepoOfTask(handover, taskList, row.TaskId), risk = row.Risk, ladder = row.Ladder, warnings = row.Warnings, canary = row.Canary }),
+                taskId: row.TaskId, ct: ct);
+    }
+
+    /// Imported prices (phase 4), read once per process; empty when nothing was imported, so no cost is recorded.
+    private IReadOnlyList<PriceRow>? _prices;
+    public IReadOnlyList<PriceRow> Prices => _prices ??= BudgetStore.LoadPrices(Settings.StateDir);
+
+    /// The cost of a turn (the model id's catalog model name is what the import prices) at the price in force today; null when the model has no imported price (the row stays cost-less).
+    public decimal? CostOf(string? modelId, Microsoft.Extensions.AI.UsageDetails? usage) =>
+        modelId is null || usage is null ? null
+            : BudgetStore.CostOf(Prices, Routing?.Catalog.FirstOrDefault(m => m.Id == modelId)?.ModelName ?? modelId,
+                usage.InputTokenCount ?? 0, usage.OutputTokenCount ?? 0, DateOnly.FromDateTime(DateTime.UtcNow));
+
+    /// The repo a task works in (its elements' single repo, as `ValidatedPlan.RepoOf`); null when none, so the row omits nothing it knows.
+    private static string? RepoOfTask(Handover handover, List<PlannedTask> tasks, string taskId)
+    {
+        var task = tasks.FirstOrDefault(t => t.Id.Value == taskId);
+        if (task is null) return null;
+        var repos = handover.Elements.Where(e => task.Elements.Contains(e.Id)).Select(e => e.Repo).Where(r => r is not null)
+            .Select(r => r!.Value).Distinct().ToList();
+        return repos.Count == 1 ? repos[0] : null;
+    }
+
+    /// Makes sure this process has the run's ladders (first thing of a wave, so a resumed run is routed). A run that
+    /// already wrote `route` rows keeps exactly those ladders: learned stats move between processes, the run's
+    /// ladders must not. A run with none (or naming a model the catalog dropped) is routed afresh and logged.
+    public async ValueTask EnsureRoutedAsync(string runId, CancellationToken ct)
+    {
+        if (Routing is not { } routing || _routedRun == runId) return;
+        var recorded = new List<LedgerEvent>();
+        await foreach (var e in Ledger.ReadAsync(runId, ct))
+            if (e.Kind == LedgerKinds.Route) recorded.Add(e);
+        if (RunRouter.Rebuild(recorded, routing.Catalog) is { } table)
+        {
+            Agents.UseRouting(table, routing.ClientFor);
+            _routedRun = runId;
+            return;
+        }
+        await RouteAsync(runId, LoadHandover(runId), LoadValidatedPlan(runId).Plan.Tasks, logRows: true, ct);
+    }
 
     public ValueTask LogAsync(string runId, string stage, string kind, string? outcome = null, string? payload = null,
         string? teamId = null, string? taskId = null, CancellationToken ct = default) =>

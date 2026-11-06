@@ -26,8 +26,11 @@ module Dispatcher =
     /// Everything a task may write, production and test paths alike.
     let private footprint (t: PlannedTask) = t.Writes @ t.TestWrites
 
-    let private tasksOverlap (a: PlannedTask) (b: PlannedTask) =
-        footprint a |> List.exists (fun wa -> footprint b |> List.exists (PathPattern.mayOverlap wa))
+    /// Two tasks in different repos never overlap: the same glob names two different directories.
+    let private tasksOverlap (repoOf: TaskId -> string option) (a: PlannedTask) (b: PlannedTask) =
+        match repoOf a.Id, repoOf b.Id with
+        | Some ra, Some rb when ra <> rb -> false
+        | _ -> footprint a |> List.exists (fun wa -> footprint b |> List.exists (PathPattern.mayOverlap wa))
 
     /// Tarjan's strongly connected components over nodes 0..n-1.
     let private scc (n: int) (succ: int -> int seq) : int list list =
@@ -132,11 +135,24 @@ module Dispatcher =
 
         for i in 0 .. n - 1 do
             for j in i + 1 .. n - 1 do
-                if tasksOverlap tasks.[i] tasks.[j] then union i j
+                if tasksOverlap vp.RepoOf tasks.[i] tasks.[j] then union i j
 
         let index = tasks |> Array.mapi (fun i t -> t.Id, i) |> dict
-        let depsOf i =
+        let explicitDeps i =
             tasks.[i].DependsOn |> List.choose (fun d -> match index.TryGetValue d with | true, j -> Some j | _ -> None)
+        // Does task `from` reach task `target` through DependsOn alone?
+        let reaches from target =
+            let seen = HashSet<int>()
+            let rec go i = i = target || (seen.Add i && explicitDeps i |> List.exists go)
+            go from
+        // Contract-first: with no OpenAPI contract pinned in the handover, the Ui side cannot start until the Api side is
+        // built, so every Ui task waits for every Api task. With a pinned contract both sides build against it in parallel.
+        // The names are fixed (Api, Ui). An explicit dependency the other way round wins, so this never makes a cycle.
+        let contractFirst i =
+            if vp.Handover.ApiContracts.IsEmpty && vp.RepoOf tasks.[i].Id = Some "Ui" then
+                [ 0 .. n - 1 ] |> List.filter (fun j -> vp.RepoOf tasks.[j].Id = Some "Api" && not (reaches j i))
+            else []
+        let depsOf i = explicitDeps i @ contractFirst i |> List.distinct
         let groupEdges () =
             [ for i in 0 .. n - 1 do
                   for j in depsOf i do
@@ -168,6 +184,12 @@ module Dispatcher =
             |> Map.ofList
 
         // Wave = longest path from a source in the team DAG.
+        // A team never spans repos. Single-repo tasks and the overlap rule above make this hold; if a dependency cycle
+        // through the other repo ever forces a merge, refuse loudly instead of running a cross-repo team.
+        for KeyValue(_, team) in teams do
+            let repos = team.Tasks |> List.choose (fun t -> vp.RepoOf t.Id) |> List.distinct
+            if repos.Length > 1 then failwithf "team %s spans repos %A: split the dependency cycle between them" team.Id.Value repos
+
         let teamEdges = groupEdges ()
         let level = Dictionary<int, int>()
         let rec levelOf g =

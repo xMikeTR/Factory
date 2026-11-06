@@ -38,6 +38,7 @@ public static class LedgerKinds
     public const string TaskEvent = "task";         // payload = encoded F# TaskEvent; replayed on resume
     public const string Turn = "turn";              // one agent turn: model, tokens, tool calls
     public const string ToolCall = "tool_call";     // allowed or denied by policy
+    public const string Route = "route";            // task + payload {role, size, risk, ladder: {tier: modelId}, warnings}: the catalog ladder a (task, role) pair was routed to at run start (FACTORY_ROUTING=catalog). Run ledger only: not in RegistryStreams
     public const string Configurator = "configurator"; // routing decision before a turn: kind, tier, reason
     public const string Verify = "verify";
     public const string NeedsDecision = "needs_decision";
@@ -89,7 +90,12 @@ public sealed class JsonlLedger(string path) : ILedger
         finally { _gate.Release(); }
     }
 
-    public async IAsyncEnumerable<LedgerEvent> ReadAsync(string runId, [EnumeratorCancellation] CancellationToken ct = default)
+    public IAsyncEnumerable<LedgerEvent> ReadAsync(string runId, CancellationToken ct = default) => ReadRowsAsync(runId, ct);
+
+    /// Every run's rows, in file order (learning reads the whole ledger).
+    public IAsyncEnumerable<LedgerEvent> ReadAllAsync(CancellationToken ct = default) => ReadRowsAsync(null, ct);
+
+    private async IAsyncEnumerable<LedgerEvent> ReadRowsAsync(string? runId, [EnumeratorCancellation] CancellationToken ct = default)
     {
         if (!File.Exists(path)) yield break;
         using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
@@ -100,7 +106,7 @@ public sealed class JsonlLedger(string path) : ILedger
             // A line cut short by a crash mid-append is skipped; it must not make the whole run unreadable.
             try { e = JsonSerializer.Deserialize<LedgerEvent>(line, Json); }
             catch (JsonException) { continue; }
-            if (e is null || e.RunId != runId) continue;
+            if (e is null || (runId is not null && e.RunId != runId)) continue;
             // TraceId defaults to the current trace, which is the writer's and never the reader's: a row with none keeps none.
             if (e.TraceId is not null && !HasTraceId(line)) e = e with { TraceId = null };
             yield return e;

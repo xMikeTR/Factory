@@ -85,4 +85,33 @@ public class JiraRestClientTests
         Assert.Single(failed);
         Assert.DoesNotContain("s3cret-token", failed[0]);
     }
+
+    [Fact]
+    public async Task A_comment_is_posted_to_the_v3_comment_endpoint_as_atlassian_document_format_with_one_paragraph_per_line()
+    {
+        var s = Jira();
+
+        await Client(s).CommentAsync("REQ-1", "Moved to Done.\ngate `dotnet test` passed", default);
+
+        var post = Assert.Single(s.Calls, c => c.Method == HttpMethod.Post);
+        Assert.Equal("/rest/api/3/issue/REQ-1/comment", post.Path);
+        using var doc = System.Text.Json.JsonDocument.Parse(post.Body!);
+        var body = doc.RootElement.GetProperty("body");
+        Assert.Equal("doc", body.GetProperty("type").GetString());
+        Assert.Equal(1, body.GetProperty("version").GetInt32());
+        var paragraphs = body.GetProperty("content").EnumerateArray().ToList();
+        Assert.Equal(2, paragraphs.Count);
+        Assert.All(paragraphs, p => Assert.Equal("paragraph", p.GetProperty("type").GetString()));
+        Assert.Equal("gate `dotnet test` passed", paragraphs[1].GetProperty("content")[0].GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public async Task A_comment_the_token_may_not_post_throws_without_the_token_in_the_message()
+    {
+        var s = new Stub((_, _) => (HttpStatusCode.Forbidden, "{}"));
+
+        var e = await Assert.ThrowsAsync<HttpRequestException>(() => Client(s).CommentAsync("REQ-1", "x", default));
+
+        Assert.DoesNotContain("s3cret-token", e.Message);
+    }
 }

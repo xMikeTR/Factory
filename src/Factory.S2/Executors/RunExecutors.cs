@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Policy;
 using Factory.Harness.Registry;
 using Factory.S2.Git;
 using Factory.S2.Quality;
@@ -32,12 +33,15 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
 
     private async Task RunWaveAsync(string runId, int index, DecisionAnswer[] answers, IWorkflowContext context, CancellationToken ct)
     {
+        await svc.EnsureRoutedAsync(runId, ct); // a resumed run is a new process: route again (same seed, same ladders)
         var handover = svc.LoadHandover(runId);
         var wave = svc.LoadDispatch(runId).Waves[index];
         var byTask = answers.ToDictionary(a => a.TaskId);
 
-        var runner = new TeamRunner(svc, handover, runId);
-        var results = await Task.WhenAll(wave.Teams.Select(team => RunTeamSafelyAsync(runner, team, byTask, ct)));
+        // A team never spans repos (the dispatcher asserts it), so it runs against its repo's workspace.
+        var plan = svc.LoadValidatedPlan(runId);
+        var results = await Task.WhenAll(wave.Teams.Select(team =>
+            RunTeamSafelyAsync(new TeamRunner(svc.ForRepo(TeamRepo(plan, team)), handover, runId), team, byTask, ct)));
 
         await svc.LogAsync(runId, "wave", LedgerKinds.Dispatch, outcome: $"wave {index}",
             payload: JsonSerializer.Serialize(results.Select(r => new { r.TeamId, Status = r.Status.ToString(), r.Failure })), ct: ct);
@@ -131,6 +135,9 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
         b.Recommended is { } r ? FSharpOption<string>.Some(r) : null);
     private static readonly JsonSerializerOptions CaseInsensitive = new() { PropertyNameCaseInsensitive = true };
 
+    internal static string? TeamRepo(ValidatedPlan plan, Team team) =>
+        team.Tasks.Select(t => plan.RepoOf(t.Id)).FirstOrDefault(r => FSharpOption<string>.get_IsSome(r))?.Value;
+
     private static async Task<TeamResult> RunTeamSafelyAsync(TeamRunner runner, Team team, IReadOnlyDictionary<string, DecisionAnswer> answers, CancellationToken ct)
     {
         try { return await runner.RunAsync(team, answers, ct); }
@@ -154,7 +161,9 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
     private async ValueTask HandleAsync(IntegrationReady msg, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         var s = svc.Settings;
-        var integration = svc.Git.IntegrationPath(msg.RunId);
+        // A split project verifies each repo; what judges the UI (acceptance specs, tokens, QA) belongs to the Ui repo.
+        var split = svc.RepoGits.Count > 0;
+        var integration = (split && svc.RepoGits.GetValueOrDefault("Ui") is { } uiGit ? uiGit : svc.Git).IntegrationPath(msg.RunId);
         var timeout = TimeSpan.FromMinutes(30);
 
         var frozen = svc.LoadHandover(msg.RunId).AcceptanceSpecs;
@@ -165,7 +174,12 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         }
 
         var outcomes = new List<VerifyOutcome>();
-        if (SuiteDiscovery.Plan(s.IntegrationTestCommand, integration) is SuitePlan.Command suite)
+        if (split)
+        {
+            foreach (var (name, git) in svc.RepoGits.OrderBy(r => r.Key, StringComparer.Ordinal))
+                await RepoSuiteAsync(msg.RunId, name, git, outcomes, timeout, cancellationToken);
+        }
+        else if (SuiteDiscovery.Plan(s.IntegrationTestCommand, integration) is SuitePlan.Command suite)
             outcomes.Add(await svc.Verify.RunCommandAsync(msg.RunId, "integration tests", suite.Item, integration, timeout, cancellationToken));
         else
             await svc.LogAsync(msg.RunId, "integration_verify", LedgerKinds.Verify, outcome: "no_suite",
@@ -182,11 +196,28 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
 
         await DecisionChecksAsync(msg.RunId, outcomes, timeout, cancellationToken);
 
+        // After both repos' own checks: the contract between them.
+        if (split && s.Contract is { } contract && svc.RepoGits.TryGetValue("Api", out var apiGit) && svc.RepoGits.TryGetValue("Ui", out var uiWs))
+            outcomes.AddRange(await ContractGate.RunAsync(svc.Verify, contract, msg.RunId,
+                apiGit.IntegrationPath(msg.RunId), uiWs.IntegrationPath(msg.RunId), timeout, cancellationToken));
+
         var failed = outcomes.Where(o => o.ExitCode != 0).ToList();
         object next = failed.Count > 0
             ? IntegrationVerdict(msg.RunId, failed)
             : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);
         await context.SendMessageAsync(next, cancellationToken: cancellationToken);
+    }
+
+    /// One repo's full suite in its own integration checkout: that repo's `integration.testCommand`, else discovered.
+    private async Task RepoSuiteAsync(string runId, string repo, GitWorkspace git, List<VerifyOutcome> outcomes, TimeSpan timeout, CancellationToken ct)
+    {
+        var dir = git.IntegrationPath(runId);
+        var command = IntegrationPolicyFile.TestCommand(git.RepoPath) ?? Environment.GetEnvironmentVariable("FACTORY_INTEGRATION_TEST_CMD");
+        if (SuiteDiscovery.Plan(command, dir) is SuitePlan.Command suite)
+            outcomes.Add(await svc.Verify.RunCommandAsync(runId, $"integration tests ({repo})", suite.Item, dir, timeout, ct));
+        else
+            await svc.LogAsync(runId, "integration_verify", LedgerKinds.Verify, outcome: "no_suite",
+                payload: JsonSerializer.Serialize(new { repo, reason = "no integration.testCommand and no test project in the repo" }), ct: ct);
     }
 
     /// The frozen acceptance specs are not the coding agent's to touch: any difference from the
@@ -337,7 +368,7 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
         var handover = svc.LoadHandover(msg.RunId);
         var dispatch = svc.LoadDispatch(msg.RunId);
         var teams = dispatch.Waves.SelectMany(w => w.Teams).ToList();
-        var (lines, files) = await svc.Git.DiffStatsAsync(msg.RunId, s.BaseBranch, cancellationToken);
+        var (lines, files) = await DiffStatsAsync(msg.RunId, cancellationToken);
 
         var policy = s.MergePolicy ?? Core.DefaultMergePolicy;
         var verdict = Core.DecideMerge(policy, new MergeInput(Core.ToList(teams), handover, lines, Core.ToList(files)));
@@ -347,13 +378,28 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
         var deferred = ManualChecks.Deferred(policy.Enforcement, manual);
 
         var branch = GitWorkspace.IntegrationBranch(msg.RunId);
-        if (svc.PullRequests is GhCliPullRequests or AzCliPullRequests) await svc.Git.PushAsync(branch, cancellationToken);
-
-        var url = await svc.PullRequests.EnsurePullRequestAsync(branch, s.BaseBranch,
-            $"[factory] {handover.Id}: {teams.Sum(t => t.Tasks.Length)} tasks", PullRequestBody(msg.RunId, handover, teams, verdict, deferred, lines, await ReviewSectionAsync(msg.RunId, cancellationToken) + await InstallScriptsSectionAsync(msg.RunId, cancellationToken) + await QualitySectionAsync(msg.RunId, cancellationToken)), cancellationToken);
+        var extras = await ReviewSectionAsync(msg.RunId, cancellationToken) + await InstallScriptsSectionAsync(msg.RunId, cancellationToken) + await QualitySectionAsync(msg.RunId, cancellationToken);
+        IReadOnlyList<SplitMerge.RepoPr> prs = [];
+        string url;
+        if (svc.IsSplit)
+        {
+            var order = SplitMerge.Order(svc.RepoGits.Keys);
+            var note = "\n" + SplitMerge.MergeOrderNote(order, msg.RunId);
+            prs = await SplitMerge.OpenAsync(order, msg.RunId, s.BaseBranch, svc.PullRequestsFor,
+                repo => $"[factory] {handover.Id}: {teams.Sum(t => t.Tasks.Length)} tasks ({repo})",
+                repo => PullRequestBody(msg.RunId, handover, teams, verdict, deferred, lines, extras + note), cancellationToken,
+                push: repo => svc.PullRequestsFor(repo) is GhCliPullRequests or AzCliPullRequests ? svc.RepoGits[repo].PushAsync(branch, cancellationToken) : Task.CompletedTask);
+            url = prs[0].Url;
+        }
+        else
+        {
+            if (svc.PullRequests is GhCliPullRequests or AzCliPullRequests) await svc.Git.PushAsync(branch, cancellationToken);
+            url = await svc.PullRequests.EnsurePullRequestAsync(branch, s.BaseBranch,
+                $"[factory] {handover.Id}: {teams.Sum(t => t.Tasks.Length)} tasks", PullRequestBody(msg.RunId, handover, teams, verdict, deferred, lines, extras), cancellationToken);
+        }
 
         // Tiered mode on a PR host: allow-listed comments record manual checks and approvals.
-        var github = svc.PullRequests as IApprovalComments;
+        var github = (svc.IsSplit ? svc.PullRequestsFor(prs[0].Repo) : svc.PullRequests) as IApprovalComments;
         var approvers = policy.Enforcement is MergeEnforcement.Tiered t ? t.approvers : ListModule.Empty<string>();
         var comments = github is not null && policy.Enforcement.IsTiered ? await github.CommentsAsync(url, cancellationToken) : [];
         verdict = Core.RecordVerified(approvers, comments, verdict);
@@ -364,7 +410,28 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
             payload: JsonSerializer.Serialize(new { url, tier = verdict.Tier.ToString(), verdict.Reasons, blocks, deferred, lines, files = files.Count }),
             ct: cancellationToken);
 
+        // A split run ends at its PRs whatever the tier: a person merges them, Api first. Blocks and manual waits still end as they would.
+        if (svc.IsSplit && !action.IsBlocked)
+        {
+            await context.SendMessageAsync(SplitMerge.Finished(msg.RunId, prs), cancellationToken: cancellationToken);
+            return;
+        }
         await ApplyMergeActionAsync(msg.RunId, action, verdict, github, comments, url, branch, teams, context, cancellationToken);
+    }
+
+    /// Lines and files changed against the base, summed over every repo of a split run.
+    private async Task<(int Lines, List<string> Files)> DiffStatsAsync(string runId, CancellationToken ct)
+    {
+        if (!svc.IsSplit) return await svc.Git.DiffStatsAsync(runId, svc.Settings.BaseBranch, ct);
+        var lines = 0;
+        var files = new List<string>();
+        foreach (var repo in SplitMerge.Order(svc.RepoGits.Keys))
+        {
+            var (l, f) = await svc.RepoGits[repo].DiffStatsAsync(runId, svc.Settings.BaseBranch, ct);
+            lines += l;
+            files.AddRange(f);
+        }
+        return (lines, files);
     }
 
     /// Carries out what the merge policy decided: stop at the PR, park, block, wait for approval, merge now or enable auto-merge.

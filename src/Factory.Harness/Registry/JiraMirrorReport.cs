@@ -41,8 +41,11 @@ public static class JiraMirrorReport
     }
 
     /// Applies the transitions through REST. Returns what was moved (key -> status) and what could not be (messages, no secrets).
+    /// `commentFor` (the `--comment` flag): after a transition succeeds, its text is posted as a comment on the issue. A
+    /// comment that fails is reported and never undoes the move.
     public static async Task<(Dictionary<string, string> Moved, List<string> Failed)> ApplyAsync(
-        JiraRestClient client, IEnumerable<MirrorAction> plan, CancellationToken ct)
+        JiraRestClient client, IEnumerable<MirrorAction> plan, CancellationToken ct,
+        Func<MirrorAction.Transition, CancellationToken, Task<string>>? commentFor = null)
     {
         var moved = new Dictionary<string, string>();
         var failed = new List<string>();
@@ -50,12 +53,36 @@ public static class JiraMirrorReport
         {
             try
             {
-                if (await client.TransitionAsync(t.key, t.target, ct) is { } why) failed.Add(why);
-                else moved[t.key] = t.target;
+                if (await client.TransitionAsync(t.key, t.target, ct) is { } why) { failed.Add(why); continue; }
+                moved[t.key] = t.target;
             }
-            catch (HttpRequestException e) { failed.Add($"{t.key}: Jira answered {(int?)e.StatusCode}"); }
+            catch (HttpRequestException e) { failed.Add($"{t.key}: Jira answered {(int?)e.StatusCode}"); continue; }
+            if (commentFor is null) continue;
+            try { await client.CommentAsync(t.key, await commentFor(t, ct), ct); }
+            catch (HttpRequestException e) { failed.Add($"{t.key}: moved to {t.target}, but the comment failed (Jira answered {(int?)e.StatusCode})"); }
         }
         return (moved, failed);
+    }
+
+    /// The comment text for a moved item: the item (its run id is the item id in the ledger), the commit it finished at
+    /// and the latest result of each gate. A pass on a tree with uncommitted changes is marked: it is never evidence.
+    public static async Task<string> EvidenceAsync(string registryPath, string item, string target, CancellationToken ct)
+    {
+        var registry = await WorkRegistryReader.ReadAsync(registryPath, ct);
+        var gates = new Dictionary<string, (bool Passed, string? Commit, bool Dirty)>();
+        string? commit = null;
+        foreach (var (_, fact) in registry.Facts.OrderBy(f => f.Ts))
+        {
+            if (fact is LedgerFact.ItemGate g && g.item == item)
+                gates[g.gate] = (g.passed, FSharpOption<string>.get_IsSome(g.commit) ? g.commit.Value : null, g.dirty);
+            else if (fact is LedgerFact.ItemDone d && d.item == item && FSharpOption<string>.get_IsSome(d.commit))
+                commit = d.commit.Value;
+        }
+        var lines = new List<string> { $"factory-s2 moved this issue to {target} (work item {item}, run {item})." };
+        if (commit is not null) lines.Add($"commit {commit}");
+        foreach (var (gate, r) in gates)
+            lines.Add($"gate `{gate}`: {(r.Passed ? "pass" : "fail")}{(r.Commit is null ? "" : " at " + r.Commit)}{(r.Dirty ? " (uncommitted changes: not evidence)" : "")}");
+        return string.Join('\n', lines);
     }
 
     /// Writes one `item_awaiting_human` row per drifted issue (same drift, same event id: flagged once).

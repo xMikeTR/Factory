@@ -25,10 +25,14 @@ type Core =
         | Error es -> raise (FactoryRejectedException("handover package is malformed", Array.ofList es))
 
     static member ValidatePlan(handover: Handover, planJson: string) : PlanValidation =
+        Core.ValidatePlan(handover, planJson, Array.empty)
+
+    /// With the repo names the run was given (`--repo Api=.. --repo Ui=..`); an empty array leaves repos unchecked.
+    static member ValidatePlan(handover: Handover, planJson: string, knownRepos: string[]) : PlanValidation =
         match Json.parsePlan planJson with
         | Error es -> PlanValidation(null, es |> List.map (fun e -> "Plan JSON: " + e) |> Array.ofList)
         | Ok plan ->
-            match PlanValidator.validate handover plan with
+            match PlanValidator.validateWithRepos (List.ofArray knownRepos) handover plan with
             | Ok vp -> PlanValidation(vp, [||])
             | Error es -> PlanValidation(null, es |> List.map PlanError.describe |> Array.ofList)
 
@@ -113,3 +117,40 @@ type Core =
 
     /// designc's spelling: stalled | parked | abandoned | gate_failed:<gate>.
     static member CauseToLedger(cause: TraceCause) : string = TraceCause.toLedger cause
+
+    /// A seed that is the same on every machine and run for the same text (unlike string.GetHashCode):
+    /// the first 8 hex of hash16, so a resumed run seeds the router the same way.
+    static member StableSeed(text: string) : int =
+        int (Convert.ToUInt32((Hash16.compute text).Substring(0, 8), 16))
+
+    /// Router.taskSpec with a .NET sequence for the implementer's families.
+    static member TaskSpecFor(config: TaskSpecConfig, handover: Handover, task: PlannedTask, role: Role, contextChars: int, implementerFamilies: string seq) : TaskSpec =
+        Router.taskSpec config handover task role contextChars (Set.ofSeq implementerFamilies)
+
+    /// Router.route with no learned stats and an Ok budget (phase 2), seeded so the same seed gives the same ladder.
+    static member RouteTask(policy: RoutingPolicy, seed: int, spec: TaskSpec, catalog: ModelEntry seq) : RouteOutcome =
+        let rng = Random(seed)
+        Router.route policy rng.NextDouble Map.empty BudgetState.Ok spec (List.ofSeq catalog)
+
+    /// Router.route with learned stats, then the canary draw from the same seeded rng (after the route draws, so
+    /// the ladder does not depend on the share). The flag says the Standard entry was swapped for Frontier.
+    static member RouteTaskLearned(policy: RoutingPolicy, seed: int, spec: TaskSpec, catalog: ModelEntry seq, stats: Stats, canaryShare: float) : RouteOutcome * bool =
+        Core.RouteTaskBudgeted(policy, seed, spec, catalog, stats, canaryShare, BudgetState.Ok)
+
+    /// RouteTaskLearned under a budget state (phase 4): Downgrade caps the tier at Standard, Blocked refuses.
+    static member RouteTaskBudgeted(policy: RoutingPolicy, seed: int, spec: TaskSpec, catalog: ModelEntry seq, stats: Stats, canaryShare: float, budget: BudgetState) : RouteOutcome * bool =
+        let rng = Random(seed)
+        match Router.route policy rng.NextDouble stats budget spec (List.ofSeq catalog) with
+        | RouteOutcome.Routed(ladder, warnings) ->
+            let ladder', canary = Router.applyCanary canaryShare rng.NextDouble ladder
+            RouteOutcome.Routed(ladder', warnings), canary
+        | other -> other, false
+
+    /// Learning.attribute for C#: events in ledger order, a predicate for catalog model ids.
+    static member Attribute(known: Func<string, bool>, learnReviewer: bool, events: LearnEvent seq) : Attempt list =
+        Learning.attribute known.Invoke learnReviewer (List.ofSeq events)
+
+    /// Learning.fold from empty stats: attempts weighted by age at `now`.
+    static member FoldAttempts(now: DateTime, halfLifeDays: float, attempts: Attempt seq) : Stats =
+        Learning.fold now halfLifeDays Map.empty (List.ofSeq attempts)
+

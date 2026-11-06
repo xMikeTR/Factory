@@ -198,7 +198,7 @@ internal sealed class TaskLoop(
         List<VerifyOutcome> green;
         await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
         {
-            green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct);
+            green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct, conventionCommand: svc.Settings.Verify?.Command);
             if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
                 && SuiteDiscovery.Plan(svc.Settings.IntegrationTestCommand, worktree) is SuitePlan.Command suite
                 && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, suite.Item, worktree, ct) is { } regressed)
@@ -329,9 +329,14 @@ internal sealed class TaskLoop(
         }
     }
 
-    private ValueTask LogReviewAsync(string outcome, int round, string tree, object detail, CancellationToken ct) =>
-        svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "review", LedgerKinds.Review, TaskId: _taskId, TeamId: _teamId, Outcome: outcome,
-            Payload: JsonSerializer.Serialize(new { round, tree, detail })), ct);
+    private ValueTask LogReviewAsync(string outcome, int round, string tree, object detail, CancellationToken ct)
+    {
+        var payload = JsonSerializer.SerializeToNode(new { round, tree, detail })!.AsObject();
+        // The reviewer always runs at Standard; under FACTORY_ROUTING=catalog the verdict names the model, for learning.
+        if (svc.Agents.ModelIdFor(Roles.Reviewer, ModelTier.Standard, _taskId) is { } modelId) payload["model_id"] = modelId;
+        return svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", "review", LedgerKinds.Review, TaskId: _taskId, TeamId: _teamId, Outcome: outcome,
+            Payload: payload.ToJsonString()), ct);
+    }
 
     /// The worktree snapshot taken at this task's last review (null before the first).
     private async Task<string?> LastReviewTreeAsync(CancellationToken ct)
@@ -860,13 +865,14 @@ internal sealed class TaskLoop(
     private ValueTask LogTurnAsync(string stage, string role, ModelTier tier, Microsoft.Extensions.AI.UsageDetails? usage, object detail, CancellationToken ct)
     {
         var payload = JsonSerializer.SerializeToNode(detail)!.AsObject();
-        if (svc.Agents.ModelIdFor(role, tier) is { } modelId) payload["model_id"] = modelId;
+        var modelId = svc.Agents.ModelIdFor(role, tier, _taskId);
+        if (modelId is not null) payload["model_id"] = modelId;
         var warm = _warmRoles.Contains(role);
         TurnUsage.AddCache(payload, usage, warm);
         if (TurnUsage.Touched(usage)) _warmRoles.Add(role);
         return svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Turn,
             TaskId: _taskId, TeamId: _teamId, Model: tier.ToString(),
-            TokensIn: usage?.InputTokenCount, TokensOut: usage?.OutputTokenCount,
+            TokensIn: usage?.InputTokenCount, TokensOut: usage?.OutputTokenCount, Cost: svc.CostOf(modelId, usage),
             Payload: payload.ToJsonString()), ct);
     }
 

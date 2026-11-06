@@ -43,7 +43,7 @@ C4Container
   title factory-s2 — Container View
   Person(eng, "Engineer", "Runs factory-s2; approves merges (/approve comments or console)")
   System_Ext(s1, "System 1 (Designc)", "Freezes handovers; resolves needs-decisions in the registry")
-  System_Ext(llm, "Model provider", "Anthropic API, or APIM -> LiteLLM (OpenAI-compatible)")
+  System_Ext(llm, "Model provider", "Vertex AI (ADC), Anthropic API, or an OpenAI-compatible gateway")
   System_Ext(gh, "GitHub / Azure DevOps", "PRs via gh or az CLI; approval comments and merge on GitHub")
   System_Ext(otel, "Langfuse / OTLP collector", "Traces (optional)")
   Container(cli, "factory-s2 CLI", "C# / MAF", "validate | dispatch | run [--since] | rerun; hosts the S2 workflow")
@@ -209,7 +209,7 @@ Used by structural-centrality-guard to determine escalation threshold.
 | System | Protocol | Direction | Canonical Name | Notes |
 |--------|---------|-----------|---------------|-------|
 | System 1 registry | Files (git repo) | In/Out | Designc registry | Reads `handovers/<id>/` (hash-checked; elements, code areas, risk, relationships and events from Designc's `elements.json`, schema `designc.handover.elements/1` or `/2`); appends the S2 projection to `ledger.jsonl`; needs-decisions raised there with `payload.options`, resolved with `payload.option` and/or `payload.note` |
-| Model provider | HTTPS | Out | Anthropic API, or APIM -> LiteLLM | `FACTORY_PROVIDER=anthropic|openai`; key never reaches sandbox, ledger or traces |
+| Model provider | HTTPS | Out | Vertex AI (ADC), Anthropic API, or an OpenAI-compatible gateway | `FACTORY_PROVIDER=vertex|anthropic|openai`; `FACTORY_ROUTING=catalog` (Vertex only) picks models per task from `catalog/models.yaml` (`FACTORY_CATALOG` overrides the path); key never reaches sandbox, ledger or traces |
 | GitHub | gh CLI | Out/In | GitHub | PR create, `/approve` and `/verified` comments from the allow-list, squash merge; dry-run writes to `.factory/runs/<id>/` |
 | Azure DevOps | az CLI (`azure-devops` extension) | Out/In | Azure DevOps | PR create/reuse, auto-complete with squash, completed-PR lookup at `close`; org/project/repo from the `origin` remote |
 | git | CLI | Out | target repo | integration branch, worktrees under the state dir |

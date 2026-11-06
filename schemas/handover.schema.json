@@ -19,7 +19,9 @@
           "id": { "type": "string", "description": "C4 element path, e.g. 'Pricing Platform/Quotes DB'" },
           "name": { "type": "string" },
           "codeAreas": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "from d.code" },
-          "risk": { "enum": ["low", "medium", "high"], "description": "from d.risk" }
+          "risk": { "enum": ["low", "medium", "high"], "description": "from d.risk" },
+          "inScope": { "type": "boolean" },
+          "repo": { "type": "string", "minLength": 1, "description": "from d.repo (designc split repos); absent when the design declares no repos" }
         }
       }
     },

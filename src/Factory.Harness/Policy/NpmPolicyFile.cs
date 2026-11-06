@@ -4,7 +4,7 @@ using YamlDotNet.Serialization;
 
 namespace Factory.Harness.Policy;
 
-/// Packages whose install script may run, offline, after `npm ci --ignore-scripts` (a native build such as esbuild).
+/// Packages whose install script may run, offline, after `npm i --ignore-scripts` (a native build such as esbuild).
 /// Protected like the rest of .factory/policy.yaml: read from the base checkout, never a task worktree.
 ///
 ///   npm:

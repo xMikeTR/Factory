@@ -19,8 +19,10 @@ using static Factory.S2.ServiceWiring;
 // factory-s2 digest --registry ../registry [--repo .] [--base main] [--last-look <epoch ms>] [--wip 3] [--notify-state <file>: print NOTIFY for new Needs/Failed rows only]   Needs decision / Failed a gate / Done / Waiting
 // factory-s2 pull-plan --registry ../registry [--repo .] [--base main] [--wip 3]   what the scheduler would pull now and why the rest waits (nothing is pulled)
 // factory-s2 metrics --registry ../registry [--repo .] [--base main]   S4 work metrics: throughput, lead time, human wait, deferrals, re-check rate, escapes
-// factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
+// factory-s2 jira-mirror --registry ../registry [--snapshot jira.json] [--state f] [--apply [--comment] | --applied] [--no-flag]   one-way ledger -> Jira plan; drift is flagged, never overwritten
 // factory-s2 budget --repo . [--registry ../registry] [--no-report]   per-item token spend vs .factory/policy.yaml budget:; writes item_budget rows; exit 2 when an item is exceeded; `run` refuses a new run for an exceeded item (exit 4)
+// factory-s2 budget-import --repo . [--prices <file>] [--spend <file>]   vendor-neutral import (CSV or JSON, schemas/budget-import.schema.json): effective-dated prices replace catalog placeholders, spend feeds budget.userMonthlyCost
+// factory-s2 router-stats --repo . [--role implementer] [--json]   what the run ledgers have taught the model router: successes, failures, mean tokens and cost per success (catalog prices) per model, role and size
 // factory-s2 parity --registry ../registry --item W-1 [--repo .] [--designc <dir>|FACTORY_DESIGNC_DIR] [--base-url <new app>] [--adapter web|fixture:<file>]   designc's recorder on the next side at the clean HEAD (appends parity_result), then parity-decisions; exit 0 pass, 1 fail, 3 could not run, 2 error
 // factory-s2 parity-decisions --registry ../registry   one open needs_decision (A build like legacy / B ask the PO) per scenario whose latest parity_result failed; exit 2 when any was raised
 // factory-s2 gate-shadow --cases cases.json [--repo .]   the QA gate's jira.transition policy against recorded kit decisions: logs what it would allow or deny (nothing enforced) and lists where it disagrees with the kit
@@ -32,6 +34,10 @@ using static Factory.S2.ServiceWiring;
 
 var cmd = args.FirstOrDefault() ?? "help";
 var opts = ParseOptions(args.Skip(1).ToArray());
+// `--repo` may repeat as Name=path pairs; every command then works on the primary (first) one, `run` also gets the map.
+var repoMap = RepoMap.FromArgs(args);
+if (repoMap.Errors.Count > 0) throw new ArgumentException(string.Join("; ", repoMap.Errors));
+if (repoMap.Primary is not null) opts["repo"] = repoMap.Primary;
 
 try
 {
@@ -71,9 +77,18 @@ try
             var settings = FactorySettings.FromEnvironment(
                 Required(opts, "repo"), opts.GetValueOrDefault("registry"),
                 repairOf is null ? opts.GetValueOrDefault("base") : GitWorkspace.IntegrationBranch(repairOf));
-            settings = settings with { References = ReferenceFlags(args).Bindings };
+            settings = settings with
+            {
+                References = ReferenceFlags(args).Bindings,
+                Repos = repoMap.Named.ToDictionary(r => r.Key, r => Path.GetFullPath(r.Value)),
+            };
             var runId = opts.GetValueOrDefault("run-id") ?? (repairOf is null ? $"{DateTime.UtcNow:yyyyMMdd-HHmmss}" : $"{repairOf}-r1");
             Directory.CreateDirectory(settings.StateDir);
+            if (settings.Repos is { Count: > 1 } named)
+            {
+                Directory.CreateDirectory(settings.RunDir(runId));
+                await File.WriteAllTextAsync(settings.ReposPath(runId), System.Text.Json.JsonSerializer.Serialize(named));
+            }
 
             // result.json in the run folder says how this attempt ended and why, whatever the exit path.
             // An attempt that ended without reaching Finalize (crash, Ctrl+C, workflow error) is ended in the registry too.
@@ -86,7 +101,10 @@ try
             // OTLP collector); disposing the provider at the end of the run flushes them.
             using var tracing = FactoryTelemetry.CreateTracerProvider(env);
             var services = Services(settings, runId, env, PullRequestHost(opts, settings.RepoPath) as IPullRequests
-                ?? new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+                ?? new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)),
+                // One PR host per named repo, bound to that repo's path; a dry run writes each repo's PR body in its own folder.
+                (name, path) => PullRequestHost(opts, path) as IPullRequests
+                    ?? new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId, name)));
 
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -107,6 +125,9 @@ try
                         settings.StateDir, new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")),
                         Factory.Harness.Policy.BudgetPolicyFile.Load(settings.RepoPath), workItem,
                         opts.GetValueOrDefault("registry"), DateTimeOffset.UtcNow, cts.Token);
+                    refusal ??= await Factory.Harness.Spending.BudgetStateReader.RefusalAsync(
+                        settings.StateDir, new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")),
+                        Factory.Harness.Policy.CostBudgetPolicyFile.Load(settings.RepoPath), workItem, DateTimeOffset.UtcNow, cts.Token);
                     if (refusal is not null)
                     {
                         Console.Error.WriteLine("refused: " + refusal);
@@ -257,7 +278,8 @@ try
             // factory-s2 jira-mirror --registry r --snapshot jira.json [--state jira-mirrored.json] [--applied] [--no-flag]
             // snapshot = { "HRE-7": "In Progress" }, the issues' current statuses. Prints the transitions the ledger implies;
             // S2 writes nothing to Jira. Drift (a status the mirror did not write) is never overwritten and is flagged to a
-            // person (item_awaiting_human) unless --no-flag. --applied records the planned transitions as mirrored.
+            // person (item_awaiting_human) unless --no-flag. --comment: with --apply, each issue moved also gets a comment with the
+            // item's commit and latest gate results; without --apply it prints the comment it would post. --applied records the planned transitions as mirrored.
             // With JIRA_URL + JIRA_TOKEN (+ JIRA_USER for Cloud) set, statuses are read over REST and --apply moves the
             // issues; without them --snapshot is required and nothing is written to Jira (a person or a browser does it).
             var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
@@ -290,9 +312,17 @@ try
             var drift = plan.OfType<Factory.Core.MirrorAction.Drift>().Count();
             if (drift > 0 && !opts.ContainsKey("no-flag"))
                 await Factory.Harness.Registry.JiraMirrorReport.FlagDriftAsync(Required(opts, "registry"), plan, DateTimeOffset.UtcNow, CancellationToken.None);
+            if (opts.ContainsKey("comment") && !opts.ContainsKey("apply"))
+                foreach (var t in plan.OfType<Factory.Core.MirrorAction.Transition>())
+                    Console.WriteLine($"  would comment on {t.key}:\n" + string.Join('\n',
+                        (await Factory.Harness.Registry.JiraMirrorReport.EvidenceAsync(Required(opts, "registry"), t.item, t.target, CancellationToken.None)).Split('\n').Select(l => "    " + l)));
             if (opts.ContainsKey("apply") && rest is not null)
             {
-                var (moved, failed) = await Factory.Harness.Registry.JiraMirrorReport.ApplyAsync(rest, plan, CancellationToken.None);
+                var registryPath = Required(opts, "registry");
+                var (moved, failed) = await Factory.Harness.Registry.JiraMirrorReport.ApplyAsync(rest, plan, CancellationToken.None,
+                    opts.ContainsKey("comment")
+                        ? (t, ct) => Factory.Harness.Registry.JiraMirrorReport.EvidenceAsync(registryPath, t.item, t.target, ct)
+                        : null);
                 foreach (var (k, s) in moved) { mirrored[k] = s; Console.WriteLine($"  moved  {k} -> {s}"); }
                 foreach (var f in failed) Console.Error.WriteLine("  FAILED " + f);
                 await File.WriteAllTextAsync(statePath, System.Text.Json.JsonSerializer.Serialize(mirrored));
@@ -427,27 +457,39 @@ try
             var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
             var runId = Required(opts, "run-id");
             var host = PullRequestHost(opts, settings.RepoPath);
+            // A split run's repos were saved by `run`; the primary is the first of them.
+            if (File.Exists(settings.ReposPath(runId)))
+                settings = settings with { Repos = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(settings.ReposPath(runId))) };
             var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
                 .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
             var services = Services(settings, runId, env, new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
             var branch = GitWorkspace.IntegrationBranch(runId);
+            var split = services.IsSplit;
+            async Task<string?> MergedIn(string repoPath, CancellationToken ct) =>
+                PullRequestHost(opts, repoPath) is { } h
+                    ? await h.MergedPullRequestAsync(branch, ct) is { } url ? $"pr {url}" : null
+                    : await RunClose.BranchMergedAsync(repoPath, branch, settings.BaseBranch, ct);
+            var splitMerged = new RunClose.SplitMerged([.. SplitMerge.Order(services.RepoGits.Keys)
+                .Select(n => new RunClose.RepoMerge(n, ct => MergedIn(services.RepoGits[n].RepoPath, ct)))]);
             var why = await RunClose.RecordAsync(services.Ledger, runId,
-                async ct => host is not null
-                    ? await host.MergedPullRequestAsync(branch, ct) is { } url ? $"pr {url}" : null
-                    : await RunClose.BranchMergedAsync(settings.RepoPath, branch, settings.BaseBranch, ct),
+                async ct => split ? await splitMerged.AllAsync(ct)
+                    : host is not null
+                        ? await host.MergedPullRequestAsync(branch, ct) is { } url ? $"pr {url}" : null
+                        : await RunClose.BranchMergedAsync(settings.RepoPath, branch, settings.BaseBranch, ct),
                 async ct =>
                 {
                     // Merged on the PR host: the merged commit is origin's base, not the local one.
+                    if (split) return await RunClose.CheckMergedSplitAsync(services, runId, host is not null, ct);
                     if (host is not null) await services.Git.FetchAsync(settings.BaseBranch, ct);
                     return await RunClose.CheckMergedAsync(services, runId, host is not null ? $"origin/{settings.BaseBranch}" : settings.BaseBranch, ct);
                 },
-                opts.GetValueOrDefault("by"), canState: host is null, CancellationToken.None);
+                opts.GetValueOrDefault("by"), canState: host is null, CancellationToken.None, split ? splitMerged.NotMerged : null);
             if (why is null && Directory.Exists(settings.RegistryPath))
                 await Factory.Harness.Registry.RegistryProgress.SyncAsync(services.Ledger, settings.RegistryPath, runId,
                     Factory.Harness.Registry.HandoverRef.From(services.LoadHandover(runId)), settings.TaskLimits, CancellationToken.None);
             Console.WriteLine(why is null ? $"run {runId}: merge recorded; the handover is closed" : $"not recorded: {why}");
             // Complete (now or by an earlier close): its worktrees and local branches go; the ledger and run folder stay.
-            if (await RunClose.CleanUpAsync(services.Ledger, services.Git, runId, CancellationToken.None))
+            if (await RunClose.CleanUpAsync(services.Ledger, split ? services.RepoGits.Values : [services.Git], runId, CancellationToken.None))
                 Console.WriteLine($"run {runId}: worktrees and local factory/{runId}/* branches removed");
             return why is null ? 0 : 1;
         }
@@ -463,7 +505,11 @@ try
             var handover = Core.ParseHandover(await File.ReadAllTextAsync(
                 await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token), cts.Token));
             RequireReferences(handover, args, settings.RepoPath);
-            settings = settings with { References = ReferenceFlags(args).Bindings };
+            settings = settings with
+            {
+                References = ReferenceFlags(args).Bindings,
+                Repos = repoMap.Named.ToDictionary(r => r.Key, r => Path.GetFullPath(r.Value)),
+            };
             var validation = Core.ValidatePlan(handover, await File.ReadAllTextAsync(Required(opts, "plan"), cts.Token));
             if (!validation.IsValid) throw new FactoryRejectedException("plan rejected", validation.Errors);
             var taskId = Required(opts, "task");
@@ -505,8 +551,43 @@ try
             return findings.IsEmpty ? 0 : 1;
         }
 
+        case "budget-import":
+        {
+            // The vendor-neutral import (schemas/budget-import.schema.json): prices and/or spend as CSV or JSON files.
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), null, null);
+            if (!opts.ContainsKey("prices") && !opts.ContainsKey("spend")) throw new FactoryRejectedException("nothing to import", ["pass --prices <file> and/or --spend <file>"]);
+            var result = await Factory.Harness.Spending.BudgetStore.ImportAsync(settings.StateDir,
+                opts.TryGetValue("prices", out var pf) ? await File.ReadAllTextAsync(pf) : null,
+                opts.TryGetValue("spend", out var sf) ? await File.ReadAllTextAsync(sf) : null,
+                DateTimeOffset.UtcNow, CancellationToken.None);
+            if (result.Errors.Count > 0) throw new FactoryRejectedException("the budget import is invalid; nothing was imported", [.. result.Errors]);
+            Console.WriteLine($"imported {result.PricesAdded} new price row(s), {result.SpendRows} spend row(s) into {Path.Combine(settings.StateDir, "budget")}");
+            return 0;
+        }
+
+        case "router-stats":
+        {
+            // What the run ledgers have taught the router: per model, role and size, with cost per success at catalog prices.
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), null, null);
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            var catalog = Factory.Harness.Policy.CatalogFile.Load(env);
+            if (catalog.Errors.Count > 0) throw new FactoryRejectedException("model catalog is invalid", [.. catalog.Errors]);
+            var routing = Factory.Harness.Policy.RoutingPolicyFile.Load(Path.GetFullPath(Required(opts, "repo")));
+            var known = catalog.Models.Select(m => m.Id).ToHashSet();
+            var stats = await Factory.Harness.Routing.LearningReader.StatsAsync(
+                settings.StateDir, known.Contains, routing.Learning, DateTimeOffset.UtcNow, CancellationToken.None, settings.RegistryPath);
+            var (priced, unmatched) = Factory.Harness.Spending.BudgetStore.ApplyPrices(
+                catalog.Models, Factory.Harness.Spending.BudgetStore.LoadPrices(settings.StateDir), DateOnly.FromDateTime(DateTime.UtcNow));
+            var rows = Factory.Harness.Routing.RouterStatsReport.Rows(stats, priced, opts.GetValueOrDefault("role"));
+            Console.Write(Factory.Harness.Routing.RouterStatsReport.Render(rows, opts.ContainsKey("json")));
+            if (unmatched.Count > 0)
+                Console.Error.WriteLine("placeholder price (no imported price): " + string.Join(", ", unmatched) + "  (factory-s2 budget-import --prices <file>)");
+            return 0;
+        }
+
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|parity|parity-decisions|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|budget-import|router-stats|parity|parity-decisions|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
             return 2;
     }
 }

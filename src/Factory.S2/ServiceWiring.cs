@@ -1,5 +1,6 @@
 using Factory.Core;
 using Factory.Harness;
+using Factory.Harness.Routing;
 using Factory.Harness.Registry;
 using Factory.Harness.Governance;
 using Factory.Harness.Policy;
@@ -23,7 +24,8 @@ public static class ServiceWiring
         new JsonlLedger(Path.Combine(settings.StateDir, "ledger.jsonl")), settings.RegistryPath,
         id => Factory.Harness.Registry.HandoverRef.From(Factory.Core.Core.ParseHandover(File.ReadAllText(settings.HandoverCopyPath(id)))), settings.TaskLimits);
 
-    public static FactoryServices Services(FactorySettings settings, string runId, Dictionary<string, string> env, IPullRequests pullRequests)
+    public static FactoryServices Services(FactorySettings settings, string runId, Dictionary<string, string> env, IPullRequests pullRequests,
+        Func<string, string, IPullRequests>? repoPullRequests = null)
     {
         var ledger = ProgressLedger(settings);
         // FACTORY_SANDBOX is an ordered list (docker,local); the first that starts is used. Default docker only;
@@ -60,9 +62,14 @@ public static class ServiceWiring
                 new HeuristicConfigurator(),
                 double.Parse(Environment.GetEnvironmentVariable("FACTORY_ROUTER_MIN_CONFIDENCE") ?? "0.7", System.Globalization.CultureInfo.InvariantCulture))
             : new HeuristicConfigurator();
-        var git = new GitWorkspace(settings.RepoPath, settings.StateDir);
+        // A named repo gets its own workspace (own worktrees); the primary repo's is `git`, as in a single-repo run.
+        var repoGits = (settings.Repos ?? new Dictionary<string, string>())
+            .ToDictionary(r => r.Key, r => new GitWorkspace(r.Value, settings.StateDir, r.Key));
+        var git = repoGits.Values.FirstOrDefault(g => g.RepoPath == settings.RepoPath) ?? new GitWorkspace(settings.RepoPath, settings.StateDir);
         var gateways = ModelGateways.FromEnvironment(env, mergesAreDryRun: pullRequests is DryRunPullRequests);
         var agents = new FactoryAgents(gateways, toolPolicy, ledger, FactoryTelemetry.CaptureContent(env));
+        // FACTORY_ROUTING=catalog routes each task through the model catalog; unset or `env`: the FACTORY_MODEL_* variables, as before.
+        var routing = RoutingSetup.FromEnvironment(env, settings.RepoPath, gateways);
         // QA runs only for a repo that describes a QA environment (.factory/qa-env.yaml); its requirements are the plan's tasks
         // (default source, until the handover carries requirements of its own).
         FactoryServices? built = null;
@@ -88,7 +95,11 @@ public static class ServiceWiring
             qa: qa,
             context: ContextRecording.Source(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_SOURCE"),
                 Environment.GetEnvironmentVariable("FACTORY_CONTEXT_DIR"), Environment.GetEnvironmentVariable("FACTORY_DESIGNC_CORE"), settings.RegistryPath),
-            injectContext: ContextRecording.Inject(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_INJECT")));
+            injectContext: ContextRecording.Inject(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_INJECT")),
+            routing: routing,
+            repoGits: repoGits,
+            repoPullRequests: repoPullRequests is null ? null
+                : (settings.Repos ?? new Dictionary<string, string>()).ToDictionary(r => r.Key, r => repoPullRequests(r.Key, r.Value)));
         return built;
     }
 }

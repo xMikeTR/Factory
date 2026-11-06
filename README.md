@@ -1,11 +1,21 @@
 # factory-s2: coding pipeline
 
-> **Where to look:** [ARCHITECTURE.md](ARCHITECTURE.md) is the living map (container and module diagrams,
-> high-centrality modules, dated change log). New here? Open [docs/guide.html](docs/guide.html). Eval method and contract: [docs/evals/](docs/evals/).
+System 2 of the design-to-code factory. It takes a **frozen handover** from System 1 (Designc) and turns it into merged code. Every step it takes is recorded in a ledger, so System 4 can learn from it.
 
-A head start on System 2 of the design-to-code factory. System 2 takes a frozen handover package
-from System 1 and turns it into merged code, recording everything it does in the ledger so that
-System 4 can learn from it.
+The rule behind every feature: **agents propose, deterministic code and humans decide.** Only two places call a model: the planner, and the turn loop inside each team. Plan validation, dispatch, task state, merge rules and gates are plain code, and the parts that must be correct are written in F#.
+
+New here? Open [docs/guide.html](docs/guide.html) for a walkthrough. [ARCHITECTURE.md](ARCHITECTURE.md) is the living map (container and module diagrams, high-centrality modules, dated change log). Eval method and contract: [docs/evals/](docs/evals/).
+
+## Contents
+
+- [How a run works](#how-a-run-works)
+- [Quick start](#quick-start): see it work in two commands, no model needed
+- [Configure a real run](#configure-a-real-run): providers, routing, budget, contracts
+- [Run it](#run-it), then [what is left behind](#new-projects-and-run-results)
+- [Commands](#commands), [Jira mirror](#jira-mirror), [status](#status), [layout of the code](#layout)
+- [Interfaces with designc](#interfaces-with-designc), [design decisions](#design-decisions)
+
+## How a run works
 
 ```
 handover.json ─► Planner ⇄ PlanValidator ─► Dispatcher ⇄ Waves ⇄ [needs-decision → System 1]
@@ -13,17 +23,303 @@ handover.json ─► Planner ⇄ PlanValidator ─► Dispatcher ⇄ Waves ⇄ [
                                    IntegrationVerify ─► Merge ⇄ [merge-approval]
 ```
 
-Agents propose and deterministic code decides. Only two places call a model: the planner, and
-the turn loop inside each team. Everything else is plain code, and the parts that must be
-correct are written in F#.
+| Step | What happens | Who decides |
+|---|---|---|
+| **Plan** | The planner drafts tasks from the handover: which elements, which files each may write, what to verify | A model proposes; `PlanValidator` (17 rules) accepts it or sends the errors back in the same turn |
+| **Dispatch** | Tasks whose writes overlap share a team; teams are ordered into waves that run in parallel | Plain code (`Dispatcher.fs`) |
+| **Team loop** | Each team plans, acts, checks scope, then runs verify, with a fresh brief each turn | A model acts; the scope check and verify decide. A question it can't answer becomes a *needs-decision* for System 1 |
+| **Integration verify** | The whole suite, PObserve and the frozen acceptance specs run on the integrated branch | Plain code |
+| **Merge** | A PR is opened. By policy it stops at review, merges on green, or asks for approvals | The merge policy and a human; the factory never merges in review mode |
+| **Close** | You record the merge; S2 re-checks the merged commit and closes the handover in the registry | Plain code |
+
+Work arrives as **work items** from Designc. A person pulls an item (`item_pulled` is human-only); S2 never starts one by itself.
+
+## Quick start
+
+No agents or network needed:
+
+```bash
+# 1. The rules, tested
+dotnet run --project tests/Factory.Core.Tests            # all passed
+
+# 2. Validate and dispatch the example handover
+dotnet run --project src/Factory.S2 -- validate --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
+dotnet run --project src/Factory.S2 -- dispatch --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
+#   wave 0: team-T-001 [T-001, T-004]      (both write under src/Quotes.Data)
+#   wave 1: team-T-002 [T-002], team-T-003 [T-003]   (parallel)
+```
+
+## Configure a real run
+
+A real run needs a model. Pick one provider:
+
+| Provider | Set | Notes |
+|---|---|---|
+| Any OpenAI-compatible gateway | `FACTORY_GATEWAY_URL=https://<gateway>/v1`, `FACTORY_GATEWAY_KEY`, and `FACTORY_MODEL_FRONTIER`, `_STANDARD`, `_SMALL` (aliases) | The default |
+| Anthropic (native client) | `FACTORY_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` | Public API unless `FACTORY_GATEWAY_URL` is set. Models default to `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-4-5` |
+| Claude on Vertex AI | `FACTORY_PROVIDER=vertex`, `FACTORY_VERTEX_PROJECT`, optional `FACTORY_VERTEX_REGION` (default `global`) | gcloud Application Default Credentials: no key, no gateway. `claude-*` models use the Anthropic client; others (e.g. `google/gemini-2.5-pro`) use Vertex's OpenAI-compatible endpoint, so the reviewer can be a Gemini on the same login |
+
+**Reviewer and QA run on a different model family.** Set `FACTORY_REVIEWER_PROVIDER` / `_GATEWAY_URL` / `_GATEWAY_KEY` / `_MODEL_*`, and declare `FACTORY_MODEL_FAMILY` and `FACTORY_REVIEWER_MODEL_FAMILY`; start-up refuses otherwise. With one provider only, set `FACTORY_REVIEWER_SAME_FAMILY=allow`: dry-run merges only (not `--github`), and those reviews are stamped same-family.
+
+### Per-task model routing (Vertex and ADC only)
+
+`FACTORY_ROUTING=catalog` turns it on (default `env`: the `FACTORY_MODEL_*` variables above, unchanged).
+
+- **Catalog:** `catalog/models.yaml` (override with `FACTORY_CATALOG=<path>`), one row per model: id, modelName, tier (small|standard|frontier), family, capabilities, window, approvedFor, price, prior. Swap or add models there (the Gemini rows are commented in the file); nothing else names a model.
+- **Policy:** the `routing:` section of `<repo>/.factory/policy.yaml` (min tier per risk, size buckets, data class). Missing means defaults. Keys: `canaryShare` (0.05: share of pairs whose Standard entry is the Frontier model), `halfLifeDays` (30), `learnReviewer` (false).
+- **Routing is logged:** each (task, role) is routed once at run start and logged as a `route` ledger row; a resumed run keeps the ladders its route rows recorded.
+- **Risk and data class** come from the handover requirement (`requirement_risk`, `requirement_data_class`) when present, else the highest element risk and the policy's data class. Designc does not write those two keys yet, so today the fallback applies.
+- **Learning:** the router learns from the run ledger (`<state dir>/ledger.jsonl`): each verify result credits the model of the act turn before it, decayed by age. See it with `factory-s2 router-stats --repo . [--role implementer] [--json]` (cache `<state dir>/router-stats.json`, rebuilt whenever the ledger changes).
+- **Prices must be real** for cost to steer routing: rows priced 0 tie, and the first row in the file wins.
+
+### Prices, spend and budget
+
+Vendor-neutral import (`schemas/budget-import.schema.json`): `factory-s2 budget-import --repo . --prices prices.csv --spend spend.csv` (CSV or JSON). Imported prices replace catalog placeholders by model name (`router-stats` names the models still on a placeholder), and turn rows then carry `cost`.
+
+`policy.yaml` `budget:` takes `itemCost`, `userMonthlyCost`, `softAt` (0.8), `downgradeAt` (0.9), `maxImportAgeDays` (2) and `currency`:
+
+| State | Effect |
+|---|---|
+| Soft | Warns |
+| Downgrade | Caps every ladder at Standard |
+| Blocked | Refuses a new run (exit 4) |
+
+A missing or stale spend import counts as Soft when `userMonthlyCost` is set. The worse of the item and user states wins.
+
+### Agent contracts
+
+A handover frozen with compiled contracts (designc `contracts/`) lists them. `FACTORY_CONTRACTS=warn` (default) names agents with none, `require` refuses to start, `off` ignores. S2 reads and checks them only; enforcing the policy at run time is not built yet.
+
+## Run it
+
+```bash
+dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/pricing-v3/handover.json \
+    --repo <target repo> --registry <registry repo> [--base main] [--github | --azdo] [--run-id <id to resume>]
+```
+
+Without `--github` or `--azdo`, the PR is written to `.factory/runs/<id>/`.
+
+### New projects and run results
+
+A brand-new project needs no repository first: when `--repo` is missing or an empty folder, `run`
+creates it as a git repository with one empty baseline commit on the base branch (a repository
+with no commit gets the same baseline). A folder that holds files but is not a git repository is
+refused and left untouched.
+
+Every run leaves `.factory/runs/<id>/result.json` (`run`, `status`, `reason`, `exitCode`, `at`) saying
+how the last attempt ended, on every exit path: the workflow's own status (`ready_for_review`, `merged`, `parked`,
+`failed`, `integration_failed`, `error`, ...), `refused` (budget, nothing to repair), `no_result`,
+or, with `exitCode` null, `rejected` (a deterministic check), `cancelled` (Ctrl+C) and `failed` (a
+crash, with the exception type). A resume replaces it.
+
+### Keys and the live check
+
+The key never reaches a sandbox, a ledger row or a printed `GatewayOptions` (its `ToString`
+redacts it). Opt-in live check on real Claude models (Sonnet plans, Haiku acts; usage tokens are
+ledgered and the key is absent from the ledger and the state dir):
+`FACTORY_LIVE_ANTHROPIC=1 ANTHROPIC_API_KEY=<key> dotnet test tests/Factory.Integration.Tests --filter LiveAnthropic`.
+
+### Turn routing
+
+Turn routing: by default `HeuristicConfigurator`. With `FACTORY_ROUTER_URL` set (run
+`python3 tools/router-sidecar/server.py`), the router decides when its confidence is at least
+`FACTORY_ROUTER_MIN_CONFIDENCE` (default 0.7); if the sidecar is down, unsure or garbled, the
+heuristic decides. Each `configurator` ledger row names the decider and why. A routing model is
+bound in one function, `tools/router-sidecar/router_adapter.py`; none is bound yet, so the sidecar
+answers 503. Sidecar tests: `cd tools/router-sidecar && python3 -m unittest test_server`.
+
+### Traces
+
+Traces: a run is one OTel trace (`run <id>`, then `task <id>` per task, then a gen_ai `chat`
+span per model call and an `execute_tool` span per tool call); every ledger row carries its
+`trace_id`. Spans are exported only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or when `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are all set (the endpoint, protocol and auth header are then derived; an explicit endpoint wins; export them in your shell profile so every run has them) (plus
+`OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_HEADERS`), to Langfuse or any OTLP collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:3000/api/public/otel OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $(printf %s "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | base64 -w0)"
+```
+
+The attribute contract (`Factory.Harness/Telemetry/FactoryTelemetry.cs`): `factory.system`,
+`factory.run_id`, `factory.team`, `factory.task`, `factory.element[]`, `factory.decision[]`,
+`factory.attempt`, the score `factory.score.task_passed` (1/0, also a `score` span event), and
+Langfuse's `langfuse.trace.tags=[designc]` and `langfuse.session.id=<run id>`. Langfuse does not
+take scores over OTel; post `task_passed` to its scores API if you want it there as a score.
+Prompts and replies stay off spans unless `FACTORY_OTEL_CAPTURE_CONTENT=1`.
+Opt-in check against langfuse-local (v4; read back through `/api/public/v2/observations`):
+`. ~/Desktop/Coding/langfuse-local/env.sh; FACTORY_LIVE_LANGFUSE=1 dotnet test tests/Factory.Integration.Tests --filter LiveLangfuse`.
+
+### Target repo setup
+
+The target repo needs `.factory/` in its `.gitignore`, and build/test outputs such as
+`artifacts/` ignored as well. Otherwise the scope check will see them as changes outside the
+task's writes and revert them. Other settings (`FACTORY_MAX_TURNS`, `FACTORY_COMMANDS`,
+`FACTORY_POBSERVE_CMD`, …) are listed in `FactorySettings.FromEnvironment`.
+
+### Sandbox
+
+Commands run in a per-team Docker container (`FACTORY_SANDBOX=docker`, the default) built
+from `docker/runner` with Podman (default) or Docker (`FACTORY_CONTAINER_ENGINE=docker`): `docker/runner/build.sh` (image
+`factory-s2-runner`, override with `FACTORY_RUNNER_IMAGE`). The worktree is mounted at its own
+path and the container runs as you with `--network none`, no capabilities, and memory/CPU/pid
+limits, and never gets a network. `dotnet restore` runs at start in a separate short-lived container on the bridge that shares the worktree and NuGet cache (ledgered at stage
+`restore`), once per project file on disk, from nuget.org only. Before it opens, every restore input
+changed since HEAD is checked against an allow-list (packages, project references, compile items,
+plain properties); anything else (targets, imports, custom SDKs, nuget.config, .props/.targets)
+refuses the restore, which is ledgered as `refused` and goes back to the agent with the reasons. `FACTORY_SANDBOX=local` runs on the host with a scrubbed environment instead. `FACTORY_SANDBOX` is an ordered list, `docker,local`: the first that starts is used and each one skipped is ledgered as `sandbox_skipped` with its reason. Unset means `docker` only; `local` (unisolated) runs only when you name it.
+
+Idle handoff: the prompt cache lives five minutes from its last use. If one tool call takes longer than `FACTORY_IDLE_HANDOFF_SECONDS` (default 200, 0 turns it off; a queue wait for a heavy-command slot counts), the turn ends there without being declared done, its turn row says `handoff: idle`, and the next turn starts a fresh agent from the brief with a note that the edits are on the worktree. That costs one small brief instead of resending the whole conversation cold. Turn rows also say `cold: true` when a turn that should have read the cache did not.
+An agent's `run_command` gets at most 3 minutes in total (`ScopedWorkspace.DefaultCommandCap`), waiting for a free heavy-command slot and a flaky re-run included. Anthropic's prompt cache lasts 5 minutes from the last model call, and a longer tool call would make the next call pay for the whole conversation again. Longer checks belong to the verify gate, which runs between agent turns.
+Docker contract tests are opt-in: `FACTORY_TEST_DOCKER=1 dotnet test --filter DockerSandbox`.
+
+### PObserve
+
+PObserve runs as an integration verify step: the runner image carries the PObserve CLI (built
+from P at a pinned commit; it is not published) and `pobserve-check <specs-dir> <Spec> <logs>`,
+which compiles the `.p` files in pobserve mode with the factory's generic parser
+(`tools/pobserve-parser`). The logging contract, stated in every brief that has an event
+vocabulary, is one line per event containing `pobserve <event> <payload> key=<id>` (scalar payload or
+none; other text on the line is ignored; each key is checked as its own history), e.g.
+`INFO pobserve eCommitted 3 key=Q-42`. Point the step at
+the handover's behaviour specs, e.g.
+`FACTORY_POBSERVE_CMD="pobserve-check /path/to/handover/behaviour NoLostUpdate artifacts/test-logs"`
+(the path must be inside the sandbox's worktree mount when `FACTORY_SANDBOX=docker`). Exit 2 is
+a spec violation, 4 a malformed event line. Tests: `FACTORY_TEST_DOCKER=1 dotnet test --filter PObserve`.
+
+### Reruns
+
+How reliably do the agents get a task to Passed? `rerun` makes k fresh attempts at one task,
+each its own run (`rerun-<task>-<time>-k<n>`: an integration branch from `--base` and a fresh
+worktree), through the same task loop as `run`. Nothing is merged and no PR is opened:
+
+```bash
+dotnet run --project src/Factory.S2 -- rerun --handover <handover> --plan plan.json --task T-001 --k 3 --repo <target repo>
+#   rerun-T-001-…-k1: passed, 3 turns, tokens 600/120
+#   …
+# T-001 k=3: passed 2/3 (67%), turns mean 3.0, tokens in/out mean 500/100
+```
+
+Outcomes are `passed`, `failed` or `blocked` (a needs-decision; reruns never answer one).
+The tasks it depends on are not replayed, so point `--base` at a branch that has their work.
+
+### Regeneration
+
+Regeneration drill: change a decision in Designc, re-freeze the handover, and run again
+`--since` the run that built the previous freeze, from a base that has its merged work:
+
+```bash
+dotnet run --project src/Factory.S2 -- run --handover <re-frozen handover> --repo <target repo> --since <previous run id>
+```
+
+The run reuses the previous plan (re-stamped with the new freeze and re-validated; if it no
+longer fits, the planner redrafts). `Regeneration.between` diffs the bound decisions: a task
+re-runs if it covers a changed, added or removed decision, or touches an element one binds
+(before or after). Every other task is ledgered `carried` and not run. The `regenerate` plan row
+and `.factory/runs/<id>/regeneration.json` record the diff. Integration verify still runs the
+whole suite. Element-only changes (code areas, risk) and the dependents of a re-run task do not
+trigger a re-run.
+
+### Merge policy
+
+The merge policy comes from the target repo's `.factory/policy.yaml` (read from the base
+checkout, never a task worktree):
+
+```yaml
+merge:
+  enforcement: review          # default; review = never merge, the run ends at the PR;
+                               # auto = merge on green; tiered = the tier decides approvals
+  approvers: [alice, bob]
+  autoMergeMaxRisk: low
+  autoMergeMaxChangedLines: 400
+```
+
+`FACTORY_MERGE_ENFORCEMENT` and `FACTORY_MERGE_APPROVERS` (comma-separated) override the file.
+
+The same file can name the repo's one verify script:
+
+```yaml
+verify:
+  command: npm run verify      # runs in every task's verify, beside the plan's own checks; a failure fails the task
+  parity: npm run parity       # for the UI parity gate (phase 7c)
+```
+
+One source of truth: the editor hook, the git hooks, CI and the factory all run these same scripts, so what
+passes here passes there. Agents can't skip hooks: `--no-verify` is refused in `run_command`, in the tool
+policies (`policies/s2/*.yaml`) and in this repo's `.claude/settings.json`.
+
+### Review, close and merge
+
+In review mode a green run ends `ready_for_review` (exit 0) with the PR url, or without a
+PR host with the integration branch to merge yourself; the factory never merges. The handover
+stays open until you record the merge:
+
+```bash
+dotnet run --project src/Factory.S2 -- close --repo <target repo> --run-id <id> [--registry <registry repo>] [--github | --azdo] [--by <you>]
+```
+
+`close` confirms the merge (with a PR host the PR is merged or completed; without, the integration branch is in
+the base branch, or after a squash merge `--by` says you merged it). The base may have moved since
+integration verify, so it runs the integration suite, PObserve, the frozen acceptance specs and the
+token lint again (as configured) on the merged commit
+(`origin/<base>` after a fetch with a PR host). Green: it logs the merge and closes the handover
+in the registry. Red: it logs the failures and refuses; the handover stays open until the base is
+fixed and `close` passes. The decision checks are not re-run: they check the registry's models,
+not the code. Once the merge is recorded the run is complete and `close` removes its worktrees and local
+`factory/<id>/*` branches (again on any later `close`, if that was interrupted); the ledger and
+`.factory/runs/<id>/` stay as its record, and remote branches are left alone. Blocks (a scope leak, a protected path changed, a pending manual
+check) stop the run in every mode; it ends `merge_blocked` with the blocks in the PR body.
+
+In tiered mode with `--github`, approvals are PR comments from the allow-listed `approvers`:
+`/approve <reason>` (one per approver; a lone approver meets two approvals with two distinct
+reasons, recorded `single_operator: true` on the Merge ledger row) and `/verified T-001: <check>`
+to record a manual check as done. Too few approvals parks the run (`parked: awaiting_approval
+<url>`, exit 3); re-run with `--run-id` after commenting. Without `--github` the console asks.
+
+`--azdo` uses Azure DevOps Repos through the az CLI: install `az` with the `azure-devops`
+extension and log in (`az login`, or `AZURE_DEVOPS_EXT_PAT`). The organisation, project and repo
+come from the repo's `origin` remote, so nothing about them is configured here. Runs push the
+integration branch and open (or reuse) a PR; auto mode sets auto-complete with squash; `close`
+finds the completed PR. Azure DevOps has no approval-comment path yet, so tiered approvals ask at
+the console. PR descriptions over Azure DevOps' 4000-character limit are cut with a note.
+
+Opt-in live test (opens and closes a real PR):
+`FACTORY_LIVE_GITHUB=xMikeTR/pricing-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`
+
+## Commands
+
+Per-command flags are the header comment of `src/Factory.S2/Program.cs`.
+
+| Command | What it does |
+|---|---|
+| `validate`, `dispatch` `--handover h.json --plan plan.json` | Deterministic checks and the wave layout. No agents |
+| `run` `--handover <h\|dir> --repo . [--registry r] [--base main] [--run-id id] [--github \| --azdo] [--since <run>] [--repair <integration_failed run> [--diagnose]]` | A real run; `--since` regenerates, `--repair` fixes a failed integration |
+| `rerun` `--handover h --plan p.json --task T-001 [--k 3] --repo .` | k fresh attempts at one task, nothing merged |
+| `close` `--repo . --run-id id [--registry r] [--by you]` | Record the merge and close the handover |
+| `qa` `--repo . --run-id id` | Follow-up QA, no author |
+| `ci-report` `--repo . --run-id id --check ...` | Record a CI failure against the run |
+| `digest` `--registry r [--last-look ms] [--wip 3] [--notify-state f]` | What needs you, what failed, what is done |
+| `pull-plan`, `metrics` `--registry r` | Read-only reports |
+| `budget` `--repo . [--registry r] [--no-report]` | Item budget; exit 2 when exceeded, then `run` exits 4 |
+| `budget-import`, `router-stats` | Prices and spend in; what the router learned out |
+| `parity` `--registry r --item W-1 [--repo .] [--base-url u]` | Designc recorder at HEAD (work VM); see `docs/parity-runbook.md` |
+| `parity-decisions` `--registry r` | A needs_decision per failed parity scenario; exit 2 when raised |
+| `intake` `--registry r --id BUG-1 --spec ... --origin ... --ref ...` | Bug intake |
+| `jira-mirror` `--registry r [--snapshot jira.json] [--apply [--comment]]` | One-way mirror of ledger state to Jira; see below |
+| `ux-review` `--repo . --handover h [--judge [--item W-1 --registry r --threshold 3.5]]` | Freeze-time UX review; `--judge` is paid, opt-in |
+| `repro` `--repo . --summary "..."` | Paid, opt-in |
+| `compare-browser` `--repo . --runs a,b` | CLI vs MCP browser tool |
+
+### Jira mirror
+
+Ledger to Jira, never the other way. Each work item's state is compared with its Jira issue (found by the item's requirement key): a move is planned, an issue already in sync is left alone, and **drift (a human changed the issue) is flagged as `item_awaiting_human`, never overwritten**.
+
+- **Dry-run by default.** Nothing is written without `--apply`.
+- **Source:** `--snapshot jira.json` (offline) or `JIRA_URL` plus `JIRA_TOKEN` (and `JIRA_USER` for Basic auth; without it the token is sent as a Bearer PAT). Jira Cloud REST v3 only; there is no Data Center variant.
+- **`--apply --comment`** also posts the evidence after each move: the work item and run, the commit, and the latest result per gate. A pass with uncommitted changes is marked "not evidence". A failed comment is reported and does not undo the move. `--comment` without `--apply` prints the comment it would post.
 
 ## Status
 
-Tests: Core 212/0 (`dotnet run --project tests/Factory.Core.Tests`),
-Integration 537/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse,
-GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set.
-Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run
-has been made yet.
+Tests: Core 327/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 778/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|
@@ -34,30 +330,11 @@ has been made yet.
 | UI acceptance: frozen spec hash check, Playwright run, `ui_acceptance_failed`, repair runs, bug intake, token lint | `Core/UiAcceptance.fs`, `VerifyRunner`, `S2/Repair.cs`, `BugIntake` | Built |
 | Item budget: measure, report, and refuse a new run when exceeded | `Core/ItemBudget.fs`, `ItemBudgetReport` | Built |
 | Freeze-time UX review and `item_judge` (gradient, never decides Done) | `Core/UxReview.fs`, `UxReviewRunner`, `ItemJudgeReport` | Built; paid, opt-in |
-| Jira mirror (one-way, drift flagged not overwritten; REST and snapshot) | `Core/JiraMirror.fs`, `JiraMirrorReport`, `JiraRestClient` | Built; stub-tested only |
+| Jira mirror (one-way, drift flagged not overwritten; REST and snapshot) | `Core/JiraMirror.fs`, `JiraMirrorReport`, `JiraRestClient` | Built; stub-tested only. `--comment` (with `--apply`) posts gate evidence as a Cloud v3 comment; Jira Cloud only, no Data Center variant |
+| Router task spec: risk and data class from the handover requirement (`requirement_risk`, `requirement_data_class`), else element max and config | `Core/Router.fs`, `Json.parseHandover`, `DesigncHandoverReader` | Built; designc does not write the keys yet, so the old behaviour applies |
 | Factory evals | `docs/evals/` | Reference copies only; the suite lives on the work VM |
 
-## CLI
-
-```
-factory-s2 validate|dispatch   --handover h.json --plan plan.json         deterministic, no agents
-factory-s2 run                 --handover <h|dir> --repo . [--registry r] [--base main] [--run-id id] [--github | --azdo]
-                               [--since <run>] [--repair <integration_failed run> [--diagnose]]
-factory-s2 rerun               --handover <h|dir> --plan p.json --task T-001 [--k 3] --repo .
-factory-s2 qa                  --repo . --run-id <id>                      follow-up QA, no author
-factory-s2 digest              --registry r [--last-look ms] [--wip 3] [--notify-state f]
-factory-s2 pull-plan | metrics --registry r                                read-only reports
-factory-s2 budget              --repo . [--registry r] [--no-report]       exit 2 when exceeded; `run` then exits 4
-factory-s2 parity             --registry r --item W-1 [--repo .] [--base-url u]   designc recorder at HEAD (work VM); docs/parity-runbook.md
-factory-s2 parity-decisions    --registry r                                needs_decision per failed parity scenario; exit 2 when raised
-factory-s2 intake              --registry r --id BUG-1 --spec ... --origin ... --ref ...
-factory-s2 jira-mirror         --registry r [--snapshot jira.json | JIRA_URL/JIRA_TOKEN] [--apply]
-factory-s2 ux-review           --repo . --handover h [--judge [--item W-1 --registry r --threshold 3.5]]
-factory-s2 repro               --repo . --summary "..."                    paid, opt-in
-factory-s2 compare-browser     --repo . --runs a,b                         CLI vs MCP browser tool
-```
-
-Per-command flags are the header comment of `src/Factory.S2/Program.cs`. S2 conforms to Designc's published
+S2 conforms to Designc's published
 contracts (`ledger_schema.json`, `elements.json` /1 and /2, the work-file format) and never edits them; the copies
 under `tests/Factory.Integration.Tests/Fixtures/designc/` are contract-tested.
 
@@ -95,190 +372,6 @@ schemas/                 plan and handover JSON Schemas
 sql/ledger.sql           Postgres ledger + System 4 starter views
 examples/pricing-v3/     Quote lost-update handover and a valid plan
 ```
-
-## Quick start
-
-```bash
-# 1. The core, no agents or network needed
-dotnet run --project tests/Factory.Core.Tests            # all passed
-
-# 2. Deterministic CLI against the example (after the S2 project compiles)
-dotnet run --project src/Factory.S2 -- validate --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
-dotnet run --project src/Factory.S2 -- dispatch --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
-#   wave 0: team-T-001 [T-001, T-004]      (both write under src/Quotes.Data)
-#   wave 1: team-T-002 [T-002], team-T-003 [T-003]   (parallel)
-
-# 3. A real run in a target repo (PRs are written to .factory/runs/<id>/ unless --github or --azdo)
-export FACTORY_GATEWAY_URL=https://<apim>/litellm/v1 FACTORY_GATEWAY_KEY=<per-user key>
-export FACTORY_MODEL_FRONTIER=<alias> FACTORY_MODEL_STANDARD=<alias> FACTORY_MODEL_SMALL=<alias>
-#   or the native Anthropic client (public API unless FACTORY_GATEWAY_URL is set; models default
-#   to claude-opus-5-5 / claude-sonnet-5-5 / claude-haiku-4-5):
-#   export FACTORY_PROVIDER=anthropic ANTHROPIC_API_KEY=<key>
-#   or Claude on Vertex AI with gcloud Application Default Credentials (no key, no gateway):
-#   export FACTORY_PROVIDER=vertex FACTORY_VERTEX_PROJECT=<project> [FACTORY_VERTEX_REGION=global]
-#   (any Vertex model: claude-* via the Anthropic client; others, e.g. google/gemini-2.5-pro, via Vertex's
-#   OpenAI-compatible endpoint, so the reviewer can be a Gemini on the same login)
-#   The reviewer and QA run on another model family (FACTORY_REVIEWER_PROVIDER / _GATEWAY_URL /
-#   _GATEWAY_KEY / _MODEL_*, and declare FACTORY_MODEL_FAMILY + FACTORY_REVIEWER_MODEL_FAMILY); start-up
-#   refuses otherwise. With one provider only: FACTORY_REVIEWER_SAME_FAMILY=allow, dry-run merges only
-#   (not --github); those reviews are stamped same-family.
-#   Agent contracts: a handover frozen with compiled contracts (designc `contracts/`) lists them;
-#   FACTORY_CONTRACTS=warn (default) names agents with none, require refuses to start, off ignores.
-#   S2 reads and checks them only; enforcing the policy at run time is not built yet.
-dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/pricing-v3/handover.json \
-    --repo <target repo> --registry <registry repo> [--base main] [--github | --azdo] [--run-id <id to resume>]
-```
-
-A brand-new project needs no repository first: when `--repo` is missing or an empty folder, `run`
-creates it as a git repository with one empty baseline commit on the base branch (a repository
-with no commit gets the same baseline). A folder that holds files but is not a git repository is
-refused and left untouched.
-
-Every run leaves `.factory/runs/<id>/result.json` (`run`, `status`, `reason`, `exitCode`, `at`) saying
-how the last attempt ended, on every exit path: the workflow's own status (`ready_for_review`, `merged`, `parked`,
-`failed`, `integration_failed`, `error`, ...), `refused` (budget, nothing to repair), `no_result`,
-or, with `exitCode` null, `rejected` (a deterministic check), `cancelled` (Ctrl+C) and `failed` (a
-crash, with the exception type). A resume replaces it.
-
-The key never reaches a sandbox, a ledger row or a printed `GatewayOptions` (its `ToString`
-redacts it). Opt-in live check on real Claude models (Sonnet plans, Haiku acts; usage tokens are
-ledgered and the key is absent from the ledger and the state dir):
-`FACTORY_LIVE_ANTHROPIC=1 ANTHROPIC_API_KEY=<key> dotnet test tests/Factory.Integration.Tests --filter LiveAnthropic`.
-
-Turn routing: by default `HeuristicConfigurator`. With `FACTORY_ROUTER_URL` set (run
-`python3 tools/router-sidecar/server.py`), the router decides when its confidence is at least
-`FACTORY_ROUTER_MIN_CONFIDENCE` (default 0.7); if the sidecar is down, unsure or garbled, the
-heuristic decides. Each `configurator` ledger row names the decider and why. A routing model is
-bound in one function, `tools/router-sidecar/router_adapter.py`; none is bound yet, so the sidecar
-answers 503. Sidecar tests: `cd tools/router-sidecar && python3 -m unittest test_server`.
-
-Traces: a run is one OTel trace (`run <id>`, then `task <id>` per task, then a gen_ai `chat`
-span per model call and an `execute_tool` span per tool call); every ledger row carries its
-`trace_id`. Spans are exported only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or when `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are all set (the endpoint, protocol and auth header are then derived; an explicit endpoint wins; export them in your shell profile so every run has them) (plus
-`OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_HEADERS`), to Langfuse or any OTLP collector:
-
-```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:3000/api/public/otel OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $(printf %s "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | base64 -w0)"
-```
-
-The attribute contract (`Factory.Harness/Telemetry/FactoryTelemetry.cs`): `factory.system`,
-`factory.run_id`, `factory.team`, `factory.task`, `factory.element[]`, `factory.decision[]`,
-`factory.attempt`, the score `factory.score.task_passed` (1/0, also a `score` span event), and
-Langfuse's `langfuse.trace.tags=[designc]` and `langfuse.session.id=<run id>`. Langfuse does not
-take scores over OTel; post `task_passed` to its scores API if you want it there as a score.
-Prompts and replies stay off spans unless `FACTORY_OTEL_CAPTURE_CONTENT=1`.
-Opt-in check against langfuse-local (v4; read back through `/api/public/v2/observations`):
-`. ~/Desktop/Coding/langfuse-local/env.sh; FACTORY_LIVE_LANGFUSE=1 dotnet test tests/Factory.Integration.Tests --filter LiveLangfuse`.
-
-The target repo needs `.factory/` in its `.gitignore`, and build/test outputs such as
-`artifacts/` ignored as well. Otherwise the scope check will see them as changes outside the
-task's writes and revert them. Other settings (`FACTORY_MAX_TURNS`, `FACTORY_COMMANDS`,
-`FACTORY_POBSERVE_CMD`, …) are listed in `FactorySettings.FromEnvironment`.
-
-Commands run in a per-team Docker container (`FACTORY_SANDBOX=docker`, the default) built
-from `docker/runner` with Podman (default) or Docker (`FACTORY_CONTAINER_ENGINE=docker`): `docker/runner/build.sh` (image
-`factory-s2-runner`, override with `FACTORY_RUNNER_IMAGE`). The worktree is mounted at its own
-path and the container runs as you with `--network none`, no capabilities, and memory/CPU/pid
-limits, and never gets a network. `dotnet restore` runs at start in a separate short-lived container on the bridge that shares the worktree and NuGet cache (ledgered at stage
-`restore`), once per project file on disk, from nuget.org only. Before it opens, every restore input
-changed since HEAD is checked against an allow-list (packages, project references, compile items,
-plain properties); anything else (targets, imports, custom SDKs, nuget.config, .props/.targets)
-refuses the restore, which is ledgered as `refused` and goes back to the agent with the reasons. `FACTORY_SANDBOX=local` runs on the host with a scrubbed environment instead. `FACTORY_SANDBOX` is an ordered list, `docker,local`: the first that starts is used and each one skipped is ledgered as `sandbox_skipped` with its reason. Unset means `docker` only; `local` (unisolated) runs only when you name it.
-
-Idle handoff: the prompt cache lives five minutes from its last use. If one tool call takes longer than `FACTORY_IDLE_HANDOFF_SECONDS` (default 200, 0 turns it off; a queue wait for a heavy-command slot counts), the turn ends there without being declared done, its turn row says `handoff: idle`, and the next turn starts a fresh agent from the brief with a note that the edits are on the worktree. That costs one small brief instead of resending the whole conversation cold. Turn rows also say `cold: true` when a turn that should have read the cache did not.
-An agent's `run_command` gets at most 3 minutes in total (`ScopedWorkspace.DefaultCommandCap`), waiting for a free heavy-command slot and a flaky re-run included. Anthropic's prompt cache lasts 5 minutes from the last model call, and a longer tool call would make the next call pay for the whole conversation again. Longer checks belong to the verify gate, which runs between agent turns.
-Docker contract tests are opt-in: `FACTORY_TEST_DOCKER=1 dotnet test --filter DockerSandbox`.
-
-PObserve runs as an integration verify step: the runner image carries the PObserve CLI (built
-from P at a pinned commit; it is not published) and `pobserve-check <specs-dir> <Spec> <logs>`,
-which compiles the `.p` files in pobserve mode with the factory's generic parser
-(`tools/pobserve-parser`). The logging contract, stated in every brief that has an event
-vocabulary, is one line per event containing `pobserve <event> <payload> key=<id>` (scalar payload or
-none; other text on the line is ignored; each key is checked as its own history), e.g.
-`INFO pobserve eCommitted 3 key=Q-42`. Point the step at
-the handover's behaviour specs, e.g.
-`FACTORY_POBSERVE_CMD="pobserve-check /path/to/handover/behaviour NoLostUpdate artifacts/test-logs"`
-(the path must be inside the sandbox's worktree mount when `FACTORY_SANDBOX=docker`). Exit 2 is
-a spec violation, 4 a malformed event line. Tests: `FACTORY_TEST_DOCKER=1 dotnet test --filter PObserve`.
-
-How reliably do the agents get a task to Passed? `rerun` makes k fresh attempts at one task,
-each its own run (`rerun-<task>-<time>-k<n>`: an integration branch from `--base` and a fresh
-worktree), through the same task loop as `run`. Nothing is merged and no PR is opened:
-
-```bash
-dotnet run --project src/Factory.S2 -- rerun --handover <handover> --plan plan.json --task T-001 --k 3 --repo <target repo>
-#   rerun-T-001-…-k1: passed, 3 turns, tokens 600/120
-#   …
-# T-001 k=3: passed 2/3 (67%), turns mean 3.0, tokens in/out mean 500/100
-```
-
-Outcomes are `passed`, `failed` or `blocked` (a needs-decision; reruns never answer one).
-The tasks it depends on are not replayed, so point `--base` at a branch that has their work.
-
-Regeneration drill: change a decision in Designc, re-freeze the handover, and run again
-`--since` the run that built the previous freeze, from a base that has its merged work:
-
-```bash
-dotnet run --project src/Factory.S2 -- run --handover <re-frozen handover> --repo <target repo> --since <previous run id>
-```
-
-The run reuses the previous plan (re-stamped with the new freeze and re-validated; if it no
-longer fits, the planner redrafts). `Regeneration.between` diffs the bound decisions: a task
-re-runs if it covers a changed, added or removed decision, or touches an element one binds
-(before or after). Every other task is ledgered `carried` and not run. The `regenerate` plan row
-and `.factory/runs/<id>/regeneration.json` record the diff. Integration verify still runs the
-whole suite. Element-only changes (code areas, risk) and the dependents of a re-run task do not
-trigger a re-run.
-
-The merge policy comes from the target repo's `.factory/policy.yaml` (read from the base
-checkout, never a task worktree):
-
-```yaml
-merge:
-  enforcement: review          # default; review = never merge, the run ends at the PR;
-                               # auto = merge on green; tiered = the tier decides approvals
-  approvers: [alice, bob]
-  autoMergeMaxRisk: low
-  autoMergeMaxChangedLines: 400
-```
-
-`FACTORY_MERGE_ENFORCEMENT` and `FACTORY_MERGE_APPROVERS` (comma-separated) override the file.
-In review mode a green run ends `ready_for_review` (exit 0) with the PR url, or without a
-PR host with the integration branch to merge yourself; the factory never merges. The handover
-stays open until you record the merge:
-
-```bash
-dotnet run --project src/Factory.S2 -- close --repo <target repo> --run-id <id> [--registry <registry repo>] [--github | --azdo] [--by <you>]
-```
-
-`close` confirms the merge (with a PR host the PR is merged or completed; without, the integration branch is in
-the base branch, or after a squash merge `--by` says you merged it). The base may have moved since
-integration verify, so it runs the integration suite, PObserve, the frozen acceptance specs and the
-token lint again (as configured) on the merged commit
-(`origin/<base>` after a fetch with a PR host). Green: it logs the merge and closes the handover
-in the registry. Red: it logs the failures and refuses; the handover stays open until the base is
-fixed and `close` passes. The decision checks are not re-run: they check the registry's models,
-not the code. Once the merge is recorded the run is complete and `close` removes its worktrees and local
-`factory/<id>/*` branches (again on any later `close`, if that was interrupted); the ledger and
-`.factory/runs/<id>/` stay as its record, and remote branches are left alone. Blocks (a scope leak, a protected path changed, a pending manual
-check) stop the run in every mode; it ends `merge_blocked` with the blocks in the PR body.
-
-In tiered mode with `--github`, approvals are PR comments from the allow-listed `approvers`:
-`/approve <reason>` (one per approver; a lone approver meets two approvals with two distinct
-reasons, recorded `single_operator: true` on the Merge ledger row) and `/verified T-001: <check>`
-to record a manual check as done. Too few approvals parks the run (`parked: awaiting_approval
-<url>`, exit 3); re-run with `--run-id` after commenting. Without `--github` the console asks.
-
-`--azdo` uses Azure DevOps Repos through the az CLI: install `az` with the `azure-devops`
-extension and log in (`az login`, or `AZURE_DEVOPS_EXT_PAT`). The organisation, project and repo
-come from the repo's `origin` remote, so nothing about them is configured here. Runs push the
-integration branch and open (or reuse) a PR; auto mode sets auto-complete with squash; `close`
-finds the completed PR. Azure DevOps has no approval-comment path yet, so tiered approvals ask at
-the console. PR descriptions over Azure DevOps' 4000-character limit are cut with a note.
-
-Opt-in live test (opens and closes a real PR):
-`FACTORY_LIVE_GITHUB=xMikeTR/pricing-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`
 
 ## Interfaces with designc
 

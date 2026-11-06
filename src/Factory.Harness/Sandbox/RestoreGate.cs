@@ -9,7 +9,7 @@ namespace Factory.Harness.Sandbox;
 /// ProjectFileChange allow-list, and project paths the restore command cannot carry safely.
 public sealed record RestorePlan(IReadOnlyList<string> Projects, IReadOnlyList<string> Refusals, IReadOnlyList<string>? NpmDirectories = null)
 {
-    /// Directories whose package.json and lockfile `npm ci` restores.
+    /// Directories whose package.json and lockfile `npm i` restores.
     public IReadOnlyList<string> NpmDirs => NpmDirectories ?? [];
 }
 
@@ -39,7 +39,7 @@ public static partial class RestoreGate
             {
                 var dir = Path.GetDirectoryName(path)!.Replace('\\', '/');
                 if (!File.Exists(Path.Combine(worktree, dir, "package-lock.json")))
-                    refusals.Add($"{path}: no package-lock.json next to it; npm ci restores only from a lockfile (nothing else pins what would install)");
+                    refusals.Add($"{path}: no package-lock.json next to it; npm ci installs only with a lockfile beside it (nothing else pins what would install)");
                 else if (dir.Length > 0 && !SafePath().IsMatch(dir))
                     refusals.Add($"{path}: the directory has characters the restore command does not carry (letters, digits, . _ - + / only)");
                 else npm.Add(dir.Length == 0 ? "." : dir);
@@ -60,10 +60,14 @@ public static partial class RestoreGate
         + $"dotnet restore \"$p\" --configfile {ConfigFile} -p:RestoreSources={NuGetOrg} -p:RestoreAdditionalProjectSources= "
         + "-p:ImportProjectExtensionProps=false -p:ImportProjectExtensionTargets=false || rc=1; done; exit $rc";
 
-    /// One `npm ci` per directory: lockfile only, no install scripts, the registry from the image's config.
+    /// One `npm i` per directory: no install scripts, the registry from the image's config. `npm i` may rewrite the
+    /// lockfile, so the lockfile as the worktree has it is saved first; if the install changes it, it is put back and the
+    /// restore fails (drift is a decision for the repo's owners, never left behind silently).
     public static string NpmCommand(IReadOnlyList<string> directories) =>
         $"rc=0; for d in {string.Join(' ', directories.Select(d => $"'{d}'"))}; do "
-        + $"(cd \"$d\" && npm ci --ignore-scripts --no-audit --no-fund --userconfig {NpmConfigFile}) || rc=1; done; exit $rc";
+        + "(cd \"$d\" && L=$(mktemp) && cp package-lock.json \"$L\" && "
+        + $"npm i --ignore-scripts --no-audit --no-fund --userconfig {NpmConfigFile} && "
+        + "{ cmp -s package-lock.json \"$L\" || { cp \"$L\" package-lock.json; echo \"$d: npm i changed package-lock.json: package-lock.json drifted from package.json; restored it. Fix the lockfile and commit it.\" >&2; false; }; }) || rc=1; done; exit $rc";
 
     /// After the restore, offline: only the allow-listed packages run their install script. Names are validated by NpmPolicyFile.
     public static string RebuildCommand(string directory, IReadOnlyList<string> packages) =>

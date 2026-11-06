@@ -13,9 +13,9 @@ namespace Factory.Harness;
 /// `vertex` is Claude on Google Vertex AI with Application Default Credentials: no key, no gateway.
 public enum ModelProvider { Anthropic, OpenAICompatible, Vertex }
 
-/// Agents never call a provider directly: APIM -> LiteLLM (per-user key, Langfuse) -> Vertex, over
-/// the OpenAI-compatible protocol; or the native Anthropic client, against the public API or a
-/// gateway that fronts it. Model names are gateway aliases (or Claude model ids for Anthropic),
+/// Agents never call a provider directly: Vertex with Application Default Credentials (Claude via the
+/// Anthropic client, others over Vertex's OpenAI-compatible endpoint), the native Anthropic client, or
+/// an OpenAI-compatible gateway. Model names are config (FACTORY_MODEL_* or catalog/models.yaml),
 /// so routing changes are config, not code. A null Endpoint is the provider's public endpoint.
 /// CacheControl (FACTORY_GATEWAY_CACHE_CONTROL = auto | on | off) puts Anthropic's cache breakpoints on the
 /// OpenAI-compatible wire. Null (auto, the default) sends them to a model whose name says Claude, which caches only
@@ -75,14 +75,23 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
         // Application Default Credentials (gcloud auth application-default login, or the VM's service account).
         // Claude models use Anthropic's Vertex client; any other model id (Gemini, Model Garden) goes through Vertex's
         // OpenAI-compatible endpoint, so the reviewer can be another family on the same login.
-        ModelProvider.Vertex when VertexAuthPolicy.IsClaude(ModelFor(tier)) => new Anthropic.Vertex.AnthropicVertexClient(new Anthropic.Vertex.AnthropicVertexCredentials(VertexRegion ?? "global", VertexProject
-                ?? throw new FactoryRejectedException("no Vertex project", ["set FACTORY_VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT"])))
-            .AsIChatClient(ModelFor(tier), AnthropicMaxOutputTokens).AsBuilder().Use(inner => new PromptCachingChatClient(inner)).Build(),
+        ModelProvider.Vertex when VertexAuthPolicy.IsClaude(ModelFor(tier)) => VertexClaudeClient(ModelFor(tier)),
         ModelProvider.Vertex => VertexOpenAIClient(ModelFor(tier)),
         ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey), OpenAIOptions(ModelFor(tier)))
             .GetChatClient(ModelFor(tier)).AsIChatClient().AsBuilder().Use(inner => new OpenAIPromptCacheKeyChatClient(inner)).Build(),
         _ => throw new ArgumentOutOfRangeException(nameof(Provider), Provider, null),
     };
+
+    /// The client for a catalog row, by its protocol. Catalog routing calls Vertex directly with ADC (decision D1).
+    public IChatClient ChatClientFor(ModelEntry entry) =>
+        Provider != ModelProvider.Vertex
+            ? throw new FactoryRejectedException("FACTORY_ROUTING=catalog needs Vertex", ["set FACTORY_PROVIDER=vertex and FACTORY_VERTEX_PROJECT (catalog routing calls Vertex directly with ADC)"])
+            : entry.Protocol.IsAnthropicVertex ? VertexClaudeClient(entry.ModelName) : VertexOpenAIClient(entry.ModelName);
+
+    private IChatClient VertexClaudeClient(string model) =>
+        new Anthropic.Vertex.AnthropicVertexClient(new Anthropic.Vertex.AnthropicVertexCredentials(VertexRegion ?? "global", VertexProject
+                ?? throw new FactoryRejectedException("no Vertex project", ["set FACTORY_VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT"])))
+            .AsIChatClient(model, AnthropicMaxOutputTokens).AsBuilder().Use(inner => new PromptCachingChatClient(inner)).Build();
 
     private IChatClient VertexOpenAIClient(string model)
     {
@@ -130,10 +139,27 @@ public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, 
     public FactoryAgents(GatewayOptions gateway, IToolPolicy policy, ILedger ledger, bool captureContent = false)
         : this(gateway.ChatClientFor, policy, ledger, captureContent) { }
 
+    private Routing.RouteTable? _routes;
+    private Func<ModelEntry, IChatClient>? _routedClient;
+
+    /// Turns on catalog routing (FACTORY_ROUTING=catalog): an agent whose (task, role) was routed calls the model its
+    /// ladder names for the turn's tier, built by `clientFor`. Other agents keep the env-var models.
+    public void UseRouting(Routing.RouteTable routes, Func<ModelEntry, IChatClient> clientFor)
+    {
+        _routes = routes;
+        _routedClient = clientFor;
+    }
+
+    private ModelEntry? RoutedEntry(string role, ModelTier tier, string? taskId) =>
+        taskId is not null && _routes?.Find(taskId, role) is { } ladder && ladder.TryGetValue(tier, out var entry) ? entry : null;
+
+    private IChatClient ClientFor(string role, ModelTier tier, string? taskId) =>
+        RoutedEntry(role, tier, taskId) is { } entry ? _routedClient!(entry) : chatFor(role, tier);
+
     /// The model a role's tier calls, as its client names it (null when the client does not say): turn rows carry it
-    /// so designc can show which model spent what.
-    public string? ModelIdFor(string role, ModelTier tier) =>
-        chatFor(role, tier).GetService<ChatClientMetadata>()?.DefaultModelId;
+    /// so designc can show which model spent what. A routed task's turns carry the catalog id.
+    public string? ModelIdFor(string role, ModelTier tier, string? taskId = null) =>
+        RoutedEntry(role, tier, taskId)?.Id ?? chatFor(role, tier).GetService<ChatClientMetadata>()?.DefaultModelId;
 
     /// Tool results older than this many are replaced by stubs in what the model sees.
     public const int KeepRecentToolResults = 5;
@@ -145,7 +171,7 @@ public sealed class FactoryAgents(Func<string, ModelTier, IChatClient> chatFor, 
 
     public AIAgent Create(AgentScope scope, ModelTier tier, string instructions, IList<AITool> tools, TurnBudget? budget = null, int keepRecentResults = KeepRecentToolResults)
     {
-        var chat = chatFor(scope.Role, tier).AsBuilder()
+        var chat = ClientFor(scope.Role, tier, scope.TaskId).AsBuilder()
             .Use(inner => new TrimmingChatClient(inner, keepRecentResults, ElideBatch, HoldResultChars))
             .Use(inner => new PromptCacheKeyChatClient(inner, PromptCacheKey.For(scope)))
             .UseOpenTelemetry(sourceName: FactoryTelemetry.SourceName, configure: o => o.EnableSensitiveData = captureContent)

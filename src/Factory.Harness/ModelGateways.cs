@@ -67,6 +67,10 @@ public sealed record ModelGateways(GatewayOptions Implementer, GatewayOptions Re
         // on Vertex the family follows the model: Claude is anthropic; a Gemini reviewer must declare its family
         : gateway.Provider == ModelProvider.Vertex && VertexAuthPolicy.IsClaude(gateway.StandardModel) ? "anthropic" : null;
 
+    /// The client for one catalog row (FACTORY_ROUTING=catalog), by its protocol, on the Vertex project and region from
+    /// the environment. Catalog routing is Vertex-only (decision D1: no gateway); another provider is refused.
+    public IChatClient ChatClientFor(ModelEntry entry) => Implementer.ChatClientFor(entry);
+
     public IChatClient ChatClientFor(string role, ModelTier tier) =>
         (role is Roles.Reviewer or Roles.Qa or Roles.UxJudge or Roles.Repro or Roles.Diagnosis ? Reviewer : Implementer).ChatClientFor(tier);
 }

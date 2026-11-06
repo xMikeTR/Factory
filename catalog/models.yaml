@@ -1,0 +1,53 @@
+# The model catalog the router picks from (per task, per tier). This is the ONLY place model names live:
+# edit a row to change a model; add a row to add one. Point FACTORY_CATALOG at another file to use a different list
+# (for example one for work), without touching this one.
+#
+# Required per row: id, modelName, tier (small | standard | frontier). Everything else has a default:
+#   family       "claude" for claude-* names, otherwise required (the reviewer must be another family than the implementer)
+#   protocol     anthropicVertex for claude-*, otherwise vertexOpenAICompatible (Vertex's OpenAI endpoint, e.g. Gemini)
+#   caps         [toolUse, structuredOutput]   (also: vision, longContext)
+#   contextWindow 200000
+#   approvedFor  [public, internal]            (add regulated only where your data policy allows it)
+#   prior        [1, 1]                        pseudo-counts (successes, failures); raise successes for a proven model
+#   price        { in: 0, out: 0 }             per million tokens; placeholder until APIM prices are imported (phase 4)
+#
+# Project and region are not per row: they come from FACTORY_VERTEX_PROJECT / FACTORY_VERTEX_REGION (ADC, no keys).
+models:
+  # Seeded from the defaults already in FactoryAgents.cs. Check the names against what your Vertex project serves.
+  - id: vertex/claude-opus
+    modelName: claude-opus-5-5
+    tier: frontier
+    caps: [toolUse, structuredOutput, vision, longContext]
+    contextWindow: 1000000
+    price: { in: 15, out: 75 }
+    source: placeholder
+
+  - id: vertex/claude-sonnet
+    modelName: claude-sonnet-5-5
+    tier: standard
+    caps: [toolUse, structuredOutput, vision, longContext]
+    contextWindow: 1000000
+    price: { in: 3, out: 15 }
+    source: placeholder
+
+  - id: vertex/claude-haiku
+    modelName: claude-haiku-4-5
+    tier: small
+    caps: [toolUse, structuredOutput, vision]
+    contextWindow: 200000
+    price: { in: 1, out: 5 }
+    source: placeholder
+
+  # Gemini (another family: lets the reviewer be independent of a Claude implementer). Uncomment and set the names
+  # your project serves; nothing here is a guess at what exists.
+  # - id: vertex/gemini-pro
+  #   family: gemini
+  #   modelName: <gemini model name>
+  #   tier: frontier
+  #   caps: [toolUse, structuredOutput, vision, longContext]
+  #   contextWindow: 1000000
+  #
+  # - id: vertex/gemini-flash
+  #   family: gemini
+  #   modelName: <gemini flash model name>
+  #   tier: small

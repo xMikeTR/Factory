@@ -1,0 +1,4 @@
+#!/bin/sh
+# $1 previous HEAD, $2 new HEAD, $3 1 for a branch checkout (0 for a file checkout: nothing to do)
+[ "${3:-1}" = 1 ] || exit 0
+exec "$(dirname "$0")/_/install-if-changed.sh" "$1" "$2"

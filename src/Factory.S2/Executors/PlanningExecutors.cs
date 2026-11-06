@@ -98,7 +98,7 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
         var signals = new TurnSignals();
         var ws = new ScopedWorkspace(svc.Settings.RepoPath, [], [], [], signals);
         var agent = svc.Agents.Create(new AgentScope(runId, Roles.Planner), ModelTier.Frontier, Briefs.Prompt("planner"),
-            ws.PlannerTools(schema.RootElement, plan => Core.ValidatePlan(handover, plan).Errors), TurnBudget.ForPlanning("submit_plan"));
+            ws.PlannerTools(schema.RootElement, plan => Core.ValidatePlan(handover, plan, svc.Settings.RepoNames).Errors), TurnBudget.ForPlanning("submit_plan"));
         var response = await agent.RunAsync(brief, cancellationToken: ct);
 
         if (signals.SubmittedPlan is { } plan) await File.WriteAllTextAsync(svc.Settings.PlanPath(runId), plan, ct);
@@ -125,7 +125,7 @@ internal sealed class PlanValidatorExecutor(FactoryServices svc) : Executor("Pla
     {
         var path = svc.Settings.PlanPath(msg.RunId);
         var validation = File.Exists(path)
-            ? Core.ValidatePlan(svc.LoadHandover(msg.RunId), await File.ReadAllTextAsync(path, cancellationToken))
+            ? Core.ValidatePlan(svc.LoadHandover(msg.RunId), await File.ReadAllTextAsync(path, cancellationToken), svc.Settings.RepoNames)
             : new PlanValidation(null!, ["No plan was submitted: call submit_plan with the whole plan."]);
 
         await svc.LogAsync(msg.RunId, "plan_validate", LedgerKinds.Plan,
@@ -155,9 +155,13 @@ internal sealed class DispatchExecutor(FactoryServices svc) : Executor("Dispatch
         var json = Core.DispatchJson(dispatch);
         await File.WriteAllTextAsync(svc.Settings.DispatchPath(msg.RunId), json, cancellationToken);
         await svc.LogAsync(msg.RunId, "dispatch", LedgerKinds.Dispatch, outcome: $"{dispatch.Waves.Length} waves", payload: json, ct: cancellationToken);
+        // FACTORY_ROUTING=catalog: every (task, role) is routed once, before any wave; a pair with no eligible model refuses the run
+        await svc.RouteAsync(msg.RunId, svc.LoadHandover(msg.RunId), svc.LoadValidatedPlan(msg.RunId).Plan.Tasks, logRows: true, cancellationToken);
         await RegenerationAsync(msg.RunId, cancellationToken);
 
-        await svc.Git.EnsureIntegrationAsync(msg.RunId, svc.Settings.BaseBranch, cancellationToken);
+        // A split project cuts an integration branch in every repo; a single-repo run, the one.
+        foreach (var git in svc.RepoGits.Count > 0 ? svc.RepoGits.Values : [svc.Git])
+            await git.EnsureIntegrationAsync(msg.RunId, svc.Settings.BaseBranch, cancellationToken);
         await NextAsync(msg.RunId, 0, dispatch, context, cancellationToken);
     }
 

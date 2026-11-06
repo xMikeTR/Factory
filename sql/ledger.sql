@@ -68,3 +68,33 @@ CREATE OR REPLACE VIEW s2_guardrail_hits AS
 SELECT ts, run_id, task_id, kind, outcome, payload
 FROM ledger
 WHERE kind = 'scope_violation' OR (kind = 'tool_call' AND outcome = 'denied');
+
+-- Model pass rate, as the router learns it (Factory.Core Learning.attribute): each verify result (a `task` row whose
+-- payload type is verify_completed; outcome Reviewing means it passed) is credited to the model of the last act turn
+-- before it, for that role. Needs FACTORY_ROUTING=catalog: only turns that carry a catalog model_id count. Size comes from
+-- the task's route row. Tokens here are the credited turn's only (the router sums that model's turns since the previous verify).
+CREATE OR REPLACE VIEW s2_model_pass_rate AS
+WITH credited AS (
+    SELECT v.run_id, v.task_id, (v.outcome = 'Reviewing') AS passed,
+           t.payload->>'model_id' AS model_id,
+           t.payload->>'role'     AS role,
+           coalesce(t.tokens_in, 0) + coalesce(t.tokens_out, 0) AS tokens,
+           (SELECT r.payload->>'size' FROM ledger r
+             WHERE r.kind = 'route' AND r.run_id = v.run_id AND r.task_id = v.task_id
+               AND r.payload->>'role' = t.payload->>'role' LIMIT 1) AS size
+    FROM ledger v
+    JOIN LATERAL (
+        SELECT * FROM ledger t
+        WHERE t.kind = 'turn' AND t.stage = 'act' AND t.run_id = v.run_id AND t.task_id = v.task_id
+          AND t.id < v.id AND t.payload->>'model_id' IS NOT NULL
+        ORDER BY t.id DESC LIMIT 1
+    ) t ON true
+    WHERE v.kind = 'task' AND v.payload->>'type' = 'verify_completed'
+)
+SELECT model_id, role, size,
+       count(*)                                    AS attempts,
+       count(*) FILTER (WHERE passed)              AS passes,
+       round(avg(passed::int), 3)                  AS pass_rate,
+       round(avg(tokens))                          AS mean_tokens
+FROM credited
+GROUP BY model_id, role, size;
