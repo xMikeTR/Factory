@@ -37,8 +37,10 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
         var wave = svc.LoadDispatch(runId).Waves[index];
         var byTask = answers.ToDictionary(a => a.TaskId);
 
-        var runner = new TeamRunner(svc, handover, runId);
-        var results = await Task.WhenAll(wave.Teams.Select(team => RunTeamSafelyAsync(runner, team, byTask, ct)));
+        // A team never spans repos (the dispatcher asserts it), so it runs against its repo's workspace.
+        var plan = svc.LoadValidatedPlan(runId);
+        var results = await Task.WhenAll(wave.Teams.Select(team =>
+            RunTeamSafelyAsync(new TeamRunner(svc.ForRepo(TeamRepo(plan, team)), handover, runId), team, byTask, ct)));
 
         await svc.LogAsync(runId, "wave", LedgerKinds.Dispatch, outcome: $"wave {index}",
             payload: JsonSerializer.Serialize(results.Select(r => new { r.TeamId, Status = r.Status.ToString(), r.Failure })), ct: ct);
@@ -131,6 +133,9 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
         Core.ToList(b.Options.Select(o => new DecisionOption(o.Id, o.Summary, o.Consequence))),
         b.Recommended is { } r ? FSharpOption<string>.Some(r) : null);
     private static readonly JsonSerializerOptions CaseInsensitive = new() { PropertyNameCaseInsensitive = true };
+
+    internal static string? TeamRepo(ValidatedPlan plan, Team team) =>
+        team.Tasks.Select(t => plan.RepoOf(t.Id)).FirstOrDefault(r => FSharpOption<string>.get_IsSome(r))?.Value;
 
     private static async Task<TeamResult> RunTeamSafelyAsync(TeamRunner runner, Team team, IReadOnlyDictionary<string, DecisionAnswer> answers, CancellationToken ct)
     {

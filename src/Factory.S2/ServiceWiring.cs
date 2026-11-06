@@ -61,7 +61,10 @@ public static class ServiceWiring
                 new HeuristicConfigurator(),
                 double.Parse(Environment.GetEnvironmentVariable("FACTORY_ROUTER_MIN_CONFIDENCE") ?? "0.7", System.Globalization.CultureInfo.InvariantCulture))
             : new HeuristicConfigurator();
-        var git = new GitWorkspace(settings.RepoPath, settings.StateDir);
+        // A named repo gets its own workspace (own worktrees); the primary repo's is `git`, as in a single-repo run.
+        var repoGits = (settings.Repos ?? new Dictionary<string, string>())
+            .ToDictionary(r => r.Key, r => new GitWorkspace(r.Value, settings.StateDir, r.Key));
+        var git = repoGits.Values.FirstOrDefault(g => g.RepoPath == settings.RepoPath) ?? new GitWorkspace(settings.RepoPath, settings.StateDir);
         var gateways = ModelGateways.FromEnvironment(env, mergesAreDryRun: pullRequests is DryRunPullRequests);
         var agents = new FactoryAgents(gateways, toolPolicy, ledger, FactoryTelemetry.CaptureContent(env));
         // FACTORY_ROUTING=catalog routes each task through the model catalog; unset or `env`: the FACTORY_MODEL_* variables, as before.
@@ -92,7 +95,8 @@ public static class ServiceWiring
             context: ContextRecording.Source(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_SOURCE"),
                 Environment.GetEnvironmentVariable("FACTORY_CONTEXT_DIR"), Environment.GetEnvironmentVariable("FACTORY_DESIGNC_CORE"), settings.RegistryPath),
             injectContext: ContextRecording.Inject(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_INJECT")),
-            routing: routing);
+            routing: routing,
+            repoGits: repoGits);
         return built;
     }
 }

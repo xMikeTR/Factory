@@ -115,13 +115,26 @@ public sealed class FactoryServices(
     IQaRunner? qa = null,
     IContextSource? context = null,
     bool injectContext = false,
-    RoutingSetup? routing = null)
+    RoutingSetup? routing = null,
+    IReadOnlyDictionary<string, GitWorkspace>? repoGits = null)
 {
     public FactorySettings Settings { get; } = settings;
+    /// One workspace per named repo (`--repo Api=.. --repo Ui=..`); empty for a single-repo run, where `Git` is the only one.
+    public IReadOnlyDictionary<string, GitWorkspace> RepoGits { get; } = repoGits ?? new Dictionary<string, GitWorkspace>();
+
+    /// These services with `Git` swapped for the repo's workspace, so a team's runner works in its own repo without
+    /// every call site naming one. A null or unnamed repo (single-repo run) is these services as they are.
+    public FactoryServices ForRepo(string? repo)
+    {
+        if (repo is null || !RepoGits.TryGetValue(repo, out var git)) return this;
+        var copy = (FactoryServices)MemberwiseClone();
+        copy.Git = git;
+        return copy;
+    }
     public ILedger Ledger { get; } = ledger;
     public FactoryAgents Agents { get; } = agents;
     public IConfigurator Configurator { get; } = configurator;
-    public GitWorkspace Git { get; } = git;
+    public GitWorkspace Git { get; private set; } = git;
     public VerifyRunner Verify { get; } = verify;
     /// Where agent commands run during a turn (verify uses its own); never the host environment.
     public ISandboxFactory Sandboxes { get; } = sandboxes;
