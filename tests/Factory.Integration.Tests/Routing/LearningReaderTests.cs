@@ -140,13 +140,108 @@ public sealed class LearningReaderTests : IDisposable
 
         Assert.Equal(0.25, Find(await Load(), "small", Role.Implementer, SizeBucket.M)!.Successes, 6);
     }
+
+    // --- 7c: a Ui task's verify pass needs its item's parity (tiers 1 and 2) to pass, judged after `factory-s2 parity` ---
+
+    private string Registry => Path.Combine(_dir, "registry");
+
+    private async Task WriteRunHandoverAsync(string run)
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "runs", run));
+        await File.WriteAllTextAsync(Path.Combine(_dir, "runs", run, "handover.json"), "{\"id\":\"h-1\"}");
+    }
+
+    private const string HandoverId = "h-1";
+
+    private void RegistryRows(params object[] rows)
+    {
+        Directory.CreateDirectory(Path.Combine(Registry, "ledger"));
+        File.WriteAllLines(Path.Combine(Registry, "ledger", "pipeline.jsonl"), rows.Select(r => JsonSerializer.Serialize(r)));
+    }
+
+    private async Task<FSharpMapOfStats> LoadWithParity() =>
+        new(await LearningReader.StatsAsync(_dir, Known, new LearningSettings(), Now, default, Registry));
+
+    private async Task UiVerifyPassAsync()
+    {
+        await Row(new LedgerEvent("r1", "S2", "route", LedgerKinds.Route, TaskId: "T-1",
+            Payload: JsonSerializer.Serialize(new { role = Roles.Implementer, size = "M", repo = "Ui" })) { Ts = Now });
+        await Act("r1", "T-1", "small");
+        await Verify("r1", "T-1", true);
+        await WriteRunHandoverAsync("r1");
+    }
+
+    private static Counts? UiCounts(FSharpMapOfStats stats) => stats.Find("small", Role.Implementer, SizeBucket.M, "Ui");
+
+    [Fact]
+    public async Task A_Ui_verify_pass_is_a_failure_when_its_items_parity_failed()
+    {
+        await UiVerifyPassAsync();
+        RegistryRows(new { kind = "handover", item = "W-1", handover = HandoverId },
+            new { kind = "parity_result", scenario = "s1", commit = "c1", outcome = "pass", item = "W-1", ts = 1 },
+            new { kind = "parity_result", scenario = "s2", commit = "c1", outcome = "fail", item = "W-1", ts = 2 });
+
+        var counts = UiCounts(await LoadWithParity())!;
+        Assert.Equal(1.0, counts.Failures, 6);
+        Assert.Equal(0.0, counts.Successes, 6);
+    }
+
+    [Fact]
+    public async Task A_failed_visual_tier_fails_the_item_even_when_tier_one_passed()
+    {
+        await UiVerifyPassAsync();
+        RegistryRows(new { kind = "handover", item = "W-1", handover = HandoverId },
+            new { kind = "parity_result", scenario = "s1", commit = "c1", outcome = "pass", item = "W-1", ts = 1, visual = new { ratio = 0.5, threshold = 0.001, outcome = "fail" } });
+
+        Assert.Equal(1.0, UiCounts(await LoadWithParity())!.Failures, 6);
+    }
+
+    [Fact]
+    public async Task A_Ui_verify_pass_stays_a_success_when_parity_passed_was_not_run_or_a_later_run_fixed_it()
+    {
+        await UiVerifyPassAsync();
+        RegistryRows(new { kind = "handover", item = "W-1", handover = HandoverId },
+            new { kind = "parity_result", scenario = "s1", commit = "c1", outcome = "fail", item = "W-1", ts = 1 },
+            new { kind = "parity_result", scenario = "s1", commit = "c2", outcome = "pass", item = "W-1", ts = 2 });
+        Assert.Equal(1.0, UiCounts(await LoadWithParity())!.Successes, 6);          // the latest result per scenario counts
+
+        RegistryRows(new { kind = "handover", item = "W-1", handover = HandoverId });  // parity never ran
+        Assert.Equal(1.0, UiCounts(await LoadWithParity())!.Successes, 6);
+        Assert.Equal(1.0, UiCounts(await Load())!.Successes, 6);                       // no registry given: as before
+    }
+
+    [Fact]
+    public async Task Api_tasks_are_not_judged_by_parity_and_a_new_parity_row_invalidates_the_cache()
+    {
+        await Row(new LedgerEvent("r1", "S2", "route", LedgerKinds.Route, TaskId: "T-1",
+            Payload: JsonSerializer.Serialize(new { role = Roles.Implementer, size = "M", repo = "Api" })) { Ts = Now });
+        await Act("r1", "T-1", "small");
+        await Verify("r1", "T-1", true);
+        await WriteRunHandoverAsync("r1");
+        RegistryRows(new { kind = "handover", item = "W-1", handover = HandoverId },
+            new { kind = "parity_result", scenario = "s1", commit = "c1", outcome = "fail", item = "W-1", ts = 1 });
+        Assert.Equal(1.0, (await LoadWithParity()).Find("small", Role.Implementer, SizeBucket.M, "Api")!.Successes, 6);
+
+        // the Ui case: parity passes first (cached), then a failing row arrives with the ledger unchanged
+        await Row(new LedgerEvent("r1", "S2", "route", LedgerKinds.Route, TaskId: "T-2",
+            Payload: JsonSerializer.Serialize(new { role = Roles.Implementer, size = "M", repo = "Ui" })) { Ts = Now });
+        await Act("r1", "T-2", "small");
+        await Verify("r1", "T-2", true);
+        RegistryRows(new { kind = "handover", item = "W-1", handover = HandoverId },
+            new { kind = "parity_result", scenario = "s1", commit = "c1", outcome = "pass", item = "W-1", ts = 1 });
+        Assert.Equal(1.0, UiCounts(await LoadWithParity())!.Successes, 6);
+        RegistryRows(new { kind = "handover", item = "W-1", handover = HandoverId },
+            new { kind = "parity_result", scenario = "s1", commit = "c1", outcome = "pass", item = "W-1", ts = 1 },
+            new { kind = "parity_result", scenario = "s2", commit = "c1", outcome = "fail", item = "W-1", ts = 3 });
+        Assert.Equal(1.0, UiCounts(await LoadWithParity())!.Failures, 6);
+    }
 }
 
 /// Test-side view of the F# stats map.
 internal readonly record struct FSharpMapOfStats(Microsoft.FSharp.Collections.FSharpMap<StatsKey, Counts> Map)
 {
-    public Counts? Find(string model, Role role, SizeBucket size) =>
-        Map.TryGetValue(new StatsKey(model, role, Microsoft.FSharp.Core.FSharpOption<string>.None, size), out var c) ? c : null;
+    public Counts? Find(string model, Role role, SizeBucket size, string? repo = null) =>
+        Map.TryGetValue(new StatsKey(model, role, repo is null ? Microsoft.FSharp.Core.FSharpOption<string>.None : Microsoft.FSharp.Core.FSharpOption<string>.Some(repo), size), out var c) ? c : null;
 
     public IEnumerable<StatsKey> Keys() => Map.Select(kv => kv.Key);
 }
