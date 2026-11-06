@@ -98,7 +98,7 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
         var signals = new TurnSignals();
         var ws = new ScopedWorkspace(svc.Settings.RepoPath, [], [], [], signals);
         var agent = svc.Agents.Create(new AgentScope(runId, Roles.Planner), ModelTier.Frontier, Briefs.Prompt("planner"),
-            ws.PlannerTools(schema.RootElement, plan => Core.ValidatePlan(handover, plan).Errors), TurnBudget.ForPlanning("submit_plan"));
+            ws.PlannerTools(schema.RootElement, plan => Core.ValidatePlan(handover, plan, svc.Settings.RepoNames).Errors), TurnBudget.ForPlanning("submit_plan"));
         var response = await agent.RunAsync(brief, cancellationToken: ct);
 
         if (signals.SubmittedPlan is { } plan) await File.WriteAllTextAsync(svc.Settings.PlanPath(runId), plan, ct);
@@ -125,7 +125,7 @@ internal sealed class PlanValidatorExecutor(FactoryServices svc) : Executor("Pla
     {
         var path = svc.Settings.PlanPath(msg.RunId);
         var validation = File.Exists(path)
-            ? Core.ValidatePlan(svc.LoadHandover(msg.RunId), await File.ReadAllTextAsync(path, cancellationToken))
+            ? Core.ValidatePlan(svc.LoadHandover(msg.RunId), await File.ReadAllTextAsync(path, cancellationToken), svc.Settings.RepoNames)
             : new PlanValidation(null!, ["No plan was submitted: call submit_plan with the whole plan."]);
 
         await svc.LogAsync(msg.RunId, "plan_validate", LedgerKinds.Plan,
