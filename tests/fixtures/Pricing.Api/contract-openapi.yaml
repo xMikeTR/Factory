@@ -1,0 +1,7 @@
+openapi: 3.0.3
+info: { title: Pricing API, version: "1.0.0" }
+paths:
+  /quotes:
+    get:
+      operationId: listQuotes
+      responses: { "200": { description: ok } }
