@@ -93,7 +93,16 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             Core.ToList(references),
             Core.ToList(contracts),
             Core.ToList(uncovered),
-            Core.ToList(ApiContracts(manifest, files, errors)));
+            Core.ToList(ApiContracts(manifest, files, errors)),
+            Str(manifest, "requirement_risk") switch
+            {
+                "low" => FSharpOption<RiskLevel>.Some(RiskLevel.Low),
+                "medium" => FSharpOption<RiskLevel>.Some(RiskLevel.Medium),
+                "high" or "critical" => FSharpOption<RiskLevel>.Some(RiskLevel.High),
+                _ => FSharpOption<RiskLevel>.None
+            },
+            Str(manifest, "requirement_data_class") is ("public" or "internal" or "regulated") and { } dataClass
+                ? FSharpOption<string>.Some(dataClass) : FSharpOption<string>.None);
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }

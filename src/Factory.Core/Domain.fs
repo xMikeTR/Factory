@@ -117,7 +117,11 @@ type Handover =
       /// Design agents (agents.json) that act on their own and have no compiled contract; empty when none, or when the handover lists no agents.
       Uncovered: string list
       /// The OpenAPI contract files the handover pins (handover.yaml `contracts_api`); empty when it pins none.
-      ApiContracts: string list }
+      ApiContracts: string list
+      /// Risk the requirement declares (handover.yaml `requirementRisk`, critical reads as high); None when absent or unknown.
+      RequirementRisk: RiskLevel option
+      /// Data class the requirement declares (`requirementDataClass`: public|internal|regulated); None when absent or unknown.
+      RequirementDataClass: string option }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

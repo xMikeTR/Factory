@@ -283,6 +283,14 @@ module Router =
             |> List.filter (fun e -> List.contains e.Id task.Elements)
             |> List.map (fun e -> e.Risk)
             |> List.fold (fun acc r -> if riskRank r > riskRank acc then r else acc) Low
+        // The requirement's own declaration, when the handover carries one, outranks the derived values.
+        let risk = handover.RequirementRisk |> Option.defaultValue risk
+        let dataClass =
+            match handover.RequirementDataClass with
+            | Some "public" -> Public
+            | Some "internal" -> Internal
+            | Some "regulated" -> Regulated
+            | _ -> config.DataClass
         let writes = task.Writes.Length + task.TestWrites.Length
         let size =
             if writes <= config.SmallMaxWrites then S
@@ -306,7 +314,7 @@ module Router =
           Repo = repo
           Needs = needs
           Risk = risk
-          DataClass = config.DataClass
+          DataClass = dataClass
           Size = size
           ContextTokens = contextChars / 4
           EstTokensIn = estIn
