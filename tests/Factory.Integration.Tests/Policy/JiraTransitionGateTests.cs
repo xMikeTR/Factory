@@ -47,6 +47,29 @@ public class JiraTransitionGateTests
     }
 
     [Fact]
+    public async Task Ready_for_qa_in_a_split_run_needs_every_repo_merged_as_well_as_a_proof()
+    {
+        var (gate, ledger) = Make(true);
+        var proofs = new[] { ProofFor("T-1", "abc") };
+
+        Assert.False((await gate.DecideAsync("run1", "T-1", "ReadyForQA", "abc", proofs, allReposMerged: false)).Allowed);
+        Assert.False((await gate.DecideAsync("run1", "T-1", "ReadyForQA", "abc", [], allReposMerged: true)).Allowed);
+        Assert.True((await gate.DecideAsync("run1", "T-1", "ReadyForQA", "abc", proofs, allReposMerged: true)).Allowed);
+
+        using var p = JsonDocument.Parse(ledger.Events[0].Payload!);
+        Assert.Equal("false", p.RootElement.GetProperty("args").GetProperty("all_repos_merged").GetString());
+    }
+
+    [Fact]
+    public async Task A_single_repo_run_passes_all_repos_merged_as_true_by_default()
+    {
+        var (gate, ledger) = Make(true);
+        Assert.True((await gate.DecideAsync("run1", "T-1", "ReadyForQA", "abc", [ProofFor("T-1", "abc")])).Allowed);
+        using var p = JsonDocument.Parse(ledger.Events[0].Payload!);
+        Assert.Equal("true", p.RootElement.GetProperty("args").GetProperty("all_repos_merged").GetString());
+    }
+
+    [Fact]
     public async Task The_start_transition_is_always_allowed_and_others_are_denied()
     {
         var (gate, _) = Make(true);

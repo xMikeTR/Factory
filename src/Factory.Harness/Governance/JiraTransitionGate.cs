@@ -7,7 +7,7 @@ public sealed record GateDecision(bool Allowed, string Reason, bool Enforced);
 
 /// The `jira.transition` policy (policies/s2/jira-gate.yaml) in front of a transition. The one fact
 /// the policy cannot compute itself, whether a Proof covers this ticket at the pushed commit, is
-/// computed here and handed in as an arg. Every evaluation is ledgered as a tool_call row.
+/// computed here and handed in as an arg (with `all_repos_merged`, for split runs). Every evaluation is ledgered as a tool_call row.
 /// Shadow mode (enforce: false) evaluates and logs but `Enforced` is false, so the caller proceeds.
 public sealed class JiraTransitionGate(AcsToolPolicy policy, ILedger ledger, bool enforce)
 {
@@ -15,7 +15,7 @@ public sealed class JiraTransitionGate(AcsToolPolicy policy, ILedger ledger, boo
     public const string Tool = "jira.transition";
 
     public async ValueTask<GateDecision> DecideAsync(
-        string runId, string ticket, string to, string pushedCommit, IEnumerable<Proof> proofs, CancellationToken ct = default)
+        string runId, string ticket, string to, string pushedCommit, IEnumerable<Proof> proofs, CancellationToken ct = default, bool allReposMerged = true)
     {
         var covered = proofs.Any(p => ProofModule.covers(ticket, pushedCommit, p));
         var args = new Dictionary<string, object?>
@@ -24,6 +24,8 @@ public sealed class JiraTransitionGate(AcsToolPolicy policy, ILedger ledger, boo
             ["to"] = to,
             ["commit"] = pushedCommit,
             ["proof_covers_commit"] = covered ? "true" : "false",
+            // Computed by the harness: every repo's PR of a split run is merged. Single-repo runs pass true.
+            ["all_repos_merged"] = allReposMerged ? "true" : "false",
         };
         var d = policy.Evaluate(Role, Tool, args);
 
