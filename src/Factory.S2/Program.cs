@@ -33,6 +33,10 @@ using static Factory.S2.ServiceWiring;
 
 var cmd = args.FirstOrDefault() ?? "help";
 var opts = ParseOptions(args.Skip(1).ToArray());
+// `--repo` may repeat as Name=path pairs; every command then works on the primary (first) one, `run` also gets the map.
+var repoMap = RepoMap.FromArgs(args);
+if (repoMap.Errors.Count > 0) throw new ArgumentException(string.Join("; ", repoMap.Errors));
+if (repoMap.Primary is not null) opts["repo"] = repoMap.Primary;
 
 try
 {
@@ -72,7 +76,11 @@ try
             var settings = FactorySettings.FromEnvironment(
                 Required(opts, "repo"), opts.GetValueOrDefault("registry"),
                 repairOf is null ? opts.GetValueOrDefault("base") : GitWorkspace.IntegrationBranch(repairOf));
-            settings = settings with { References = ReferenceFlags(args).Bindings };
+            settings = settings with
+            {
+                References = ReferenceFlags(args).Bindings,
+                Repos = repoMap.Named.ToDictionary(r => r.Key, r => Path.GetFullPath(r.Value)),
+            };
             var runId = opts.GetValueOrDefault("run-id") ?? (repairOf is null ? $"{DateTime.UtcNow:yyyyMMdd-HHmmss}" : $"{repairOf}-r1");
             Directory.CreateDirectory(settings.StateDir);
 
@@ -464,7 +472,11 @@ try
             var handover = Core.ParseHandover(await File.ReadAllTextAsync(
                 await HandoverInput.ResolveAsync(Required(opts, "handover"), settings.StateDir, cts.Token), cts.Token));
             RequireReferences(handover, args, settings.RepoPath);
-            settings = settings with { References = ReferenceFlags(args).Bindings };
+            settings = settings with
+            {
+                References = ReferenceFlags(args).Bindings,
+                Repos = repoMap.Named.ToDictionary(r => r.Key, r => Path.GetFullPath(r.Value)),
+            };
             var validation = Core.ValidatePlan(handover, await File.ReadAllTextAsync(Required(opts, "plan"), cts.Token));
             if (!validation.IsValid) throw new FactoryRejectedException("plan rejected", validation.Errors);
             var taskId = Required(opts, "task");

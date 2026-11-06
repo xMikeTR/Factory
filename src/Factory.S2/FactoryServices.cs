@@ -53,8 +53,13 @@ public sealed record FactorySettings(
     string? ScreenshotCommand = null,
     /// Read-only references by handover key, each bound to an absolute folder outside the repo by `--reference key=path`
     /// (validated against the handover before a run starts); null or empty is none.
-    IReadOnlyDictionary<string, string>? References = null)
+    IReadOnlyDictionary<string, string>? References = null,
+    /// `--repo Api=../api --repo Ui=../ui`: repo name to full path. Null or empty is the single-repo form (RepoPath only).
+    IReadOnlyDictionary<string, string>? Repos = null)
 {
+    /// The names the plan validator checks task repos against; empty means unchecked (single repo).
+    public string[] RepoNames => Repos is null ? [] : [.. Repos.Keys];
+
     public static FactorySettings FromEnvironment(string repo, string? registry, string? baseBranch) => new(
         RepoPath: Path.GetFullPath(repo),
         RegistryPath: Path.GetFullPath(registry ?? Env("FACTORY_REGISTRY", Path.Combine(repo, "..", "registry"))),
@@ -139,7 +144,7 @@ public sealed class FactoryServices(
 
     public ValidatedPlan LoadValidatedPlan(string runId)
     {
-        var validation = Core.ValidatePlan(LoadHandover(runId), File.ReadAllText(Settings.PlanPath(runId)));
+        var validation = Core.ValidatePlan(LoadHandover(runId), File.ReadAllText(Settings.PlanPath(runId)), Settings.RepoNames);
         return validation.IsValid
             ? validation.Plan
             : throw new FactoryRejectedException("stored plan no longer validates", validation.Errors);

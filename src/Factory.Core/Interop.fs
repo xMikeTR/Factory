@@ -25,10 +25,14 @@ type Core =
         | Error es -> raise (FactoryRejectedException("handover package is malformed", Array.ofList es))
 
     static member ValidatePlan(handover: Handover, planJson: string) : PlanValidation =
+        Core.ValidatePlan(handover, planJson, Array.empty)
+
+    /// With the repo names the run was given (`--repo Api=.. --repo Ui=..`); an empty array leaves repos unchecked.
+    static member ValidatePlan(handover: Handover, planJson: string, knownRepos: string[]) : PlanValidation =
         match Json.parsePlan planJson with
         | Error es -> PlanValidation(null, es |> List.map (fun e -> "Plan JSON: " + e) |> Array.ofList)
         | Ok plan ->
-            match PlanValidator.validate handover plan with
+            match PlanValidator.validateWithRepos (List.ofArray knownRepos) handover plan with
             | Ok vp -> PlanValidation(vp, [||])
             | Error es -> PlanValidation(null, es |> List.map PlanError.describe |> Array.ofList)
 
