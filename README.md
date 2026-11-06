@@ -34,7 +34,8 @@ has been made yet.
 | UI acceptance: frozen spec hash check, Playwright run, `ui_acceptance_failed`, repair runs, bug intake, token lint | `Core/UiAcceptance.fs`, `VerifyRunner`, `S2/Repair.cs`, `BugIntake` | Built |
 | Item budget: measure, report, and refuse a new run when exceeded | `Core/ItemBudget.fs`, `ItemBudgetReport` | Built |
 | Freeze-time UX review and `item_judge` (gradient, never decides Done) | `Core/UxReview.fs`, `UxReviewRunner`, `ItemJudgeReport` | Built; paid, opt-in |
-| Jira mirror (one-way, drift flagged not overwritten; REST and snapshot) | `Core/JiraMirror.fs`, `JiraMirrorReport`, `JiraRestClient` | Built; stub-tested only |
+| Jira mirror (one-way, drift flagged not overwritten; REST and snapshot) | `Core/JiraMirror.fs`, `JiraMirrorReport`, `JiraRestClient` | Built; stub-tested only. `--comment` (with `--apply`) posts gate evidence as a Cloud v3 comment; Jira Cloud only, no Data Center variant |
+| Router task spec: risk and data class from the handover requirement (`requirement_risk`, `requirement_data_class`), else element max and config | `Core/Router.fs`, `Json.parseHandover`, `DesigncHandoverReader` | Built; designc does not write the keys yet, so the old behaviour applies |
 | Factory evals | `docs/evals/` | Reference copies only; the suite lives on the work VM |
 
 ## CLI
@@ -51,7 +52,7 @@ factory-s2 budget              --repo . [--registry r] [--no-report]       exit 
 factory-s2 parity             --registry r --item W-1 [--repo .] [--base-url u]   designc recorder at HEAD (work VM); docs/parity-runbook.md
 factory-s2 parity-decisions    --registry r                                needs_decision per failed parity scenario; exit 2 when raised
 factory-s2 intake              --registry r --id BUG-1 --spec ... --origin ... --ref ...
-factory-s2 jira-mirror         --registry r [--snapshot jira.json | JIRA_URL/JIRA_TOKEN] [--apply]
+factory-s2 jira-mirror         --registry r [--snapshot jira.json | JIRA_URL/JIRA_TOKEN] [--apply [--comment]]   --comment without --apply prints the comment (dry-run)
 factory-s2 ux-review           --repo . --handover h [--judge [--item W-1 --registry r --threshold 3.5]]
 factory-s2 repro               --repo . --summary "..."                    paid, opt-in
 factory-s2 compare-browser     --repo . --runs a,b                         CLI vs MCP browser tool
