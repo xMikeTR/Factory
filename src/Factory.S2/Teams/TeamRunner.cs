@@ -865,13 +865,14 @@ internal sealed class TaskLoop(
     private ValueTask LogTurnAsync(string stage, string role, ModelTier tier, Microsoft.Extensions.AI.UsageDetails? usage, object detail, CancellationToken ct)
     {
         var payload = JsonSerializer.SerializeToNode(detail)!.AsObject();
-        if (svc.Agents.ModelIdFor(role, tier, _taskId) is { } modelId) payload["model_id"] = modelId;
+        var modelId = svc.Agents.ModelIdFor(role, tier, _taskId);
+        if (modelId is not null) payload["model_id"] = modelId;
         var warm = _warmRoles.Contains(role);
         TurnUsage.AddCache(payload, usage, warm);
         if (TurnUsage.Touched(usage)) _warmRoles.Add(role);
         return svc.Ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Turn,
             TaskId: _taskId, TeamId: _teamId, Model: tier.ToString(),
-            TokensIn: usage?.InputTokenCount, TokensOut: usage?.OutputTokenCount,
+            TokensIn: usage?.InputTokenCount, TokensOut: usage?.OutputTokenCount, Cost: svc.CostOf(modelId, usage),
             Payload: payload.ToJsonString()), ct);
     }
 

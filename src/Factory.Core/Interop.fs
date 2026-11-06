@@ -135,8 +135,12 @@ type Core =
     /// Router.route with learned stats, then the canary draw from the same seeded rng (after the route draws, so
     /// the ladder does not depend on the share). The flag says the Standard entry was swapped for Frontier.
     static member RouteTaskLearned(policy: RoutingPolicy, seed: int, spec: TaskSpec, catalog: ModelEntry seq, stats: Stats, canaryShare: float) : RouteOutcome * bool =
+        Core.RouteTaskBudgeted(policy, seed, spec, catalog, stats, canaryShare, BudgetState.Ok)
+
+    /// RouteTaskLearned under a budget state (phase 4): Downgrade caps the tier at Standard, Blocked refuses.
+    static member RouteTaskBudgeted(policy: RoutingPolicy, seed: int, spec: TaskSpec, catalog: ModelEntry seq, stats: Stats, canaryShare: float, budget: BudgetState) : RouteOutcome * bool =
         let rng = Random(seed)
-        match Router.route policy rng.NextDouble stats BudgetState.Ok spec (List.ofSeq catalog) with
+        match Router.route policy rng.NextDouble stats budget spec (List.ofSeq catalog) with
         | RouteOutcome.Routed(ladder, warnings) ->
             let ladder', canary = Router.applyCanary canaryShare rng.NextDouble ladder
             RouteOutcome.Routed(ladder', warnings), canary

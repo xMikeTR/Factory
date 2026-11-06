@@ -65,6 +65,24 @@ public class TeamRoutingTests
         new(CatalogFile.Parse(catalogYaml).Models, RoutingPolicyFile.Load(Path.Combine(Path.GetTempPath(), "none")), _ => model);
 
     [Fact]
+    public async Task Turn_rows_carry_cost_from_the_imported_price()
+    {
+        var model = Model();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), routing: Setup(Catalog, model));
+        await Factory.Harness.Spending.BudgetStore.ImportAsync(h.StateDir,
+            "model,in_per_mtok,out_per_mtok,currency,source,effective\nclaude-haiku-4-5,1000000,1000000,GBP,t,2020-01-01\nclaude-sonnet-5-5,1000000,1000000,GBP,t,2020-01-01\nclaude-opus-5-5,1000000,1000000,GBP,t,2020-01-01\ng-flash,1000000,1000000,GBP,t,2020-01-01\ng-mid,1000000,1000000,GBP,t,2020-01-01\ng-pro,1000000,1000000,GBP,t,2020-01-01\n",
+            null, DateTimeOffset.UtcNow, default);
+        await h.Services.RouteAsync(TeamHarness.RunId, h.Handover, [T001()], logRows: true, default);
+        await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        var turns = h.Rows(LedgerKinds.Turn).Where(t => t.TokensIn is > 0).ToList();
+        Assert.NotEmpty(turns);
+        // At 1 per token, cost equals tokens in + out; every priced model's row carries a cost.
+        Assert.All(turns.Where(t => t.Cost is not null), t => Assert.Equal((decimal)(t.TokensIn!.Value + (t.TokensOut ?? 0)), t.Cost));
+        Assert.Contains(turns, t => t.Cost is not null);
+    }
+
+    [Fact]
     public async Task With_routing_on_turn_rows_carry_the_catalog_model_id_and_a_route_row_is_written_per_pair()
     {
         var model = Model();

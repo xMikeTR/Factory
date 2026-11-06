@@ -83,7 +83,8 @@ public static class RunRouter
     /// `contextChars` is the size of the task's brief; at run start only the task's own text is known, so the default
     /// is title plus instructions (a lower bound: the context bundle is added at turn time).
     public static RouteTable Route(string runId, Handover handover, IEnumerable<PlannedTask> tasks, IReadOnlyList<ModelEntry> catalog,
-        RoutingPolicyFile.RoutingConfig config, Func<PlannedTask, int>? contextChars = null, FSharpMap<StatsKey, Counts>? stats = null)
+        RoutingPolicyFile.RoutingConfig config, Func<PlannedTask, int>? contextChars = null, FSharpMap<StatsKey, Counts>? stats = null,
+        BudgetState? budget = null)
     {
         contextChars ??= t => t.Title.Length + t.Instructions.Length;
         stats ??= MapModule.Empty<StatsKey, Counts>();
@@ -97,7 +98,7 @@ public static class RunRouter
             foreach (var (name, role) in Routed)
             {
                 var spec = Core.TaskSpecFor(config.Spec, handover, task, role, contextChars(task), implementerFamilies);
-                var (outcome, canary) = Core.RouteTaskLearned(config.Policy, Core.StableSeed($"{runId}|{task.Id.Value}|{name}"), spec, catalog, stats, config.CanaryShare).ToValueTuple();
+                var (outcome, canary) = Core.RouteTaskBudgeted(config.Policy, Core.StableSeed($"{runId}|{task.Id.Value}|{name}"), spec, catalog, stats, config.CanaryShare, budget ?? BudgetState.Ok).ToValueTuple();
                 switch (outcome)
                 {
                     case RouteOutcome.Routed routed:
@@ -113,7 +114,7 @@ public static class RunRouter
                         refusals.AddRange(none.Item.Select(i => $"  {i.Model}: {string.Join("; ", i.Reasons)}"));
                         break;
                     case RouteOutcome.NeedsDecision d:
-                        refusals.Add($"{task.Id.Value} / {name}: needs a decision: {d.reason}");
+                        refusals.Add($"{task.Id.Value} / {name}: needs a decision: {d.reason}: raise budget: in .factory/policy.yaml, or accept a Standard model");
                         break;
                     default:
                         refusals.Add($"{task.Id.Value} / {name}: budget exceeded");
