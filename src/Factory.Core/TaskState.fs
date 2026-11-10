@@ -360,9 +360,12 @@ module TaskState =
         | ReviewAccepted _
         | ReviewGuided _ -> illegal ()
 
-    let private fromReviewing (illegal: unit -> Result<TaskState, TransitionError>) (p: Progress) (ph: Phase) (ev: VerifiedEvidence) (parked: NeedsDecision option) (event: TaskEvent) : Result<TaskState, TransitionError> =
+    let private fromReviewing (limits: Limits) (illegal: unit -> Result<TaskState, TransitionError>) (p: Progress) (ph: Phase) (ev: VerifiedEvidence) (parked: NeedsDecision option) (event: TaskEvent) : Result<TaskState, TransitionError> =
         let exhausted = p.ReviewRounds >= maxReviewRounds
         let passed (r: ReviewEvidence) = Ok(Passed(ev, r))
+        // A fix that a review (or a designer's guidance) asks for must be verifiable: leave one verify attempt for it, or the
+        // task would spend a full turn on the fix and fail at VerifyRequested with nothing verified (finding 11).
+        let fixable (q: Progress) = { q with VerifyAttempts = min q.VerifyAttempts (max 0 (limits.MaxVerifyAttempts - 1)) }
         match event, parked with
         | Abandon r, _ -> Ok(Failed(Abandoned r, p))
         | ReviewCompleted r, None when not exhausted ->
@@ -374,12 +377,12 @@ module TaskState =
                 if rounds >= maxReviewRounds then Ok(Reviewing(p', ph, ev, None)) // a designer decides next
                 else
                     match Review.route blocking with
-                    | ToTestAuthor -> Ok(Ready(p', TestAuthor))
-                    | ToImplementer -> Ok(Ready(p', ph))
+                    | ToTestAuthor -> Ok(Ready(fixable p', TestAuthor))
+                    | ToImplementer -> Ok(Ready(fixable p', ph))
         | NeedsDecisionRaised n, None -> Ok(Reviewing(p, ph, ev, Some n)) // rounds ran out, or no usable review could be had
         | ReviewAccepted(note, independence), Some _ ->
             passed { Advisory = []; Accepted = p.OpenFindings; Independence = independence; Rounds = p.ReviewRounds; Note = Some note }
-        | ReviewGuided _, Some _ -> Ok(Ready((if exhausted then { p with ReviewRounds = 0 } else p), ph)) // guidance buys fresh rounds only once they ran out
+        | ReviewGuided _, Some _ -> Ok(Ready(fixable (if exhausted then { p with ReviewRounds = 0 } else p), ph)) // guidance buys fresh rounds only once they ran out
         | (ReviewCompleted _ | NeedsDecisionRaised _ | ReviewAccepted _ | ReviewGuided _), _
         | (TurnStarted _ | TurnEnded | DecisionBound _ | VerifyRequested | VerifyCompleted _ | TestsAuthored _ | ReturnedToTestAuthor _), _ -> illegal ()
 
@@ -404,7 +407,8 @@ module TaskState =
     ///                                                      -> Ready(p, TestAuthor) if green but the stash check failed
     ///                                                      -> Ready(p, Implementer r) otherwise
     ///   Reviewing(p,ph,ev,None)    + ReviewCompleted r     -> Passed(ev, review) if nothing blocks; else ReviewRounds+1 and
-    ///                                                         Ready(p, TestAuthor) for weak tests, Ready(p, ph) otherwise,
+    ///                                                         Ready(p, TestAuthor) for weak tests, Ready(p, ph) otherwise (both leave at least one
+    ///                                                         verify attempt for the fix: VerifyAttempts capped at Max-1),
     ///                                                         or, at maxReviewRounds, Reviewing awaiting a ND (not a turn)
     ///   Reviewing(p,None)          + NeedsDecisionRaised n -> Reviewing(.., Some n) (rounds ran out, or no usable review)
     ///   Reviewing(.., Some _)      + ReviewAccepted        -> Passed(ev, open findings accepted)
@@ -420,7 +424,7 @@ module TaskState =
         | Running(p, ph, _) -> fromRunning illegal p ph event
         | Blocked(p, ph, _) -> fromBlocked illegal p ph event
         | Verifying(p, ph) -> fromVerifying limits illegal p ph event
-        | Reviewing(p, ph, ev, parked) -> fromReviewing illegal p ph ev parked event
+        | Reviewing(p, ph, ev, parked) -> fromReviewing limits illegal p ph ev parked event
 
     /// Rebuild a task's state from its ledger events. This is how a restarted runner resumes.
     let replay (limits: Limits) (events: TaskEvent seq) : Result<TaskState, TransitionError> =
