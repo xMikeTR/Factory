@@ -226,7 +226,7 @@ restore_cmd='dotnet restore Factory.sln --configfile /etc/factory/nuget.config -
 if [ "$local_run" = 0 ] && [ -n "$restore_cmd" ]; then
   echo "selfcheck: restore (network: bridge)" >&2
   t0=$(date +%s%3N); out="$work/restore.out"
-  run_in restore 900 "$restore_cmd" > "$out" 2>&1; rc=$?
+  run_in restore 900 "$restore_cmd" > "$out" 2>&1 & wait $!; rc=$?
   ms=$(( $(date +%s%3N) - t0 ))
   if [ $rc -eq 0 ]; then record restore pass "$ms" "$out"; echo "selfcheck: restore: pass (${ms} ms)" >&2
   else record restore fail "$ms" "$out"; restore_failed=1; echo "selfcheck: restore: fail (${ms} ms)" >&2; fi
@@ -267,7 +267,8 @@ PY
     echo "selfcheck: $name: $outcome (${ms} ms)" >&2
     record "$name" "$outcome" "$ms" "$out"; continue
   fi
-  run_in stage "$secs" "$cmd" > "$out" 2>&1; rc=$?
+  # Background + wait: bash runs a trap only between commands, so a TERM mid-stage would otherwise wait for the stage to end.
+  run_in stage "$secs" "$cmd" > "$out" 2>&1 & wait $!; rc=$?
   ms=$(( $(date +%s%3N) - t0 ))
   if [ $rc -eq 0 ]; then outcome=pass; else
     outcome=fail; any_fail=1; [ "$name" = build ] && build_failed=1
