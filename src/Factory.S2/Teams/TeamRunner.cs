@@ -96,7 +96,9 @@ internal sealed class TaskLoop(
         // Every ledger row and model call below lands in this span's trace (LedgerEvent.TraceId).
         using var span = FactoryTelemetry.StartTask(runId, _teamId, task);
         _span = span;
-        var state = Core.Replay(_limits, await TaskPayloadsAsync(ct));
+        var payloads = await TaskPayloadsAsync(ct);
+        var state = Core.Replay(_limits, payloads);
+        (_lastFailures, _lastVerifyFailed) = ResumeContext.Derive(_limits, payloads); // what the last turn left for the next brief (finding 12)
 
         // Crashed between Passed and the commit: the leftovers are this task's work, but only commit
         // them if they are all in scope (anything else is not ours to keep).
@@ -304,7 +306,7 @@ internal sealed class TaskLoop(
 
     private static object FindingJson(Finding f) => new { category = f.Category.ToString(), file = f.File, line = f.Line, message = f.Message };
 
-    private static string FindingLines(IEnumerable<Finding> findings) =>
+    internal static string FindingLines(IEnumerable<Finding> findings) =>
         string.Join("\n", findings.Select(f => $"- [{f.Category}] {f.File}:{f.Line}: {f.Message}"));
 
     private static readonly FSharpList<DecisionOption> ReviewOptions = Core.ToList(new[]
