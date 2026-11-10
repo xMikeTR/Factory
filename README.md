@@ -12,6 +12,7 @@ New here? Open [docs/guide.html](docs/guide.html) for a walkthrough. [ARCHITECTU
 - [Quick start](#quick-start): see it work in two commands, no model needed
 - [Configure a real run](#configure-a-real-run): providers, routing, budget, contracts
 - [Run it](#run-it), then [what is left behind](#new-projects-and-run-results)
+- [Selfcheck](#selfcheck-local-ci): the checks CI would run, on a commit, locally
 - [Commands](#commands), [Jira mirror](#jira-mirror), [status](#status), [layout of the code](#layout)
 - [Interfaces with designc](#interfaces-with-designc), [design decisions](#design-decisions)
 
@@ -285,6 +286,33 @@ the console. PR descriptions over Azure DevOps' 4000-character limit are cut wit
 
 Opt-in live test (opens and closes a real PR):
 `FACTORY_LIVE_GITHUB=xMikeTR/fares-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`
+
+## Selfcheck (local CI)
+
+Checks what is **committed**, in a clean worktree and a container with no network, and records the result on the commit as a git note. It calls no model.
+
+```mermaid
+flowchart LR
+  C[commit] --> W[clean git worktree]
+  W -->|dotnet restore, nuget.org only| R[restore]
+  R -->|--network none| B[build]
+  B --> T1[tests-core] --> T2[tests-integration] --> S[sabotage] --> K[contracts] --> D[docs]
+  D --> N[git note refs/notes/selfcheck + JSON on stdout]
+  N --> H[pre-push hook gates main and release/*]
+```
+
+### Use it
+
+1. Build the runner image once: `FACTORY_CONTAINER_ENGINE=docker docker/runner/build.sh` (Podman is the default engine).
+2. Check HEAD: `FACTORY_CONTAINER_ENGINE=docker scripts/selfcheck.sh`. Progress goes to stderr, one JSON record to stdout. Commit first; uncommitted changes are not checked.
+3. The `contracts` stage compares the fixtures under `tests/Factory.Integration.Tests/Fixtures/designc` with designc. Point it at a checkout with `--designc <dir>` (else `FACTORY_DESIGNC_DIR`, else `../designc`). A fixture behind designc HEAD is a warning; `--strict-contracts` makes it a failure.
+4. Other forms: `--commit <sha>`, `--stage build|tests-core|tests-integration|sabotage|contracts|docs` for one stage, `--local` to run on the host. A `--stage` or `--local` pass is printed but exits 1, because it never counts as a pass.
+5. See the last result: `scripts/selfcheck.sh --status [sha]`. It exits 0 only for a full, container, passing record.
+6. Gate pushes: `scripts/selfcheck.sh --install-hook`. A push to `main` or `release/*` is refused unless the tip commit has a current container pass (tip only; `--no-verify` skips it). An existing hook that is not ours is never overwritten.
+
+Exit codes: 0 pass, 1 a check failed, 2 could not run, 3 no record (`--status` only). A failed stage does not stop the later ones. A record is current only while `checks_hash` matches (`scripts/selfcheck.sh` and `scripts/selfcheck/**`; `--checks-hash [sha]` prints it).
+
+The `docs` stage fails when a doc line is over its length limit, when the README test counts differ from the run, or when an old system name is still used. It is the reason a test-count change belongs in the same commit as the tests.
 
 ## Commands
 
