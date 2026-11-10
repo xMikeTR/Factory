@@ -312,10 +312,11 @@ public sealed class ScopedWorkspace(
     public string WriteFile([Description("repo-relative path")] string path, [Description("full new file content")] string content)
     {
         if (!TryResolve(path, out var full, out var error)) return error;
-        if (Refusal(path) is { } refusal) return refusal;
+        var rel = RelativeTo(full);
+        if (Refusal(rel) is { } refusal) return refusal;
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, content);
-        signals.FilesWritten.Add(Normalise(path));
+        signals.FilesWritten.Add(rel);
         return $"wrote {path} ({content.Length} chars)";
     }
 
@@ -323,10 +324,11 @@ public sealed class ScopedWorkspace(
     public string DeleteFile([Description("repo-relative path")] string path)
     {
         if (!TryResolve(path, out var full, out var error)) return error;
-        if (Refusal(path) is { } refusal) return refusal;
+        var rel = RelativeTo(full);
+        if (Refusal(rel) is { } refusal) return refusal;
         if (!File.Exists(full)) return $"ERROR: {path} does not exist";
         File.Delete(full);
-        signals.FilesWritten.Add(Normalise(path));
+        signals.FilesWritten.Add(rel);
         return $"deleted {path}";
     }
 
@@ -344,7 +346,7 @@ public sealed class ScopedWorkspace(
         var cmd = command.Trim();
         if (!commandAllowList.Any(prefix => cmd == prefix || cmd.StartsWith(prefix + " ", StringComparison.Ordinal)))
             return $"DENIED: only these commands are allowed: {string.Join(", ", commandAllowList)}";
-        if (cmd.IndexOfAny([';', '&', '|', '`', '$', '>', '<']) >= 0)
+        if (cmd.IndexOfAny([';', '&', '|', '`', '$', '>', '<', '\n', '\r']) >= 0)
             return "DENIED: shell operators are not allowed; run one command at a time.";
         // Hooks are the gate layers' first line: an agent may not skip them.
         if (cmd.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("--no-verify", StringComparer.Ordinal))
@@ -428,9 +430,9 @@ public sealed class ScopedWorkspace(
         return "Recorded. Stop now; the test author fixes the tests, then the task comes back to you.";
     }
 
-    private string? Refusal(string path)
+    /// `rel` is the repo-relative path of the *resolved* file (`..` already collapsed), never the text the agent typed.
+    private string? Refusal(string rel)
     {
-        var rel = Normalise(path);
         if (protectedPaths.Any(p => Core.Matches(p, rel)))
             return $"DENIED: {rel} is a protected path (registry, CI, or verify scripts).";
         if (!writes.Any(w => Core.Matches(w, rel)))
@@ -503,13 +505,16 @@ public sealed class ScopedWorkspace(
     private bool TryResolve(string path, out string full, out string error)
     {
         full = Path.GetFullPath(Path.Combine(_root, Normalise(path)));
-        var ok = (full + Path.DirectorySeparatorChar).StartsWith(_root, StringComparison.Ordinal) &&
-                 !Normalise(path).StartsWith(".git/") && Normalise(path) != ".git";
+        var ok = (full + Path.DirectorySeparatorChar).StartsWith(_root, StringComparison.Ordinal);
+        // Judged on the resolved path, so `src/../.git` is the same as `.git`.
+        if (ok) { var rel = RelativeTo(full); ok = !rel.StartsWith(".git/", StringComparison.Ordinal) && rel != ".git"; }
         // A link inside the worktree must not lead out of it: judge where the path really points.
         ok = ok && (RealPath(full) + Path.DirectorySeparatorChar).StartsWith(RealRoot(_root), StringComparison.Ordinal);
         error = ok ? "" : $"DENIED: {path} is outside the workspace";
         return ok;
     }
+
+    private string RelativeTo(string full) => Path.GetRelativePath(_root, full).Replace('\\', '/');
 
     /// A listing leaves out .git and build output at any depth, the root included (a folder named bin, obj or node_modules).
     private static bool IsHidden(string rel) =>

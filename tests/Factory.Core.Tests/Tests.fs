@@ -54,6 +54,11 @@ let tests: (string * (unit -> unit)) list =
           check (PathPattern.matches (p "src/*.cs") "src/a.cs") "* in segment"
           check (not (PathPattern.matches (p "src/*.cs") "src/a/b.cs")) "* does not cross /"
           check (PathPattern.matches (p "src/**/Data/*.cs") "src/x/y/Data/Q.cs") "** in middle"
+      "paths: a path with a dot segment never matches", fun () ->
+          // `**` must not swallow `..`: this text names tests/acceptance/x.ts, not a file under src/Quotes.
+          for bad in [ "src/Quotes/../../tests/acceptance/x.ts"; "src/Quotes/../x.ts"; "src/./x.ts"; "../src/x.ts" ] do
+              check (not (PathPattern.matches (p "src/**") bad)) $"should not match '{bad}'"
+              check (not (PathPattern.matches (p "**") bad)) $"** should not match '{bad}'"
       "paths: overlap", fun () ->
           check (PathPattern.mayOverlap (p "src/Bookings.Data/**") (p "src/Bookings.Data/Logging/**")) "nested globs"
           check (not (PathPattern.mayOverlap (p "src/FaresApi/**") (p "src/EscalationWorker/**"))) "sibling dirs"

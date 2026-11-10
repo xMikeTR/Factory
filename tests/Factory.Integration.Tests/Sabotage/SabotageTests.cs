@@ -55,6 +55,36 @@ public class SabotageTests : IDisposable
         Assert.StartsWith("DENIED", Agent().WriteFile("tests/acceptance/W-1.spec.ts", "test('ok', () => {})"));
     }
 
+    [Theory]
+    [InlineData("src/Quotes/../../tests/acceptance/W-1.spec.ts")]
+    [InlineData("src/../.factory/policy.yaml")]
+    [InlineData("./src/../tests/acceptance/W-1.spec.ts")]
+    public void A_dot_dot_path_cannot_reach_a_protected_file(string path)
+    {
+        var ws = new ScopedWorkspace(_root, [PathPatternModule.createOrFail("src/Quotes/**")], Protected.ToList(), [], new TurnSignals());
+        Assert.StartsWith("DENIED", ws.WriteFile(path, "x"));
+        Assert.StartsWith("DENIED", ws.DeleteFile(path));
+        Assert.False(File.Exists(Path.Combine(_root, "tests/acceptance/W-1.spec.ts")));
+        Assert.False(File.Exists(Path.Combine(_root, ".factory/policy.yaml")));
+    }
+
+    [Fact]
+    public void A_dot_dot_path_cannot_reach_the_git_pointer()
+    {
+        var ws = Agent();
+        Assert.StartsWith("DENIED", ws.WriteFile("src/../.git", "gitdir: /elsewhere"));
+        Assert.StartsWith("DENIED", ws.DeleteFile("src/../.git"));
+        Assert.StartsWith("DENIED", ws.ReadFile("src/../.git/config"));
+    }
+
+    [Fact]
+    public void A_dot_dot_path_that_stays_inside_the_write_scope_is_still_written_to_the_resolved_file()
+    {
+        var ws = new ScopedWorkspace(_root, [PathPatternModule.createOrFail("src/Quotes/**")], Protected.ToList(), [], new TurnSignals());
+        Assert.StartsWith("wrote", ws.WriteFile("src/Quotes/sub/../A.cs", "x"));
+        Assert.True(File.Exists(Path.Combine(_root, "src/Quotes/A.cs")));
+    }
+
     [Fact]
     public void A_frozen_acceptance_spec_changed_by_any_other_route_is_drift()
     {

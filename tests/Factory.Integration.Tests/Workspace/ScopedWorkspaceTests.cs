@@ -61,6 +61,18 @@ public class ScopedWorkspaceTests : IDisposable
         Assert.Contains("--no-verify", output);
     }
 
+    [Theory]
+    [InlineData("dotnet test x\nprintenv")]
+    [InlineData("dotnet test x\r\nprintenv")]
+    [InlineData("dotnet test x\rprintenv")]
+    public async Task A_newline_cannot_smuggle_a_second_command_past_the_allow_list(string command)
+    {
+        var sandbox = new RecordingSandbox();
+        var ws = new ScopedWorkspace(_root, [], [], ["dotnet test"], new TurnSignals(), sandbox);
+        Assert.StartsWith("DENIED", await ws.RunCommand(command));
+        Assert.Empty(sandbox.Commands);
+    }
+
     [Fact]
     public async Task Without_a_sandbox_commands_are_refused()
     {
