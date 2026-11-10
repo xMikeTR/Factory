@@ -606,6 +606,11 @@ public class TeamRunnerTests
 
         Assert.Equal(TeamStatus.Passed, second.Status);
         Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("Draft and Bound only"));
+
+        // the designer's note is ledgered, so a loop restarted after the answer can put it back in the brief (finding 12)
+        var bound = new List<LedgerEvent>();
+        await foreach (var e in h.Services.Ledger.ReadAsync(TeamHarness.RunId)) if (e.Kind == LedgerKinds.DecisionBound) bound.Add(e);
+        Assert.Contains("Draft and Bound only", Assert.Single(bound).Payload);
     }
 
     /// live2: the Implementer found the fault was in the test project, outside its writes, and

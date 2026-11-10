@@ -41,6 +41,7 @@ public static class LedgerKinds
     public const string Route = "route";            // task + payload {role, size, risk, ladder: {tier: modelId}, warnings}: the catalog ladder a (task, role) pair was routed to at run start (FACTORY_ROUTING=catalog). Run ledger only: not in RegistryStreams
     public const string Configurator = "configurator"; // routing decision before a turn: kind, tier, reason
     public const string Verify = "verify";
+    public const string DecisionBound = "decision_bound"; // task + payload {decision, note}: the designer's answer as the task loop bound it; a restarted loop puts it back in the brief. Run ledger only: not projected
     public const string NeedsDecision = "needs_decision";
     public const string ScopeViolation = "scope_violation";
     public const string Review = "review";          // one review round: outcome, findings kept and dropped, independence

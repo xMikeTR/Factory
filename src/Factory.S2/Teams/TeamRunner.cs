@@ -99,6 +99,7 @@ internal sealed class TaskLoop(
         var payloads = await TaskPayloadsAsync(ct);
         var state = Core.Replay(_limits, payloads);
         (_lastFailures, _lastVerifyFailed) = ResumeContext.Derive(_limits, payloads); // what the last turn left for the next brief (finding 12)
+        _resolvedDecision = await LastBoundDecisionAsync(ct);
 
         // Crashed between Passed and the commit: the leftovers are this task's work, but only commit
         // them if they are all in scope (anything else is not ours to keep).
@@ -146,6 +147,9 @@ internal sealed class TaskLoop(
                     if (answer.DecisionId is { } id)
                     {
                         _resolvedDecision = $"{id}: {answer.Note}";
+                        // Written before the event, like every state change: the event carries the id only, and a restart needs the note (finding 12).
+                        await svc.LogAsync(runId, "task", LedgerKinds.DecisionBound,
+                            payload: JsonSerializer.Serialize(new { decision = id, note = answer.Note }), teamId: _teamId, taskId: _taskId, ct: ct);
                         state = await ApplyAsync(state, TaskEvent.NewDecisionBound(DecisionId.NewDecisionId(id)), ct);
                     }
                     else
@@ -780,6 +784,19 @@ internal sealed class TaskLoop(
 
     private bool InScope(string path, IEnumerable<PathPattern> writable) =>
         !handover.ProtectedPaths.Any(pp => Core.Matches(pp, path)) && writable.Any(w => Core.Matches(w, path));
+
+    /// The last answer a designer gave this task, as the brief words it ("<decision id>: <note>"), or null.
+    private async Task<string?> LastBoundDecisionAsync(CancellationToken ct)
+    {
+        string? last = null;
+        await foreach (var e in svc.Ledger.ReadAsync(runId, ct))
+            if (e.Kind == LedgerKinds.DecisionBound && e.TaskId == _taskId && e.Payload is not null)
+            {
+                using var doc = JsonDocument.Parse(e.Payload);
+                last = $"{doc.RootElement.GetProperty("decision").GetString()}: {(doc.RootElement.TryGetProperty("note", out var n) ? n.GetString() : null)}";
+            }
+        return last;
+    }
 
     private async Task<List<string>> TaskPayloadsAsync(CancellationToken ct)
     {
