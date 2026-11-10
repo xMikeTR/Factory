@@ -410,6 +410,13 @@ examples/fares-v3/     Booking lost-update handover and a valid plan
   re-validates the plan.
 - **Each turn gets a fresh brief, never a chat history.** The approach note, the previous verify
   failures and any newly bound decision are carried between turns through the ledger.
+  After a restart `Teams/ResumeContext` rebuilds the failure text, the last-verify flag and the
+  designer's decision note from the task's ledger rows (a `decision_bound` row in the run ledger
+  holds the note; it is not projected to designc). Not recovered: the done declaration, the stall
+  counters and mutant verdicts, which start fresh.
+- **A review fix keeps one verify attempt.** When review sends a task back to the test author or
+  the implementer, its verify attempts are capped at `MaxVerifyAttempts - 1`, so the fix can always
+  be verified at least once.
 - **Signals come through tools, not free text.** `declare_done` and `raise_needs_decision` are
   tool calls, so they are governed and logged like any other call. The planner's plan is too:
   `submit_plan` takes the plan schema as its input schema and answers with the validator's errors,
