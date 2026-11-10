@@ -73,6 +73,7 @@ stages=(
 )
 # contracts runs on the host, not in the container: it only reads files and runs `git show` in the designc checkout.
 [ -n "$designc" ] || designc="$(dirname "$(git rev-parse --show-toplevel 2>/dev/null)")/designc"
+designc=$(cd "$designc" 2>/dev/null && pwd || echo "$designc") # absolute: the stage runs from the worktree
 # In the container the restore already ran, and the stages have no network: a second implicit restore would only
 # try (and fail) to reach nuget.org, e.g. for the vulnerability audit (NU1900, an error under -warnaserror).
 NR=""; [ "$local_run" = 0 ] && NR=" --no-restore"
