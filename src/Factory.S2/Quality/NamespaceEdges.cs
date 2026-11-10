@@ -5,7 +5,7 @@ using Factory.Core;
 namespace Factory.S2.Quality;
 
 /// Namespace-level dependencies read from compiled assemblies with ArchUnitNET (it reads metadata only, nothing of the
-/// target's code runs). An edge is a namespace path ("Pricing/Domain") depending on another; only the assemblies given
+/// target's code runs). An edge is a namespace path ("Fares/Domain") depending on another; only the assemblies given
 /// count as targets, so the framework never shows up. Core's `Fitness.forbidden` judges them like any other edge.
 public static class NamespaceEdges
 {

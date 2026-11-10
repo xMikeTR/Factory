@@ -2,16 +2,16 @@ id: D-0001
 status: bound           # minted | checked | bound | superseded
 effect: fix             # fix (the model changes) | accept (keep the risk)
 requirement: DEMO-1234
-binds: [Quotes DB]
+binds: [Bookings DB]
 resolves: [DC002]
 statement: >-
-  Quote writes use optimistic concurrency (rowversion) from both
-  Pricing API and Referral Worker.
+  Booking writes use optimistic concurrency (rowversion) from both
+  Fares API and Escalation Worker.
 checks:
   - p check -tc tcOptimistic
 rationale: >-
-  Two writers, no owner. Ownership would force referrals through the API;
+  Two writers, no owner. Ownership would force escalations through the API;
   optimistic locking keeps them independent.
 promoted_by: mike
 promoted_at: 2026-10-07
-promoted_against: [{"element": "quotes", "name": "Quotes DB", "hash": "b144266ff141d90b"}]
+promoted_against: [{"element": "bookings", "name": "Bookings DB", "hash": "b144266ff141d90b"}]

@@ -54,7 +54,7 @@ module Diff =
     let private hunkHeader =
         System.Text.RegularExpressions.Regex(@"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
-    /// git quotes a path holding a quote, backslash, control or non-ASCII character as "..." with C escapes
+    /// git bookings a path holding a booking, backslash, control or non-ASCII character as "..." with C escapes
     /// (octal bytes for UTF-8). Unquoted, it is the path a finding cites.
     let private unquote (path: string) =
         if path.Length < 2 || path.[0] <> '"' || path.[path.Length - 1] <> '"' then path

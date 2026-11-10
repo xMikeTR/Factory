@@ -3,8 +3,8 @@ module Factory.Core.Tests.SplitRepoTests
 open Factory.Core
 open Factory.Core.Tests.Support
 
-// The example handover re-read as a two-repo design: Quotes DB and Pricing API are the Api repo, Referral Worker stands in for the Ui repo.
-let private examples = System.IO.Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "examples", "pricing-v3")
+// The example handover re-read as a two-repo design: Bookings DB and Fares API are the Api repo, Escalation Worker stands in for the Ui repo.
+let private examples = System.IO.Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "examples", "fares-v3")
 let private baseHandover =
     match Json.parseHandover (System.IO.File.ReadAllText(System.IO.Path.Combine(examples, "handover.json"))) with
     | Ok h -> h
@@ -14,7 +14,7 @@ let private basePlan =
     | Ok p -> p
     | Error es -> failwithf "%A" es
 
-let private repoFor (e: ElementSpec) = if e.Name = "Referral Worker" then Some "Ui" else Some "Api"
+let private repoFor (e: ElementSpec) = if e.Name = "Escalation Worker" then Some "Ui" else Some "Api"
 let private split contracts =
     { baseHandover with
         Elements = baseHandover.Elements |> List.map (fun e -> { e with Repo = repoFor e })
@@ -31,12 +31,12 @@ let private waveOf (d: DispatchPlan) (id: string) =
 
 let tests: (string * (unit -> unit)) list =
     [ "split repos: the handover json round-trips repo and apiContracts", fun () ->
-          let h = split [ "contracts/openapi/pricing.yaml" ]
+          let h = split [ "contracts/openapi/fares.yaml" ]
           match Json.parseHandover (Json.writeHandover h) with
           | Error es -> failwithf "%A" es
           | Ok back ->
               equal (h.Elements |> List.map (fun e -> e.Repo)) (back.Elements |> List.map (fun e -> e.Repo)) "repos"
-              equal [ "contracts/openapi/pricing.yaml" ] back.ApiContracts "contracts"
+              equal [ "contracts/openapi/fares.yaml" ] back.ApiContracts "contracts"
       "split repos: an older handover has no repo and no api contracts", fun () ->
           check (baseHandover.Elements |> List.forall (fun e -> e.Repo = None)) "repo"
           equal [] baseHandover.ApiContracts "contracts"
@@ -48,7 +48,7 @@ let tests: (string * (unit -> unit)) list =
           let v = match PlanValidator.validate baseHandover plan with Ok v -> v | Error es -> failwithf "%A" es
           equal None (v.RepoOf(TaskId "T-001")) "none"
       "validator: a task whose elements span repos is MixedRepoTask", fun () ->
-          let mixed = { plan with Tasks = plan.Tasks |> List.map (fun t -> if t.Id = TaskId "T-002" then { t with Elements = t.Elements @ [ ElementId "Pricing Platform/Referral Worker" ]; Writes = t.Writes @ [ PathPattern.createOrFail "src/ReferralWorker/**" ] } else t) }
+          let mixed = { plan with Tasks = plan.Tasks |> List.map (fun t -> if t.Id = TaskId "T-002" then { t with Elements = t.Elements @ [ ElementId "Fares Platform/Escalation Worker" ]; Writes = t.Writes @ [ PathPattern.createOrFail "src/EscalationWorker/**" ] } else t) }
           let es = errorsWith [ "Api"; "Ui" ] (split []) mixed
           check (es |> List.exists (function MixedRepoTask(t, rs) -> t = TaskId "T-002" && rs = [ "Api"; "Ui" ] | _ -> false)) $"%A{es}"
       "validator: an element repo that is not a known repo is UnknownRepo", fun () ->
@@ -57,7 +57,7 @@ let tests: (string * (unit -> unit)) list =
           equal [] (errorsWith [ "Api"; "Ui" ] (split []) plan) "all known"
           equal [] (errorsWith [] (split []) plan) "no repo map given: not checked"
       "validator: a write into the other repo's code area is rejected", fun () ->
-          let stray = { plan with Tasks = plan.Tasks |> List.map (fun t -> if t.Id = TaskId "T-003" then { t with Writes = t.Writes @ [ PathPattern.createOrFail "src/PricingApi/Hack.cs" ] } else t) }
+          let stray = { plan with Tasks = plan.Tasks |> List.map (fun t -> if t.Id = TaskId "T-003" then { t with Writes = t.Writes @ [ PathPattern.createOrFail "src/FaresApi/Hack.cs" ] } else t) }
           let es = errorsWith [ "Api"; "Ui" ] (split []) stray
           check (es |> List.exists (function WriteOutsideElement(t, _) -> t = TaskId "T-003" | _ -> false)) $"%A{es}"
       "dispatcher: without a pinned contract every Ui task waits for every Api task", fun () ->
@@ -66,7 +66,7 @@ let tests: (string * (unit -> unit)) list =
           check (waveOf d "T-003" > waveOf d "T-002") "after T-002"
           check (waveOf d "T-003" > waveOf d "T-004") "after T-004"
       "dispatcher: with a pinned contract Ui and Api tasks run in parallel", fun () ->
-          let d = Dispatcher.dispatch (validated [ "contracts/openapi/pricing.yaml" ])
+          let d = Dispatcher.dispatch (validated [ "contracts/openapi/fares.yaml" ])
           equal 0 (waveOf d "T-003") "ui in wave 0"
           equal 0 (waveOf d "T-001") "api in wave 0"
       "dispatcher: a team never spans repos, even when write areas overlap across repos", fun () ->

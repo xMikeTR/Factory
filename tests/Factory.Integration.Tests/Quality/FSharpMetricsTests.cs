@@ -6,7 +6,7 @@ namespace Factory.Integration.Tests.Quality;
 public class FSharpMetricsTests
 {
     private const string Source = """
-        module Pricing
+        module Fares
 
         let flat x = x + 1
 
@@ -32,12 +32,12 @@ public class FSharpMetricsTests
         let value = 42
         """;
 
-    private static Factory.Core.FunctionMetrics Fn(string name) => FSharpMetrics.measure("Pricing.fs", Source).Single(f => f.Name == name);
+    private static Factory.Core.FunctionMetrics Fn(string name) => FSharpMetrics.measure("Fares.fs", Source).Single(f => f.Name == name);
 
     [Fact]
     public void Every_function_is_measured_and_plain_values_are_not()
     {
-        var names = FSharpMetrics.measure("Pricing.fs", Source).Select(f => f.Name).ToHashSet();
+        var names = FSharpMetrics.measure("Fares.fs", Source).Select(f => f.Name).ToHashSet();
         Assert.Equal(new HashSet<string> { "Calc.Total", "Inner.twice", "flat", "rate" }, names);
     }
 
@@ -55,7 +55,7 @@ public class FSharpMetricsTests
     {
         var rate = Fn("rate");
         Assert.Equal((5, 8), (rate.Line, rate.Lines));
-        Assert.Equal("Pricing.fs", rate.File);
+        Assert.Equal("Fares.fs", rate.File);
     }
 
     [Fact]

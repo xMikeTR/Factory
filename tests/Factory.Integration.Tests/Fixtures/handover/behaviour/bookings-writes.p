@@ -1,4 +1,4 @@
-// Two writers against Quotes DB. tcNoControl should fail, tcOptimistic should pass.
+// Two writers against Bookings DB. tcNoControl should fail, tcOptimistic should pass.
 type tReadResp = (value: int, version: int);
 type tWriteReq = (client: machine, value: int, expected: int);
 
@@ -8,7 +8,7 @@ event eWrite: tWriteReq;
 event eWriteResp: bool;
 event eCommitted: int;
 
-machine QuotesDb {
+machine BookingsDb {
   var value: int;
   var version: int;
   var optimistic: bool;
@@ -64,17 +64,17 @@ spec NoLostUpdate observes eCommitted {
 machine NoControl {
   start state Init { entry {
     var db: machine;
-    db = new QuotesDb(false);
+    db = new BookingsDb(false);
     new Writer(db); new Writer(db);
   } }
 }
 machine Optimistic {
   start state Init { entry {
     var db: machine;
-    db = new QuotesDb(true);
+    db = new BookingsDb(true);
     new Writer(db); new Writer(db);
   } }
 }
 
-test tcNoControl [main = NoControl]: assert NoLostUpdate in { NoControl, QuotesDb, Writer };
-test tcOptimistic [main = Optimistic]: assert NoLostUpdate in { Optimistic, QuotesDb, Writer };
+test tcNoControl [main = NoControl]: assert NoLostUpdate in { NoControl, BookingsDb, Writer };
+test tcOptimistic [main = Optimistic]: assert NoLostUpdate in { Optimistic, BookingsDb, Writer };

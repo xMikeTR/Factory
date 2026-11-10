@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Factory.Integration.Tests.Workflow;
 
-/// A split run over the Pricing.Api / Pricing.Portal fixtures (pricing-sample split in two), real git repos, fake PR hosts:
+/// A split run over the Fares.Api / Fares.Portal fixtures (fares-sample split in two), real git repos, fake PR hosts:
 /// one PR per repo, Api first, the factory never merges; closed only when both PRs are merged.
 public sealed class SplitRunTests : IDisposable
 {
@@ -65,9 +65,9 @@ public sealed class SplitRunTests : IDisposable
 
     private async Task<(GitWorkspace Api, GitWorkspace Ui, Host ApiHost, Host UiHost, ILedger Ledger, RunClose.SplitMerged Merged)> SetUpAsync()
     {
-        var api = new GitWorkspace(Fixture("Pricing.Api"), State, "Api");
-        var ui = new GitWorkspace(Fixture("Pricing.Portal"), State, "Ui");
-        foreach (var (g, file) in new[] { (api, "src/Pricing.Data/Quote.cs"), (ui, "src/Pricing.Portal/Program.cs") })
+        var api = new GitWorkspace(Fixture("Fares.Api"), State, "Api");
+        var ui = new GitWorkspace(Fixture("Fares.Portal"), State, "Ui");
+        foreach (var (g, file) in new[] { (api, "src/Fares.Data/Booking.cs"), (ui, "src/Fares.Portal/Program.cs") })
         {
             var wt = await g.EnsureIntegrationAsync(Run, "main", default);
             File.AppendAllText(Path.Combine(wt, file), "// change\n");
@@ -108,8 +108,8 @@ public sealed class SplitRunTests : IDisposable
         Assert.Contains("Merge the Api PR first", Assert.Single(apiHost.Opened));
         Assert.Contains("Merge the Api PR first", Assert.Single(uiHost.Opened));
         // each PR comes from its own repo's integration branch, which carries that repo's change only
-        Assert.Equal(["src/Pricing.Portal/Program.cs"], (await ui.DiffStatsAsync(Run, "main", default)).Files);
-        Assert.Equal(["src/Pricing.Data/Quote.cs"], (await api.DiffStatsAsync(Run, "main", default)).Files);
+        Assert.Equal(["src/Fares.Portal/Program.cs"], (await ui.DiffStatsAsync(Run, "main", default)).Files);
+        Assert.Equal(["src/Fares.Data/Booking.cs"], (await api.DiffStatsAsync(Run, "main", default)).Files);
     }
 
     [Fact]

@@ -8,8 +8,8 @@ requirements: ["DEMO-1234"]
 decisions: ["D-0001"]
 evals: {}
 files:
-  - { path: "behaviour/quotes-writes.p", hash: fe75e3c3e91819f7 }
-  - { path: "decisions/D-0001.yaml", hash: 83d766859d21cb09 }
-  - { path: "elements.json", hash: b936dd6967ec28d5 }
-  - { path: "model/workspace.dsl", hash: f1998966d886f52a }
-  - { path: "requirements/DEMO-1234.yaml", hash: 71e2effac008f12e }
+  - { path: "behaviour/bookings-writes.p", hash: b4b4a00d06aaf1b1 }
+  - { path: "decisions/D-0001.yaml", hash: 523ac918c3575abc }
+  - { path: "elements.json", hash: ab5c55c57b9115a9 }
+  - { path: "model/workspace.dsl", hash: 1410150395f0f50f }
+  - { path: "requirements/DEMO-1234.yaml", hash: e079a7ae2bf3b7aa }

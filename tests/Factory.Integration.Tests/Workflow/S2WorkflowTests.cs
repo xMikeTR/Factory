@@ -15,7 +15,7 @@ using Core = Factory.Core.Core;
 
 public class S2WorkflowTests
 {
-    private const string NewFile = "src/Pricing.Data/QuoteStatus.cs";
+    private const string NewFile = "src/Fares.Data/BookingStatus.cs";
 
     private sealed class ApprovingHuman : IHumanChannel
     {
@@ -34,13 +34,13 @@ public class S2WorkflowTests
         {
             new
             {
-                id = "T-001", title = "Add QuoteStatus", instructions = "Add the QuoteStatus enum.",
-                elements = new[] { "Pricing Platform/Quotes DB" },
-                writes = new[] { "src/Pricing.Data/**" },
-                testWrites = new[] { "tests/Pricing.Data.Tests/**" },
+                id = "T-001", title = "Add BookingStatus", instructions = "Add the BookingStatus enum.",
+                elements = new[] { "Fares Platform/Bookings DB" },
+                writes = new[] { "src/Fares.Data/**" },
+                testWrites = new[] { "tests/Fares.Data.Tests/**" },
                 dependsOn = Array.Empty<string>(),
                 covers = new[] { "D-0001" },
-                verify = new[] { new { name = "file exists", kind = "invariant", run = $"sh {TeamHarness.QuoteStatusTest}", timeoutSeconds = 30 } },
+                verify = new[] { new { name = "file exists", kind = "invariant", run = $"sh {TeamHarness.BookingStatusTest}", timeoutSeconds = 30 } },
             },
         },
     });
@@ -52,10 +52,10 @@ public class S2WorkflowTests
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.NewTiered(Microsoft.FSharp.Collections.ListModule.Empty<string>())));
         model.Enqueue(
             SubmitPlan(PlanFor(h.Handover)), Say("submitted"),          // planner
-            Say("Approach: add QuoteStatus.cs"),                        // task-planner
+            Say("Approach: add BookingStatus.cs"),                        // task-planner
             Call("declare_done", new { summary = "test already on main" }), Say("done"), // test author
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }),
             Say("done"));
         var human = new ApprovingHuman();
 
@@ -69,7 +69,7 @@ public class S2WorkflowTests
         Assert.True(Core.Replay(new Limits(8, 3), payloads).IsPassed);
 
         var approval = Assert.Single(human.Approvals);
-        Assert.Equal("TwoApprovals", approval.Tier); // Quotes DB is high risk
+        Assert.Equal("TwoApprovals", approval.Tier); // Bookings DB is high risk
 
         var prBody = Path.Combine(h.StateDir, "runs", TeamHarness.RunId, $"factory_{TeamHarness.RunId}_integration.pr.md");
         Assert.True(File.Exists(prBody));
@@ -92,7 +92,7 @@ public class S2WorkflowTests
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
         var frozen = new Handover(h.Handover.Id, h.Handover.Digest, h.Handover.Elements, h.Handover.Decisions, h.Handover.ProtectedPaths,
             h.Handover.EventVocabulary, h.Handover.Relationships,
-            Microsoft.FSharp.Collections.ListModule.OfSeq([new AcceptanceSpec("tests/acceptance/quotes-db/AC-1.spec.ts", "deadbeefdeadbeef")]),
+            Microsoft.FSharp.Collections.ListModule.OfSeq([new AcceptanceSpec("tests/acceptance/bookings-db/AC-1.spec.ts", "deadbeefdeadbeef")]),
             h.Handover.WorkItem, h.Handover.DesignTokens,
             h.Handover.DesignVersion, h.Handover.AcceptanceCriteria, h.Handover.LoopSpecs, h.Handover.References, h.Handover.Contracts, h.Handover.Uncovered, h.Handover.ApiContracts, h.Handover.RequirementRisk, h.Handover.RequirementDataClass);
         var path = Path.Combine(h.StateDir, "frozen-handover.json");
@@ -100,17 +100,17 @@ public class S2WorkflowTests
         await File.WriteAllTextAsync(path, Core.HandoverJson(frozen));
         model.Enqueue(
             SubmitPlan(PlanFor(frozen)), Say("submitted"),
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }),
             Say("done"));
 
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
             new StartRun(TeamHarness.RunId, path), new ApprovingHuman(), default);
 
         Assert.Equal("integration_failed", result!.Status);
-        Assert.Contains("tests/acceptance/quotes-db/AC-1.spec.ts is frozen in the handover but missing", result.Detail);
+        Assert.Contains("tests/acceptance/bookings-db/AC-1.spec.ts is frozen in the handover but missing", result.Detail);
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Outcome == "acceptance_specs_modified");
         Assert.DoesNotContain(h.Rows(LedgerKinds.Verify), e => e.Stage == "integration_verify" && e.Outcome is "passed" or "failed");
     }
@@ -121,19 +121,19 @@ public class S2WorkflowTests
         var model = new ScriptedChatClient();
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.Auto));
         h.Reviewer.Independence = Independence.SameFamily;
-        h.Reviewer.Then(new Finding(FindingCategory.Design, NewFile, 1, "name it QuoteState"));
+        h.Reviewer.Then(new Finding(FindingCategory.Design, NewFile, 1, "name it BookingState"));
         model.Enqueue(
             SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
 
         await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
 
         var prBody = await File.ReadAllTextAsync(Path.Combine(h.StateDir, "runs", TeamHarness.RunId, $"factory_{TeamHarness.RunId}_integration.pr.md"));
         Assert.Contains("independence: same-family", prBody);
-        Assert.Contains($"T-001 [Design] {NewFile}:1: name it QuoteState", prBody);
+        Assert.Contains($"T-001 [Design] {NewFile}:1: name it BookingState", prBody);
     }
 
     /// live2-live5: free-text plans broke on raw newlines and every rejection cost a fresh turn.
@@ -142,13 +142,13 @@ public class S2WorkflowTests
     {
         var model = new ScriptedChatClient();
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.Auto));
-        var outside = PlanFor(h.Handover).Replace("\"src/Pricing.Data/**\"", "\"src/Elsewhere/**\"");
+        var outside = PlanFor(h.Handover).Replace("\"src/Fares.Data/**\"", "\"src/Elsewhere/**\"");
         model.Enqueue(
             SubmitPlan(outside), SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }),
             Say("done"));
 
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
@@ -194,10 +194,10 @@ public class S2WorkflowTests
     {
         model.Enqueue(
             SubmitPlan((plan ?? (p => p))(PlanFor(h.Handover))), Say("submitted"),
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }),
             Say("done"));
         return WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), human, default);
     }
@@ -211,16 +211,16 @@ public class S2WorkflowTests
             SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
             Call("submit_approach", new
             {
-                note = "Approach: add QuoteStatus.cs",
+                note = "Approach: add BookingStatus.cs",
                 context = new[]
                 {
                     new { path = "scripts/suite.sh", reason = "how the suite runs" },
-                    new { path = "src/Pricing.Data/Missing.cs", reason = "guess" },
+                    new { path = "src/Fares.Data/Missing.cs", reason = "guess" },
                 },
             }), Say("done"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
 
         await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
             new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new ApprovingHuman(), default);
@@ -228,13 +228,13 @@ public class S2WorkflowTests
         Assert.Contains(model.Requests, r => r.Any(m => m.Text.Contains("### `scripts/suite.sh` (how the suite runs)")));
         var plan = h.Rows(LedgerKinds.Turn).Single(e => e.Stage == "task_plan");
         using var doc = JsonDocument.Parse(plan.Payload!);
-        Assert.Equal("Approach: add QuoteStatus.cs", doc.RootElement.GetProperty("note").GetString());
+        Assert.Equal("Approach: add BookingStatus.cs", doc.RootElement.GetProperty("note").GetString());
         var context = doc.RootElement.GetProperty("context").EnumerateArray().ToList();
         Assert.Contains(context, c => c.GetProperty("path").GetString() == "scripts/suite.sh"
             && c.GetProperty("reason").GetString() == "how the suite runs");
-        Assert.DoesNotContain(context, c => c.GetProperty("path").GetString() == "src/Pricing.Data/Missing.cs");
+        Assert.DoesNotContain(context, c => c.GetProperty("path").GetString() == "src/Fares.Data/Missing.cs");
         Assert.Contains(doc.RootElement.GetProperty("rejected").EnumerateArray(),
-            r => r.GetProperty("path").GetString() == "src/Pricing.Data/Missing.cs");
+            r => r.GetProperty("path").GetString() == "src/Fares.Data/Missing.cs");
     }
 
     [Fact]
@@ -244,9 +244,9 @@ public class S2WorkflowTests
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
         model.Enqueue(
             SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }));
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }));
         for (var i = 0; i < 14; i++) model.Enqueue(Call("list_files", new { directory = "." })); // 15 calls in all, no declare_done
 
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
@@ -291,7 +291,7 @@ public class S2WorkflowTests
         Assert.Equal("auto_merge_enabled", result?.Status);
         Assert.Equal(1, host.AutoMerges);
         Assert.Empty(human.Approvals);
-        Assert.Single(h.Rows(LedgerKinds.Merge), e => e.Outcome == "TwoApprovals"); // still reported: Quotes DB is high risk
+        Assert.Single(h.Rows(LedgerKinds.Merge), e => e.Outcome == "TwoApprovals"); // still reported: Bookings DB is high risk
     }
 
     [Fact]
@@ -316,10 +316,10 @@ public class S2WorkflowTests
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), mergePolicy: Policy(MergeEnforcement.Auto));
         model.Enqueue(
             SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }),
             Say("done"));
 
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new RefusingHuman(), default);
@@ -404,7 +404,7 @@ public class S2WorkflowTests
 
         var waiting = await RunT001(h, model, human);
 
-        Assert.Equal("parked", waiting?.Status); // TwoApprovals (Quotes DB is high risk); the handover stays open
+        Assert.Equal("parked", waiting?.Status); // TwoApprovals (Bookings DB is high risk); the handover stays open
         Assert.Equal("parked: awaiting_approval https://github.com/o/r/pull/1 (2 more /approve from mike)", RunReport.Line(waiting!));
         Assert.Empty(human.Approvals);
         Assert.Equal(0, github.Merges);
@@ -426,10 +426,10 @@ public class S2WorkflowTests
 
     private static void RunScript(ScriptedChatClient model, Handover h) => model.Enqueue(
         SubmitPlan(PlanFor(h)), Say("submitted"),
-        Say("Approach: add QuoteStatus.cs"),
+        Say("Approach: add BookingStatus.cs"),
         Call("declare_done", new { summary = "test already on main" }), Say("done"),
-        Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-        Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+        Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+        Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
 
     private static QaTest QaT(string id, QaKind kind, QaOutcome baseline, QaOutcome integrated) => new(id, "R1", kind, baseline, integrated);
 
@@ -558,10 +558,10 @@ public class S2WorkflowTests
         Directory.CreateDirectory(h.Services.Settings.RegistryPath); // empty registry: D-0001's P check fails there
         model.Enqueue(
             SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }),
             Say("done"));
 
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
@@ -590,7 +590,7 @@ public class S2WorkflowTests
         Directory.CreateDirectory(registry);
         model.Enqueue(
             SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
-            Call("submit_approach", new { note = "Approach: add QuoteStatus.cs", context = new[] { new { path = "scripts/suite.sh", reason = "how the suite runs" } } }), Say("done"),
+            Call("submit_approach", new { note = "Approach: add BookingStatus.cs", context = new[] { new { path = "scripts/suite.sh", reason = "how the suite runs" } } }), Say("done"),
             Call("raise_needs_decision", new { question = "Is Draft the only initial status?", options = new[] { new { id = "A", summary = "Draft only", consequence = "one initial status" }, new { id = "B", summary = "Draft and Bound", consequence = "two initial statuses" } }, recommended = "A" }), Say("blocked"));
         var handover = h.WriteHandoverJson();
 
@@ -628,8 +628,8 @@ public class S2WorkflowTests
             """{"kind":"needs_decision_resolved","id":"ND-0001","by":"designer","schema_version":1,"event_id":"e-2","ts":1791500000001,"payload":{"option":"B","note":"Bound comes from imports"}}""" + "\n");
         model.Enqueue( // the approach note is replayed, so no task-planner turn
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }),
             Say("done"));
 
         await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
@@ -640,7 +640,7 @@ public class S2WorkflowTests
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("ND-0001"));
         // The planner did not run again: the nominated file comes from the selection frozen in the ledger.
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("### `scripts/suite.sh` (how the suite runs)"));
-        Assert.Contains(model.Requests.Last(), m => m.Text.Contains("### `src/Pricing.Data/Quote.cs`"));
+        Assert.Contains(model.Requests.Last(), m => m.Text.Contains("### `src/Fares.Data/Booking.cs`"));
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("Chosen option B: Draft and Bound") && m.Text.Contains("Bound comes from imports"));
         var pipeline = await File.ReadAllLinesAsync(Path.Combine(registry, "ledger", "pipeline.jsonl"));
         Assert.Single(pipeline, l => l.Contains("\"kind\":\"needs_decision\"") && l.Contains("\"status\":\"resolved\""));
@@ -655,9 +655,9 @@ public class S2WorkflowTests
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
         model.Enqueue(
             SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Kill(killed));
         var handover = h.WriteHandoverJson();
 
@@ -668,7 +668,7 @@ public class S2WorkflowTests
         Assert.Equal("Running", h.Rows(LedgerKinds.TaskEvent).Last(e => e.TaskId == "T-001").Outcome); // died mid-turn
 
         // restart: same run id, fresh workflow; the model only sees what is left to do
-        model.Enqueue(Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+        model.Enqueue(Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
 
         Assert.Equal("ready_for_review", result?.Status);
@@ -682,7 +682,7 @@ public class S2WorkflowTests
         var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
         var log = await h.GitIn(integration, "log", "--format=%s");
         Assert.Single(log.Output.Split('\n'), l => l.StartsWith("T-001:"));
-        Assert.Equal("public enum QuoteStatus { Draft }\n", await File.ReadAllTextAsync(Path.Combine(integration, NewFile)));
+        Assert.Equal("public enum BookingStatus { Draft }\n", await File.ReadAllTextAsync(Path.Combine(integration, NewFile)));
 
         // a third run is a no-op on tasks: everything replays
         model.Enqueue();

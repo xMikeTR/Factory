@@ -19,15 +19,15 @@ using Core = Factory.Core.Core;
 public sealed class TeamHarness : IDisposable
 {
     public const string RunId = "run-test";
-    /// A test already on main that passes once src/Pricing.Data/QuoteStatus.cs exists.
-    public const string QuoteStatusTest = "tests/Pricing.Data.Tests/quote_status.sh";
-    /// A suite on main that writes JUnit XML to $FACTORY_TEST_RESULTS: one test, "Quote.exists",
-    /// which passes while src/Pricing.Data/Quote.cs exists.
+    /// A test already on main that passes once src/Fares.Data/BookingStatus.cs exists.
+    public const string BookingStatusTest = "tests/Fares.Data.Tests/quote_status.sh";
+    /// A suite on main that writes JUnit XML to $FACTORY_TEST_RESULTS: one test, "Booking.exists",
+    /// which passes while src/Fares.Data/Booking.cs exists.
     public const string SuiteCommand = "sh scripts/suite.sh";
     private const string Suite = """
         mkdir -p "$(dirname "$FACTORY_TEST_RESULTS")"
-        if test -f src/Pricing.Data/Quote.cs; then r=''; else r='<failure message="Quote.cs is gone"/>'; fi
-        printf '<testsuites><testsuite name="s"><testcase classname="Quote" name="exists">%s</testcase></testsuite></testsuites>\n' "$r" > "$FACTORY_TEST_RESULTS"
+        if test -f src/Fares.Data/Booking.cs; then r=''; else r='<failure message="Booking.cs is gone"/>'; fi
+        printf '<testsuites><testsuite name="s"><testcase classname="Booking" name="exists">%s</testcase></testsuite></testsuites>\n' "$r" > "$FACTORY_TEST_RESULTS"
 
         """;
     private readonly string _root;
@@ -105,10 +105,10 @@ public sealed class TeamHarness : IDisposable
 
     private static async Task InitRepoAsync(string repo)
     {
-        Directory.CreateDirectory(Path.Combine(repo, "src", "Pricing.Data"));
-        await File.WriteAllTextAsync(Path.Combine(repo, "src", "Pricing.Data", "Quote.cs"), "// quote\n");
-        Directory.CreateDirectory(Path.Combine(repo, "tests", "Pricing.Data.Tests"));
-        await File.WriteAllTextAsync(Path.Combine(repo, QuoteStatusTest), "test -f src/Pricing.Data/QuoteStatus.cs\n");
+        Directory.CreateDirectory(Path.Combine(repo, "src", "Fares.Data"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "src", "Fares.Data", "Booking.cs"), "// booking\n");
+        Directory.CreateDirectory(Path.Combine(repo, "tests", "Fares.Data.Tests"));
+        await File.WriteAllTextAsync(Path.Combine(repo, BookingStatusTest), "test -f src/Fares.Data/BookingStatus.cs\n");
         await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "bin/\n");
         Directory.CreateDirectory(Path.Combine(repo, "scripts"));
         await File.WriteAllTextAsync(Path.Combine(repo, "scripts", "suite.sh"), Suite);

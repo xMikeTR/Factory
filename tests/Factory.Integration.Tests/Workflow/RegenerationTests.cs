@@ -22,7 +22,7 @@ public class RegenerationTests
             Task.FromResult(new MergeApprovalResponse(request.RunId, true, "test-approver"));
     }
 
-    /// T-001 on Quotes DB proves D-0001; T-002 on Pricing API is bound by no decision.
+    /// T-001 on Bookings DB proves D-0001; T-002 on Fares API is bound by no decision.
     private static string PlanFor(Handover h) => JsonSerializer.Serialize(new
     {
         handover = new { id = h.Id, digest = h.Digest },
@@ -30,19 +30,19 @@ public class RegenerationTests
         {
             new
             {
-                id = "T-001", title = "Add QuoteStatus", instructions = "Add the QuoteStatus enum.",
-                elements = new[] { "Pricing Platform/Quotes DB" },
-                writes = new[] { "src/Pricing.Data/**" }, testWrites = new[] { "tests/Pricing.Data.Tests/**" },
+                id = "T-001", title = "Add BookingStatus", instructions = "Add the BookingStatus enum.",
+                elements = new[] { "Fares Platform/Bookings DB" },
+                writes = new[] { "src/Fares.Data/**" }, testWrites = new[] { "tests/Fares.Data.Tests/**" },
                 dependsOn = Array.Empty<string>(), covers = new[] { "D-0001" },
-                verify = new[] { new { name = "file exists", kind = "invariant", run = $"sh {TeamHarness.QuoteStatusTest}", timeoutSeconds = 30 } },
+                verify = new[] { new { name = "file exists", kind = "invariant", run = $"sh {TeamHarness.BookingStatusTest}", timeoutSeconds = 30 } },
             },
             new
             {
-                id = "T-002", title = "Expose quote status", instructions = "Return the status from the API.",
-                elements = new[] { "Pricing Platform/Pricing API" },
-                writes = new[] { "src/Pricing.Api/**" }, testWrites = new[] { "tests/Pricing.Api.Tests/**" },
+                id = "T-002", title = "Expose booking status", instructions = "Return the status from the API.",
+                elements = new[] { "Fares Platform/Fares API" },
+                writes = new[] { "src/Fares.Api/**" }, testWrites = new[] { "tests/Fares.Api.Tests/**" },
                 dependsOn = new[] { "T-001" }, covers = Array.Empty<string>(),
-                verify = new[] { new { name = "api exists", kind = "invariant", run = "sh tests/Pricing.Api.Tests/status.sh", timeoutSeconds = 30 } },
+                verify = new[] { new { name = "api exists", kind = "invariant", run = "sh tests/Fares.Api.Tests/status.sh", timeoutSeconds = 30 } },
             },
         },
     });
@@ -69,10 +69,10 @@ public class RegenerationTests
 
         // No planner call: the previous plan is reused. Only T-001's turns are scripted.
         model.Enqueue(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = "src/Pricing.Data/QuoteStatus.cs", content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Call("write_file", new { path = "src/Fares.Data/BookingStatus.cs", content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }),
             Say("done"));
 
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services),
@@ -103,22 +103,22 @@ public class RegenerationTests
 
         // The failed run's integration verify blamed T-001 for a frozen spec; T-002 is not named.
         await h.Services.Ledger.AppendAsync(new LedgerEvent(PreviousRun, "S2", "integration_verify", LedgerKinds.UiAcceptanceFailed,
-            TaskId: "T-001", Element: "Pricing Platform/Quotes DB", Outcome: "failed",
-            Payload: JsonSerializer.Serialize(new { ac = "AC-1", spec = "tests/acceptance/quotes.spec.ts", commit = "abc1234", trace = "expected Draft" })));
+            TaskId: "T-001", Element: "Fares Platform/Bookings DB", Outcome: "failed",
+            Payload: JsonSerializer.Serialize(new { ac = "AC-1", spec = "tests/acceptance/bookings.spec.ts", commit = "abc1234", trace = "expected Draft" })));
 
         var repair = await Repair.FromFailedRunAsync(h.Services, PreviousRun, default);
         Assert.NotNull(repair);
         Assert.Equal(["T-001"], repair.Feedback.Keys);
-        Assert.Contains("tests/acceptance/quotes.spec.ts", repair.Feedback["T-001"]);
+        Assert.Contains("tests/acceptance/bookings.spec.ts", repair.Feedback["T-001"]);
         Assert.Contains("expected Draft", repair.Feedback["T-001"]);
         Directory.CreateDirectory(h.Services.Settings.RunDir(TeamHarness.RunId));
         await File.WriteAllTextAsync(h.Services.Settings.RepairPath(TeamHarness.RunId), JsonSerializer.Serialize(repair));
 
         model.Enqueue(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = "src/Pricing.Data/QuoteStatus.cs", content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Call("write_file", new { path = "src/Fares.Data/BookingStatus.cs", content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }),
             Say("done"));
 
         var handoverPath = Path.Combine(h.StateDir, "same.json");

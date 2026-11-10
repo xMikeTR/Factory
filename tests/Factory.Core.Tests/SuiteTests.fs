@@ -25,7 +25,7 @@ let tests: (string * (unit -> unit)) list =
       "suite: a new repo with no test project yet has no suite", fun () ->
           equal SuitePlan.NoSuite (Suite.discover [] [] []) "empty"
           equal SuitePlan.NoSuite (Suite.discover [] [ "src/A/A.csproj", library ] []) "libraries only"
-      "suite: a quote in a path cannot end the shell word", fun () ->
+      "suite: a booking in a path cannot end the shell word", fun () ->
           equal (SuitePlan.Command "s=0; for p in 'it'\\''s/T.Tests.csproj'; do dotnet test \"$p\" || s=1; done; exit $s")
               (Suite.discover [] [ "it's/T.Tests.csproj", testProject ] []) "quoted" 
       "suite: a package with a real test script runs `npm test` in its folder, next to the .NET projects", fun () ->

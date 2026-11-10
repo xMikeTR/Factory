@@ -72,13 +72,13 @@ public class SabotageTests : IDisposable
     [Fact]
     public async Task Skipping_a_ui_test_is_a_violation()
     {
-        var (h, wt) = await TeamWith(("web/Export.test.tsx", "test(\"exports the quote\", () => { expect(1).toBe(1); });\n"));
+        var (h, wt) = await TeamWith(("web/Export.test.tsx", "test(\"exports the booking\", () => { expect(1).toBe(1); });\n"));
         using var _ = h;
-        await File.WriteAllTextAsync(Path.Combine(wt, "web/Export.test.tsx"), "test.skip(\"exports the quote\", () => { expect(1).toBe(1); });\n");
+        await File.WriteAllTextAsync(Path.Combine(wt, "web/Export.test.tsx"), "test.skip(\"exports the booking\", () => { expect(1).toBe(1); });\n");
 
         var v = await UiGate.CheckAsync(h.Services.Git, wt, TeamHarness.RunId, new UiPolicy([], []), [], [], CancellationToken.None);
 
-        Assert.Equal([UiViolation.NewNowSkipped(new UiItem(UiItemKind.UiTest, "exports the quote"))], v);
+        Assert.Equal([UiViolation.NewNowSkipped(new UiItem(UiItemKind.UiTest, "exports the booking"))], v);
     }
 
     [Fact]

@@ -32,6 +32,6 @@ let tests: (string * (unit -> unit)) list =
       "lint: a raw value is a translation error on the task that writes the file, orphans reported apart", fun () ->
           let tasks = [ task "T-001" [ "src/ui/**" ]; task "T-002" [ "src/api/**" ] ]
           let v file = { File = file; Line = 3; Rule = "declaration-strict-value"; Text = "#fff" }
-          let errors, orphans = TokenLint.translationErrors tasks [ v "src/ui/Quote.css"; v "src/ui/Other.css"; v "web/x.css" ]
+          let errors, orphans = TokenLint.translationErrors tasks [ v "src/ui/Booking.css"; v "src/ui/Other.css"; v "web/x.css" ]
           equal [ TranslationError(TaskId "T-001") ] errors "errors"
           equal [ "web/x.css" ] orphans "orphans" ]

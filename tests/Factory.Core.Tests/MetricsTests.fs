@@ -6,7 +6,7 @@ open Factory.Core.Tests.Support
 let private item id =
     match
         WorkItem.create
-            { Id = id; Requirement = Some "REQ-1"; Elements = [ "Pricing/Form" ]; Repo = None; Target = None
+            { Id = id; Requirement = Some "REQ-1"; Elements = [ "Fares/Form" ]; Repo = None; Target = None
               DependsOn = []; Writes = [ "src/**" ]; DoneWhen = [ "gate", "dotnet test" ] }
     with
     | Ok i -> i

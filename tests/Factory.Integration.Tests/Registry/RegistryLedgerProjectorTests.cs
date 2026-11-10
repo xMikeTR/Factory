@@ -28,12 +28,12 @@ public class RegistryLedgerProjectorTests
         At(2, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-001", TeamId: "team-1", Outcome: "Running")),
         At(3, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Standard", TokensIn: 100, TokensOut: 20, Payload: """{"model_id":"mid-model"}""")),
         At(4, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-001", TeamId: "team-1", Model: "Frontier", TokensIn: 300, TokensOut: 40, Payload: """{"model_id":"big-model","cache_read":200,"cache_write":50}""")),
-        At(5, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-001", TeamId: "team-1", Element: "Pricing Platform/Referral Worker", Outcome: "Passed")),
+        At(5, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-001", TeamId: "team-1", Element: "Fares Platform/Escalation Worker", Outcome: "Passed")),
         At(6, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-002", TeamId: "team-2", Outcome: "Running")),
         At(7, new(RunId, "S2", "act", LedgerKinds.Turn, TaskId: "T-002", TeamId: "team-2", Model: "Small", TokensIn: 50, TokensOut: 5)),
         At(8, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: "T-002", TeamId: "team-2", Outcome: "Blocked")),
         At(9, new(RunId, "S2", "wave", LedgerKinds.NeedsDecision, TaskId: "T-002", TeamId: "team-2", Outcome: "raised",
-            Payload: """{"id":"ND-0004","Question":"Dedupe on message id?","Elements":["Pricing Platform/Referral Worker"]}""")),
+            Payload: """{"id":"ND-0004","Question":"Dedupe on message id?","Elements":["Fares Platform/Escalation Worker"]}""")),
         At(10, new(RunId, "S2", "integration_verify", LedgerKinds.Verify, Decision: "D-0001", Outcome: "passed",
             Payload: """{"name":"D-0001 [p]","command":"p check -tc tcOptimistic","ExitCode":0,"ms":4300}""")),
         At(11, new(RunId, "S2", "integration_verify", LedgerKinds.Verify, Decision: "D-0002", Outcome: "failed",
@@ -170,7 +170,7 @@ public class RegistryLedgerProjectorTests
         Assert.Equal("""[{"model":"mid-model","tier":"Standard","turns":1,"tokens_in":100,"tokens_out":20},{"model":"big-model","tier":"Frontier","turns":1,"tokens_in":300,"tokens_out":40,"cache_read":200,"cache_write":50}]""",
             t1["usage"].GetRawText());
         Assert.Equal(Handover.Id, t1["handover"].GetString());
-        Assert.Equal("Pricing Platform/Referral Worker", t1["element"].GetString());
+        Assert.Equal("Fares Platform/Escalation Worker", t1["element"].GetString());
         Assert.Equal(T0.AddSeconds(5).ToUnixTimeMilliseconds(), t1["ts"].GetInt64());
 
         var t2 = Assert.Single(rows, r => r["kind"].GetString() == "task" && r["task"].GetString() == "T-002");
@@ -183,7 +183,7 @@ public class RegistryLedgerProjectorTests
         Assert.Equal("open", nd["status"].GetString());
         Assert.Equal("Dedupe on message id?", nd["question"].GetString());
         Assert.Equal("T-002", nd["task"].GetString());
-        Assert.Equal("Pricing Platform/Referral Worker", nd["element"].GetString());
+        Assert.Equal("Fares Platform/Escalation Worker", nd["element"].GetString());
 
         var checks = rows.Where(r => r["kind"].GetString() == "check").ToList();
         Assert.Equal(["D-0001", "D-0002"], checks.Select(c => c["decision"].GetString()));

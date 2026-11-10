@@ -14,8 +14,8 @@ namespace Factory.Integration.Tests.Teams;
 public class TeamRunnerTests
 {
     private static readonly IReadOnlyDictionary<string, DecisionAnswer> NoAnswers = new Dictionary<string, DecisionAnswer>();
-    private const string NewFile = "src/Pricing.Data/QuoteStatus.cs";
-    private const string TestFile = "tests/Pricing.Data.Tests/status.sh";
+    private const string NewFile = "src/Fares.Data/BookingStatus.cs";
+    private const string TestFile = "tests/Fares.Data.Tests/status.sh";
 
     private static PlannedTask T001() => Plans.Task("T-001", Plans.Auto("file exists", $"test -f {NewFile}"));
 
@@ -24,14 +24,14 @@ public class TeamRunnerTests
     {
         var model = new ScriptedChatClient(
             // planning turn (task-planner)
-            Call("list_files", new { directory = "src/Pricing.Data" }),
-            Say("Approach: add QuoteStatus.cs"),
+            Call("list_files", new { directory = "src/Fares.Data" }),
+            Say("Approach: add BookingStatus.cs"),
             // test-author turn: the verify block needs no new test file
             Call("declare_done", new { summary = "verify block already fails" }),
             Say("done"),
             // implementer turn
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }),
             Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
 
@@ -68,10 +68,10 @@ public class TeamRunnerTests
     public async Task Each_phase_asks_for_its_roles_bundle_and_the_answer_or_the_miss_is_ledgered_without_stopping_the_run()
     {
         var model = new ScriptedChatClient(
-            Call("list_files", new { directory = "src/Pricing.Data" }), Say("Approach: add QuoteStatus.cs"),
+            Call("list_files", new { directory = "src/Fares.Data" }), Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
         var context = new StubContext(r => new BundleFetch.Missed("designc", "timed out"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), context: context);
 
@@ -89,9 +89,9 @@ public class TeamRunnerTests
     public async Task With_no_context_source_the_run_asks_for_nothing_but_records_the_miss()
     {
         var model = new ScriptedChatClient(
-            Call("list_files", new { directory = "src/Pricing.Data" }), Say("Approach: add QuoteStatus.cs"),
+            Call("list_files", new { directory = "src/Fares.Data" }), Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "x" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("declare_done", new { summary = "y" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
 
@@ -105,14 +105,14 @@ public class TeamRunnerTests
     [Fact]
     public async Task Files_a_check_generates_are_never_committed()
     {
-        const string generated = "tests/Pricing.Data.Tests/P/PGenerated/Gen.cs";
+        const string generated = "tests/Fares.Data.Tests/P/PGenerated/Gen.cs";
         var task = Plans.Task("T-001", Plans.Auto("generates then checks",
-            $"mkdir -p tests/Pricing.Data.Tests/P/PGenerated && echo gen > {generated} && test -f {NewFile}"));
+            $"mkdir -p tests/Fares.Data.Tests/P/PGenerated && echo gen > {generated} && test -f {NewFile}"));
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(task), NoAnswers, default);
@@ -132,17 +132,17 @@ public class TeamRunnerTests
     [Fact]
     public async Task A_build_that_changes_tracked_build_output_outside_the_writes_still_lets_done_count()
     {
-        const string obj = "tests/Pricing.Data.Tests/obj/project.assets.json";
+        const string obj = "tests/Fares.Data.Tests/obj/project.assets.json";
         TeamHarness? harness = null;
         void Build() => File.WriteAllText(Path.Combine(harness!.Services.Git.TeamPath(TeamHarness.RunId, "team-T-001"), obj), "{\"restored\": 2}\n");
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            After(Call("declare_done", new { summary = "added QuoteStatus" }), Build), Say("done"));
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            After(Call("declare_done", new { summary = "added BookingStatus" }), Build), Say("done"));
         using var h = harness = await TeamHarness.CreateAsync(model, new Limits(8, 3));
         var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
-        Directory.CreateDirectory(Path.Combine(integration, "tests/Pricing.Data.Tests/obj"));
+        Directory.CreateDirectory(Path.Combine(integration, "tests/Fares.Data.Tests/obj"));
         await File.WriteAllTextAsync(Path.Combine(integration, obj), "{}\n");
         await h.GitIn(integration, "add", "-f", obj);
         await h.GitIn(integration, "commit", "-q", "-m", "obj committed by mistake");
@@ -164,10 +164,10 @@ public class TeamRunnerTests
         TeamHarness? harness = null;
         void Touch() => File.WriteAllText(Path.Combine(harness!.Services.Git.TeamPath(TeamHarness.RunId, "team-T-001"), stray), "// stray\n");
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            After(Call("declare_done", new { summary = "added QuoteStatus" }), Touch), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            After(Call("declare_done", new { summary = "added BookingStatus" }), Touch), Say("done"),
             After(Call("declare_done", new { summary = "done again" }), Touch), Say("done"),
             After(Call("declare_done", new { summary = "done again" }), Touch), Say("done"));
         using var h = harness = await TeamHarness.CreateAsync(model, new Limits(8, 3));
@@ -184,15 +184,15 @@ public class TeamRunnerTests
     [Fact]
     public async Task A_check_never_sees_the_files_an_earlier_check_generated()
     {
-        const string generated = "tests/Pricing.Data.Tests/P/PGenerated/Gen.cs";
+        const string generated = "tests/Fares.Data.Tests/P/PGenerated/Gen.cs";
         var task = Plans.Task("T-001",
-            Plans.Auto("generates", $"mkdir -p tests/Pricing.Data.Tests/P/PGenerated && echo gen > {generated}"),
+            Plans.Auto("generates", $"mkdir -p tests/Fares.Data.Tests/P/PGenerated && echo gen > {generated}"),
             Plans.Auto("needs a clean tree", $"test ! -e {generated} && test -f {NewFile}"));
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(task), NoAnswers, default);
@@ -203,12 +203,12 @@ public class TeamRunnerTests
     [Fact]
     public async Task Files_the_baseline_suite_generates_are_never_committed()
     {
-        const string generated = "tests/Pricing.Data.Tests/baseline.log";
+        const string generated = "tests/Fares.Data.Tests/baseline.log";
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), suiteCommand: $"echo log > {generated}");
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
@@ -227,7 +227,7 @@ public class TeamRunnerTests
             Plans.Auto("file exists", $"test -f {NewFile}"),
             Plans.Auto("P model check", "echo 'P.csproj : error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json.'; exit 1"));
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "verify block already fails" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
 
@@ -247,7 +247,7 @@ public class TeamRunnerTests
     {
         var task = Plans.Task("T-001", Plans.Auto("slow check", "sleep 5", timeoutSeconds: 1));
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "tests" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
 
@@ -265,9 +265,9 @@ public class TeamRunnerTests
     {
         var task = Plans.Task("T-001", Plans.Auto("slow once built", $"test -f {NewFile} && sleep 5", timeoutSeconds: 1));
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "tests" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("declare_done", new { summary = "added" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
 
@@ -279,54 +279,54 @@ public class TeamRunnerTests
         Assert.Equal(0, model.Remaining); // no second Implementer turn to "fix" a timeout
     }
 
-    private const string Branchy = "class QuoteStatus { int F(int x) { if (x > 1) x++; if (x > 2) x++; if (x > 3) x++; return x; } }\n";
+    private const string Branchy = "class BookingStatus { int F(int x) { if (x > 1) x++; if (x > 2) x++; if (x > 3) x++; return x; } }\n";
     private static readonly QualityThresholds Tight = new(2, 30.0, 80);
 
     [Fact]
     public async Task In_block_mode_new_code_over_a_quality_threshold_fails_the_verify_and_the_Implementer_fixes_it()
     {
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "tests" }), Say("done"),
             Call("write_file", new { path = NewFile, content = Branchy }), Call("declare_done", new { summary = "too branchy" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }), Call("declare_done", new { summary = "simpler" }), Say("done"));
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }), Call("declare_done", new { summary = "simpler" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qualityPolicy: new QualityPolicy(QualityMode.Block, Tight));
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
 
         Assert.Equal(TeamStatus.Passed, result.Status);
         Assert.Equal(0, model.Remaining);
-        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "blocked" && e.Payload!.Contains("QuoteStatus.F"));
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "blocked" && e.Payload!.Contains("BookingStatus.F"));
     }
 
     [Fact]
     public async Task In_block_mode_a_project_reference_the_model_does_not_allow_fails_the_verify()
     {
-        const string csproj = "src/Pricing.Data/Pricing.Data.csproj";
-        const string refsRating = "<Project><ItemGroup><ProjectReference Include=\"..\\Rating.Engine\\Rating.Engine.csproj\" /></ItemGroup></Project>\n";
+        const string csproj = "src/Fares.Data/Fares.Data.csproj";
+        const string refsRating = "<Project><ItemGroup><ProjectReference Include=\"..\\Surcharge.Engine\\Surcharge.Engine.csproj\" /></ItemGroup></Project>\n";
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "tests" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("write_file", new { path = csproj, content = refsRating }), Call("declare_done", new { summary = "referenced rating" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("write_file", new { path = csproj, content = refsRating }), Call("declare_done", new { summary = "referenced surcharge" }), Say("done"),
             Call("write_file", new { path = csproj, content = "<Project />\n" }), Call("declare_done", new { summary = "dropped the reference" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qualityPolicy: new QualityPolicy(QualityMode.Block, new QualityThresholds(50, 100.0, 500)));
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
 
         Assert.Equal(TeamStatus.Passed, result.Status);
-        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "blocked" && e.Payload!.Contains("Quotes DB") && e.Payload.Contains("Rating Engine"));
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "blocked" && e.Payload!.Contains("Bookings DB") && e.Payload.Contains("Surcharge Engine"));
     }
 
     [Fact]
     public async Task A_disallowed_reference_the_baseline_already_had_passes_and_is_ledgered_as_an_asbuilt_edge()
     {
-        const string csproj = "src/Pricing.Data/Pricing.Data.csproj";
-        const string refsRating = "<Project><ItemGroup><ProjectReference Include=\"..\\Rating.Engine\\Rating.Engine.csproj\" /></ItemGroup></Project>\n";
+        const string csproj = "src/Fares.Data/Fares.Data.csproj";
+        const string refsRating = "<Project><ItemGroup><ProjectReference Include=\"..\\Surcharge.Engine\\Surcharge.Engine.csproj\" /></ItemGroup></Project>\n";
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "tests" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("write_file", new { path = csproj, content = refsRating + "<!-- touched -->\n" }), Call("declare_done", new { summary = "kept the reference" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qualityPolicy: new QualityPolicy(QualityMode.Block, new QualityThresholds(50, 100.0, 500)));
         var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
@@ -339,14 +339,14 @@ public class TeamRunnerTests
         Assert.Equal(TeamStatus.Passed, result.Status);
         var edge = Assert.Single(h.Rows(LedgerKinds.AsBuiltEdge));
         Assert.Equal(("quality", "debt", "T-001"), (edge.Stage, edge.Outcome, edge.TaskId));
-        Assert.Equal("""{"from":"Pricing Platform/Quotes DB","to":"Pricing Platform/Rating Engine"}""", edge.Payload);
+        Assert.Equal("""{"from":"Fares Platform/Bookings DB","to":"Fares Platform/Surcharge Engine"}""", edge.Payload);
     }
 
     [Fact]
     public async Task In_report_mode_the_same_code_passes_and_the_finding_is_in_the_ledger()
     {
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "tests" }), Say("done"),
             Call("write_file", new { path = NewFile, content = Branchy }), Call("declare_done", new { summary = "branchy" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qualityPolicy: new QualityPolicy(QualityMode.Report, Tight));
@@ -366,7 +366,7 @@ public class TeamRunnerTests
         Say("Approach: test first"),
         Call("write_file", new { path = TestFile, content = $"test -f {NewFile}\n" }),
         Call("declare_done", new { summary = "tests" }), Say("done"),
-        Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+        Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
         Call("declare_done", new { summary = "impl" }), Say("done"),
         .. more]);
 
@@ -381,7 +381,7 @@ public class TeamRunnerTests
 
         Assert.NotEqual(TeamStatus.Passed, result.Status);
         Assert.Equal([NewFile], h.Mutation.Asked.Single());
-        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "blocked" && e.Payload!.Contains("QuoteStatus.cs:1"));
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "blocked" && e.Payload!.Contains("BookingStatus.cs:1"));
         Assert.Contains(h.Rows(LedgerKinds.TaskEvent), e => e.Payload!.Contains("returned_to_test_author"));
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("mutants of the code this task changed survived"));
     }
@@ -434,7 +434,7 @@ public class TeamRunnerTests
         Assert.False(policy.Evaluate(Factory.Harness.Roles.TestAuthor, "confirm_equivalents", none).Allowed);
     }
 
-    private const string Existing = "src/Pricing.Data/Quote.cs";
+    private const string Existing = "src/Fares.Data/Booking.cs";
     private static Mutant OnExisting(string id, MutantStatus status) => new(id, Existing, 2, "Equality", status);
 
     /// The implementation edits a file the baseline already has, so the baseline can be measured.
@@ -442,7 +442,7 @@ public class TeamRunnerTests
         Say("Approach: test first"),
         Call("write_file", new { path = TestFile, content = $"grep -q more {Existing}\n" }),
         Call("declare_done", new { summary = "tests" }), Say("done"),
-        Call("write_file", new { path = Existing, content = "// quote\n// more\n" }),
+        Call("write_file", new { path = Existing, content = "// booking\n// more\n" }),
         Call("declare_done", new { summary = "impl" }), Say("done"),
         .. more]);
 
@@ -514,15 +514,15 @@ public class TeamRunnerTests
     [Fact]
     public async Task Tests_that_pass_on_the_existing_code_are_red_evidence_when_they_kill_a_mutant()
     {
-        const string existing = "src/Pricing.Data/Quote.cs";
+        const string existing = "src/Fares.Data/Booking.cs";
         var model = new ScriptedChatClient(
             Say("Approach: pin the existing behaviour"),
             Call("write_file", new { path = TestFile, content = $"test -f {existing}\n" }),
-            Call("declare_done", new { summary = "pins Quote" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "pins Booking" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("declare_done", new { summary = "impl" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Block));
-        h.Mutation.Then(new Mutant("k1", existing, 1, "Block", MutantStatus.Killed)); // red run: the test killed a mutant of Quote.cs
+        h.Mutation.Then(new Mutant("k1", existing, 1, "Block", MutantStatus.Killed)); // red run: the test killed a mutant of Booking.cs
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
 
@@ -535,10 +535,10 @@ public class TeamRunnerTests
     {
         var model = new ScriptedChatClient(
             Say("Approach: pin"),
-            Call("write_file", new { path = TestFile, content = "test -f src/Pricing.Data/Quote.cs\n" }),
-            Call("declare_done", new { summary = "pins Quote" }), Say("done"));
+            Call("write_file", new { path = TestFile, content = "test -f src/Fares.Data/Booking.cs\n" }),
+            Call("declare_done", new { summary = "pins Booking" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(2, 3), qualityPolicy: MutationOn(QualityMode.Block));
-        h.Mutation.Then(new Mutant("s1", "src/Pricing.Data/Quote.cs", 1, "Block", MutantStatus.Survived));
+        h.Mutation.Then(new Mutant("s1", "src/Fares.Data/Booking.cs", 1, "Block", MutantStatus.Survived));
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
 
@@ -571,7 +571,7 @@ public class TeamRunnerTests
     {
         var model = new ScriptedChatClient(
             Say("Approach: try"),
-            Call("write_file", new { path = TestFile, content = "test -f src/Pricing.Data/QuoteStatus.cs\n" }), Say("still working"));
+            Call("write_file", new { path = TestFile, content = "test -f src/Fares.Data/BookingStatus.cs\n" }), Say("still working"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(2, 3));
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
@@ -586,10 +586,10 @@ public class TeamRunnerTests
     {
         var model = new ScriptedChatClient(
             Say("Approach: need a status list"),
-            Call("raise_needs_decision", new { question = "Which quote statuses exist?", options = new[] { new { id = "A", summary = "Draft only", consequence = "one initial status" }, new { id = "B", summary = "Draft and Bound", consequence = "two initial statuses" } }, recommended = "A" }), Say("asked"),
+            Call("raise_needs_decision", new { question = "Which booking statuses exist?", options = new[] { new { id = "A", summary = "Draft only", consequence = "one initial status" }, new { id = "B", summary = "Draft and Bound", consequence = "two initial statuses" } }, recommended = "A" }), Say("asked"),
             // after the answer
             Call("declare_done", new { summary = "tests" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft, Bound }\n" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft, Bound }\n" }),
             Call("declare_done", new { summary = "added" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
         var team = TeamHarness.TeamOf(T001());
@@ -597,7 +597,7 @@ public class TeamRunnerTests
         var first = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(team, NoAnswers, default);
 
         Assert.Equal(TeamStatus.Blocked, first.Status);
-        Assert.Equal("Which quote statuses exist?", first.Blocked!.Question);
+        Assert.Equal("Which booking statuses exist?", first.Blocked!.Question);
         Assert.Equal("agent", first.Blocked.Source);
 
         // a fresh runner (as after a restart) replays the ledger and continues with the answer
@@ -613,14 +613,14 @@ public class TeamRunnerTests
     [Fact]
     public async Task The_Implementer_hands_broken_tests_back_to_the_TestAuthor_instead_of_parking()
     {
-        const string fixture = "tests/Pricing.Data.Tests/fixture.txt";
-        const string problem = "status.sh needs tests/Pricing.Data.Tests/fixture.txt, which is outside my writes";
+        const string fixture = "tests/Fares.Data.Tests/fixture.txt";
+        const string problem = "status.sh needs tests/Fares.Data.Tests/fixture.txt, which is outside my writes";
         var model = new ScriptedChatClient(
             Say("Approach: test first"),
             Call("write_file", new { path = TestFile, content = $"test -f {NewFile} && test -f {fixture}\n" }),
             Call("declare_done", new { summary = "status test" }), Say("done"),
             // implementer: writes the code, finds the test can never pass
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("return_to_test_author", new { problem }), Say("handed back"),
             // test author again
             Call("write_file", new { path = fixture, content = "x\n" }),
@@ -652,7 +652,7 @@ public class TeamRunnerTests
     [Fact]
     public async Task TestAuthor_writes_only_tests_and_Implementer_writes_only_code()
     {
-        const string realTest = "test -f src/Pricing.Data/QuoteStatus.cs\n";
+        const string realTest = "test -f src/Fares.Data/BookingStatus.cs\n";
         var model = new ScriptedChatClient(
             Say("Approach: test first"),
             // test author: code is refused, the test is not
@@ -661,7 +661,7 @@ public class TeamRunnerTests
             Call("declare_done", new { summary = "status test" }), Say("done"),
             // implementer: the test is refused, the code is not
             Call("write_file", new { path = TestFile, content = "exit 0\n" }),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("declare_done", new { summary = "added" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
 
@@ -678,7 +678,7 @@ public class TeamRunnerTests
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "red_run" && e.Outcome == "failed");
         var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
         Assert.Equal(realTest, await File.ReadAllTextAsync(Path.Combine(integration, TestFile)));
-        Assert.Equal("public enum QuoteStatus { Draft }\n", await File.ReadAllTextAsync(Path.Combine(integration, NewFile)));
+        Assert.Equal("public enum BookingStatus { Draft }\n", await File.ReadAllTextAsync(Path.Combine(integration, NewFile)));
     }
 
     [Fact]
@@ -706,7 +706,7 @@ public class TeamRunnerTests
     public async Task A_vacuous_test_fails_the_stash_check_and_goes_back_to_TestAuthor()
     {
         // The test checks an ignored build artefact, which stashing the implementation leaves behind.
-        const string artefact = "src/Pricing.Data/bin/Pricing.Data.dll";
+        const string artefact = "src/Fares.Data/bin/Fares.Data.dll";
         var model = new ScriptedChatClient(
             Say("Approach: test first"),
             Call("write_file", new { path = TestFile, content = $"test -f {artefact}\n" }),
@@ -749,17 +749,17 @@ public class TeamRunnerTests
 
     private static async Task<ScriptedChatClient> BreakAndRestoreAsync()
     {
-        const string quote = "src/Pricing.Data/Quote.cs";
+        const string booking = "src/Fares.Data/Booking.cs";
         var model = new ScriptedChatClient(
-            Say("Approach: replace Quote.cs with QuoteStatus.cs"),
+            Say("Approach: replace Booking.cs with BookingStatus.cs"),
             Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-            // implementer breaks Quote.exists on the way
-            Call("delete_file", new { path = quote }),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            // implementer breaks Booking.exists on the way
+            Call("delete_file", new { path = booking }),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("declare_done", new { summary = "moved" }), Say("done"),
             // ... and puts it back after seeing the regression
-            Call("write_file", new { path = quote, content = "// quote\n" }),
-            Call("declare_done", new { summary = "restored Quote.cs" }), Say("done"));
+            Call("write_file", new { path = booking, content = "// booking\n" }),
+            Call("declare_done", new { summary = "restored Booking.cs" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), TeamHarness.SuiteCommand);
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
@@ -769,7 +769,7 @@ public class TeamRunnerTests
         Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "baseline");
         Assert.Equal(["failed", "passed"], h.Rows(LedgerKinds.Verify).Where(e => e.Stage == "regression").Select(e => e.Outcome));
         Assert.Equal(2, h.Rows(LedgerKinds.Verify).Count(e => e.Stage == "verify"));
-        Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("What failed last time") && m.Text.Contains("Quote.exists"));
+        Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("What failed last time") && m.Text.Contains("Booking.exists"));
         Assert.Single(h.Rows(LedgerKinds.TaskEvent), e => e.Outcome == "Passed");
         return model;
     }

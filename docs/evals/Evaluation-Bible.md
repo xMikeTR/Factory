@@ -22,7 +22,7 @@ Use these words and only these. Most of the confusion between sources is the sam
 
 | Term | Meaning | In the factory |
 | --- | --- | --- |
-| Task | One test case with defined inputs and success criteria | A frozen handover slice plus its bound decisions, e.g. pricing-v3 with D-0042 |
+| Task | One test case with defined inputs and success criteria | A frozen handover slice plus its bound decisions, e.g. fares-v3 with D-0042 |
 | Trial | One attempt at a task; run several because agents are non-deterministic | One S2 run of that task in a fresh worktree |
 | Grader | Logic that scores one aspect of a trial; holds one or more checks | A decision's `checks:` entry, a verify block, an LLM judge |
 | Transcript (trace) | Full record of a trial: messages, tool calls, reasoning | The Langfuse trace, linked from the ledger by `trace_id` |
@@ -109,15 +109,15 @@ source:                        # why this task exists (the one rule)
   failure_mode: FM-03          # from taxonomy.yaml
   trace_id: lf-7c1e...         # the Langfuse trace that showed it
 input:
-  handover: handovers/pricing-v3@v3.1.0
-  task_filter: [quote-writes]
+  handover: handovers/fares-v3@v3.1.0
+  task_filter: [booking-writes]
 environment:
-  repo: pricing-engine
+  repo: fares-engine
   commit: 4f2a9e1              # frozen start state
   fresh_worktree: true
 graders:                       # all must pass unless weighted below
   - {type: build}
-  - {type: tests, fail_to_pass: [QuoteConcurrencyTests], pass_to_pass: all}
+  - {type: tests, fail_to_pass: [BookingConcurrencyTests], pass_to_pass: all}
   - {type: decision_checks, decisions: [D-0042]}
   - {type: scope, allowed: from_task_writes}
   - {type: judge, rubric: rubrics/test-gaming.md}
@@ -136,7 +136,7 @@ Three checks before a task is bound: two engineers would give the same verdict o
 This is the step every source agrees on and the one your current suite skipped. Budget two evenings for the first pass; it produces the taxonomy everything else hangs off.
 
 1. **Collect 50–100 traces.** Mix real S2 runs with the 11 existing tasks rerun k times. Include passes as well as failures; quiet failures hide in passing runs.
-2. **Open coding.** Read each trace and write one plain sentence about the first thing that went wrong, e.g. "executor edited QuoteService outside its writes paths". Note only the first error; later ones are usually downstream of it. Record pass or fail for the trial as a whole.
+2. **Open coding.** Read each trace and write one plain sentence about the first thing that went wrong, e.g. "executor edited BookingService outside its writes paths". Note only the first error; later ones are usually downstream of it. Record pass or fail for the trial as a whole.
 3. **Axial coding.** Group the sentences into 5–10 failure modes. Give each an id (FM-01), a one-line definition and one example trace. An LLM can propose clusters; you decide them.
 4. **Count.** Tally traces per failure mode. The top three by frequency, weighted by cost to you, are what you work on.
 5. **Triage each mode.** Ask which fix is cheapest:
@@ -316,12 +316,12 @@ Three conventions make the rest easy:
 - Name scores `grader.<name>` with values 1 (pass), 0 (fail) or null (unknown).
 - Write every grader result to the ledger first and Langfuse second. The ledger is what System 4 reads.
 
-## Worked example: Quote lost-update (D-0042)
+## Worked example: Booking lost-update (D-0042)
 
 The same slice the factory plan uses, taken once through the whole loop. The trace contents below are illustrative; yours will differ, which is the point of looking.
 
-1. **Look.** Run the pricing-v3 handover through S2, 5 trials, plus the 11 existing tasks rerun 3 times each. That gives about 38 traces.
-2. **Name.** Open coding produces notes such as: "added rowversion but retried forever on conflict"; "edited `PricingController` outside writes"; "tcOptimistic passes but the new test only asserts no exception". Axial coding groups them into, say, FM-01 unbounded retry, FM-03 scope breach, FM-05 weak test.
+1. **Look.** Run the fares-v3 handover through S2, 5 trials, plus the 11 existing tasks rerun 3 times each. That gives about 38 traces.
+2. **Name.** Open coding produces notes such as: "added rowversion but retried forever on conflict"; "edited `FaresController` outside writes"; "tcOptimistic passes but the new test only asserts no exception". Axial coding groups them into, say, FM-01 unbounded retry, FM-03 scope breach, FM-05 weak test.
 3. **Triage.**
    - FM-01 is a spec gap: D-0042 never said what to do on conflict. Add a grill-me question ("retry or surface to the caller?") and a gate clause. That is an S1 escape.
    - FM-03 has an obvious fix: tighten the executor's ACS policy. Add task S2-0001 with the scope grader so it stays fixed.
@@ -339,7 +339,7 @@ The goal for two weeks is one regression suite you trust, not a framework. Each 
 **Week 1: look and name**
 
 - [ ] Tag S2 traces with `task_id`, `trial`, `harness_version`
-- [ ] Run the 11 existing tasks 3 times each and the pricing-v3 slice 5 times
+- [ ] Run the 11 existing tasks 3 times each and the fares-v3 slice 5 times
 - [ ] Open-code every trace in a Langfuse annotation queue, one sentence each
 - [ ] Cluster into 5–10 failure modes and write `factory/taxonomy.yaml` with counts
 - [ ] Triage each mode as spec, fix or grader

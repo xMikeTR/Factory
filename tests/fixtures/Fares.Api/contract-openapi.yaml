@@ -1,0 +1,7 @@
+openapi: 3.0.3
+info: { title: Fares API, version: "1.0.0" }
+paths:
+  /bookings:
+    get:
+      operationId: listBookings
+      responses: { "200": { description: ok } }

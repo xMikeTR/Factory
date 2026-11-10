@@ -43,9 +43,9 @@ No agents or network needed:
 dotnet run --project tests/Factory.Core.Tests            # all passed
 
 # 2. Validate and dispatch the example handover
-dotnet run --project src/Factory.S2 -- validate --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
-dotnet run --project src/Factory.S2 -- dispatch --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
-#   wave 0: team-T-001 [T-001, T-004]      (both write under src/Quotes.Data)
+dotnet run --project src/Factory.S2 -- validate --handover examples/fares-v3/handover.json --plan examples/fares-v3/plan.json
+dotnet run --project src/Factory.S2 -- dispatch --handover examples/fares-v3/handover.json --plan examples/fares-v3/plan.json
+#   wave 0: team-T-001 [T-001, T-004]      (both write under src/Bookings.Data)
 #   wave 1: team-T-002 [T-002], team-T-003 [T-003]   (parallel)
 ```
 
@@ -58,6 +58,7 @@ A real run needs a model. Pick one provider:
 | Any OpenAI-compatible gateway | `FACTORY_GATEWAY_URL=https://<gateway>/v1`, `FACTORY_GATEWAY_KEY`, and `FACTORY_MODEL_FRONTIER`, `_STANDARD`, `_SMALL` (aliases) | The default |
 | Anthropic (native client) | `FACTORY_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` | Public API unless `FACTORY_GATEWAY_URL` is set. Models default to `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-4-5` |
 | Claude on Vertex AI | `FACTORY_PROVIDER=vertex`, `FACTORY_VERTEX_PROJECT`, optional `FACTORY_VERTEX_REGION` (default `global`) | gcloud Application Default Credentials: no key, no gateway. `claude-*` models use the Anthropic client; others (e.g. `google/gemini-2.5-pro`) use Vertex's OpenAI-compatible endpoint, so the reviewer can be a Gemini on the same login |
+| Claude subscription (local `claude` CLI) | `FACTORY_PROVIDER=claude-code`, then `claude login` once | No key, no gateway. Each model call is one `claude -p` process with its own tools off; the factory's tools are offered as text and parsed back from a JSON reply. `ANTHROPIC_API_KEY` is removed from the child so it cannot override the login. It is the same Claude family, so the reviewer needs `FACTORY_REVIEWER_SAME_FAMILY=allow` with dry-run merges |
 
 **Reviewer and QA run on a different model family.** Set `FACTORY_REVIEWER_PROVIDER` / `_GATEWAY_URL` / `_GATEWAY_KEY` / `_MODEL_*`, and declare `FACTORY_MODEL_FAMILY` and `FACTORY_REVIEWER_MODEL_FAMILY`; start-up refuses otherwise. With one provider only, set `FACTORY_REVIEWER_SAME_FAMILY=allow`: dry-run merges only (not `--github`), and those reviews are stamped same-family.
 
@@ -93,7 +94,7 @@ A handover frozen with compiled contracts (designc `contracts/`) lists them. `FA
 ## Run it
 
 ```bash
-dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/pricing-v3/handover.json \
+dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/fares-v3/handover.json \
     --repo <target repo> --registry <registry repo> [--base main] [--github | --azdo] [--run-id <id to resume>]
 ```
 
@@ -136,7 +137,7 @@ span per model call and an `execute_tool` span per tool call); every ledger row 
 `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_HEADERS`), to Langfuse or any OTLP collector:
 
 ```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:3000/api/public/otel OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:3100/api/public/otel OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $(printf %s "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | base64 -w0)"
 ```
 
@@ -283,7 +284,7 @@ finds the completed PR. Azure DevOps has no approval-comment path yet, so tiered
 the console. PR descriptions over Azure DevOps' 4000-character limit are cut with a note.
 
 Opt-in live test (opens and closes a real PR):
-`FACTORY_LIVE_GITHUB=xMikeTR/pricing-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`
+`FACTORY_LIVE_GITHUB=xMikeTR/fares-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`
 
 ## Commands
 
@@ -370,7 +371,7 @@ src/Factory.S2/          C#: the MAF workflow
 prompts/                 planner, task-planner and executor system prompts (reviewed like code)
 schemas/                 plan and handover JSON Schemas
 sql/ledger.sql           Postgres ledger + System 4 starter views
-examples/pricing-v3/     Quote lost-update handover and a valid plan
+examples/fares-v3/     Booking lost-update handover and a valid plan
 ```
 
 ## Interfaces with designc

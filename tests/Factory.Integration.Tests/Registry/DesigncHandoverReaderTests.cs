@@ -52,19 +52,19 @@ public class DesigncHandoverReaderTests
         var dir = FixtureCopy();
         var elementsPath = Path.Combine(dir, "elements.json");
         var json = await File.ReadAllTextAsync(elementsPath);
-        json = json.Replace("\"src/Pricing.Portal/**\"\n      ],", "\"src/Pricing.Portal/**\"\n      ],\n      \"repo\": \"Ui\",")
-                   .Replace("\"id\": \"Pricing Platform/Quotes DB\",", "\"id\": \"Pricing Platform/Quotes DB\",\n      \"repo\": \"Api\",");
+        json = json.Replace("\"src/Fares.Portal/**\"\n      ],", "\"src/Fares.Portal/**\"\n      ],\n      \"repo\": \"Ui\",")
+                   .Replace("\"id\": \"Fares Platform/Bookings DB\",", "\"id\": \"Fares Platform/Bookings DB\",\n      \"repo\": \"Api\",");
         await File.WriteAllTextAsync(elementsPath, json);
         var manifestPath = Path.Combine(dir, "handover.yaml");
         var manifest = await File.ReadAllTextAsync(manifestPath);
         manifest = System.Text.RegularExpressions.Regex.Replace(manifest, "path: \"elements.json\", hash: [0-9a-f]+", $"path: \"elements.json\", hash: {DesigncHandoverReader.Hash16(json)}");
         if (withContract)
         {
-            const string api = "openapi: 3.0.3\ninfo: { title: Pricing, version: 1.0.0 }\npaths: {}\n";
+            const string api = "openapi: 3.0.3\ninfo: { title: Fares, version: 1.0.0 }\npaths: {}\n";
             Directory.CreateDirectory(Path.Combine(dir, "contracts", "openapi"));
-            await File.WriteAllTextAsync(Path.Combine(dir, "contracts", "openapi", "pricing.yaml"), api);
-            manifest = manifest.Replace("evals: {}\n", "evals: {}\ncontracts_api: [\"contracts/openapi/pricing.yaml\"]\n")
-                + $"  - {{ path: \"contracts/openapi/pricing.yaml\", hash: {DesigncHandoverReader.Hash16(api)} }}\n";
+            await File.WriteAllTextAsync(Path.Combine(dir, "contracts", "openapi", "fares.yaml"), api);
+            manifest = manifest.Replace("evals: {}\n", "evals: {}\ncontracts_api: [\"contracts/openapi/fares.yaml\"]\n")
+                + $"  - {{ path: \"contracts/openapi/fares.yaml\", hash: {DesigncHandoverReader.Hash16(api)} }}\n";
         }
         await File.WriteAllTextAsync(manifestPath, manifest);
         return dir;
@@ -74,10 +74,10 @@ public class DesigncHandoverReaderTests
     public async Task Elements_carry_their_repo_and_a_pinned_api_contract_is_read()
     {
         var h = await Load(await TwoRepoCopy(withContract: true));
-        Assert.Equal("Ui", h.Elements.Single(e => e.Name == "Pricing Portal").Repo.Value);
-        Assert.Equal("Api", h.Elements.Single(e => e.Name == "Quotes DB").Repo.Value);
-        Assert.True(h.Elements.Where(e => e.Name is not ("Pricing Portal" or "Quotes DB")).All(e => e.Repo is null));
-        Assert.Equal(["contracts/openapi/pricing.yaml"], h.ApiContracts);
+        Assert.Equal("Ui", h.Elements.Single(e => e.Name == "Fares Portal").Repo.Value);
+        Assert.Equal("Api", h.Elements.Single(e => e.Name == "Bookings DB").Repo.Value);
+        Assert.True(h.Elements.Where(e => e.Name is not ("Fares Portal" or "Bookings DB")).All(e => e.Repo is null));
+        Assert.Equal(["contracts/openapi/fares.yaml"], h.ApiContracts);
         Assert.Empty(h.Contracts); // the agent-policy key is untouched
     }
 
@@ -92,7 +92,7 @@ public class DesigncHandoverReaderTests
     public async Task A_changed_api_contract_is_rejected_like_any_frozen_file()
     {
         var dir = await TwoRepoCopy(withContract: true);
-        await File.AppendAllTextAsync(Path.Combine(dir, "contracts", "openapi", "pricing.yaml"), "# edited\n");
+        await File.AppendAllTextAsync(Path.Combine(dir, "contracts", "openapi", "fares.yaml"), "# edited\n");
         await Assert.ThrowsAnyAsync<Exception>(() => Load(dir));
     }
 
@@ -104,19 +104,19 @@ public class DesigncHandoverReaderTests
         Assert.Equal("20261007-c4d072ba", h.Id);
         Assert.StartsWith("sha256:", h.Digest);
 
-        var quotes = Assert.Single(h.Elements, e => e.Name == "Quotes DB");
-        Assert.Equal("Pricing Platform/Quotes DB", quotes.Id.Value);
-        Assert.Equal(RiskLevel.High, quotes.Risk);
-        Assert.Equal(["src/Pricing.Data/**", "db/migrations/**", "tests/Pricing.Data.Tests/**"], quotes.CodeAreas.Select(p => p.Value));
+        var bookings = Assert.Single(h.Elements, e => e.Name == "Bookings DB");
+        Assert.Equal("Fares Platform/Bookings DB", bookings.Id.Value);
+        Assert.Equal(RiskLevel.High, bookings.Risk);
+        Assert.Equal(["src/Fares.Data/**", "db/migrations/**", "tests/Fares.Data.Tests/**"], bookings.CodeAreas.Select(p => p.Value));
         Assert.Equal(
-            ["Cat Model Adapter", "Pricing API", "Pricing Portal", "Quotes DB", "Rating Engine", "Referral Worker"],
+            ["Bookings DB", "Escalation Worker", "Fares API", "Fares Portal", "Surcharge Engine", "Weather Feed Adapter"],
             h.Elements.Select(e => e.Name).Order());
-        Assert.Equal(RiskLevel.Low, h.Elements.Single(e => e.Name == "Pricing Portal").Risk);
+        Assert.Equal(RiskLevel.Low, h.Elements.Single(e => e.Name == "Fares Portal").Risk);
 
         var d = Assert.Single(h.Decisions);
         Assert.Equal("D-0001", d.Id.Value);
-        Assert.StartsWith("Quote writes use optimistic concurrency", d.Statement);
-        Assert.Equal(["Pricing Platform/Quotes DB"], d.Binds.Select(b => b.Value));
+        Assert.StartsWith("Booking writes use optimistic concurrency", d.Statement);
+        Assert.Equal(["Fares Platform/Bookings DB"], d.Binds.Select(b => b.Value));
         var check = Assert.Single(d.Checks);
         Assert.Equal(("p", "p check -tc tcOptimistic"), (check.Kind, check.Run));
 
@@ -125,9 +125,9 @@ public class DesigncHandoverReaderTests
 
         // Only relationships between elements that own code are kept (the person and the external vendor do not).
         var rels = h.Relationships.Select(r => (r.From.Value, r.To.Value)).ToList();
-        Assert.Contains(("Pricing Platform/Pricing API", "Pricing Platform/Rating Engine"), rels);
-        Assert.Contains(("Pricing Platform/Referral Worker", "Pricing Platform/Quotes DB"), rels);
-        Assert.DoesNotContain(rels, r => r.Item1 == "Underwriter" || r.Item2 == "Cat Model Vendor");
+        Assert.Contains(("Fares Platform/Fares API", "Fares Platform/Surcharge Engine"), rels);
+        Assert.Contains(("Fares Platform/Escalation Worker", "Fares Platform/Bookings DB"), rels);
+        Assert.DoesNotContain(rels, r => r.Item1 == "Traveller" || r.Item2 == "Weather Feed Vendor");
     }
 
     [Fact]
@@ -141,11 +141,11 @@ public class DesigncHandoverReaderTests
     {
         var dir = FixtureCopy();
         var path = Path.Combine(dir, "decisions", "D-0001.yaml");
-        await File.WriteAllTextAsync(path, (await File.ReadAllTextAsync(path)).Replace("binds: [Quotes DB]", "binds: [Quotes Store]"));
+        await File.WriteAllTextAsync(path, (await File.ReadAllTextAsync(path)).Replace("binds: [Bookings DB]", "binds: [Bookings Store]"));
         RewriteHash(dir, "decisions/D-0001.yaml");
 
         var ex = await Assert.ThrowsAsync<FactoryRejectedException>(() => Load(dir));
-        Assert.Contains("D-0001 binds 'Quotes Store', which is not an element in the model", ex.Errors);
+        Assert.Contains("D-0001 binds 'Bookings Store', which is not an element in the model", ex.Errors);
     }
 
     [Fact]
@@ -204,7 +204,7 @@ public class DesigncHandoverReaderTests
         var text = (await File.ReadAllTextAsync(file)).Replace("checks:\n  - p check -tc tcOptimistic\n", checksYaml);
         await File.WriteAllTextAsync(file, text);
         var manifest = Path.Combine(dir, "handover.yaml");
-        await File.WriteAllTextAsync(manifest, (await File.ReadAllTextAsync(manifest)).Replace("83d766859d21cb09", DesigncHandoverReader.Hash16(text)));
+        await File.WriteAllTextAsync(manifest, (await File.ReadAllTextAsync(manifest)).Replace("523ac918c3575abc", DesigncHandoverReader.Hash16(text)));
         return dir;
     }
 
@@ -212,14 +212,14 @@ public class DesigncHandoverReaderTests
     [Fact]
     public async Task A_check_is_a_command_or_an_id_and_run_and_every_check_gets_designcs_id()
     {
-        var dir = await WithChecks("checks:\n  - p check -tc tcOptimistic\n  - { id: quotes.lock, run: \"p check -tc tcDedupe\" }\n  - { run: \"  dotnet test  \" }\n");
+        var dir = await WithChecks("checks:\n  - p check -tc tcOptimistic\n  - { id: bookings.lock, run: \"p check -tc tcDedupe\" }\n  - { run: \"  dotnet test  \" }\n");
 
         var checks = Assert.Single((await Load(dir)).Decisions).Checks.ToList();
 
         Assert.Equal(["p check -tc tcOptimistic", "p check -tc tcDedupe", "dotnet test"], checks.Select(c => c.Run));
         Assert.Equal(["p", "p", "script"], checks.Select(c => c.Kind));
         Assert.Equal(
-            ["chk-" + DesigncHandoverReader.Hash16("p check -tc tcOptimistic")[..8], "quotes.lock", "chk-" + DesigncHandoverReader.Hash16("dotnet test")[..8]],
+            ["chk-" + DesigncHandoverReader.Hash16("p check -tc tcOptimistic")[..8], "bookings.lock", "chk-" + DesigncHandoverReader.Hash16("dotnet test")[..8]],
             checks.Select(c => c.CheckId));
     }
 

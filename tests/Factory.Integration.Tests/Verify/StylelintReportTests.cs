@@ -6,7 +6,7 @@ namespace Factory.Integration.Tests.Verify;
 public class StylelintReportTests
 {
     private const string Report = """
-        [ { "source": "/work/tree/src/ui/Quote.css", "warnings": [
+        [ { "source": "/work/tree/src/ui/Booking.css", "warnings": [
               { "line": 12, "rule": "declaration-strict-value", "text": "Expected a variable for \"color\"" } ] },
           { "source": "/work/tree/src/ui/Clean.css", "warnings": [] } ]
         """;
@@ -15,7 +15,7 @@ public class StylelintReportTests
     public void Violations_are_relative_to_the_worktree_with_line_and_rule()
     {
         var v = Assert.Single(StylelintReport.Violations(Report, "/work/tree"));
-        Assert.Equal(("src/ui/Quote.css", 12, "declaration-strict-value"), (v.File, v.Line, v.Rule));
+        Assert.Equal(("src/ui/Booking.css", 12, "declaration-strict-value"), (v.File, v.Line, v.Rule));
     }
 
     [Fact]

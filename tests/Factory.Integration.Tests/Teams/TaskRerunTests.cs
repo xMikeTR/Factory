@@ -10,16 +10,16 @@ namespace Factory.Integration.Tests.Teams;
 
 public class TaskRerunTests
 {
-    private const string NewFile = "src/Pricing.Data/QuoteStatus.cs";
+    private const string NewFile = "src/Fares.Data/BookingStatus.cs";
     private static PlannedTask T001() => Plans.Task("T-001", Plans.Auto("file exists", $"test -f {NewFile}"));
 
     // 3 turns, 7 model calls: plan, test-author, implementer.
     private static ChatResponse[] Passing() =>
     [
-        Say("Approach: add QuoteStatus.cs"),
+        Say("Approach: add BookingStatus.cs"),
         Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-        Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-        Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"),
+        Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+        Call("declare_done", new { summary = "added BookingStatus" }), Say("done"),
     ];
 
     // Never changes anything: stuck detection raises a needs-decision, so the attempt blocks.

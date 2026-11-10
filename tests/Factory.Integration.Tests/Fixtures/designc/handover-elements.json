@@ -2,18 +2,18 @@
   "schema": "designc.handover.elements/1",
   "elements": [
     {
-      "id": "Underwriter",
-      "name": "Underwriter",
+      "id": "Traveller",
+      "name": "Traveller",
       "kind": "person"
     },
     {
-      "id": "Quotes",
-      "name": "Quotes",
+      "id": "Bookings",
+      "name": "Bookings",
       "kind": "softwareSystem"
     },
     {
-      "id": "Quotes/Quotes API",
-      "name": "Quotes API",
+      "id": "Bookings/Bookings API",
+      "name": "Bookings API",
       "kind": "container",
       "code": [
         "src/Api/**",
@@ -22,33 +22,33 @@
       "risk": "medium"
     },
     {
-      "id": "Quotes/Quotes API/Pricing",
-      "name": "Pricing",
+      "id": "Bookings/Bookings API/Fares",
+      "name": "Fares",
       "kind": "component",
       "code": [
-        "src/Api/Pricing/**"
+        "src/Api/Fares/**"
       ],
       "risk": "high"
     },
     {
-      "id": "Quotes/Quotes DB",
-      "name": "Quotes DB",
+      "id": "Bookings/Bookings DB",
+      "name": "Bookings DB",
       "kind": "container"
     }
   ],
   "relationships": [
     {
-      "from": "Underwriter",
-      "to": "Quotes/Quotes API"
+      "from": "Traveller",
+      "to": "Bookings/Bookings API"
     },
     {
-      "from": "Quotes/Quotes API",
-      "to": "Quotes/Quotes DB"
+      "from": "Bookings/Bookings API",
+      "to": "Bookings/Bookings DB"
     }
   ],
   "events": [
-    "QuoteRequested",
-    "QuoteSaved",
-    "QuotePriced"
+    "BookingRequested",
+    "BookingSaved",
+    "BookingPriced"
   ]
 }

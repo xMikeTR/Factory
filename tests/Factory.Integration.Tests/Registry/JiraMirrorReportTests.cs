@@ -16,8 +16,8 @@ public class JiraMirrorReportTests
             Directory.CreateDirectory(Path.GetDirectoryName(p)!);
             File.WriteAllText(p, text);
         }
-        Put("requirements/REQ-1.yaml", "id: REQ-1\nelements:\n  - Pricing/Form\n");
-        Put("work/W-1.yaml", "id: W-1\nrequirement: REQ-1\nelements: [Pricing/Form]\nwrites: [src/Form/**]\ndepends_on: []\ndone_when:\n  - gate: dotnet test\n");
+        Put("requirements/REQ-1.yaml", "id: REQ-1\nelements:\n  - Fares/Form\n");
+        Put("work/W-1.yaml", "id: W-1\nrequirement: REQ-1\nelements: [Fares/Form]\nwrites: [src/Form/**]\ndepends_on: []\ndone_when:\n  - gate: dotnet test\n");
         Put("ledger/designc.jsonl", ledger);
         return root;
     }

@@ -11,18 +11,18 @@ public class GitWorkspaceTests
     {
         using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
         var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
-        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs"), "// changed\n");
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Fares.Data/Booking.cs"), "// changed\n");
         string path;
 
         await using (var baseline = await h.Services.Git.BaselineCheckoutAsync(TeamHarness.RunId, CancellationToken.None))
         {
             path = baseline.Path;
             Assert.NotEqual(wt, path);
-            Assert.Equal("// quote\n", await File.ReadAllTextAsync(Path.Combine(path, "src/Pricing.Data/Quote.cs")));
+            Assert.Equal("// booking\n", await File.ReadAllTextAsync(Path.Combine(path, "src/Fares.Data/Booking.cs")));
         }
 
         Assert.False(Directory.Exists(path));
-        Assert.Equal("// changed\n", await File.ReadAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs")));
+        Assert.Equal("// changed\n", await File.ReadAllTextAsync(Path.Combine(wt, "src/Fares.Data/Booking.cs")));
     }
 
     [Fact]
@@ -30,21 +30,21 @@ public class GitWorkspaceTests
     {
         using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
         var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
-        var quote = Path.Combine(wt, "src/Pricing.Data/Quote.cs");
-        var added = Path.Combine(wt, "src/Pricing.Data/QuoteStatus.cs");
-        var test = Path.Combine(wt, "tests/Pricing.Data.Tests/new_test.sh");
-        await File.WriteAllTextAsync(quote, "// changed\n");
-        await File.WriteAllTextAsync(added, "enum QuoteStatus {}\n");
+        var booking = Path.Combine(wt, "src/Fares.Data/Booking.cs");
+        var added = Path.Combine(wt, "src/Fares.Data/BookingStatus.cs");
+        var test = Path.Combine(wt, "tests/Fares.Data.Tests/new_test.sh");
+        await File.WriteAllTextAsync(booking, "// changed\n");
+        await File.WriteAllTextAsync(added, "enum BookingStatus {}\n");
         await File.WriteAllTextAsync(test, "true\n");
 
-        await using (await h.Services.Git.StashImplAsync(wt, ["src/Pricing.Data/Quote.cs", "src/Pricing.Data/QuoteStatus.cs"], "run-test/team-x", CancellationToken.None))
+        await using (await h.Services.Git.StashImplAsync(wt, ["src/Fares.Data/Booking.cs", "src/Fares.Data/BookingStatus.cs"], "run-test/team-x", CancellationToken.None))
         {
-            Assert.Equal("// quote\n", await File.ReadAllTextAsync(quote));
+            Assert.Equal("// booking\n", await File.ReadAllTextAsync(booking));
             Assert.False(File.Exists(added));
             Assert.True(File.Exists(test)); // tests stay
         }
 
-        Assert.Equal("// changed\n", await File.ReadAllTextAsync(quote));
+        Assert.Equal("// changed\n", await File.ReadAllTextAsync(booking));
         Assert.True(File.Exists(added));
     }
 
@@ -53,10 +53,10 @@ public class GitWorkspaceTests
     {
         using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
         var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
-        var added = Path.Combine(wt, "src/Pricing.Data/QuoteStatus.cs");
-        await File.WriteAllTextAsync(added, "enum QuoteStatus {}\n");
+        var added = Path.Combine(wt, "src/Fares.Data/BookingStatus.cs");
+        await File.WriteAllTextAsync(added, "enum BookingStatus {}\n");
 
-        await h.Services.Git.StashImplAsync(wt, ["src/Pricing.Data/QuoteStatus.cs"], "run-test/team-x", CancellationToken.None); // never disposed
+        await h.Services.Git.StashImplAsync(wt, ["src/Fares.Data/BookingStatus.cs"], "run-test/team-x", CancellationToken.None); // never disposed
         Assert.False(File.Exists(added));
 
         Assert.True(await h.Services.Git.RestoreStashAsync(wt, "run-test/team-x", CancellationToken.None));
@@ -71,19 +71,19 @@ public class GitWorkspaceTests
     {
         using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
         var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
-        var generated = Path.Combine(wt, "tests/Pricing.Data.Tests/PModel/PGenerated");
-        var cache = Path.Combine(wt, "tests/Pricing.Data.Tests/bin");
+        var generated = Path.Combine(wt, "tests/Fares.Data.Tests/PModel/PGenerated");
+        var cache = Path.Combine(wt, "tests/Fares.Data.Tests/bin");
 
         await using (await h.Services.Git.LeaveAsFoundAsync(wt, CancellationToken.None))
         {
             Directory.CreateDirectory(Path.Combine(generated, "bin/Release"));
             await File.WriteAllTextAsync(Path.Combine(generated, "bin/Release/Gen.AssemblyInfo.cs"), "// ignored\n");
             Directory.CreateDirectory(cache);
-            await File.WriteAllTextAsync(Path.Combine(cache, "Pricing.Data.Tests.dll"), "cache\n");
+            await File.WriteAllTextAsync(Path.Combine(cache, "Fares.Data.Tests.dll"), "cache\n");
         }
 
-        Assert.False(Directory.Exists(Path.Combine(wt, "tests/Pricing.Data.Tests/PModel")));
-        Assert.True(File.Exists(Path.Combine(cache, "Pricing.Data.Tests.dll")));
+        Assert.False(Directory.Exists(Path.Combine(wt, "tests/Fares.Data.Tests/PModel")));
+        Assert.True(File.Exists(Path.Combine(cache, "Fares.Data.Tests.dll")));
     }
 
     [Fact]
@@ -94,12 +94,12 @@ public class GitWorkspaceTests
         var wt = await git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
         Assert.Empty(await git.TaskPathsAsync(wt, TeamHarness.RunId, CancellationToken.None));
 
-        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Pricing.Data.Tests/new_test.sh"), "true\n");
-        await git.CommitPathsAsync(wt, ["tests/Pricing.Data.Tests/new_test.sh"], "tests", CancellationToken.None);
-        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs"), "// changed\n");
+        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Fares.Data.Tests/new_test.sh"), "true\n");
+        await git.CommitPathsAsync(wt, ["tests/Fares.Data.Tests/new_test.sh"], "tests", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Fares.Data/Booking.cs"), "// changed\n");
 
         var paths = await git.TaskPathsAsync(wt, TeamHarness.RunId, CancellationToken.None);
-        Assert.Equal(["src/Pricing.Data/Quote.cs", "tests/Pricing.Data.Tests/new_test.sh"], paths.Order(StringComparer.Ordinal));
+        Assert.Equal(["src/Fares.Data/Booking.cs", "tests/Fares.Data.Tests/new_test.sh"], paths.Order(StringComparer.Ordinal));
     }
 
     /// live run 20261015-161547: the tests commit held obj/ (the new repo had no .gitignore), every
@@ -111,16 +111,16 @@ public class GitWorkspaceTests
         using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
         var git = h.Services.Git;
         var wt = await git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
-        var trackedObj = Path.Combine(wt, "tests/Pricing.Data.Tests/obj/project.assets.json");
+        var trackedObj = Path.Combine(wt, "tests/Fares.Data.Tests/obj/project.assets.json");
         Directory.CreateDirectory(Path.GetDirectoryName(trackedObj)!);
         await File.WriteAllTextAsync(trackedObj, "{}\n");
-        await h.GitIn(wt, "add", "-f", "tests/Pricing.Data.Tests/obj/project.assets.json");
+        await h.GitIn(wt, "add", "-f", "tests/Fares.Data.Tests/obj/project.assets.json");
         await h.GitIn(wt, "commit", "-q", "-m", "obj committed by mistake");
         var fingerprint = await git.WorkFingerprintAsync(wt, CancellationToken.None);
 
         await File.WriteAllTextAsync(trackedObj, "{\"changed\": true}\n");
-        Directory.CreateDirectory(Path.Combine(wt, "src/Pricing.Data/obj"));
-        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/obj/Quote.dll"), "new\n");
+        Directory.CreateDirectory(Path.Combine(wt, "src/Fares.Data/obj"));
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Fares.Data/obj/Booking.dll"), "new\n");
         Directory.CreateDirectory(Path.Combine(wt, "web/node_modules/x"));
         await File.WriteAllTextAsync(Path.Combine(wt, "web/node_modules/x/index.js"), "new\n");
 
@@ -128,11 +128,11 @@ public class GitWorkspaceTests
         Assert.Equal(fingerprint, await git.WorkFingerprintAsync(wt, CancellationToken.None));
         Assert.False(await git.CommitAllAsync(wt, "nothing to commit", CancellationToken.None));
 
-        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs"), "// changed\n");
-        Assert.Equal(["src/Pricing.Data/Quote.cs"], await git.ChangedPathsAsync(wt, CancellationToken.None));
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Fares.Data/Booking.cs"), "// changed\n");
+        Assert.Equal(["src/Fares.Data/Booking.cs"], await git.ChangedPathsAsync(wt, CancellationToken.None));
         Assert.True(await git.CommitAllAsync(wt, "work", CancellationToken.None));
         var committed = (await h.GitIn(wt, "show", "--name-only", "--format=", "HEAD")).Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(["src/Pricing.Data/Quote.cs"], committed);
+        Assert.Equal(["src/Fares.Data/Booking.cs"], committed);
     }
 
     [Fact]
@@ -141,19 +141,19 @@ public class GitWorkspaceTests
         using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
         var git = h.Services.Git;
         var wt = await git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
-        Directory.CreateDirectory(Path.Combine(wt, "tests/Pricing.Data.Tests/obj"));
-        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Pricing.Data.Tests/obj/a.cache"), "x\n");
-        await h.GitIn(wt, "add", "-f", "tests/Pricing.Data.Tests/obj/a.cache");
+        Directory.CreateDirectory(Path.Combine(wt, "tests/Fares.Data.Tests/obj"));
+        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Fares.Data.Tests/obj/a.cache"), "x\n");
+        await h.GitIn(wt, "add", "-f", "tests/Fares.Data.Tests/obj/a.cache");
         await h.GitIn(wt, "commit", "-q", "-m", "tests with obj");
-        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Pricing.Data.Tests/obj/a.cache"), "y\n");
-        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs"), "// changed\n");
+        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Fares.Data.Tests/obj/a.cache"), "y\n");
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Fares.Data/Booking.cs"), "// changed\n");
 
-        Assert.Equal(["src/Pricing.Data/Quote.cs"], await git.TaskPathsAsync(wt, TeamHarness.RunId, CancellationToken.None));
+        Assert.Equal(["src/Fares.Data/Booking.cs"], await git.TaskPathsAsync(wt, TeamHarness.RunId, CancellationToken.None));
         var diff = await git.TaskDiffAsync(wt, TeamHarness.RunId, CancellationToken.None);
-        Assert.Contains("Quote.cs", diff);
+        Assert.Contains("Booking.cs", diff);
         Assert.DoesNotContain("a.cache", diff);
         var tree = await git.SnapshotAsync(wt, CancellationToken.None);
-        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Pricing.Data.Tests/obj/a.cache"), "z\n");
+        await File.WriteAllTextAsync(Path.Combine(wt, "tests/Fares.Data.Tests/obj/a.cache"), "z\n");
         Assert.Equal("", await git.DiffSinceAsync(wt, tree, CancellationToken.None));
     }
 
@@ -195,7 +195,7 @@ public class GitWorkspaceTests
         var marker = Path.Combine(Path.GetTempPath(), $"hook-{Guid.NewGuid():N}");
         await h.GitIn(wt, "config", "core.hooksPath", ".hooks"); // a repository using tracked hooks, as husky does
         WriteHook(Path.Combine(wt, ".hooks/pre-commit"), marker);
-        await File.WriteAllTextAsync(Path.Combine(wt, "src/Pricing.Data/Quote.cs"), "// changed\n");
+        await File.WriteAllTextAsync(Path.Combine(wt, "src/Fares.Data/Booking.cs"), "// changed\n");
 
         Assert.True(await h.Services.Git.CommitAllAsync(wt, "work", CancellationToken.None));
         Assert.False(File.Exists(marker));

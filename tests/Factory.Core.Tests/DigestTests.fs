@@ -12,9 +12,9 @@ let private item id elements writes gates deps =
     | Ok i -> i
     | Error es -> failwithf "%A" es
 
-let a = item "W-A" [ "Pricing/Form" ] [ "src/A/**" ] [ "dotnet test" ] []
-let b = item "W-B" [ "Pricing/Form" ] [ "src/B/**" ] [ "dotnet test" ] []
-let c = item "W-C" [ "Pricing/Other" ] [ "src/C/**" ] [ "dotnet test" ] [ "W-A" ]
+let a = item "W-A" [ "Fares/Form" ] [ "src/A/**" ] [ "dotnet test" ] []
+let b = item "W-B" [ "Fares/Form" ] [ "src/B/**" ] [ "dotnet test" ] []
+let c = item "W-C" [ "Fares/Other" ] [ "src/C/**" ] [ "dotnet test" ] [ "W-A" ]
 let items = [ a; b; c ]
 let onMain (_: string) = Some true
 let compute facts = Digest.compute items facts onMain 3 0L
@@ -46,7 +46,7 @@ let tests: (string * (unit -> unit)) list =
           equal [ NotOnMain ] (d.Failed |> List.map (fun f -> f.Kind)) "not on main"
           equal 0 d.Done.Length "not done"
       "digest: an acceptance failure stands until the item passes a gate", fun () ->
-          let f = 2L, AcceptanceFailed("W-A", "AC-1", "Pricing/Form", "abcdef123")
+          let f = 2L, AcceptanceFailed("W-A", "AC-1", "Fares/Form", "abcdef123")
           equal [ AcceptanceFailure ] ((compute [ 1L, ItemPulled "W-A"; f ]).Failed |> List.map (fun x -> x.Kind)) "stands"
           equal 0 (compute [ 1L, ItemPulled "W-A"; f; 3L, ItemGate("W-A", "dotnet test", true, None, false) ]).Failed.Length "cleared"
           equal 1 (compute [ 1L, ItemPulled "W-A"; f; 3L, ItemGate("W-A", "dotnet test", true, None, true) ]).Failed.Length "a dirty pass does not clear it"

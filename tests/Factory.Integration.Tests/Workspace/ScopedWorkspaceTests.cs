@@ -132,7 +132,7 @@ public class ScopedWorkspaceTests : IDisposable
         public Task<ProcessResult> RunAsync(string command, string workdir, TimeSpan timeout, IReadOnlyDictionary<string, string> env, CancellationToken ct)
         {
             Commands.Add(command);
-            return Task.FromResult(new ProcessResult(0, "page: Quotes", TimeSpan.Zero, false));
+            return Task.FromResult(new ProcessResult(0, "page: Bookings", TimeSpan.Zero, false));
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
@@ -152,9 +152,9 @@ public class ScopedWorkspaceTests : IDisposable
         var sandbox = new RecordingSandbox();
         var ws = new ScopedWorkspace(_root, [], [], [], new TurnSignals(), sandbox);
 
-        Assert.StartsWith("exit 0", await ws.PlaywrightCli("open http://localhost:3000/quotes"));
+        Assert.StartsWith("exit 0", await ws.PlaywrightCli("open http://localhost:3000/bookings"));
         Assert.StartsWith("exit 0", await ws.PlaywrightCli("snapshot"));
-        Assert.Equal(["playwright-cli open http://localhost:3000/quotes", "playwright-cli snapshot"], sandbox.Commands);
+        Assert.Equal(["playwright-cli open http://localhost:3000/bookings", "playwright-cli snapshot"], sandbox.Commands);
 
         Assert.StartsWith("DENIED", await ws.PlaywrightCli("open https://prod.example.com"));
         Assert.StartsWith("DENIED", await ws.PlaywrightCli("install --skills"));
@@ -215,11 +215,11 @@ public class ScopedWorkspaceTests : IDisposable
 
         var answer = await submit.InvokeAsync(new()
         {
-            ["note"] = "change Quote.cs first",
-            ["context"] = System.Text.Json.JsonDocument.Parse("""[{"path":"src/A.cs","reason":"calls Quote"},{"path":"src/Missing.cs","reason":"x"}]""").RootElement.Clone(),
+            ["note"] = "change Booking.cs first",
+            ["context"] = System.Text.Json.JsonDocument.Parse("""[{"path":"src/A.cs","reason":"calls Booking"},{"path":"src/Missing.cs","reason":"x"}]""").RootElement.Clone(),
         });
 
-        Assert.Equal("change Quote.cs first", signals.ApproachNote);
+        Assert.Equal("change Booking.cs first", signals.ApproachNote);
         Assert.Equal(["src/A.cs"], signals.ContextSelection!.Entries.Select(e => e.Path));
         Assert.Contains("src/Missing.cs", answer?.ToString());
         Assert.Contains("does not exist", answer?.ToString());

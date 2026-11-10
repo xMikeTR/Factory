@@ -17,11 +17,11 @@ public class WorkRegistryReaderTests
         return root;
     }
 
-    private const string Requirement = "id: REQ-1\nelements:\n  - Pricing/Form\n";
+    private const string Requirement = "id: REQ-1\nelements:\n  - Fares/Form\n";
     private const string Work = """
         id: W-1
         requirement: REQ-1
-        elements: [Pricing/Form]
+        elements: [Fares/Form]
         writes: [src/Form/**]
         depends_on: []
         done_when:
@@ -46,7 +46,7 @@ public class WorkRegistryReaderTests
         {
             ["requirements/REQ-1.yaml"] = Requirement,
             ["work/W-1.yaml"] = Work.Replace("REQ-1", "REQ-9"),
-            ["work/W-2.yaml"] = Work.Replace("W-1", "W-2").Replace("depends_on: []", "depends_on: [W-7]").Replace("Pricing/Form]", "Pricing/Other]"),
+            ["work/W-2.yaml"] = Work.Replace("W-1", "W-2").Replace("depends_on: []", "depends_on: [W-7]").Replace("Fares/Form]", "Fares/Other]"),
         });
 
         var reg = await WorkRegistryReader.ReadAsync(root, CancellationToken.None);
@@ -54,7 +54,7 @@ public class WorkRegistryReaderTests
         Assert.Empty(reg.Items);
         Assert.Contains("W-1: requirement REQ-9 does not exist in requirements/.", reg.Problems);
         Assert.Contains("W-2: depends_on W-7 is not a work item.", reg.Problems);
-        Assert.Contains(reg.Problems, p => p.StartsWith("W-2: Pricing/Other is not an element of requirement REQ-1."));
+        Assert.Contains(reg.Problems, p => p.StartsWith("W-2: Fares/Other is not an element of requirement REQ-1."));
     }
 
     [Fact]
@@ -138,13 +138,13 @@ public class WorkRegistryReaderTests
             ["requirements/REQ-1.yaml"] = Requirement,
             ["work/W-1.yaml"] = Work,
             ["ledger/pipeline.jsonl"] =
-                """{"kind":"parity_result","scenario":"quote-list","commit":"abc1234","outcome":"pass","failures":[],"visual":{"ratio":0.5,"threshold":0.001,"outcome":"fail"},"ts":2,"by":"designc"}""" + "\n",
+                """{"kind":"parity_result","scenario":"booking-list","commit":"abc1234","outcome":"pass","failures":[],"visual":{"ratio":0.5,"threshold":0.001,"outcome":"fail"},"ts":2,"by":"designc"}""" + "\n",
         });
 
         var reg = await WorkRegistryReader.ReadAsync(root, CancellationToken.None);
 
         var row = Assert.IsType<Factory.Core.LedgerFact.ParityResult>(Assert.Single(reg.Facts).Fact);
-        Assert.Equal(("quote-list", "abc1234", Factory.Core.ParityOutcome.ParityPass), (row.scenario, row.commit, row.outcome));
+        Assert.Equal(("booking-list", "abc1234", Factory.Core.ParityOutcome.ParityPass), (row.scenario, row.commit, row.outcome));
     }
 
     [Fact]
@@ -154,20 +154,20 @@ public class WorkRegistryReaderTests
         {
             ["requirements/REQ-1.yaml"] = Requirement,
             ["work/W-1.yaml"] = Work.Replace("- gate: dotnet test", "- gate: dotnet test\n  - parity: all"),
-            ["parity/scenarios/quote-list.yaml"] = "id: quote-list\nsteps:\n  - goto: {path: /quotes}\n",
+            ["parity/scenarios/booking-list.yaml"] = "id: booking-list\nsteps:\n  - goto: {path: /bookings}\n",
             ["parity/scenarios/broken.yaml"] = "steps: []\n",
             ["ledger/pipeline.jsonl"] =
-                """{"kind":"parity_result","scenario":"quote-list","commit":"abc1234","outcome":"could_not_run","failures":[],"ts":2,"by":"factory-s2"}""" + "\n"
-                + """{"kind":"parity_result","scenario":"quote-list","commit":"abc1234","outcome":"maybe","ts":3,"by":"factory-s2"}""" + "\n",
+                """{"kind":"parity_result","scenario":"booking-list","commit":"abc1234","outcome":"could_not_run","failures":[],"ts":2,"by":"factory-s2"}""" + "\n"
+                + """{"kind":"parity_result","scenario":"booking-list","commit":"abc1234","outcome":"maybe","ts":3,"by":"factory-s2"}""" + "\n",
         });
 
         var reg = await WorkRegistryReader.ReadAsync(root, CancellationToken.None);
 
-        Assert.Equal(["quote-list"], reg.ParityScenarios);
+        Assert.Equal(["booking-list"], reg.ParityScenarios);
         Assert.Contains("parity/scenarios/broken.yaml: has no id; parity: all leaves it out.", reg.Problems);
         Assert.Contains(Factory.Core.Check.NewParity("all"), Assert.Single(reg.Items).DoneWhen.ToList);
         var row = Assert.IsType<Factory.Core.LedgerFact.ParityResult>(Assert.Single(reg.Facts).Fact); // an unknown outcome is not a fact
-        Assert.Equal(("quote-list", "abc1234", Factory.Core.ParityOutcome.ParityCouldNotRun), (row.scenario, row.commit, row.outcome));
+        Assert.Equal(("booking-list", "abc1234", Factory.Core.ParityOutcome.ParityCouldNotRun), (row.scenario, row.commit, row.outcome));
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public class WorkRegistryReaderTests
     public async Task A_frozen_item_is_pulled_until_a_stale_recheck_defers_it()
     {
         var frozen = """{"kind":"handover","handover":"h1","revision":"r1","item":"W-1","ts":1,"by":"mike"}""" + "\n";
-        var stale = """{"kind":"item_recheck","item":"W-1","handover":"h1","stale":true,"reasons":["Pricing moved"],"ts":2,"by":"mike"}""" + "\n";
+        var stale = """{"kind":"item_recheck","item":"W-1","handover":"h1","stale":true,"reasons":["Fares moved"],"ts":2,"by":"mike"}""" + "\n";
 
         var ready = await WorkDigestReport.PullPlanAsync(
             Registry(new() { ["requirements/REQ-1.yaml"] = Requirement, ["work/W-1.yaml"] = Work, ["ledger/designc.jsonl"] = frozen }),
@@ -205,7 +205,7 @@ public class WorkRegistryReaderTests
             Registry(new() { ["requirements/REQ-1.yaml"] = Requirement, ["work/W-1.yaml"] = Work, ["ledger/designc.jsonl"] = frozen + stale }),
             null, "main", 3, CancellationToken.None);
         Assert.Empty(deferred.Pull);
-        Assert.Contains("needs a re-check: Pricing moved", WorkDigestReport.RenderPullPlan(deferred));
+        Assert.Contains("needs a re-check: Fares moved", WorkDigestReport.RenderPullPlan(deferred));
     }
 
     [Fact]

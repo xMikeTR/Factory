@@ -15,15 +15,15 @@ namespace Factory.Integration.Tests.Telemetry;
 /// and model calls nest under it with their content off unless asked for.
 public class TelemetryContractTests
 {
-    private const string NewFile = "src/Pricing.Data/QuoteStatus.cs";
+    private const string NewFile = "src/Fares.Data/BookingStatus.cs";
     private const string Brief = "secret-brief-text-0042";
     private static readonly IReadOnlyDictionary<string, DecisionAnswer> NoAnswers = new Dictionary<string, DecisionAnswer>();
 
     private static ScriptedChatClient PassingScript() => new(
-        Say("Approach: add QuoteStatus.cs"),
+        Say("Approach: add BookingStatus.cs"),
         Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-        Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-        Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+        Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+        Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
 
     /// Hands back designc's example whatever role is asked for (the stub is the source, not the check).
     private sealed class ExampleBundle : Factory.Harness.Registry.IContextSource
@@ -43,7 +43,7 @@ public class TelemetryContractTests
         await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId)
             .RunAsync(TeamHarness.TeamOf(Plans.Task("T-001", Plans.Auto("file exists", $"test -f {NewFile}"))), NoAnswers, default);
 
-        Assert.StartsWith("sha256:1956c88a", (string?)Assert.Single(spans.Spans, s => s.OperationName == "task T-001").GetTagItem(FactoryTelemetry.Attr.BundleId));
+        Assert.StartsWith("sha256:4a57987a", (string?)Assert.Single(spans.Spans, s => s.OperationName == "task T-001").GetTagItem(FactoryTelemetry.Attr.BundleId));
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public class TelemetryContractTests
         Assert.Equal("S2", span.GetTagItem(FactoryTelemetry.Attr.System));
         Assert.Equal(TeamHarness.RunId, span.GetTagItem(FactoryTelemetry.Attr.RunId));
         Assert.Equal("T-001", span.GetTagItem(FactoryTelemetry.Attr.Task));
-        Assert.Equal(new[] { "Pricing Platform/Quotes DB" }, span.GetTagItem(FactoryTelemetry.Attr.Element));
+        Assert.Equal(new[] { "Fares Platform/Bookings DB" }, span.GetTagItem(FactoryTelemetry.Attr.Element));
         Assert.Equal(new[] { "D-0042" }, span.GetTagItem(FactoryTelemetry.Attr.Decision));
         Assert.Equal(1, span.GetTagItem(FactoryTelemetry.Attr.Attempt));
         Assert.Equal(new[] { FactoryTelemetry.Tag }, span.GetTagItem(FactoryTelemetry.Attr.LangfuseTags));
@@ -128,10 +128,10 @@ public class TelemetryContractTests
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
         model.Enqueue(
             SubmitPlan(Workflow.S2WorkflowTests.PlanFor(h.Handover)), Say("submitted"),
-            Say("Approach: add QuoteStatus.cs"),
+            Say("Approach: add BookingStatus.cs"),
             Call("declare_done", new { summary = "test already on main" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
 
         await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()), new Approve(), default);
 

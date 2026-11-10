@@ -11,5 +11,5 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.9" />
   </ItemGroup>
-  <ItemGroup><ProjectReference Include="..\..\src\Pricing.Data\Pricing.Data.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="..\..\src\Fares.Data\Fares.Data.csproj" /></ItemGroup>
 </Project>

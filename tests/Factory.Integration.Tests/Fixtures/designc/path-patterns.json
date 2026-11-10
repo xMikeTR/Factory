@@ -1,8 +1,8 @@
 {
   "about": "The meaning of a d.code path pattern. designc owns it (renderer/pathpattern.js, python/designc/pathpattern.py); a coding agent that reads d.code from a handover runs these cases against its own implementation. `value` is the normalised pattern; `valid: false` means it is rejected. `mayOverlap` is symmetric and over-approximates: two wild segments are assumed compatible. `matches` takes a concrete repo-relative file path; matching is ordinal and case-sensitive.",
   "create": [
-    { "input": "src/Pricing.Api/**", "value": "src/Pricing.Api/**" },
-    { "input": "./src\\Quotes/", "value": "src/Quotes" },
+    { "input": "src/Fares.Api/**", "value": "src/Fares.Api/**" },
+    { "input": "./src\\Bookings/", "value": "src/Bookings" },
     { "input": "  src/A/**  ", "value": "src/A/**" },
     { "input": "src//", "value": "src" },
     { "input": "**", "value": "**" },
@@ -22,8 +22,8 @@
     { "input": "   ", "valid": false }
   ],
   "mayOverlap": [
-    { "a": "src/Quotes.Data/**", "b": "src/Quotes.Data/Logging/**", "overlap": true },
-    { "a": "src/PricingApi/**", "b": "src/ReferralWorker/**", "overlap": false },
+    { "a": "src/Bookings.Data/**", "b": "src/Bookings.Data/Logging/**", "overlap": true },
+    { "a": "src/FaresApi/**", "b": "src/EscalationWorker/**", "overlap": false },
     { "a": "src/a.cs", "b": "src/*.cs", "overlap": true },
     { "a": "src/a.cs", "b": "src/b.cs", "overlap": false },
     { "a": "src/a.cs", "b": "src/a.cs", "overlap": true },

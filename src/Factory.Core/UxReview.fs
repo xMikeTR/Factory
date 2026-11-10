@@ -29,7 +29,7 @@ module UxReview =
             elif sb.Length > 0 && sb.[sb.Length - 1] <> '-' then sb.Append '-' |> ignore
         sb.ToString().Trim('-')
 
-    /// `quotes-quote-ui__ready__mobile.png` -> shot; None for any other name.
+    /// `bookings-booking-ui__ready__mobile.png` -> shot; None for any other name.
     let parseShot (path: string) : UxShot option =
         let file = IO.Path.GetFileNameWithoutExtension path
         match file.Split([| "__" |], StringSplitOptions.None) with

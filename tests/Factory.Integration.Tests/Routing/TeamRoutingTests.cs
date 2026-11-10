@@ -13,7 +13,7 @@ namespace Factory.Integration.Tests.Routing;
 
 public class TeamRoutingTests
 {
-    private const string NewFile = "src/Pricing.Data/QuoteStatus.cs";
+    private const string NewFile = "src/Fares.Data/BookingStatus.cs";
     private static readonly IReadOnlyDictionary<string, DecisionAnswer> NoAnswers = new Dictionary<string, DecisionAnswer>();
     private static PlannedTask T001() => Plans.Task("T-001", Plans.Auto("file exists", $"test -f {NewFile}"));
 
@@ -56,10 +56,10 @@ public class TeamRoutingTests
     }
 
     private static ScriptedChatClient Model() => new(
-        Call("list_files", new { directory = "src/Pricing.Data" }), Say("Approach: add QuoteStatus.cs"),
+        Call("list_files", new { directory = "src/Fares.Data" }), Say("Approach: add BookingStatus.cs"),
         Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-        Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-        Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+        Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+        Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
 
     private static RoutingSetup Setup(string catalogYaml, ScriptedChatClient model) =>
         new(CatalogFile.Parse(catalogYaml).Models, RoutingPolicyFile.Load(Path.Combine(Path.GetTempPath(), "none")), _ => model);

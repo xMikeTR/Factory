@@ -342,7 +342,7 @@ let tests: (string * (unit -> unit)) list =
           equal High (Router.taskSpec specConfig { h with RequirementRisk = Some High } t Role.Implementer 0 Set.empty).Risk "requirement high"
           equal DataClass.Internal (Router.taskSpec { specConfig with DataClass = DataClass.Internal } specHandover t Role.Implementer 0 Set.empty).DataClass "config when absent"
       "router: parseHandover reads requirementRisk (critical is high) and ignores unknown values", fun () ->
-          let json = System.IO.File.ReadAllText(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "examples", "pricing-v3", "handover.json"))
+          let json = System.IO.File.ReadAllText(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "examples", "fares-v3", "handover.json"))
           let withKeys r d = json.Replace(",\n  \"requirementRisk\": \"high\",\n  \"requirementDataClass\": \"internal\"", "").TrimEnd().TrimEnd('}') + sprintf ",\"requirementRisk\":\"%s\",\"requirementDataClass\":\"%s\"}" r d
           let get j = match Json.parseHandover j with Ok h -> h | Error es -> failwithf "%A" es
           equal (Some High) (get (withKeys "critical" "regulated")).RequirementRisk "critical"

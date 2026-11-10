@@ -14,7 +14,7 @@ namespace Factory.Integration.Tests.Teams;
 public class ReviewLoopTests
 {
     private static readonly IReadOnlyDictionary<string, DecisionAnswer> NoAnswers = new Dictionary<string, DecisionAnswer>();
-    private const string NewFile = "src/Pricing.Data/QuoteStatus.cs";
+    private const string NewFile = "src/Fares.Data/BookingStatus.cs";
 
     private static PlannedTask T001() => Plans.Task("T-001", Plans.Auto("file exists", $"test -f {NewFile}"));
     private static Finding Found(FindingCategory c, string message, int line = 1) => new(c, NewFile, line, message);
@@ -22,10 +22,10 @@ public class ReviewLoopTests
     /// plan, test author (verify block needs no new test), then `implementations` implementer turns.
     private static ScriptedChatClient Model(int implementations)
     {
-        var script = new List<ChatResponse> { Say("Approach: add QuoteStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done") };
+        var script = new List<ChatResponse> { Say("Approach: add BookingStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done") };
         for (var i = 0; i < implementations; i++)
         {
-            script.Add(Call("write_file", new { path = NewFile, content = $"public enum QuoteStatus {{ Draft{i} }}\n" }));
+            script.Add(Call("write_file", new { path = NewFile, content = $"public enum BookingStatus {{ Draft{i} }}\n" }));
             script.Add(Call("declare_done", new { summary = $"added {i}" }));
             script.Add(Say("done"));
         }
