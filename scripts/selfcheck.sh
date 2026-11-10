@@ -44,10 +44,13 @@ command -v python3 >/dev/null || { echo "selfcheck: python3 is needed to write t
 # SELFCHECK_CMD_<NAME> (name upper-cased, - as _) replaces a command. It exists so tests/selfcheck can drive the
 # script without a real build; nothing else sets it.
 stages=(
-  "build|dotnet build Factory.sln -warnaserror|900"
-  "tests-core|dotnet run --project tests/Factory.Core.Tests|900"
-  "tests-integration|dotnet test tests/Factory.Integration.Tests|1800"
+  "build|dotnet build Factory.sln -warnaserror{NR}|900"
+  "tests-core|dotnet run --project tests/Factory.Core.Tests{NR}|900"
+  "tests-integration|dotnet test tests/Factory.Integration.Tests{NR}|1800"
 )
+# In the container the restore already ran, and the stages have no network: a second implicit restore would only
+# try (and fail) to reach nuget.org, e.g. for the vulnerability audit (NU1900, an error under -warnaserror).
+NR=""; [ "$local_run" = 0 ] && NR=" --no-restore"
 if [ -n "$only" ]; then
   keep=()
   for s in "${stages[@]}"; do [ "${s%%|*}" = "$only" ] && keep+=("$s"); done
@@ -124,7 +127,7 @@ if [ "$local_run" = 0 ] && [ -n "$restore_cmd" ]; then
 fi
 
 for s in "${stages[@]}"; do
-  IFS='|' read -r name cmd secs <<<"$s"
+  IFS='|' read -r name cmd secs <<<"${s//\{NR\}/$NR}"
   var="SELFCHECK_CMD_$(echo "$name" | tr 'a-z-' 'A-Z_')"; [ -n "${!var:-}" ] && cmd="${!var}"
   out="$work/$name.out"
   if [ "$restore_failed" = 1 ]; then
