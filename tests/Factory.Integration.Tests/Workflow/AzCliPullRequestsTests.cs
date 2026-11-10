@@ -1,3 +1,4 @@
+using Factory.Integration.Tests.Support;
 using Factory.S2;
 using Xunit;
 
@@ -25,7 +26,7 @@ public class AzCliPullRequestsTests : IDisposable
               *"pr create"*) echo '{{Url}}' ;;
             esac
             """.Replace("\r", ""));
-        File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        Scripts.MakeExecutable(script);
         WarmUp(script);
         return new AzCliPullRequests(_dir, script);
     }
