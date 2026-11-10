@@ -1,6 +1,6 @@
 # factory-s2: coding pipeline
 
-System 2 of the design-to-code factory. It takes a **frozen handover** from System 1 (Designc) and turns it into merged code. Every step it takes is recorded in a ledger, so System 4 can learn from it.
+System 2 of the design-to-code factory. It takes a **frozen handover** from System 1 (Designc) and turns it into merged code. Every step it takes is recorded in a ledger, so System 3 can learn from it.
 
 The rule behind every feature: **agents propose, deterministic code and humans decide.** Only two places call a model: the planner, and the turn loop inside each team. Plan validation, dispatch, task state, merge rules and gates are plain code, and the parts that must be correct are written in F#.
 
@@ -326,7 +326,7 @@ Tests: Core 327/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration
 |---|---|---|
 | Rules: paths, plan validation, dispatch, task state, merge tiers, regeneration | `Factory.Core` (F#) | Built, tested |
 | MAF workflow, teams, sandbox, verify, quality gates (mutation, coverage, fitness, UI guard) | `Factory.S2`, `Factory.Harness`, `Factory.Quality.*` | Built, tested; run live on real models |
-| Work intake: work items, WIP/dependency/conflict/budget scheduler, digest, S4 metrics | `Core/Work.fs`, `Scheduler.fs`, `Board.fs`, `Digest.fs`, `Metrics.fs` | Built; a person still pulls (`item_pulled` is human-only). The digest lists `item_budget` rows under Waiting, as designc does |
+| Work intake: work items, WIP/dependency/conflict/budget scheduler, digest, S3 metrics | `Core/Work.fs`, `Scheduler.fs`, `Board.fs`, `Digest.fs`, `Metrics.fs` | Built; a person still pulls (`item_pulled` is human-only). The digest lists `item_budget` rows under Waiting, as designc does |
 | Per-run registry streams and single-writer fold | `Harness/Registry/RunLedgerStream`, `LedgerFold` | Built |
 | UI acceptance: frozen spec hash check, Playwright run, `ui_acceptance_failed`, repair runs, bug intake, token lint | `Core/UiAcceptance.fs`, `VerifyRunner`, `S2/Repair.cs`, `BugIntake` | Built |
 | Item budget: measure, report, and refuse a new run when exceeded | `Core/ItemBudget.fs`, `ItemBudgetReport` | Built |
@@ -370,7 +370,7 @@ src/Factory.S2/          C#: the MAF workflow
   Integrations.cs        GitHub (gh CLI) / Azure DevOps (az CLI) / dry-run PRs; console human channel
 prompts/                 planner, task-planner and executor system prompts (reviewed like code)
 schemas/                 plan and handover JSON Schemas
-sql/ledger.sql           Postgres ledger + System 4 starter views
+sql/ledger.sql           Postgres ledger + System 3 starter views
 examples/fares-v3/     Booking lost-update handover and a valid plan
 ```
 
@@ -395,7 +395,7 @@ examples/fares-v3/     Booking lost-update handover and a valid plan
   - designc answers with `payload.option` (the chosen id) and/or `payload.note` on
     `needs_decision_resolved`. An id that was never offered answers nothing: the run stays parked
     and the ledger records `resolution_rejected`.
-- **Ledger kinds** (`LedgerKinds`) and the `task` event payload (`Json.encodeTaskEvent`). System 4
+- **Ledger kinds** (`LedgerKinds`) and the `task` event payload (`Json.encodeTaskEvent`). System 3
   queries depend on these.
 
 ## Design decisions

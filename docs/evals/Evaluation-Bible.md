@@ -12,7 +12,7 @@ Three principles carry over from the factory itself:
 
 - **Design is the source of truth.** Eval tasks come from frozen handover packages and bound decisions, so they regenerate when the design changes.
 - **Probabilistic proposes, deterministic decides.** Prefer a code grader; reach for an LLM judge only for what code cannot check.
-- **Nothing is done without a check.** Every check emits a ledger event, so System 4 can learn from it.
+- **Nothing is done without a check.** Every check emits a ledger event, so System 3 can learn from it.
 
 To extend it: add a section only when a real eval run taught you something. Log the change in the changelog at the end, with the date and the failure that prompted it.
 
@@ -35,9 +35,9 @@ Use these words and only these. Most of the confusion between sources is the sam
 | Gate | A threshold that blocks progress | `ReadyGate`, `PlanValidator`, merge tiers |
 | Gradient | A score tracked over time that guides change but blocks nothing | CRAP score, mutation score, tokens per passing task |
 | Failure mode | A named, recurring way the system fails, found by reading traces | A row in the failure taxonomy (playbook section) |
-| Escape | A problem caught later than the stage that should have caught it | The S4 escape classification |
+| Escape | A problem caught later than the stage that should have caught it | The S3 escape classification |
 
-The last two are the bridge between Hamel and your factory: error analysis finds failure modes; System 4 classifies escapes. Same activity, two scales.
+The last two are the bridge between Hamel and your factory: error analysis finds failure modes; System 3 classifies escapes. Same activity, two scales.
 
 ## The one loop
 
@@ -49,7 +49,7 @@ The look step is highlighted because it is the one most often skipped. Hamel's L
 
 ## Where evals live in the factory
 
-Evals wrap System 2 from the outside: the eval harness reads tasks from the registry, drives S2 trials, and writes results to the ledger that System 4 reads. Nothing new is invented; it reuses the registry lifecycle, the ledger and the escape table from the factory plan.
+Evals wrap System 2 from the outside: the eval harness reads tasks from the registry, drives S2 trials, and writes results to the ledger that System 3 reads. Nothing new is invented; it reuses the registry lifecycle, the ledger and the escape table from the factory plan.
 
 &#91;embedded content: evals in the design-to-code factory · 7 parts\]
 
@@ -57,7 +57,7 @@ Evals wrap System 2 from the outside: the eval harness reads tasks from the regi
 | --- | --- | --- |
 | System 1 | Does grill-me ask the question that resolves each open finding? Does ReadyGate reject incomplete packages? | Question-quality judge; F# tests per gate clause |
 | System 2 | Does the merged code satisfy the package and every bound decision, within cost? | Build, tests, decision checks, scope, then judges |
-| System 4 | No suite of its own. Each proposal carries a task that fails on the old version and passes on the new. | The proposal's own check |
+| System 3 | No suite of its own. Each proposal carries a task that fails on the old version and passes on the new. | The proposal's own check |
 
 Start with System 2. It has the most deterministic graders and the existing 11 tasks to learn from.
 
@@ -80,13 +80,13 @@ Pick the cheapest grader that can see the failure: code first, an LLM judge only
 | Quality rubric | Root cause fixed, no test gaming, codebase fit, no over-engineering | LLM judge | Gradient | Rubric playbook |
 | Plan quality | Planner's tasks are well-scoped with verify blocks | LLM judge plus `PlanValidator` | Gate (validator), gradient (judge) | S2 planner |
 | Question quality | Grill-me asks the question that resolves the open finding | LLM judge | Gradient | S1 grill-me |
-| Human review | Labels a sample to calibrate judges | Human | Neither; calibration only | Weekly S4 review |
+| Human review | Labels a sample to calibrate judges | Human | Neither; calibration only | Weekly S3 review |
 
 Two rules for promotion. A gradient becomes a gate only after its threshold has been stable for several weeks, the gate-vs-gradient framing you already use. An LLM judge never becomes a gate on its own; pair it with a code check or a human.
 
 ## Task and suite format
 
-Every task is one YAML file in the registry, reviewed by PR like a decision. It follows the same lifecycle (minted, checked, bound), so System 4 can propose tasks and only a human can bind them.
+Every task is one YAML file in the registry, reviewed by PR like a decision. It follows the same lifecycle (minted, checked, bound), so System 3 can propose tasks and only a human can bind them.
 
 ```
 registry/
@@ -157,7 +157,7 @@ Keep the result in `factory/taxonomy.yaml`:
   graders: [scope]
 ```
 
-The classification in step 5 is the same as System 4's escape table: a spec gap is an S1 escape, a runtime failure is an S2 escape. Run error analysis by hand inside the weekly S4 review until the patterns are stable; that is Phase A of System 4.
+The classification in step 5 is the same as System 3's escape table: a spec gap is an S1 escape, a runtime failure is an S2 escape. Run error analysis by hand inside the weekly S3 review until the patterns are stable; that is Phase A of System 3.
 
 ## Playbook: LLM judges
 
@@ -254,7 +254,7 @@ Start with the bold rows; add others only when a decision depends on them.
 | --- | --- | --- | --- |
 | **First-pass rate** | Tasks passing `VerifyRunner` on the first attempt ÷ tasks started | S2 quality trend | Ledger `task`, `gate` |
 | **Tokens per passing task** | All tokens in a handover ÷ tasks that passed | Headline efficiency | Langfuse usage, ledger |
-| **Escape rate per stage** | Problems caught later than the stage that should have caught them, by stage | System 4's headline | Ledger `escape` |
+| **Escape rate per stage** | Problems caught later than the stage that should have caught them, by stage | System 3's headline | Ledger `escape` |
 | **Stall rate** | Tasks escalated because they stalled ÷ tasks | Where agents get stuck; entry to behavioural evals | Ledger `task_event` Abandon whose reason starts "not making progress" (a stall fails the task; it is not a `needs_decision`) |
 | **Spend per user** | £ per user per month against the £750 budget | Budget and alerts | APIM v2 |
 | Reruns per task | Verify failures before pass | Main cost lever | Ledger `task.reruns` |
@@ -281,7 +281,7 @@ Three views, each built for one decision:
 
 - **Run view** (Langfuse trace): why did this run fail? Opened from a ledger row.
 - **Factory health** (daily, ledger queries): first-pass rate, tokens per passing task, stall rate, spend per user, each against last week.
-- **Improvement review** (weekly, System 4): escape rate per stage and the top failure modes, which feed the error-analysis playbook.
+- **Improvement review** (weekly, System 3): escape rate per stage and the top failure modes, which feed the error-analysis playbook.
 
 Alert on few things, all actionable: a user above 80% of budget; stall rate double its 4-week average; a spike in ACS denials for one rule; the regression suite's pass^3 dropping after a merge to the factory.
 
@@ -289,7 +289,7 @@ Alert on few things, all actionable: a user above 80% of budget; stall rate doub
 
 Run the code graders on every production run, since they are cheap. Run LLM judges on a sample of about 10% of runs. Send runs where graders disagree, or a judge returns UNKNOWN, to an annotation queue; they are the first traces you read in the next error-analysis pass.
 
-One rule from System 4 applies here too: track escapes, never raw finding counts. A metric with no decision behind it is a panel nobody opens; delete it.
+One rule from System 3 applies here too: track escapes, never raw finding counts. A metric with no decision behind it is a panel nobody opens; delete it.
 
 ### Anatomy of one run's trace
 
@@ -314,7 +314,7 @@ Three conventions make the rest easy:
 
 - Tag each trial's trace with `task_id`, `suite_run_id` and `harness_version`, so a filter gives you one run.
 - Name scores `grader.<name>` with values 1 (pass), 0 (fail) or null (unknown).
-- Write every grader result to the ledger first and Langfuse second. The ledger is what System 4 reads.
+- Write every grader result to the ledger first and Langfuse second. The ledger is what System 3 reads.
 
 ## Worked example: Booking lost-update (D-0042)
 
@@ -328,9 +328,9 @@ The same slice the factory plan uses, taken once through the whole loop. The tra
    - FM-05 recurs and code cannot see it. Write the test-gaming judge, then calibrate it on 40 labelled trials.
 4. **Test.** Bind S2-0001 to S2-0003 in `s2-regression`, each with build, tests, the D-0042 check, scope, and the judge where relevant.
 5. **Measure.** Change one thing, e.g. the executor prompt. Rerun the suite with the same trials and compare pass^3 and tokens per passing task against the previous `harness_version`.
-6. **Feed System 4.** Each failure mode becomes a ledger `escape` event classified by stage. The next weekly review starts from those counts.
+6. **Feed System 3.** Each failure mode becomes a ledger `escape` event classified by stage. The next weekly review starts from those counts.
 
-What proves the loop works: a new task fails on the old prompt and passes on the new one. That is the same proof the factory plan asks of every System 4 proposal.
+What proves the loop works: a new task fails on the old prompt and passes on the new one. That is the same proof the factory plan asks of every System 3 proposal.
 
 ## Starter plan: first two weeks
 
