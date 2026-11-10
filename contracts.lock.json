@@ -1,0 +1,25 @@
+{
+  "designc_commit": "aa03fd0929ea5661b416f5d888d857cf35939995",
+  "files": [
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/ledger_schema.json",
+      "source": "python/designc/ledger_schema.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/path-patterns.json",
+      "source": "docs/path-patterns.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/context-bundle.example.json",
+      "source": "docs/context-bundle.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-elements.json",
+      "source": "docs/handover-elements.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-elements-2.json",
+      "source": "docs/handover-elements-2.example.json"
+    }
+  ]
+}
