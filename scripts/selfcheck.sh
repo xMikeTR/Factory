@@ -83,7 +83,7 @@ build_failed=0; any_fail=0; restore_failed=0
 
 # Same limits, user and mounts as the factory's own sandbox (DockerSandbox.LimitArgs / BaseEnv).
 user="$(id -u):$(id -g)"
-cargs=(--cap-drop ALL --security-opt no-new-privileges --user "$user" --tmpfs /tmp:exec,mode=1777
+cargs=(--init --cap-drop ALL --security-opt no-new-privileges --user "$user" --tmpfs /tmp:exec,mode=1777
        -v "$tree:$tree" -v "$nuget_cache:/nuget" -w "$tree"
        -e HOME=/tmp/home -e DOTNET_CLI_HOME=/tmp/home -e NUGET_PACKAGES=/nuget -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1)
 if [ "$local_run" = 0 ]; then
