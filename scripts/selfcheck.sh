@@ -13,21 +13,39 @@
 #   scripts/selfcheck.sh --commit <sha>  check another commit
 #   scripts/selfcheck.sh --stage <name>  one stage (build | tests-core | tests-integration)
 #   scripts/selfcheck.sh --local         on the host, no container
+#   scripts/selfcheck.sh --status [sha]  the last recorded result for a commit (default HEAD)
 #
+# Each run is appended as a git note under refs/notes/selfcheck (compact JSON, one line per run).
 # Environment: FACTORY_CONTAINER_ENGINE (podman by default), FACTORY_RUNNER_IMAGE (factory-s2-runner:latest).
-# Exit codes: 0 pass, 1 a check failed, 2 could not run (no engine, no image, restore failed, bad arguments).
+# Exit codes: 0 pass, 1 a check failed, 2 could not run (no engine, no image, restore failed, bad arguments),
+# 3 no record (--status only). --status exits 0 only for a full, container, passing record; a --stage or --local
+# pass is printed but exits 1, because it never counts as a pass.
 set -u
 
-commit=HEAD; only=""; local_run=0
+commit=HEAD; only=""; local_run=0; status=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --local)  local_run=1 ;;
     --commit) commit="${2:-}"; shift ;;
     --stage)  only="${2:-}"; shift ;;
+    --status) status=1; if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then commit="$2"; shift; fi ;;
     *) echo "selfcheck: unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
 done
+
+if [ "$status" = 1 ]; then
+  srepo=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "selfcheck: not inside a git repository" >&2; exit 2; }
+  ssha=$(git -C "$srepo" rev-parse --verify --quiet "$commit^{commit}") || { echo "selfcheck: no such commit: $commit" >&2; exit 2; }
+  note=$(git -C "$srepo" notes --ref=selfcheck show "$ssha" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 1)
+  [ -n "$note" ] || { echo "selfcheck: no record for ${ssha:0:12}" >&2; exit 3; }
+  python3 - "$note" <<'PY'
+import json, sys
+r = json.loads(sys.argv[1]); print(json.dumps(r, indent=2))
+sys.exit(0 if r.get("outcome") == "pass" and not r.get("partial") and r.get("env") == "container" else 1)
+PY
+  exit $?
+fi
 engine="${FACTORY_CONTAINER_ENGINE:-podman}"; image="${FACTORY_RUNNER_IMAGE:-factory-s2-runner:latest}"
 image_id=""
 if [ "$local_run" = 0 ]; then
@@ -148,18 +166,29 @@ for s in "${stages[@]}"; do
   record "$name" "$outcome" "$ms" "$out"
 done
 
+# checks_hash ties a result to the version of the checks: sha256 over the script and scripts/selfcheck/**, as committed.
+checks_hash=$(cd "$tree" && { sha256sum scripts/selfcheck.sh; [ -d scripts/selfcheck ] && find scripts/selfcheck -type f | LC_ALL=C sort | xargs -r sha256sum; } | sha256sum | cut -d' ' -f1)
+by=$(git -C "$repo" config user.name 2>/dev/null || true)
+
 # --stage runs are for iteration and never count as a pass (the record, and the gate in a later slice, say so).
-python3 - "$records" "$sha" "$any_fail" "${only:-}" "$restore_failed" "$local_run" "$image_id" <<'PY'
+python3 - "$records" "$sha" "$any_fail" "${only:-}" "$restore_failed" "$local_run" "$image_id" "$checks_hash" "$by" "$work/record.json" <<'PY'
 import json, sys, datetime
-records, sha, any_fail, only, restore_failed, local_run, image_id = sys.argv[1:8]
+records, sha, any_fail, only, restore_failed, local_run, image_id, checks_hash, by, outpath = sys.argv[1:11]
 stages = [json.loads(l) for l in open(records)]
-print(json.dumps({
+rec = ({
     "schema": "selfcheck/1", "commit": sha,
     "outcome": "could_not_run" if restore_failed == "1" else "fail" if any_fail == "1" else "pass",
     "env": "local" if local_run == "1" else "container", "image": image_id or None, "partial": bool(only),
-    "stages": stages,
+    "checks_hash": checks_hash,
+    "stages": stages, "warnings": [],
     "at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-}, indent=2))
+    "by": by or None,
+})
+print(json.dumps(rec, indent=2))
+open(outpath, "w").write(json.dumps(rec))
 PY
+# Append to the note (a later run on the same commit adds a line; --status reads the last). A failure to write is a warning, not a verdict.
+git -C "$repo" notes --ref=selfcheck append -F "$work/record.json" "$sha" >/dev/null 2>&1 \
+  || echo "selfcheck: could not write the git note (is user.name/user.email set?); the record above was not stored" >&2
 [ "$restore_failed" = 1 ] && exit 2
 [ "$any_fail" = 0 ] && exit 0; exit 1
