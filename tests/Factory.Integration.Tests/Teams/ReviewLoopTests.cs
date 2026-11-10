@@ -97,7 +97,7 @@ public class ReviewLoopTests
         Assert.Equal(2, h.Reviewer.Requests.Count);
         Assert.Equal(["malformed"], h.Rows(LedgerKinds.Review).Select(e => e.Outcome));
 
-        var accept = new Dictionary<string, DecisionAnswer> { ["T-001"] = new("T-001", "A", "reviewed by hand") };
+        var accept = new Dictionary<string, DecisionAnswer> { ["T-001"] = new("T-001", null, "reviewed by hand", "A") };
         Assert.Equal(TeamStatus.Passed, (await RunAsync(h, accept)).Status);
         Assert.Equal(2, h.Reviewer.Requests.Count); // a designer's decision, not another review
     }
@@ -115,7 +115,7 @@ public class ReviewLoopTests
         Assert.Equal(["A", "B", "C"], parked.Blocked.Options.Select(o => o.Id));
         Assert.Equal(3, h.Reviewer.Requests.Count);
 
-        var reject = new Dictionary<string, DecisionAnswer> { ["T-001"] = new("T-001", "B", "not what we meant") };
+        var reject = new Dictionary<string, DecisionAnswer> { ["T-001"] = new("T-001", null, "not what we meant", "B") };
         var result = await RunAsync(h, reject);
 
         Assert.Equal(TeamStatus.Failed, result.Status);

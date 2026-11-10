@@ -647,6 +647,37 @@ public class S2WorkflowTests
         Assert.Single(pipeline, l => l.Contains("\"task\":\"T-001\"") && l.Contains("\"status\":\"passed\""));
     }
 
+    [Theory]
+    [InlineData("A", true)]  // accept the findings: the task passes
+    [InlineData("B", false)] // reject: the task does not
+    public async Task A_parked_review_is_resolved_by_the_option_the_designer_chose_through_the_registry(string option, bool taskPasses)
+    {
+        var model = new ScriptedChatClient();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        var registry = h.Services.Settings.RegistryPath;
+        Directory.CreateDirectory(registry);
+        h.Reviewer.ThenMalformed("the reviewer never called submit_review").ThenMalformed("still no submit_review");
+        model.Enqueue(
+            SubmitPlan(PlanFor(h.Handover)), Say("submitted"),
+            Say("Approach: add QuoteStatus.cs"),
+            Call("declare_done", new { summary = "test already on main" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+        var handover = h.WriteHandoverJson();
+
+        var parked = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
+        Assert.Equal("parked: ND-0001", RunReport.Line(parked!));
+
+        // The row carries the chosen letter in payload.option, as designc writes it; the decision field is not set.
+        await File.WriteAllTextAsync(Path.Combine(registry, "ledger", "designc.jsonl"),
+            $$$"""{"kind":"needs_decision_resolved","id":"ND-0001","by":"designer","schema_version":1,"event_id":"e-1","ts":1791500000000,"payload":{"option":"{{{option}}}","note":"by the designer"}}""" + "\n");
+        await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, handover), new ApprovingHuman(), default);
+
+        var payloads = h.Rows(LedgerKinds.TaskEvent).Where(e => e.TaskId == "T-001").Select(e => e.Payload!);
+        Assert.Equal(taskPasses, Core.Replay(new Limits(8, 3), payloads).IsPassed);
+        Assert.Equal(2, h.Reviewer.Requests.Count); // the designer's answer decided it; no third review
+    }
+
     [Fact]
     public async Task Resume_after_a_kill_mid_turn_reaches_the_same_state_without_duplicates()
     {

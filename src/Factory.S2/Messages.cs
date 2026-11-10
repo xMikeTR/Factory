@@ -46,7 +46,9 @@ public sealed record BlockedTask(string TeamId, string TaskId, string Question, 
 public sealed record OfferedOption(string Id, string Summary, string Consequence);
 
 /// One answer per blocked task: a newly bound decision id, or null to abandon the task.
-public sealed record DecisionAnswer(string TaskId, string? DecisionId, string? Note);
+/// A designer's answer. `DecisionId` is the decision to bind (agent-raised questions); `OptionId` is the letter they chose,
+/// which is all a parked review or UI removal reads.
+public sealed record DecisionAnswer(string TaskId, string? DecisionId, string? Note, string? OptionId = null);
 
 /// Merge executor -> "merge-approval" port, for tiers that need a human.
 public sealed record MergeApprovalRequest(string RunId, string PullRequestUrl, string Tier, string[] Reasons);
