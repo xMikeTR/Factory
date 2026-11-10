@@ -404,8 +404,18 @@ public sealed class GitWorkspace(string repoPath, string stateDir, string? repoN
         var text = info.Exists && info.LinkTarget is null ? await File.ReadAllTextAsync(link, ct) : "";
         var worktrees = Path.Combine(await GitCommonDirAsync(ct), "worktrees") + Path.DirectorySeparatorChar;
         if (!text.StartsWith("gitdir: ", StringComparison.Ordinal)
-            || !Path.GetFullPath(text["gitdir: ".Length..].Trim(), full).StartsWith(worktrees, StringComparison.Ordinal))
-            throw new InvalidOperationException($"{link} no longer links into {worktrees}: refusing to run git there");
+            || !Path.GetFullPath(text["gitdir: ".Length..].Trim(), full).StartsWith(worktrees, StringComparison.Ordinal)
+            || !LinksBack(Path.GetFullPath(text["gitdir: ".Length..].Trim(), full), link))
+            throw new InvalidOperationException($"{link} no longer links into its own entry under {worktrees}: refusing to run git there");
+    }
+
+    /// Being inside the worktrees folder is not enough: a link repointed at another team's entry would pass. An entry
+    /// names the worktree it belongs to in its `gitdir` file (outside every sandbox), so the link must be this worktree's own.
+    private static bool LinksBack(string entry, string link)
+    {
+        var back = Path.Combine(entry, "gitdir");
+        if (!File.Exists(back)) return false;
+        return string.Equals(Path.GetFullPath(File.ReadAllText(back).Trim()), Path.GetFullPath(link), StringComparison.Ordinal); // as git wrote it, like the prefix check above
     }
 
     private string? _gitCommonDir;
