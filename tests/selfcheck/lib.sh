@@ -23,3 +23,10 @@ json() { python3 -c "import json,sys; d=json.load(open('$1')); print($2)"; }
 
 # No selfcheck worktree may outlive a run (AC-7 in the spec, cheap to hold from slice 1).
 no_leftovers() { [ -z "$(git -C "$1" worktree list | grep -v "^$1 ")" ] || fail "a worktree was left behind in $1"; }
+
+# Container tests need the engine and the runner image; without them they report SKIP (exit 0), never a false pass.
+ENGINE="${FACTORY_CONTAINER_ENGINE:-podman}"; IMAGE="${FACTORY_RUNNER_IMAGE:-factory-s2-runner:latest}"
+need_container() {
+  command -v "$ENGINE" >/dev/null && "$ENGINE" image inspect "$IMAGE" >/dev/null 2>&1 || { echo "SKIP $1: no '$ENGINE' or no image $IMAGE"; exit 0; }
+}
+no_containers() { [ -z "$("$ENGINE" ps -aq --filter name=selfcheck-)" ] || fail "a selfcheck container was left behind"; }
