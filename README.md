@@ -418,6 +418,7 @@ examples/fares-v3/     Booking lost-update handover and a valid plan
   - the workspace tools refuse writes outside the task's paths;
   - a git check after every turn reverts out-of-scope changes and logs a `scope_violation`;
   - a changed file outside the declared writes, or under a protected path, blocks the merge in every mode.
+  - a worktree's `.git` link must point at its own entry under the repo's `worktrees/` folder, and that entry must link back; a task that repoints it fails the scope check instead of reaching another checkout.
 - **Self-seeded verify steps get `FACTORY_VERIFY_NS`,** so seeded data never collides between
   runs or attempts.
 - **The only change to the task-state DU is `Ready of Progress`.** The Queued state
