@@ -6,7 +6,7 @@ contracts_fixture "$d" "$dc"; use_real_contracts; cd "$d"
 bash scripts/selfcheck.sh --local --designc "$d/nowhere" > out.json 2>/dev/null; rc=$?
 [ $rc -eq 2 ] || fail "expected exit 2, got $rc"
 [ "$(json out.json "d['outcome']")" = could_not_run ] || fail "outcome is not could_not_run"
-[ "$(json out.json "[s['outcome'] for s in d['stages']]")" = "['pass', 'pass', 'pass', 'could_not_run']" ] || fail "stages: $(json out.json "[s['outcome'] for s in d['stages']]")"
+[ "$(json out.json "[s['outcome'] for s in d['stages']]")" = "['pass', 'pass', 'pass', 'pass', 'could_not_run', 'pass']" ] || fail "stages: $(json out.json "[s['outcome'] for s in d['stages']]")"
 # --update re-copies from designc HEAD and re-pins; the next run passes with no warning.
 echo changed > "$dc/docs/a.json"; git -C "$dc" commit -qam "designc moves a"
 bash scripts/selfcheck/contracts.sh --designc "$dc" --update > /dev/null || fail "--update failed"

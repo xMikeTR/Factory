@@ -15,7 +15,7 @@ fixture_repo() {
 use_fixture_stages() {
   export SELFCHECK_CMD_BUILD='grep -q ok flag && test ! -e broken-build'
   export SELFCHECK_CMD_TESTS_CORE='grep -q ok flag && test ! -e broken-tests-core'
-  export SELFCHECK_CMD_CONTRACTS=true
+  export SELFCHECK_CMD_CONTRACTS=true SELFCHECK_CMD_SABOTAGE=true SELFCHECK_CMD_DOCS=true
   export SELFCHECK_CMD_TESTS_INTEGRATION='grep -q ok flag && test ! -e broken-tests-integration'
 }
 

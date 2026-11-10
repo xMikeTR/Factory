@@ -11,7 +11,7 @@
 #
 #   scripts/selfcheck.sh                 check HEAD in the container
 #   scripts/selfcheck.sh --commit <sha>  check another commit
-#   scripts/selfcheck.sh --stage <name>  one stage (build | tests-core | tests-integration | contracts)
+#   scripts/selfcheck.sh --stage <name>  one stage (build | tests-core | tests-integration | sabotage | contracts | docs)
 #   scripts/selfcheck.sh --designc <dir> where designc is checked out (else FACTORY_DESIGNC_DIR, else ../designc)
 #   scripts/selfcheck.sh --strict-contracts  a fixture behind designc HEAD fails instead of warning
 #   scripts/selfcheck.sh --local         on the host, no container
@@ -146,7 +146,9 @@ stages=(
   "build|dotnet build Factory.sln -warnaserror{NR}|900"
   "tests-core|dotnet run --project tests/Factory.Core.Tests{NR}|900"
   "tests-integration|dotnet test tests/Factory.Integration.Tests{NR}|1800"
+  "sabotage|bash scripts/selfcheck/sabotage.sh{NR}|900"
   "contracts|bash scripts/selfcheck/contracts.sh|120"
+  "docs|bash scripts/selfcheck/docs.sh|60"
 )
 # contracts runs on the host, not in the container: it only reads files and runs `git show` in the designc checkout.
 [ -n "$designc" ] || designc="$(dirname "$(git rev-parse --show-toplevel 2>/dev/null)")/designc"
@@ -182,7 +184,7 @@ trap 'exit 130' INT TERM
 git -C "$repo" worktree add -q --detach "$tree" "$sha" || { echo "selfcheck: could not create a worktree for ${sha:0:12}" >&2; exit 2; }
 
 records="$work/records.jsonl"; : > "$records"
-build_failed=0; any_fail=0; restore_failed=0; cnr=0
+build_failed=0; any_fail=0; restore_failed=0; cnr=0; core_ok=0; int_ok=0
 warnings_file="$work/warnings.jsonl"; : > "$warnings_file"; designc_commit=""; designc_head=""
 
 # Same limits, user and mounts as the factory's own sandbox (DockerSandbox.LimitArgs / BaseEnv).
@@ -237,17 +239,18 @@ for s in "${stages[@]}"; do
   if [ "$restore_failed" = 1 ]; then
     echo "selfcheck: $name not run (restore failed)" >&2; : > "$out"; record "$name" not_run 0 "$out"; continue
   fi
-  if [ "$build_failed" = 1 ] && [ "${name#tests-}" != "$name" ]; then
+  if [ "$build_failed" = 1 ] && { [ "${name#tests-}" != "$name" ] || [ "$name" = sabotage ]; }; then
     echo "selfcheck: $name not run (build failed)" >&2; : > "$out"; record "$name" not_run 0 "$out"; continue
   fi
   echo "selfcheck: $name: $cmd" >&2
   t0=$(date +%s%3N)
-  if [ "$name" = contracts ] && [ -z "${!var:-}" ]; then
+  if { [ "$name" = contracts ] || [ "$name" = docs ]; } && [ -z "${!var:-}" ]; then
     # Host stage. The script prints one JSON object; its detail becomes the stage tail, its warnings go in the record.
-    cargs_c=(--designc "$designc"); [ "$strict_contracts" = 1 ] && cargs_c+=(--strict)
-    if [ -f "$tree/scripts/selfcheck/contracts.sh" ]; then
-      (cd "$tree" && timeout "$secs" bash scripts/selfcheck/contracts.sh "${cargs_c[@]}") > "$out.json" 2> "$out.err"; rc=$?
-    else echo "scripts/selfcheck/contracts.sh is not in this commit" > "$out.err"; : > "$out.json"; rc=2; fi
+    if [ "$name" = contracts ]; then cargs_c=(--designc "$designc"); [ "$strict_contracts" = 1 ] && cargs_c+=(--strict)
+    else cargs_c=(); [ "$core_ok" = 1 ] && cargs_c+=(--core-out "$work/tests-core.out"); [ "$int_ok" = 1 ] && cargs_c+=(--int-out "$work/tests-integration.out"); fi
+    if [ -f "$tree/scripts/selfcheck/$name.sh" ]; then
+      (cd "$tree" && timeout "$secs" bash "scripts/selfcheck/$name.sh" "${cargs_c[@]}") > "$out.json" 2> "$out.err"; rc=$?
+    else echo "scripts/selfcheck/$name.sh is not in this commit" > "$out.err"; : > "$out.json"; rc=2; fi
     python3 - "$out.json" "$out.err" "$out" "$warnings_file" > "$out.meta" <<'PY'
 import json, sys
 j, e, out, wf = sys.argv[1:5]
@@ -258,7 +261,7 @@ with open(wf, "a") as f:
     for w in d.get("warnings", []): f.write(json.dumps(w) + "\n")
 print(d.get("designc_commit") or "", d.get("designc_head") or "")
 PY
-    read -r designc_commit designc_head < "$out.meta"; [ -n "${designc_commit:-}" ] || designc_commit=""
+    if [ "$name" = contracts ]; then read -r designc_commit designc_head < "$out.meta"; [ -n "${designc_commit:-}" ] || designc_commit=""; fi
     ms=$(( $(date +%s%3N) - t0 ))
     if [ $rc -eq 0 ]; then outcome=pass; elif [ $rc -eq 2 ]; then outcome=could_not_run; cnr=1; else outcome=fail; any_fail=1; fi
     echo "selfcheck: $name: $outcome (${ms} ms)" >&2
@@ -271,6 +274,7 @@ PY
     [ $rc -eq 124 ] && echo "selfcheck: $name timed out after ${secs}s" >> "$out"
   fi
   echo "selfcheck: $name: $outcome (${ms} ms)" >&2
+  [ "$outcome" = pass ] && { [ "$name" = tests-core ] && core_ok=1; [ "$name" = tests-integration ] && int_ok=1; }
   record "$name" "$outcome" "$ms" "$out"
 done
 
