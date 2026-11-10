@@ -16,6 +16,8 @@
 #   scripts/selfcheck.sh --strict-contracts  a fixture behind designc HEAD fails instead of warning
 #   scripts/selfcheck.sh --local         on the host, no container
 #   scripts/selfcheck.sh --status [sha]  the last recorded result for a commit (default HEAD)
+#   scripts/selfcheck.sh --install-hook  install the pre-push gate (main and release/* need a current container pass)
+#   scripts/selfcheck.sh --checks-hash [sha]  the checks_hash of the checks as committed at sha (default: the files on disk)
 #
 # Each run is appended as a git note under refs/notes/selfcheck (compact JSON, one line per run).
 # Environment: FACTORY_CONTAINER_ENGINE (podman by default), FACTORY_RUNNER_IMAGE (factory-s2-runner:latest).
@@ -24,7 +26,7 @@
 # pass is printed but exits 1, because it never counts as a pass.
 set -u
 
-commit=HEAD; only=""; local_run=0; status=0; designc="${FACTORY_DESIGNC_DIR:-}"; strict_contracts=0
+commit=HEAD; only=""; local_run=0; status=0; mode=""; hook_args=(); designc="${FACTORY_DESIGNC_DIR:-}"; strict_contracts=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --local)  local_run=1 ;;
@@ -32,11 +34,86 @@ while [ $# -gt 0 ]; do
     --stage)  only="${2:-}"; shift ;;
     --designc) designc="${2:-}"; shift ;;
     --strict-contracts) strict_contracts=1 ;;
+    --install-hook) mode=install ;;
+    --checks-hash)  mode=hash; hash_given=0; if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then commit="$2"; hash_given=1; shift; fi ;;
+    --pre-push)     mode=prepush; shift; hook_args=("$@"); break ;;
     --status) status=1; if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then commit="$2"; shift; fi ;;
     *) echo "selfcheck: unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
 done
+
+# checks_hash: sha256 over scripts/selfcheck.sh and scripts/selfcheck/**, hashed file by file so the paths count too.
+hash_checks_in() { (cd "$1" && { sha256sum scripts/selfcheck.sh; [ -d scripts/selfcheck ] && find scripts/selfcheck -type f | LC_ALL=C sort | xargs -r sha256sum; } | sha256sum | cut -d' ' -f1); }
+hash_checks_at() { # <repo> <sha>: the checks as committed
+  local t; t=$(mktemp -d "${TMPDIR:-/tmp}/selfcheck-hash.XXXXXX") || return 1
+  git -C "$1" ls-tree -r --name-only "$2" -- scripts/selfcheck.sh scripts/selfcheck | xargs -r git -C "$1" archive "$2" 2>/dev/null | tar -x -C "$t" 2>/dev/null
+  hash_checks_in "$t"; rm -rf "$t"
+}
+
+if [ "$mode" = hash ]; then
+  hrepo=$(git rev-parse --show-toplevel) || exit 2
+  if [ "$hash_given" = 0 ]; then hash_checks_in "$(cd "$(dirname "$0")/.." && pwd)"; else hash_checks_at "$hrepo" "$(git -C "$hrepo" rev-parse "$commit^{commit}")"; fi
+  exit 0
+fi
+
+if [ "$mode" = install ]; then
+  irepo=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "selfcheck: not inside a git repository" >&2; exit 2; }
+  hook="$(git -C "$irepo" rev-parse --path-format=absolute --git-path hooks)/pre-push"
+  if [ -e "$hook" ] && ! grep -q "Installed by scripts/selfcheck.sh --install-hook" "$hook"; then
+    echo "selfcheck: $hook already exists and is not ours; not overwriting it" >&2; exit 2
+  fi
+  mkdir -p "$(dirname "$hook")"
+  cat > "$hook" <<'HOOK'
+#!/usr/bin/env bash
+# Installed by scripts/selfcheck.sh --install-hook. Refuses a push to main or release/* without a current container pass.
+root=$(git rev-parse --show-toplevel) || exit 1
+[ -f "$root/scripts/selfcheck.sh" ] || { echo "selfcheck: scripts/selfcheck.sh is missing in $root; push refused" >&2; exit 1; }
+exec bash "$root/scripts/selfcheck.sh" --pre-push "$@"
+HOOK
+  chmod +x "$hook"; echo "selfcheck: installed $hook"; exit 0
+fi
+
+if [ "$mode" = prepush ]; then
+  prepo=$(git rev-parse --show-toplevel) || exit 1
+  remote="${hook_args[0]:-}"; refused=0; here_hash=""
+  while read -r lref lsha rref rsha; do
+    [ -n "${lsha:-}" ] || continue
+    case "$lsha" in *[!0]*) ;; *) continue ;; esac               # a delete pushes no commit
+    case "$rref" in refs/heads/main|refs/heads/release/*) ;; *) continue ;; esac
+    # Only the tip is gated: a passing run of the tip covers every commit under it. (The spec says "each commit"; see the slice notes.)
+    want=$(hash_checks_at "$prepo" "$lsha")
+    note=$(git -C "$prepo" notes --ref=selfcheck show "$lsha" 2>/dev/null)
+    reason=$(python3 - "$want" "$note" <<'PY'
+import json, sys
+want, note = sys.argv[1], sys.argv[2]
+recs = []
+for l in note.splitlines():
+    try: recs.append(json.loads(l))
+    except Exception: pass
+if not recs: print("no selfcheck record"); sys.exit()
+full = [r for r in recs if r.get("env") == "container" and not r.get("partial")]
+if not full: print("only --local or --stage records (they never count)"); sys.exit()
+cur = [r for r in full if r.get("checks_hash") == want]
+if not cur: print("the record was made with different checks (stale checks_hash)"); sys.exit()
+print("" if cur[-1].get("outcome") == "pass" else "the last record is " + str(cur[-1].get("outcome")))
+PY
+)
+    if [ -n "$reason" ]; then
+      echo "selfcheck: push of ${lsha:0:12} to $rref refused: $reason" >&2
+      echo "selfcheck: run:  scripts/selfcheck.sh --commit ${lsha:0:12}   (then push again; git push --no-verify skips this gate)" >&2
+      refused=1
+    fi
+  done
+  [ "$refused" = 0 ] || exit 1
+  # Send the notes with the push when they differ from the remote's (a failure here never blocks the push).
+  if [ -n "$remote" ] && lsn=$(git -C "$prepo" rev-parse --verify --quiet refs/notes/selfcheck); then
+    rsn=$(git -C "$prepo" ls-remote "$remote" refs/notes/selfcheck 2>/dev/null | cut -f1)
+    [ "$lsn" = "$rsn" ] || git -C "$prepo" push --no-verify -q "$remote" refs/notes/selfcheck:refs/notes/selfcheck \
+      || echo "selfcheck: could not push refs/notes/selfcheck (a second machine may need: git fetch $remote refs/notes/selfcheck:refs/notes/selfcheck)" >&2
+  fi
+  exit 0
+fi
 
 if [ "$status" = 1 ]; then
   srepo=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "selfcheck: not inside a git repository" >&2; exit 2; }
@@ -197,8 +274,9 @@ PY
   record "$name" "$outcome" "$ms" "$out"
 done
 
-# checks_hash ties a result to the version of the checks: sha256 over the script and scripts/selfcheck/**, as committed.
-checks_hash=$(cd "$tree" && { sha256sum scripts/selfcheck.sh; [ -d scripts/selfcheck ] && find scripts/selfcheck -type f | LC_ALL=C sort | xargs -r sha256sum; } | sha256sum | cut -d' ' -f1)
+# checks_hash ties a result to the version of the checks that actually ran: this script and its scripts/selfcheck/** on disk.
+# The pre-push gate compares it with the same files as committed at the pushed tip.
+checks_hash=$(hash_checks_in "$(cd "$(dirname "$0")/.." && pwd)")
 by=$(git -C "$repo" config user.name 2>/dev/null || true)
 
 # --stage runs are for iteration and never count as a pass (the record, and the gate in a later slice, say so).
