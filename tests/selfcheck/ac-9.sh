@@ -8,6 +8,6 @@ export SELFCHECK_CMD_TESTS_CORE="timeout 5 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443
 cd "$d" && bash scripts/selfcheck.sh > out.json 2> err.txt; rc=$?
 [ $rc -eq 1 ] || fail "expected exit 1 (the connect must fail), got $rc"
 [ "$(json out.json "d['env']")" = container ] || fail "record env is not container"
-[ "$(json out.json "[s['outcome'] for s in d['stages']]")" = "['pass', 'fail', 'pass']" ] || fail "expected build pass, the network stage fail, integration pass: $(json out.json "[s['outcome'] for s in d['stages']]")"
+[ "$(json out.json "[s['outcome'] for s in d['stages']]")" = "['pass', 'fail', 'pass', 'pass']" ] || fail "expected build pass, the network stage fail, integration pass: $(json out.json "[s['outcome'] for s in d['stages']]")"
 no_leftovers "$d"; no_containers
 echo "ok AC-9"

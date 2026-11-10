@@ -15,5 +15,5 @@ no_leftovers "$d"
 rm -f "$d/broken-tests-core"; touch "$d/broken-build"; git -C "$d" add -A; git -C "$d" commit -qm "break build"
 bash scripts/selfcheck.sh --local > out2.json 2> err2.txt; rc=$?
 [ $rc -eq 1 ] || fail "expected exit 1 for a broken build, got $rc"
-[ "$(json out2.json "[s['outcome'] for s in d['stages']]")" = "['fail', 'not_run', 'not_run']" ] || fail "tests-* were not marked not_run after a build failure"
+[ "$(json out2.json "[s['outcome'] for s in d['stages']]")" = "['fail', 'not_run', 'not_run', 'pass']" ] || fail "tests-* were not marked not_run after a build failure"
 echo "ok AC-3"

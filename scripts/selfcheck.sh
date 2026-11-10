@@ -11,7 +11,9 @@
 #
 #   scripts/selfcheck.sh                 check HEAD in the container
 #   scripts/selfcheck.sh --commit <sha>  check another commit
-#   scripts/selfcheck.sh --stage <name>  one stage (build | tests-core | tests-integration)
+#   scripts/selfcheck.sh --stage <name>  one stage (build | tests-core | tests-integration | contracts)
+#   scripts/selfcheck.sh --designc <dir> where designc is checked out (else FACTORY_DESIGNC_DIR, else ../designc)
+#   scripts/selfcheck.sh --strict-contracts  a fixture behind designc HEAD fails instead of warning
 #   scripts/selfcheck.sh --local         on the host, no container
 #   scripts/selfcheck.sh --status [sha]  the last recorded result for a commit (default HEAD)
 #
@@ -22,12 +24,14 @@
 # pass is printed but exits 1, because it never counts as a pass.
 set -u
 
-commit=HEAD; only=""; local_run=0; status=0
+commit=HEAD; only=""; local_run=0; status=0; designc="${FACTORY_DESIGNC_DIR:-}"; strict_contracts=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --local)  local_run=1 ;;
     --commit) commit="${2:-}"; shift ;;
     --stage)  only="${2:-}"; shift ;;
+    --designc) designc="${2:-}"; shift ;;
+    --strict-contracts) strict_contracts=1 ;;
     --status) status=1; if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then commit="$2"; shift; fi ;;
     *) echo "selfcheck: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -65,7 +69,10 @@ stages=(
   "build|dotnet build Factory.sln -warnaserror{NR}|900"
   "tests-core|dotnet run --project tests/Factory.Core.Tests{NR}|900"
   "tests-integration|dotnet test tests/Factory.Integration.Tests{NR}|1800"
+  "contracts|bash scripts/selfcheck/contracts.sh|120"
 )
+# contracts runs on the host, not in the container: it only reads files and runs `git show` in the designc checkout.
+[ -n "$designc" ] || designc="$(dirname "$(git rev-parse --show-toplevel 2>/dev/null)")/designc"
 # In the container the restore already ran, and the stages have no network: a second implicit restore would only
 # try (and fail) to reach nuget.org, e.g. for the vulnerability audit (NU1900, an error under -warnaserror).
 NR=""; [ "$local_run" = 0 ] && NR=" --no-restore"
@@ -97,7 +104,8 @@ trap 'exit 130' INT TERM
 git -C "$repo" worktree add -q --detach "$tree" "$sha" || { echo "selfcheck: could not create a worktree for ${sha:0:12}" >&2; exit 2; }
 
 records="$work/records.jsonl"; : > "$records"
-build_failed=0; any_fail=0; restore_failed=0
+build_failed=0; any_fail=0; restore_failed=0; cnr=0
+warnings_file="$work/warnings.jsonl"; : > "$warnings_file"; designc_commit=""; designc_head=""
 
 # Same limits, user and mounts as the factory's own sandbox (DockerSandbox.LimitArgs / BaseEnv).
 user="$(id -u):$(id -g)"
@@ -151,11 +159,33 @@ for s in "${stages[@]}"; do
   if [ "$restore_failed" = 1 ]; then
     echo "selfcheck: $name not run (restore failed)" >&2; : > "$out"; record "$name" not_run 0 "$out"; continue
   fi
-  if [ "$build_failed" = 1 ] && [ "$name" != build ]; then
+  if [ "$build_failed" = 1 ] && [ "${name#tests-}" != "$name" ]; then
     echo "selfcheck: $name not run (build failed)" >&2; : > "$out"; record "$name" not_run 0 "$out"; continue
   fi
   echo "selfcheck: $name: $cmd" >&2
   t0=$(date +%s%3N)
+  if [ "$name" = contracts ] && [ -z "${!var:-}" ]; then
+    # Host stage. The script prints one JSON object; its detail becomes the stage tail, its warnings go in the record.
+    cargs_c=(--designc "$designc"); [ "$strict_contracts" = 1 ] && cargs_c+=(--strict)
+    if [ -f "$tree/scripts/selfcheck/contracts.sh" ]; then
+      (cd "$tree" && timeout "$secs" bash scripts/selfcheck/contracts.sh "${cargs_c[@]}") > "$out.json" 2> "$out.err"; rc=$?
+    else echo "scripts/selfcheck/contracts.sh is not in this commit" > "$out.err"; : > "$out.json"; rc=2; fi
+    python3 - "$out.json" "$out.err" "$out" "$warnings_file" > "$out.meta" <<'PY'
+import json, sys
+j, e, out, wf = sys.argv[1:5]
+try: d = json.load(open(j))
+except Exception: d = {"detail": open(e).read(), "warnings": []}
+open(out, "w").write(d.get("detail") or open(e).read())
+with open(wf, "a") as f:
+    for w in d.get("warnings", []): f.write(json.dumps(w) + "\n")
+print(d.get("designc_commit") or "", d.get("designc_head") or "")
+PY
+    read -r designc_commit designc_head < "$out.meta"; [ -n "${designc_commit:-}" ] || designc_commit=""
+    ms=$(( $(date +%s%3N) - t0 ))
+    if [ $rc -eq 0 ]; then outcome=pass; elif [ $rc -eq 2 ]; then outcome=could_not_run; cnr=1; else outcome=fail; any_fail=1; fi
+    echo "selfcheck: $name: $outcome (${ms} ms)" >&2
+    record "$name" "$outcome" "$ms" "$out"; continue
+  fi
   run_in stage "$secs" "$cmd" > "$out" 2>&1; rc=$?
   ms=$(( $(date +%s%3N) - t0 ))
   if [ $rc -eq 0 ]; then outcome=pass; else
@@ -171,16 +201,17 @@ checks_hash=$(cd "$tree" && { sha256sum scripts/selfcheck.sh; [ -d scripts/selfc
 by=$(git -C "$repo" config user.name 2>/dev/null || true)
 
 # --stage runs are for iteration and never count as a pass (the record, and the gate in a later slice, say so).
-python3 - "$records" "$sha" "$any_fail" "${only:-}" "$restore_failed" "$local_run" "$image_id" "$checks_hash" "$by" "$work/record.json" <<'PY'
+python3 - "$records" "$sha" "$any_fail" "${only:-}" "$restore_failed" "$local_run" "$image_id" "$checks_hash" "$by" "$work/record.json" "$cnr" "$designc_commit" "$designc_head" "$warnings_file" <<'PY'
 import json, sys, datetime
-records, sha, any_fail, only, restore_failed, local_run, image_id, checks_hash, by, outpath = sys.argv[1:11]
+records, sha, any_fail, only, restore_failed, local_run, image_id, checks_hash, by, outpath, cnr, dc, dh, wf = sys.argv[1:15]
+warnings = [json.loads(l) for l in open(wf)]
 stages = [json.loads(l) for l in open(records)]
 rec = ({
     "schema": "selfcheck/1", "commit": sha,
-    "outcome": "could_not_run" if restore_failed == "1" else "fail" if any_fail == "1" else "pass",
+    "outcome": "could_not_run" if restore_failed == "1" else "fail" if any_fail == "1" else "could_not_run" if cnr == "1" else "pass",
     "env": "local" if local_run == "1" else "container", "image": image_id or None, "partial": bool(only),
-    "checks_hash": checks_hash,
-    "stages": stages, "warnings": [],
+    "checks_hash": checks_hash, "designc_commit": dc or None, "designc_head": dh or None,
+    "stages": stages, "warnings": warnings,
     "at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "by": by or None,
 })
@@ -191,4 +222,6 @@ PY
 git -C "$repo" notes --ref=selfcheck append -F "$work/record.json" "$sha" >/dev/null 2>&1 \
   || echo "selfcheck: could not write the git note (is user.name/user.email set?); the record above was not stored" >&2
 [ "$restore_failed" = 1 ] && exit 2
-[ "$any_fail" = 0 ] && exit 0; exit 1
+[ "$any_fail" = 1 ] && exit 1
+[ "$cnr" = 1 ] && exit 2
+exit 0
