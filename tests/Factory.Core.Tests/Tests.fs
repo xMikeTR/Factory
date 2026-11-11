@@ -196,6 +196,14 @@ let tests: (string * (unit -> unit)) list =
                   [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 1 ], [])
                     TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 1 ], []) ]
           check (match s with Ok(Failed(VerifyBudgetExhausted _, _)) -> true | _ -> false) $"%A{s}"
+      "state: a review fix is never starved of a verify attempt (finding 11)", fun () ->
+          // green on the last attempt, then one blocking finding: the fix must still be verifiable
+          let lim = { limits with MaxVerifyAttempts = 1 }
+          let s =
+              TaskState.replay lim
+                  [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; VerifyCompleted([ outcome "a" 0 ], stashedRed)
+                    reviewed [ finding Intent ] []; TurnStarted Standard; TurnEnded; VerifyRequested ]
+          check (match s with Ok(Verifying _) -> true | _ -> false) $"%A{s}"
       "state: surviving mutants in a green verify send the task back to the TestAuthor", fun () ->
           let s = TaskState.replay limits [ authored; TurnStarted Standard; TurnEnded; VerifyRequested; ReturnedToTestAuthor "2 mutants survived" ]
           check (match s with Ok(Ready(_, TestAuthor)) -> true | _ -> false) $"%A{s}"

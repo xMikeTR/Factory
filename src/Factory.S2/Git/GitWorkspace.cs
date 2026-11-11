@@ -13,8 +13,8 @@ namespace Factory.S2.Git;
 /// the same in each repo (they are separate repositories). Null is the single-repo layout, unchanged.
 public sealed class GitWorkspace(string repoPath, string stateDir, string? repoName = null)
 {
-    public string RepoPath { get; } = repoPath;
-    public string? RepoName { get; } = repoName;
+    public string RepoPath => repoPath;
+    public string? RepoName => repoName;
     private string RunRoot(string runId) => repoName is null
         ? Path.Combine(stateDir, "worktrees", runId) : Path.Combine(stateDir, "worktrees", runId, repoName);
 

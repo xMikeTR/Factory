@@ -1,3 +1,4 @@
+using Factory.Integration.Tests.Support;
 using Factory.Harness;
 using Xunit;
 
@@ -20,7 +21,7 @@ public class HuskyHooksTests : IDisposable
     public HuskyHooksTests()
     {
         File.WriteAllText(Path.Combine(_bin, "npm"), "#!/bin/sh\necho \"npm $*\" >> \"$STUB_LOG\"\n[ -z \"${STUB_REWRITE_LOCK:-}\" ] || echo drift >> package-lock.json\n");
-        File.SetUnixFileMode(Path.Combine(_bin, "npm"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        Scripts.MakeExecutable(Path.Combine(_bin, "npm"));
 
         var hooks = Path.Combine(_repo, ".husky");
         foreach (var f in Directory.EnumerateFiles(TemplateDir(), "*", SearchOption.AllDirectories).Where(f => !f.EndsWith(".md")))
@@ -28,7 +29,7 @@ public class HuskyHooksTests : IDisposable
             var to = Path.Combine(hooks, Path.GetRelativePath(TemplateDir(), f));
             Directory.CreateDirectory(Path.GetDirectoryName(to)!);
             File.Copy(f, to);
-            File.SetUnixFileMode(to, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            Scripts.MakeExecutable(to);
         }
         Git("init", "-q", "-b", "main");
         Git("config", "core.hooksPath", ".husky");

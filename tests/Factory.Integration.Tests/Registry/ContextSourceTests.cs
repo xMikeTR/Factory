@@ -1,3 +1,4 @@
+using Factory.Integration.Tests.Support;
 using System.Text.Json.Nodes;
 using Factory.Harness.Registry;
 using Xunit;
@@ -177,7 +178,7 @@ public class ContextSourceTests
         var dir = TempDir();
         var script = Path.Combine(dir, "node");
         File.WriteAllText(script, "#!/bin/sh\n[ \"$1\" = warm-up ] && exit 0\n" + body.Replace("\r", ""));
-        File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        Scripts.MakeExecutable(script);
         // A parallel fork can hold a just-written script open for a moment (ETXTBSY); one successful exec ends that window.
         for (var attempt = 0; ; attempt++)
         {

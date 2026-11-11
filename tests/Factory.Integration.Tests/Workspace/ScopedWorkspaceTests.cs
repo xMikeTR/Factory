@@ -150,7 +150,7 @@ public class ScopedWorkspaceTests : IDisposable
     }
 
     [Fact]
-    public async Task The_implementer_gets_playwright_cli_only_for_a_self_check_run()
+    public void The_implementer_gets_playwright_cli_only_for_a_self_check_run()
     {
         var ws = new ScopedWorkspace(_root, [], [], [], new TurnSignals());
         Assert.DoesNotContain("playwright_cli", ws.ImplementerTools().Select(t => t.Name));
@@ -176,14 +176,14 @@ public class ScopedWorkspaceTests : IDisposable
     }
 
     [Fact]
-    public void Repro_and_diagnosis_cannot_write_and_report_through_their_own_tool()
+    public async Task Repro_and_diagnosis_cannot_write_and_report_through_their_own_tool()
     {
         var signals = new TurnSignals();
         var ws = new ScopedWorkspace(_root, [], [], [], signals);
         foreach (var tools in new[] { ws.ReproTools(), ws.DiagnosisTools() })
             Assert.DoesNotContain(tools.Select(t => t.Name), n => n is "write_file" or "delete_file" or "run_command");
         var diagnose = ws.DiagnosisTools().OfType<Microsoft.Extensions.AI.AIFunction>().Single(t => t.Name == "submit_diagnosis");
-        diagnose.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments { ["finding"] = "button is outside the form" }).AsTask().Wait();
+        await diagnose.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments { ["finding"] = "button is outside the form" });
         Assert.Equal("button is outside the form", signals.Diagnosis);
     }
 
