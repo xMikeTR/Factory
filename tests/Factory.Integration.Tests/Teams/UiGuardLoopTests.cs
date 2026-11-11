@@ -45,7 +45,7 @@ public class UiGuardLoopTests
     private static Task<TeamResult> RunAsync(TeamHarness h, IReadOnlyDictionary<string, DecisionAnswer>? answers = null) =>
         new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), answers ?? NoAnswers, default);
 
-    private static Dictionary<string, DecisionAnswer> Answer(string option, string note) => new() { ["T-001"] = new("T-001", option, note) };
+    private static Dictionary<string, DecisionAnswer> Answer(string option, string note) => new() { ["T-001"] = new("T-001", "ND-0001", note, option) };
 
     [Fact]
     public async Task A_green_task_that_removes_a_ui_feature_parks_with_the_removal_named()

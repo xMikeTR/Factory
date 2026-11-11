@@ -164,6 +164,19 @@ public class GitWorkspaceTests
         Scripts.MakeExecutable(path);
     }
 
+    [Fact]
+    public async Task A_git_link_repointed_at_another_teams_worktree_entry_stops_git()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var x = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        var y = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-y", CancellationToken.None);
+        Assert.NotNull(await h.Services.Git.ChangedPathsAsync(x, CancellationToken.None)); // its own link is fine
+        await File.WriteAllTextAsync(Path.Combine(x, ".git"), await File.ReadAllTextAsync(Path.Combine(y, ".git")));
+
+        var e = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Services.Git.ChangedPathsAsync(x, CancellationToken.None));
+        Assert.Contains("own entry", e.Message);
+    }
+
     [Theory]
     [InlineData(false)] // .git still a file, naming a git directory the sandbox wrote
     [InlineData(true)]  // .git swapped for a directory

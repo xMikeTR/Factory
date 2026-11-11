@@ -105,7 +105,11 @@ module PathPattern =
         p.Split('/', StringSplitOptions.RemoveEmptyEntries) |> List.ofArray
 
     /// Does the glob match a concrete repo-relative file path? Ordinal, case-sensitive.
-    let matches (glob: PathPattern) (path: string) = matchSegs glob.Segs (split path)
+    /// A path with a `.` or `..` segment never matches: `**` would otherwise swallow `..`, so
+    /// `src/Quotes/../../tests/x` would pass for `src/Quotes/**` while naming a file elsewhere.
+    let matches (glob: PathPattern) (path: string) =
+        let segs = split path
+        not (segs |> List.exists (fun g -> g = "." || g = "..")) && matchSegs glob.Segs segs
 
     let rec private isPrefixOf (a: string list) (b: string list) =
         match a, b with

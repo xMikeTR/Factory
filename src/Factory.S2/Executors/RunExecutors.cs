@@ -90,7 +90,7 @@ internal sealed class WaveExecutor(FactoryServices svc) : Executor("Waves")
             var r = resolutions[ids[b.TaskId]];
             await svc.LogAsync(runId, "wave", LedgerKinds.NeedsDecision, outcome: "resolved",
                 payload: JsonSerializer.Serialize(new { id = r.Id, b.Question, b.Elements, r.Decision, r.Option, r.Note }), teamId: b.TeamId, taskId: b.TaskId, ct: ct);
-            next.Add(new DecisionAnswer(b.TaskId, r.Decision ?? r.Id, answer!.Value.ResultValue));
+            next.Add(new DecisionAnswer(b.TaskId, r.Decision ?? r.Id, answer!.Value.ResultValue, r.Option));
         }
         return next.ToArray();
     }

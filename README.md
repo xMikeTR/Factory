@@ -348,7 +348,7 @@ Ledger to Jira, never the other way. Each work item's state is compared with its
 
 ## Status
 
-Tests: Core 327/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 783/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
+Tests: Core 329/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 799/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|
@@ -453,6 +453,7 @@ examples/fares-v3/     Booking lost-update handover and a valid plan
   - the workspace tools refuse writes outside the task's paths;
   - a git check after every turn reverts out-of-scope changes and logs a `scope_violation`;
   - a changed file outside the declared writes, or under a protected path, blocks the merge in every mode.
+  - a worktree's `.git` link must point at its own entry under the repo's `worktrees/` folder, and that entry must link back; a task that repoints it fails the scope check instead of reaching another checkout.
 - **Self-seeded verify steps get `FACTORY_VERIFY_NS`,** so seeded data never collides between
   runs or attempts.
 - **The only change to the task-state DU is `Ready of Progress`.** The Queued state

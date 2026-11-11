@@ -325,7 +325,7 @@ internal sealed class TaskLoop(
     /// A designer's answer to a parked review: A accepts, C guides (the note is the guidance), anything else rejects.
     private TaskEvent ReviewAnswer(DecisionAnswer answer, Progress progress)
     {
-        switch (answer.DecisionId)
+        switch (answer.OptionId)
         {
             case "A": return TaskEvent.NewReviewAccepted(answer.Note ?? "accepted by the designer", svc.Reviewer.Independence);
             case "C":
@@ -584,11 +584,11 @@ internal sealed class TaskLoop(
     private async Task UiAnswerAsync(DecisionAnswer answer, CancellationToken ct)
     {
         var violations = await UiViolationsAsync(ct);
-        if (answer.DecisionId == "A")
+        if (answer.OptionId == "A")
             await svc.LogAsync(runId, "ui", LedgerKinds.Verify, "accepted", UiGate.Encode(violations.Select(UiGate.ItemOf), answer.Note), _teamId, _taskId, ct);
         else
             _lastFailures = "A designer read the UI features this change removes and wants them kept. Restore them (the same data-testid, route or test):\n"
-                + UiLines(violations) + (answer.DecisionId == "C" ? $"\nGuidance: {answer.Note}" : "");
+                + UiLines(violations) + (answer.OptionId == "C" ? $"\nGuidance: {answer.Note}" : "");
     }
 
     /// The quality ratchet over the task's diff. Block mode returns a failing outcome that joins the
