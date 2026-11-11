@@ -338,6 +338,10 @@ Per-command flags are the header comment of `src/Factory.S2/Program.cs`.
 | `repro` `--repo . --summary "..."` | Paid, opt-in |
 | `compare-browser` `--repo . --runs a,b` | CLI vs MCP browser tool |
 
+### Split repos
+
+An app in two repositories: freeze a handover whose elements carry `repo` (`Api` / `Ui`, set in designc with `d.repo`), then give the run both: `run --repo Api=../api --repo Ui=../ui`. The first is primary. A task works in one repo (its repo is derived from its elements, never planned). Plan validation rejects a task whose elements span repos (`MixedRepoTask`), an element repo the run was not given (`UnknownRepo`), and a dependency cycle through the other repo among tasks whose writes overlap (`CrossRepoCycle`), because the dispatcher would have to merge them into one team and a team never spans repos. With OpenAPI files pinned in the handover (`contracts_api`) Api and Ui tasks run in parallel; with none, every Ui task waits for every Api task.
+
 ### Jira mirror
 
 Ledger to Jira, never the other way. Each work item's state is compared with its Jira issue (found by the item's requirement key): a move is planned, an issue already in sync is left alone, and **drift (a human changed the issue) is flagged as `item_awaiting_human`, never overwritten**.
