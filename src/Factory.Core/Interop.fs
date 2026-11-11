@@ -69,6 +69,11 @@ type Core =
 
     static member EncodeEvent(ev: TaskEvent) : string = Json.encodeTaskEvent ev
 
+    static member DecodeEvent(payload: string) : TaskEvent =
+        match Json.decodeTaskEvent payload with
+        | Ok e -> e
+        | Error es -> raise (FactoryRejectedException("unreadable task event in ledger", Array.ofList es))
+
     static member DecideMerge(policy: MergePolicy, input: MergeInput) : MergeVerdict = Merge.decide policy input
 
     static member DefaultMergePolicy = Merge.defaultPolicy

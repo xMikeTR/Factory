@@ -41,6 +41,7 @@ public static class LedgerKinds
     public const string Route = "route";            // task + payload {role, size, risk, ladder: {tier: modelId}, warnings}: the catalog ladder a (task, role) pair was routed to at run start (FACTORY_ROUTING=catalog). Run ledger only: not in RegistryStreams
     public const string Configurator = "configurator"; // routing decision before a turn: kind, tier, reason
     public const string Verify = "verify";
+    public const string DecisionBound = "decision_bound"; // task + payload {decision, note}: the designer's answer as the task loop bound it; a restarted loop puts it back in the brief. Run ledger only: not projected
     public const string NeedsDecision = "needs_decision";
     public const string ScopeViolation = "scope_violation";
     public const string Review = "review";          // one review round: outcome, findings kept and dropped, independence
@@ -68,6 +69,10 @@ public interface ILedger
 
 /// Append-only JSON Lines ledger for local runs and the Phase 2 slice. Swap for the Postgres
 /// implementation once the platform decision (Postgres vs Azure SQL) is made; nothing else changes.
+///
+/// One file per run: `ledger.jsonl` -> `ledger.runs/<runId>.jsonl`, so a read scans only its own run and two processes
+/// on the same repo never append to one file (finding 18). A `ledger.jsonl` left by an older version is still read:
+/// it is never written to again.
 public sealed class JsonlLedger(string path) : ILedger
 {
     private static readonly JsonSerializerOptions Json = new()
@@ -77,39 +82,58 @@ public sealed class JsonlLedger(string path) : ILedger
     };
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private string RunsDir => Path.ChangeExtension(Path.GetFullPath(path), ".runs");
+
+    /// The file one run's rows live in. A run id is escaped, so it can never name a path outside the folder.
+    public string RunFile(string runId) => Path.Combine(RunsDir, Uri.EscapeDataString(runId).Replace("%", "_") + ".jsonl");
 
     public async ValueTask AppendAsync(LedgerEvent e, CancellationToken ct = default)
     {
-        var line = JsonSerializer.Serialize(e, Json) + "\n";
+        var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(e, Json) + "\n");
+        var file = RunFile(e.RunId);
         await _gate.WaitAsync(ct);
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-            await File.AppendAllTextAsync(path, line, ct);
+            Directory.CreateDirectory(RunsDir);
+            // One write call per row on an append-mode handle: rows from another process land whole, never interleaved.
+            await using var fs = new FileStream(file, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+            await fs.WriteAsync(bytes, ct);
         }
         finally { _gate.Release(); }
     }
 
     public IAsyncEnumerable<LedgerEvent> ReadAsync(string runId, CancellationToken ct = default) => ReadRowsAsync(runId, ct);
 
-    /// Every run's rows, in file order (learning reads the whole ledger).
+    /// Every run's rows (learning reads the whole ledger): an old shared file first, then each run's file by name.
     public IAsyncEnumerable<LedgerEvent> ReadAllAsync(CancellationToken ct = default) => ReadRowsAsync(null, ct);
+
+    /// Whether there is anything to read, and a number that changes whenever a row is added (the learning cache key).
+    public bool Exists => File.Exists(path) || Directory.Exists(RunsDir);
+    public long TotalBytes => (File.Exists(path) ? new FileInfo(path).Length : 0)
+        + (Directory.Exists(RunsDir) ? Directory.EnumerateFiles(RunsDir, "*.jsonl").Sum(f => new FileInfo(f).Length) : 0);
 
     private async IAsyncEnumerable<LedgerEvent> ReadRowsAsync(string? runId, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        if (!File.Exists(path)) yield break;
-        using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
-        while (await reader.ReadLineAsync(ct) is { } line)
+        var files = new List<string>();
+        if (File.Exists(path)) files.Add(path);
+        if (runId is not null) { if (File.Exists(RunFile(runId))) files.Add(RunFile(runId)); }
+        else if (Directory.Exists(RunsDir)) files.AddRange(Directory.EnumerateFiles(RunsDir, "*.jsonl").Order(StringComparer.Ordinal));
+
+        foreach (var file in files)
         {
-            if (string.IsNullOrWhiteSpace(line)) continue;
-            LedgerEvent? e;
-            // A line cut short by a crash mid-append is skipped; it must not make the whole run unreadable.
-            try { e = JsonSerializer.Deserialize<LedgerEvent>(line, Json); }
-            catch (JsonException) { continue; }
-            if (e is null || (runId is not null && e.RunId != runId)) continue;
-            // TraceId defaults to the current trace, which is the writer's and never the reader's: a row with none keeps none.
-            if (e.TraceId is not null && !HasTraceId(line)) e = e with { TraceId = null };
-            yield return e;
+            using var reader = new StreamReader(new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+            while (await reader.ReadLineAsync(ct) is { } line)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                LedgerEvent? e;
+                // A line cut short by a crash mid-append is skipped; it must not make the whole run unreadable.
+                try { e = JsonSerializer.Deserialize<LedgerEvent>(line, Json); }
+                catch (JsonException) { continue; }
+                if (e is null || (runId is not null && e.RunId != runId)) continue;
+                // TraceId defaults to the current trace, which is the writer's and never the reader's: a row with none keeps none.
+                if (e.TraceId is not null && !HasTraceId(line)) e = e with { TraceId = null };
+                yield return e;
+            }
         }
     }
 

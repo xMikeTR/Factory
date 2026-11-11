@@ -71,7 +71,7 @@ A real run needs a model. Pick one provider:
 - **Policy:** the `routing:` section of `<repo>/.factory/policy.yaml` (min tier per risk, size buckets, data class). Missing means defaults. Keys: `canaryShare` (0.05: share of pairs whose Standard entry is the Frontier model), `halfLifeDays` (30), `learnReviewer` (false).
 - **Routing is logged:** each (task, role) is routed once at run start and logged as a `route` ledger row; a resumed run keeps the ladders its route rows recorded.
 - **Risk and data class** come from the handover requirement (`requirement_risk`, `requirement_data_class`) when present, else the highest element risk and the policy's data class. Designc does not write those two keys yet, so today the fallback applies.
-- **Learning:** the router learns from the run ledger (`<state dir>/ledger.jsonl`): each verify result credits the model of the act turn before it, decayed by age. See it with `factory-s2 router-stats --repo . [--role implementer] [--json]` (cache `<state dir>/router-stats.json`, rebuilt whenever the ledger changes).
+- **Learning:** the router learns from the run ledger (one file per run, `<state dir>/ledger.runs/<run id>.jsonl`; an older `ledger.jsonl` is still read): each verify result credits the model of the act turn before it, decayed by age. See it with `factory-s2 router-stats --repo . [--role implementer] [--json]` (cache `<state dir>/router-stats.json`, rebuilt whenever the ledger changes).
 - **Prices must be real** for cost to steer routing: rows priced 0 tie, and the first row in the file wins.
 
 ### Prices, spend and budget
@@ -438,6 +438,13 @@ examples/fares-v3/     Booking lost-update handover and a valid plan
   re-validates the plan.
 - **Each turn gets a fresh brief, never a chat history.** The approach note, the previous verify
   failures and any newly bound decision are carried between turns through the ledger.
+  After a restart `Teams/ResumeContext` rebuilds the failure text, the last-verify flag and the
+  designer's decision note from the task's ledger rows (a `decision_bound` row in the run ledger
+  holds the note; it is not projected to designc). Not recovered: the done declaration, the stall
+  counters and mutant verdicts, which start fresh.
+- **A review fix keeps one verify attempt.** When review sends a task back to the test author or
+  the implementer, its verify attempts are capped at `MaxVerifyAttempts - 1`, so the fix can always
+  be verified at least once.
 - **Signals come through tools, not free text.** `declare_done` and `raise_needs_decision` are
   tool calls, so they are governed and logged like any other call. The planner's plan is too:
   `submit_plan` takes the plan schema as its input schema and answers with the validator's errors,

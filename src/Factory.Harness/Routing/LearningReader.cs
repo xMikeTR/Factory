@@ -34,9 +34,9 @@ public static class LearningReader
 
     private static async Task<List<Tuple<StatsKey, bool, int, int, DateTime>>> AttemptsAsync(string stateDir, bool learnReviewer, string? registryPath, CancellationToken ct)
     {
-        var ledgerPath = Path.Combine(stateDir, "ledger.jsonl");
-        if (!File.Exists(ledgerPath)) return [];
-        var bytes = new FileInfo(ledgerPath).Length;
+        var ledger = new JsonlLedger(Path.Combine(stateDir, "ledger.jsonl"));
+        if (!ledger.Exists) return [];
+        var bytes = ledger.TotalBytes;
         var registryBytes = RegistryParity.Bytes(registryPath);
         var cachePath = Path.Combine(stateDir, CacheFile);
 
@@ -44,7 +44,7 @@ public static class LearningReader
             return cache.Attempts.Select(FromCached).ToList();
 
         var events = new List<LearnEvent>();
-        await foreach (var row in new JsonlLedger(ledgerPath).ReadAllAsync(ct))
+        await foreach (var row in ledger.ReadAllAsync(ct))
             if (Map(row) is { } e) events.Add(e);
         events.AddRange(await RegistryParity.JudgeAsync(stateDir, registryPath, events, ct));
         // Everything is attributed here; the catalog filter comes after the cache.
