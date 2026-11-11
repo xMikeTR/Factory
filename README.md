@@ -70,7 +70,7 @@ A real run needs a model. Pick one provider:
 - **Catalog:** `catalog/models.yaml` (override with `FACTORY_CATALOG=<path>`), one row per model: id, modelName, tier (small|standard|frontier), family, capabilities, window, approvedFor, price, prior. Swap or add models there (the Gemini rows are commented in the file); nothing else names a model.
 - **Policy:** the `routing:` section of `<repo>/.factory/policy.yaml` (min tier per risk, size buckets, data class). Missing means defaults. Keys: `canaryShare` (0.05: share of pairs whose Standard entry is the Frontier model), `halfLifeDays` (30), `learnReviewer` (false).
 - **Routing is logged:** each (task, role) is routed once at run start and logged as a `route` ledger row; a resumed run keeps the ladders its route rows recorded.
-- **Risk and data class** come from the handover requirement (`requirement_risk`, `requirement_data_class`) when present, else the highest element risk and the policy's data class. Designc does not write those two keys yet, so today the fallback applies.
+- **Risk and data class** come from the handover requirement (`requirement_risk`, `requirement_data_class`) when present, else the highest element risk and the policy's data class. Designc writes both keys from the frozen requirements' `risk` and `data_class` (highest risk wins, first data class wins); a handover frozen before that has neither, and the fallback applies.
 - **Learning:** the router learns from the run ledger (one file per run, `<state dir>/ledger.runs/<run id>.jsonl`; an older `ledger.jsonl` is still read): each verify result credits the model of the act turn before it, decayed by age. See it with `factory-s2 router-stats --repo . [--role implementer] [--json]` (cache `<state dir>/router-stats.json`, rebuilt whenever the ledger changes).
 - **Prices must be real** for cost to steer routing: rows priced 0 tie, and the first row in the file wins.
 
@@ -348,7 +348,7 @@ Ledger to Jira, never the other way. Each work item's state is compared with its
 
 ## Status
 
-Tests: Core 329/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 799/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
+Tests: Core 331/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 799/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|
@@ -360,7 +360,7 @@ Tests: Core 329/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration
 | Item budget: measure, report, and refuse a new run when exceeded | `Core/ItemBudget.fs`, `ItemBudgetReport` | Built |
 | Freeze-time UX review and `item_judge` (gradient, never decides Done) | `Core/UxReview.fs`, `UxReviewRunner`, `ItemJudgeReport` | Built; paid, opt-in |
 | Jira mirror (one-way, drift flagged not overwritten; REST and snapshot) | `Core/JiraMirror.fs`, `JiraMirrorReport`, `JiraRestClient` | Built; stub-tested only. `--comment` (with `--apply`) posts gate evidence as a Cloud v3 comment; Jira Cloud only, no Data Center variant |
-| Router task spec: risk and data class from the handover requirement (`requirement_risk`, `requirement_data_class`), else element max and config | `Core/Router.fs`, `Json.parseHandover`, `DesigncHandoverReader` | Built; designc does not write the keys yet, so the old behaviour applies |
+| Router task spec: risk and data class from the handover requirement (`requirement_risk`, `requirement_data_class`), else element max and config | `Core/Router.fs`, `Json.parseHandover`, `DesigncHandoverReader` | Built; designc writes the keys, and a handover without them falls back to the old behaviour |
 | Factory evals | `docs/evals/` | Reference copies only; the suite lives on the work VM |
 
 S2 conforms to Designc's published
