@@ -60,6 +60,24 @@ let tests: (string * (unit -> unit)) list =
           let stray = { plan with Tasks = plan.Tasks |> List.map (fun t -> if t.Id = TaskId "T-003" then { t with Writes = t.Writes @ [ PathPattern.createOrFail "src/FaresApi/Hack.cs" ] } else t) }
           let es = errorsWith [ "Api"; "Ui" ] (split []) stray
           check (es |> List.exists (function WriteOutsideElement(t, _) -> t = TaskId "T-003" | _ -> false)) $"%A{es}"
+      "validator: Api A1 -> Ui U -> Api A2 with A1 and A2 overlapping is CrossRepoCycle", fun () ->
+          // T-002 is made an Api task that writes where T-001 writes, so they are one team; T-003 (Ui) sits between them.
+          let t1 = plan.Tasks |> List.find (fun t -> t.Id = TaskId "T-001")
+          let cyc =
+              { plan with
+                  Tasks =
+                    plan.Tasks
+                    |> List.map (fun t ->
+                        if t.Id = TaskId "T-002" then { t with Elements = t1.Elements; Writes = t1.Writes; TestWrites = t1.TestWrites; DependsOn = [ TaskId "T-003" ] }
+                        elif t.Id = TaskId "T-003" then { t with DependsOn = [ TaskId "T-001" ] }
+                        else t) }
+          let es = errorsWith [ "Api"; "Ui" ] (split []) cyc
+          check (es |> List.exists (function CrossRepoCycle(ids, rs) -> List.contains (TaskId "T-003") ids && rs = [ "Api"; "Ui" ] | _ -> false)) $"%A{es}"
+          check (errorsWith [ "Api"; "Ui" ] (split []) plan |> List.forall (function CrossRepoCycle _ -> false | _ -> true)) "a valid plan has none"
+      "validator: the same shape in a single-repo design is not a CrossRepoCycle", fun () ->
+          let t1 = plan.Tasks |> List.find (fun t -> t.Id = TaskId "T-001")
+          let cyc = { plan with Tasks = plan.Tasks |> List.map (fun t -> if t.Id = TaskId "T-002" then { t with Writes = t1.Writes; DependsOn = [ TaskId "T-003" ] } elif t.Id = TaskId "T-003" then { t with DependsOn = [ TaskId "T-001" ] } else t) }
+          check (errorsWith [] baseHandover cyc |> List.forall (function CrossRepoCycle _ -> false | _ -> true)) "no repos, no repo cycle"
       "dispatcher: without a pinned contract every Ui task waits for every Api task", fun () ->
           let d = Dispatcher.dispatch (validated [])
           check (waveOf d "T-003" > waveOf d "T-001") "after T-001"

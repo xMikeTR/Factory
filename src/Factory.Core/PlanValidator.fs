@@ -28,6 +28,8 @@ type PlanError =
     | MixedRepoTask of TaskId * repos: string list
     /// An element's repo is not one the run was given (--repo Name=path).
     | UnknownRepo of TaskId * repo: string
+    /// Tasks on a dependency cycle that the dispatcher would have to merge into one team, and that team would span repos. Split the cycle.
+    | CrossRepoCycle of TaskId list * repos: string list
     /// An invariant must run something the Implementer cannot edit: a path under TestWrites or a protected path.
     | InvariantNotUnderTestWrites of TaskId * verifyName: string
     /// `pobserve-check` takes exactly <specs-dir> <SpecName> <log file|dir>; anything else exits 1.
@@ -60,6 +62,7 @@ module PlanError =
         | InvalidTimeout(t, v) -> $"Task {t.Value}, verify '{v}' needs a positive timeoutSeconds."
         | TestWritesOverlapWrites(t, w, tw) -> $"Task {t.Value}: `writes` '{w.Value}' overlaps `testWrites` '{tw.Value}'. Production and test paths must be disjoint: the TestAuthor and the Implementer never edit the same files."
         | MixedRepoTask(t, rs) -> $"Task {t.Value} links elements from more than one repo (" + String.Join(", ", rs) + "). A task works in one repo: split it into one task per repo."
+        | CrossRepoCycle(ids, rs) -> "Tasks " + String.Join(", ", ids |> List.map (fun (TaskId v) -> v)) + " depend on each other across repos (" + String.Join(", ", rs) + ") and overlap in their writes, so they cannot be built apart. Remove the dependency that goes back across the repos, or make the writes disjoint."
         | UnknownRepo(t, r) -> $"Task {t.Value} links an element in repo '{r}', which this run was not given."
         | TestWriteOutsideElement(t, p) -> $"Task {t.Value} has testWrites '{p.Value}', which is outside the code areas of its elements."
         | InvariantNotUnderTestWrites(t, v) -> $"Task {t.Value}, invariant '{v}' runs nothing under the task's testWrites or a protected path, so the Implementer could weaken it. Point its command at the tests it checks."
@@ -85,6 +88,56 @@ type ValidatedPlan internal (plan: Plan, handover: Handover) =
             |> List.choose (fun e -> e.Repo)
             |> List.distinct
             |> function [ r ] -> Some r | _ -> None)
+
+/// Task grouping shared by the validator and the dispatcher, so both apply the same overlap rule.
+[<RequireQualifiedAccess>]
+module internal TaskGraph =
+    /// Everything a task may write, production and test paths alike.
+    let footprint (t: PlannedTask) = t.Writes @ t.TestWrites
+
+    /// Two tasks in different repos never overlap: the same glob names two different directories.
+    let tasksOverlap (repoOf: TaskId -> string option) (a: PlannedTask) (b: PlannedTask) =
+        match repoOf a.Id, repoOf b.Id with
+        | Some ra, Some rb when ra <> rb -> false
+        | _ -> footprint a |> List.exists (fun wa -> footprint b |> List.exists (PathPattern.mayOverlap wa))
+
+    /// Tarjan's strongly connected components over nodes 0..n-1.
+    let scc (n: int) (succ: int -> int seq) : int list list =
+        let index = Array.create n -1
+        let low = Array.zeroCreate n
+        let onStack = Array.zeroCreate n
+        let stack = Stack<int>()
+        let mutable next = 0
+        let result = ResizeArray<int list>()
+
+        let rec strong v =
+            index.[v] <- next
+            low.[v] <- next
+            next <- next + 1
+            stack.Push v
+            onStack.[v] <- true
+
+            for w in succ v do
+                if index.[w] = -1 then
+                    strong w
+                    low.[v] <- min low.[v] low.[w]
+                elif onStack.[w] then
+                    low.[v] <- min low.[v] index.[w]
+
+            if low.[v] = index.[v] then
+                let mutable comp = []
+                let mutable fin = false
+                while not fin do
+                    let w = stack.Pop()
+                    onStack.[w] <- false
+                    comp <- w :: comp
+                    fin <- (w = v)
+                result.Add comp
+
+        for v in 0 .. n - 1 do
+            if index.[v] = -1 then strong v
+
+        List.ofSeq result
 
 [<RequireQualifiedAccess>]
 module PlanValidator =
@@ -221,11 +274,33 @@ module PlanValidator =
               | Some d -> if not (d.Binds |> List.exists (fun b -> List.contains b t.Elements)) then CoverWithoutBinding(t.Id, c)
           yield! t.Verify |> List.collect (verifyErrors handover t) ]
 
+    /// The dispatcher merges tasks that overlap, or that depend on each other in a cycle, into one team, and a team never spans
+    /// repos. Find that merge here, so it is a plan error the planner can fix and not a dispatch-time failure.
+    let private crossRepoCycle (handover: Handover) (plan: Plan) =
+        let tasks = Array.ofList plan.Tasks
+        let repoOf (t: PlannedTask) =
+            handover.Elements |> List.filter (fun e -> List.contains e.Id t.Elements) |> List.choose (fun e -> e.Repo) |> List.distinct
+            |> function [ r ] -> Some r | _ -> None
+        let repos = tasks |> Array.map repoOf
+        let repoById = tasks |> Seq.mapi (fun i t -> t.Id, repos.[i]) |> Seq.distinctBy fst |> dict
+        let succ i =
+            seq {
+                for j in 0 .. tasks.Length - 1 do
+                    if j <> i && (List.contains tasks.[i].Id tasks.[j].DependsOn || TaskGraph.tasksOverlap (fun id -> repoById.[id]) tasks.[i] tasks.[j]) then j
+            }
+        TaskGraph.scc tasks.Length succ
+        |> List.tryPick (fun comp ->
+            let inComp = comp |> List.choose (fun i -> repos.[i]) |> List.distinct |> List.sort
+            if comp.Length > 1 && inComp.Length > 1 then Some(CrossRepoCycle(comp |> List.map (fun i -> tasks.[i].Id), inComp)) else None)
+
     let private wholePlan (handover: Handover) (plan: Plan) =
         [ for d in handover.Decisions do
               if not (plan.Tasks |> List.exists (fun t -> List.contains d.Id t.Covers)) then UncoveredDecision d.Id
           match findCycle plan.Tasks with
           | Some cycle -> DependencyCycle cycle
+          | None -> ()
+          match crossRepoCycle handover plan with
+          | Some e -> e
           | None -> () ]
 
     /// `knownRepos` is the repo names the run was given (--repo Name=path). Empty means "not checked": a single-repo run.

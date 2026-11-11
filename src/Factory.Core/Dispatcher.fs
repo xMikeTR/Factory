@@ -11,7 +11,7 @@ type TeamId =
 type Team =
     { Id: TeamId
       Tasks: PlannedTask list
-      /// The team's whole footprint: every task's Writes and TestWrites.
+      /// The team's whole TaskGraph.footprint: every task's Writes and TestWrites.
       Writes: PathPattern list
       Elements: ElementId list }
 
@@ -22,53 +22,6 @@ type DispatchPlan = { HandoverId: string; Waves: Wave list }
 
 [<RequireQualifiedAccess>]
 module Dispatcher =
-
-    /// Everything a task may write, production and test paths alike.
-    let private footprint (t: PlannedTask) = t.Writes @ t.TestWrites
-
-    /// Two tasks in different repos never overlap: the same glob names two different directories.
-    let private tasksOverlap (repoOf: TaskId -> string option) (a: PlannedTask) (b: PlannedTask) =
-        match repoOf a.Id, repoOf b.Id with
-        | Some ra, Some rb when ra <> rb -> false
-        | _ -> footprint a |> List.exists (fun wa -> footprint b |> List.exists (PathPattern.mayOverlap wa))
-
-    /// Tarjan's strongly connected components over nodes 0..n-1.
-    let private scc (n: int) (succ: int -> int seq) : int list list =
-        let index = Array.create n -1
-        let low = Array.zeroCreate n
-        let onStack = Array.zeroCreate n
-        let stack = Stack<int>()
-        let mutable next = 0
-        let result = ResizeArray<int list>()
-
-        let rec strong v =
-            index.[v] <- next
-            low.[v] <- next
-            next <- next + 1
-            stack.Push v
-            onStack.[v] <- true
-
-            for w in succ v do
-                if index.[w] = -1 then
-                    strong w
-                    low.[v] <- min low.[v] low.[w]
-                elif onStack.[w] then
-                    low.[v] <- min low.[v] index.[w]
-
-            if low.[v] = index.[v] then
-                let mutable comp = []
-                let mutable fin = false
-                while not fin do
-                    let w = stack.Pop()
-                    onStack.[w] <- false
-                    comp <- w :: comp
-                    fin <- (w = v)
-                result.Add comp
-
-        for v in 0 .. n - 1 do
-            if index.[v] = -1 then strong v
-
-        List.ofSeq result
 
     /// Kahn's algorithm, always taking the smallest ready key first so the order is stable.
     let private topoBy (key: 'a -> string) (deps: 'a -> 'a list) (items: 'a list) : 'a list =
@@ -135,7 +88,7 @@ module Dispatcher =
 
         for i in 0 .. n - 1 do
             for j in i + 1 .. n - 1 do
-                if tasksOverlap vp.RepoOf tasks.[i] tasks.[j] then union i j
+                if TaskGraph.tasksOverlap vp.RepoOf tasks.[i] tasks.[j] then union i j
 
         let index = tasks |> Array.mapi (fun i t -> t.Id, i) |> dict
         let explicitDeps i =
@@ -164,7 +117,7 @@ module Dispatcher =
         // a graph is acyclic, so one pass is enough.
         let edges = groupEdges ()
         let succ g = edges |> Seq.filter (fun (a, _) -> a = g) |> Seq.map snd
-        for comp in scc n succ do
+        for comp in TaskGraph.scc n succ do
             match comp with
             | first :: rest -> for r in rest do union first r
             | [] -> ()
@@ -179,7 +132,7 @@ module Dispatcher =
                 root,
                 { Id = TeamId("team-" + tasks.[root].Id.Value)
                   Tasks = ordered
-                  Writes = ts |> List.collect footprint |> List.distinct
+                  Writes = ts |> List.collect TaskGraph.footprint |> List.distinct
                   Elements = ts |> List.collect (fun t -> t.Elements) |> List.distinct })
             |> Map.ofList
 
