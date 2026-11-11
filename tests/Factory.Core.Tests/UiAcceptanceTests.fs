@@ -5,14 +5,14 @@ open Factory.Core.Tests.Support
 
 let private p = PathPattern.createOrFail
 let private el id name = { Id = ElementId id; Name = name; CodeAreas = [ p "src/**" ]; Risk = Low; InScope = true; Repo = None }
-let private elements = [ el "Pricing/Quote Form" "Quote Form"; el "Pricing/Quote API" "Quote API" ]
+let private elements = [ el "Fares/Booking Form" "Booking Form"; el "Fares/Booking API" "Booking API" ]
 let private task id els =
     { Id = TaskId id; Title = ""; Instructions = ""; Elements = els |> List.map ElementId; Writes = []; TestWrites = []
       DependsOn = []; Covers = []; Verify = [] }
-let private spec = "tests/acceptance/quote-form/AC-0107.spec.ts"
+let private spec = "tests/acceptance/booking-form/AC-0107.spec.ts"
 let private frozen = [ { Path = spec; Hash = "aaaa" } ]
 let private failing = match FailingCheck.create spec with Ok f -> f | Error e -> failwith e
-let private bug = { Id = "BUG-1"; Summary = "premium lost on 500" }
+let private bug = { Id = "BUG-1"; Summary = "fee lost on 500" }
 let private gate = { Gate = "AC-0107 error state"; Strengthens = None }
 let private origin = TranslationOrigin(TaskId "T-001")
 
@@ -27,16 +27,16 @@ let tests: (string * (unit -> unit)) list =
           match AcceptanceSpecs.failure elements spec with
           | Some f ->
               equal "AC-0107" f.Ac "ac"
-              equal (Some(ElementId "Pricing/Quote Form")) (f.Element |> Option.map (fun e -> e.Id)) "element"
+              equal (Some(ElementId "Fares/Booking Form")) (f.Element |> Option.map (fun e -> e.Id)) "element"
           | None -> failwith "not parsed"
           equal None (AcceptanceSpecs.failure elements "src/a.spec.ts") "outside tests/acceptance"
       "acceptance: a failing spec is a translation error on each task that changes its element only", fun () ->
-          let tasks = [ task "T-001" [ "Pricing/Quote Form" ]; task "T-002" [ "Pricing/Quote API" ]; task "T-003" [ "Pricing/Quote Form"; "Pricing/Quote API" ] ]
+          let tasks = [ task "T-001" [ "Fares/Booking Form" ]; task "T-002" [ "Fares/Booking API" ]; task "T-003" [ "Fares/Booking Form"; "Fares/Booking API" ] ]
           let f = (AcceptanceSpecs.failure elements spec).Value
           equal [ TranslationError(TaskId "T-001"); TranslationError(TaskId "T-003") ] (AcceptanceSpecs.translationErrors tasks f) "tasks"
       "defect: a bug cannot be classified before it is reproduced", fun () ->
           check (Defect.report bug |> Defect.classify origin |> Result.isError) "classify first"
-          check (FailingCheck.create "src/Quote.spec.ts" |> Result.isError) "not an acceptance spec"
+          check (FailingCheck.create "src/Booking.spec.ts" |> Result.isError) "not an acceptance spec"
       "defect: closing needs classification and a new gate", fun () ->
           check (Defect.report bug |> Defect.close gate |> Result.isError) "close reported"
           let closed =

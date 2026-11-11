@@ -5,9 +5,9 @@ open Factory.Core.Tests.Support
 
 let p = PathPattern.createOrFail
 let draft =
-    { Id = "W-1"; Requirement = Some "REQ-031"; Elements = [ "Pricing/Quote Form" ]; Repo = None; Target = None
-      DependsOn = []; Writes = [ "src/Quotes/**" ]; DoneWhen = [ "gate", "dotnet test" ] }
-let docDraft = { draft with Requirement = None; Elements = []; Writes = []; Target = Some("document", "Q3 pricing write-up"); DoneWhen = [ "checklist", "audience named" ] }
+    { Id = "W-1"; Requirement = Some "REQ-031"; Elements = [ "Fares/Booking Form" ]; Repo = None; Target = None
+      DependsOn = []; Writes = [ "src/Bookings/**" ]; DoneWhen = [ "gate", "dotnet test" ] }
+let docDraft = { draft with Requirement = None; Elements = []; Writes = []; Target = Some("document", "Q3 fares write-up"); DoneWhen = [ "checklist", "audience named" ] }
 
 let created d = match WorkItem.create d with Ok i -> i | Error es -> failwithf "%A" es
 let errorsOf d = match WorkItem.create d with Ok _ -> [] | Error es -> es
@@ -33,8 +33,8 @@ let parityRun s outcome = { Scenario = s; Commit = "abc1234"; Outcome = outcome 
 let tests: (string * (unit -> unit)) list =
     [ "work: a repo item and a non-repo item are valid", fun () ->
           equal (WorkItemId "W-1") repoItem.Id "id"
-          check (match repoItem.Target with Repo("REQ-031", [ e ], None) -> e.Value = "Pricing/Quote Form" | _ -> false) $"%A{repoItem.Target}"
-          check (match docItem.Target with Document "Q3 pricing write-up" -> true | _ -> false) $"%A{docItem.Target}"
+          check (match repoItem.Target with Repo("REQ-031", [ e ], None) -> e.Value = "Fares/Booking Form" | _ -> false) $"%A{repoItem.Target}"
+          check (match docItem.Target with Document "Q3 fares write-up" -> true | _ -> false) $"%A{docItem.Target}"
       "work: name a requirement or a target, never both and never neither", fun () ->
           check (List.contains NeedsRequirementOrTarget (errorsOf { draft with Target = Some("document", "x") })) "both"
           check (List.contains NeedsRequirementOrTarget (errorsOf { draft with Requirement = None })) "neither"
@@ -83,23 +83,23 @@ let tests: (string * (unit -> unit)) list =
           check (Result.isOk (Evidence.create item { none with Ticks = [ "checklist:audience named"; "review:Dana" ] })) "ticked"
       // ---------- parity: a recorded parity_result at the done commit, never a claim ----------
       "work: a parity entry names a scenario or all, and only a repo item has one", fun () ->
-          check (match (parityItem "quote-list").DoneWhen.ToList with [ Gate _; Parity "quote-list" ] -> true | _ -> false) "scenario"
+          check (match (parityItem "booking-list").DoneWhen.ToList with [ Gate _; Parity "booking-list" ] -> true | _ -> false) "scenario"
           equal "parity:all" (Check.key (Parity "all")) "key"
           check (List.contains (BlankCheck(2, "parity")) (errorsOf { draft with DoneWhen = [ "gate", "g"; "parity", " " ] })) "blank"
           check (List.contains ParityWithoutRepo (errorsOf { docDraft with DoneWhen = [ "checklist", "c"; "parity", "all" ] })) "not a repo item"
           check (List.contains RepoWithoutGate (errorsOf { draft with DoneWhen = [ "parity", "all" ] })) "parity is not a gate"
       "evidence: parity needs a passing result for the scenario at the done commit", fun () ->
-          let item = parityItem "quote-list"
-          check (Result.isOk (Evidence.create item { facts with ParityRuns = [ parityRun "quote-list" ParityPass ] })) "pass"
+          let item = parityItem "booking-list"
+          check (Result.isOk (Evidence.create item { facts with ParityRuns = [ parityRun "booking-list" ParityPass ] })) "pass"
           check (Result.isError (Evidence.create item facts)) "never recorded"
-          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "quote-list" ParityFail ] })) "fail"
-          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "quote-list" ParityCouldNotRun ] })) "could not run is not a pass"
-          check (Result.isError (Evidence.create item { facts with ParityRuns = [ { parityRun "quote-list" ParityPass with Commit = "other" } ] })) "other commit"
+          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "booking-list" ParityFail ] })) "fail"
+          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "booking-list" ParityCouldNotRun ] })) "could not run is not a pass"
+          check (Result.isError (Evidence.create item { facts with ParityRuns = [ { parityRun "booking-list" ParityPass with Commit = "other" } ] })) "other commit"
           check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "other-screen" ParityPass ] })) "other scenario"
       "evidence: the last parity result for a scenario at the commit decides", fun () ->
-          let item = parityItem "quote-list"
-          check (Result.isOk (Evidence.create item { facts with ParityRuns = [ parityRun "quote-list" ParityFail; parityRun "quote-list" ParityPass ] })) "pass last"
-          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "quote-list" ParityPass; parityRun "quote-list" ParityFail ] })) "fail last"
+          let item = parityItem "booking-list"
+          check (Result.isOk (Evidence.create item { facts with ParityRuns = [ parityRun "booking-list" ParityFail; parityRun "booking-list" ParityPass ] })) "pass last"
+          check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "booking-list" ParityPass; parityRun "booking-list" ParityFail ] })) "fail last"
       "evidence: parity all needs every registry scenario to pass, and fails when there are none", fun () ->
           let item = parityItem "all"
           let scenarios = [ "a"; "b" ]
@@ -110,11 +110,11 @@ let tests: (string * (unit -> unit)) list =
           check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "a" ParityPass ] })) "no scenarios in the registry"
       "parity: an uncovered difference asks to build it like legacy or ask the PO, naming the first failures", fun () ->
           let f n = { Step = n; Key = $"button:Save#{n}"; Kind = "missing"; Msg = $"step {n}: button Save is missing" }
-          let nd = ParityDecision.raise "quote-list" "abc1234def" (Some "W-1") [ f 1; f 2; f 3; f 4 ]
+          let nd = ParityDecision.raise "booking-list" "abc1234def" (Some "W-1") [ f 1; f 2; f 3; f 4 ]
           equal [ "A"; "B" ] (nd.Options |> List.map (fun o -> o.Id)) "two options"
           equal [] (NeedsDecision.optionErrors nd.Options nd.Recommended) "a valid choice"
           check (nd.Options.[0].Summary.Contains "like legacy" && nd.Options.[1].Summary.Contains "PO") $"%A{nd.Options}"
-          check (nd.Question.Contains "quote-list" && nd.Question.Contains "abc1234" && nd.Question.Contains "W-1" && nd.Question.Contains "4 uncovered") nd.Question
+          check (nd.Question.Contains "booking-list" && nd.Question.Contains "abc1234" && nd.Question.Contains "W-1" && nd.Question.Contains "4 uncovered") nd.Question
           check (nd.Question.Contains "step 3:" && not (nd.Question.Contains "step 4:")) "only the first three failures"
           equal "parity" nd.Source "source"
       // ---------- state machine ----------
@@ -150,12 +150,12 @@ let tests: (string * (unit -> unit)) list =
       // ---------- conflicts, pull scheduler, re-check ----------
       "conflict: shared writes, shared element, same target; unrelated items do not", fun () ->
           let w id elements writes = created { draft with Id = id; Elements = elements; Writes = writes }
-          let a = w "A" [ "UI" ] [ "src/Quotes/**" ]
-          equal [ SharedWrites(p "src/Quotes/**", p "src/Quotes/Data/**") ] (Scheduler.conflict a (w "B" [ "Api" ] [ "src/Quotes/Data/**" ]) |> Option.toList) "writes"
+          let a = w "A" [ "UI" ] [ "src/Bookings/**" ]
+          equal [ SharedWrites(p "src/Bookings/**", p "src/Bookings/Data/**") ] (Scheduler.conflict a (w "B" [ "Api" ] [ "src/Bookings/Data/**" ]) |> Option.toList) "writes"
           equal [ SharedElement(ElementId "UI") ] (Scheduler.conflict a (w "C" [ "UI" ] [ "src/Other/**" ]) |> Option.toList) "element"
           equal [] (Scheduler.conflict a (w "D" [ "Api" ] [ "src/Api/**" ]) |> Option.toList) "none"
           let d1 = created { docDraft with Id = "P" }
-          equal [ SameTarget "document Q3 pricing write-up" ] (Scheduler.conflict d1 (created { docDraft with Id = "Q" }) |> Option.toList) "same document"
+          equal [ SameTarget "document Q3 fares write-up" ] (Scheduler.conflict d1 (created { docDraft with Id = "Q" }) |> Option.toList) "same document"
           equal [] (Scheduler.conflict d1 (created { docDraft with Id = "R"; Target = Some("document", "other") }) |> Option.toList) "another document"
       "scheduler: pulls ready items in priority then age order, up to the free slots", fun () ->
           let item id = created { docDraft with Id = id; Target = Some("document", id) }
@@ -190,11 +190,11 @@ let tests: (string * (unit -> unit)) list =
                   { Candidates = [ c prereq (WorkState.Backlog); c (doc "needs-pre" [ "pre" ]) (WorkState.Ready at); c (doc "stale" []) (WorkState.Ready at); c (doc "dear" []) (WorkState.Ready at) ]
                     WipLimit = 5
                     Budget = Some { Remaining = 100L; Estimate = fun i -> if i.Id.Value = "dear" then 500L else 1L }
-                    Stale = Map.ofList [ WorkItemId "stale", [ "Quote Form changed" ] ] }
+                    Stale = Map.ofList [ WorkItemId "stale", [ "Booking Form changed" ] ] }
           equal [] plan.Pull "nothing"
           let why id = plan.Deferred |> List.find (fun (i, _) -> i.Value = id) |> snd
           equal (WaitsOnDependency [ WorkItemId "pre" ]) (why "needs-pre") "dependency"
-          equal (NeedsRecheck [ "Quote Form changed" ]) (why "stale") "recheck"
+          equal (NeedsRecheck [ "Booking Form changed" ]) (why "stale") "recheck"
           equal (OverBudget(500L, 100L)) (why "dear") "budget"
       "scheduler: a done dependency is satisfied, and budget is spent as items are pulled", fun () ->
           let ev = match Evidence.create docItem { facts with Ticks = [ "checklist:audience named" ]; Commit = None; OnMain = None; GateRuns = [] } with Ok e -> e | Error es -> failwithf "%A" es

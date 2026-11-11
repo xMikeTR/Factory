@@ -27,7 +27,7 @@ let tests: (string * (unit -> unit)) list =
     [ "jira mirror: a jira target and a repo item with a jira-style requirement mirror; others do not", fun () ->
           equal (Some "DEMO-7") (JiraMirror.key (jiraItem "W-A" "DEMO-7")) "target"
           equal (Some "DEMO-9") (JiraMirror.key (repoItem "W-B" "DEMO-9")) "requirement"
-          equal None (JiraMirror.key (repoItem "W-C" "pricing-rules")) "not a key"
+          equal None (JiraMirror.key (repoItem "W-C" "fares-rules")) "not a key"
       "jira mirror: Jira behind the ledger is moved when it shows what the mirror wrote", fun () ->
           let plan = JiraMirror.plan [ jiraItem "W-A" "DEMO-7", active ] (Map [ "DEMO-7", "To Do" ]) (Map [ "DEMO-7", "To Do" ])
           equal [ Transition("DEMO-7", "W-A", "To Do", "In Progress") ] plan "transition"

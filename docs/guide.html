@@ -34,7 +34,7 @@
 <p>No model, key or cost needed.</p>
 <p>When you want a model, a reviewer or Langfuse, run <code>scripts/setup-wizard.sh</code>: a step-by-step prompt that writes <code>~/.config/factory-s2/env</code> (mode 600, outside the repo). Connection tests are free and only run if you say yes.</p>
 <ol>
-<li><code>npm install &amp;&amp; npm start</code>, then choose <strong>Try the sample project</strong>. The first launch also shows a short tour (Help, Take the tour, shows it again). This opens <code>sample-registry/</code>, a small pricing-engine design.</li>
+<li><code>npm install &amp;&amp; npm start</code>, then choose <strong>Try the sample project</strong>. The first launch also shows a short tour (Help, Take the tour, shows it again). This opens <code>sample-registry/</code>, a small fares-engine design.</li>
 <li>Look at the status bar: the gate says <em>not ready</em>. In the Design sidebar, the blocking clauses are listed in the order to work them. The first one is marked <em>next</em>.</li>
 <li>Open <code>model/workspace.dsl</code> from the Explorer. Findings (DC000 to DC009) appear in the Problems panel as you read; click one to jump to the line.</li>
 <li>On a finding, try <strong>Ask the tutor</strong> to have it explained, or <strong>Record decision</strong> to write down how you will resolve it. Nothing is bound until you press Bind.</li>
@@ -63,7 +63,7 @@
 <pre>npm install
 npm start                          # opens the app
 npm start -- /path/to/registry     # opens straight into a registry folder</pre>
-<p>Needs Node 20 or later. Use <em>Try the sample project</em> to explore <code>sample-registry/</code>, a small pricing-engine design with a decision, a requirement, and a sample ledger. A registry is a plain folder, so git gives you review and history.</p>
+<p>Needs Node 20 or later. Use <em>Try the sample project</em> to explore <code>sample-registry/</code>, a small fares-engine design with a decision, a requirement, and a sample ledger. A registry is a plain folder, so git gives you review and history.</p>
 
 <h3>The views</h3>
 <table>
@@ -88,7 +88,7 @@ npm start -- /path/to/registry     # opens straight into a registry folder</pre>
 <p><code>designc.json</code> in the registry holds settings, and only the <em>names</em> of environment variables for secrets. The Set up page (opened when a folder has no <code>designc.json</code>) walks through the model, LLM and Langfuse sections, each skippable, with a Test connection button.</p>
 <pre>{
   "model": "model/workspace.dsl",
-  "codebase": "../pricing-repo",
+  "codebase": "../fares-repo",
   "dispatch": { "pipeline": { "label": "Build it",
     "command": "my-build --handover {handover} --repo {repo} --registry {registry} --base {base}" } }
 }</pre>
@@ -99,8 +99,8 @@ npm start -- /path/to/registry     # opens straight into a registry folder</pre>
 <h2 id="s2">Running factory-s2</h2>
 <h3>Try it without a model</h3>
 <pre>dotnet run --project tests/Factory.Core.Tests
-dotnet run --project src/Factory.S2 -- validate --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
-dotnet run --project src/Factory.S2 -- dispatch --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json</pre>
+dotnet run --project src/Factory.S2 -- validate --handover examples/fares-v3/handover.json --plan examples/fares-v3/plan.json
+dotnet run --project src/Factory.S2 -- dispatch --handover examples/fares-v3/handover.json --plan examples/fares-v3/plan.json</pre>
 <p><code>validate</code> and <code>dispatch</code> are deterministic: no agents, no network, no cost. <code>dispatch</code> prints the waves of tasks that can run in parallel.</p>
 
 <h3>A real run</h3>

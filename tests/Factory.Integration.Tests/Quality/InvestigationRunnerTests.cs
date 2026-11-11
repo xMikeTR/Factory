@@ -15,13 +15,13 @@ public class InvestigationRunnerTests
     {
         var model = new ScriptedChatClient();
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
-        model.Enqueue(Call("submit_diagnosis", new { finding = "QuoteStatus never sets Draft on create." }), Say("done"));
+        model.Enqueue(Call("submit_diagnosis", new { finding = "BookingStatus never sets Draft on create." }), Say("done"));
         var repair = new RepairFile("run-prev", new Dictionary<string, string> { ["T-001"] = "Frozen spec failed: expected Draft" });
 
         var diagnosed = await InvestigationRunner.DiagnoseAsync(h.Services, repair, h.Repo, default);
 
         Assert.Contains("expected Draft", diagnosed.Feedback["T-001"]);
-        Assert.Contains("QuoteStatus never sets Draft", diagnosed.Feedback["T-001"]);
+        Assert.Contains("BookingStatus never sets Draft", diagnosed.Feedback["T-001"]);
         var row = Assert.Single(h.Rows(LedgerKinds.Diagnosis));
         Assert.Equal(("T-001", "diagnosed"), (row.TaskId, row.Outcome));
         Assert.Equal(0, model.Remaining);
@@ -46,7 +46,7 @@ public class InvestigationRunnerTests
     {
         var model = new ScriptedChatClient();
         using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
-        model.Enqueue(Call("submit_reproduction", new { steps = "1. open quote 2. save; status stays blank" }), Say("done"), Say("no luck"));
+        model.Enqueue(Call("submit_reproduction", new { steps = "1. open booking 2. save; status stays blank" }), Say("done"), Say("no luck"));
 
         var steps = await InvestigationRunner.ReproduceAsync(h.Services, "repro-1", "status blank after save", h.Repo, default);
         Assert.Contains("status stays blank", steps);

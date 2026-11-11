@@ -14,8 +14,8 @@ namespace Factory.Integration.Tests.Teams;
 public class UiGuardLoopTests
 {
     private static readonly IReadOnlyDictionary<string, DecisionAnswer> NoAnswers = new Dictionary<string, DecisionAnswer>();
-    private const string NewFile = "src/Pricing.Data/QuoteStatus.cs";
-    private const string Page = "src/Pricing.Data/Page.tsx";
+    private const string NewFile = "src/Fares.Data/BookingStatus.cs";
+    private const string Page = "src/Fares.Data/Page.tsx";
     private const string WithButton = "export const P = () => <button data-testid=\"export-btn\" />;\n";
     private const string WithoutButton = "export const P = () => <p />;\n";
 
@@ -25,8 +25,8 @@ public class UiGuardLoopTests
 
     /// Plan, test author, then an implementer turn that adds the file and rewrites the page without its button, then `more`.
     private static ScriptedChatClient Model(params Microsoft.Extensions.AI.ChatResponse[] more) => new([
-        Say("Approach: add QuoteStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-        Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+        Say("Approach: add BookingStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+        Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
         Call("write_file", new { path = Page, content = WithoutButton }),
         Call("declare_done", new { summary = "added" }), Say("done"),
         .. more]);
@@ -104,8 +104,8 @@ public class UiGuardLoopTests
     public async Task check_quality_shows_the_implementer_the_removal_before_verify_does()
     {
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Say("Approach: add BookingStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("write_file", new { path = Page, content = WithoutButton }),
             Call("check_quality", new { }),
             Call("declare_done", new { summary = "added" }), Say("done"));
@@ -122,8 +122,8 @@ public class UiGuardLoopTests
     public async Task check_quality_names_a_change_outside_the_write_paths_before_verify_reverts_it()
     {
         var model = new ScriptedChatClient(
-            Say("Approach: add QuoteStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-            Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
+            Say("Approach: add BookingStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("write_file", new { path = Page, content = WithoutButton }),
             Call("run_command", new { command = "touch stray.md" }),
             Call("check_quality", new { }),

@@ -12,7 +12,7 @@ Three principles carry over from the factory itself:
 
 - **Design is the source of truth.** Eval tasks come from frozen handover packages and bound decisions, so they regenerate when the design changes.
 - **Probabilistic proposes, deterministic decides.** Prefer a code grader; reach for an LLM judge only for what code cannot check.
-- **Nothing is done without a check.** Every check emits a ledger event, so System 4 can learn from it.
+- **Nothing is done without a check.** Every check emits a ledger event, so System 3 can learn from it.
 
 To extend it: add a section only when a real eval run taught you something. Log the change in the changelog at the end, with the date and the failure that prompted it.
 
@@ -22,7 +22,7 @@ Use these words and only these. Most of the confusion between sources is the sam
 
 | Term | Meaning | In the factory |
 | --- | --- | --- |
-| Task | One test case with defined inputs and success criteria | A frozen handover slice plus its bound decisions, e.g. pricing-v3 with D-0042 |
+| Task | One test case with defined inputs and success criteria | A frozen handover slice plus its bound decisions, e.g. fares-v3 with D-0042 |
 | Trial | One attempt at a task; run several because agents are non-deterministic | One S2 run of that task in a fresh worktree |
 | Grader | Logic that scores one aspect of a trial; holds one or more checks | A decision's `checks:` entry, a verify block, an LLM judge |
 | Transcript (trace) | Full record of a trial: messages, tool calls, reasoning | The Langfuse trace, linked from the ledger by `trace_id` |
@@ -35,9 +35,9 @@ Use these words and only these. Most of the confusion between sources is the sam
 | Gate | A threshold that blocks progress | `ReadyGate`, `PlanValidator`, merge tiers |
 | Gradient | A score tracked over time that guides change but blocks nothing | CRAP score, mutation score, tokens per passing task |
 | Failure mode | A named, recurring way the system fails, found by reading traces | A row in the failure taxonomy (playbook section) |
-| Escape | A problem caught later than the stage that should have caught it | The S4 escape classification |
+| Escape | A problem caught later than the stage that should have caught it | The S3 escape classification |
 
-The last two are the bridge between Hamel and your factory: error analysis finds failure modes; System 4 classifies escapes. Same activity, two scales.
+The last two are the bridge between Hamel and your factory: error analysis finds failure modes; System 3 classifies escapes. Same activity, two scales.
 
 ## The one loop
 
@@ -49,7 +49,7 @@ The look step is highlighted because it is the one most often skipped. Hamel's L
 
 ## Where evals live in the factory
 
-Evals wrap System 2 from the outside: the eval harness reads tasks from the registry, drives S2 trials, and writes results to the ledger that System 4 reads. Nothing new is invented; it reuses the registry lifecycle, the ledger and the escape table from the factory plan.
+Evals wrap System 2 from the outside: the eval harness reads tasks from the registry, drives S2 trials, and writes results to the ledger that System 3 reads. Nothing new is invented; it reuses the registry lifecycle, the ledger and the escape table from the factory plan.
 
 &#91;embedded content: evals in the design-to-code factory · 7 parts\]
 
@@ -57,7 +57,7 @@ Evals wrap System 2 from the outside: the eval harness reads tasks from the regi
 | --- | --- | --- |
 | System 1 | Does grill-me ask the question that resolves each open finding? Does ReadyGate reject incomplete packages? | Question-quality judge; F# tests per gate clause |
 | System 2 | Does the merged code satisfy the package and every bound decision, within cost? | Build, tests, decision checks, scope, then judges |
-| System 4 | No suite of its own. Each proposal carries a task that fails on the old version and passes on the new. | The proposal's own check |
+| System 3 | No suite of its own. Each proposal carries a task that fails on the old version and passes on the new. | The proposal's own check |
 
 Start with System 2. It has the most deterministic graders and the existing 11 tasks to learn from.
 
@@ -80,13 +80,13 @@ Pick the cheapest grader that can see the failure: code first, an LLM judge only
 | Quality rubric | Root cause fixed, no test gaming, codebase fit, no over-engineering | LLM judge | Gradient | Rubric playbook |
 | Plan quality | Planner's tasks are well-scoped with verify blocks | LLM judge plus `PlanValidator` | Gate (validator), gradient (judge) | S2 planner |
 | Question quality | Grill-me asks the question that resolves the open finding | LLM judge | Gradient | S1 grill-me |
-| Human review | Labels a sample to calibrate judges | Human | Neither; calibration only | Weekly S4 review |
+| Human review | Labels a sample to calibrate judges | Human | Neither; calibration only | Weekly S3 review |
 
 Two rules for promotion. A gradient becomes a gate only after its threshold has been stable for several weeks, the gate-vs-gradient framing you already use. An LLM judge never becomes a gate on its own; pair it with a code check or a human.
 
 ## Task and suite format
 
-Every task is one YAML file in the registry, reviewed by PR like a decision. It follows the same lifecycle (minted, checked, bound), so System 4 can propose tasks and only a human can bind them.
+Every task is one YAML file in the registry, reviewed by PR like a decision. It follows the same lifecycle (minted, checked, bound), so System 3 can propose tasks and only a human can bind them.
 
 ```
 registry/
@@ -109,15 +109,15 @@ source:                        # why this task exists (the one rule)
   failure_mode: FM-03          # from taxonomy.yaml
   trace_id: lf-7c1e...         # the Langfuse trace that showed it
 input:
-  handover: handovers/pricing-v3@v3.1.0
-  task_filter: [quote-writes]
+  handover: handovers/fares-v3@v3.1.0
+  task_filter: [booking-writes]
 environment:
-  repo: pricing-engine
+  repo: fares-engine
   commit: 4f2a9e1              # frozen start state
   fresh_worktree: true
 graders:                       # all must pass unless weighted below
   - {type: build}
-  - {type: tests, fail_to_pass: [QuoteConcurrencyTests], pass_to_pass: all}
+  - {type: tests, fail_to_pass: [BookingConcurrencyTests], pass_to_pass: all}
   - {type: decision_checks, decisions: [D-0042]}
   - {type: scope, allowed: from_task_writes}
   - {type: judge, rubric: rubrics/test-gaming.md}
@@ -136,7 +136,7 @@ Three checks before a task is bound: two engineers would give the same verdict o
 This is the step every source agrees on and the one your current suite skipped. Budget two evenings for the first pass; it produces the taxonomy everything else hangs off.
 
 1. **Collect 50–100 traces.** Mix real S2 runs with the 11 existing tasks rerun k times. Include passes as well as failures; quiet failures hide in passing runs.
-2. **Open coding.** Read each trace and write one plain sentence about the first thing that went wrong, e.g. "executor edited QuoteService outside its writes paths". Note only the first error; later ones are usually downstream of it. Record pass or fail for the trial as a whole.
+2. **Open coding.** Read each trace and write one plain sentence about the first thing that went wrong, e.g. "executor edited BookingService outside its writes paths". Note only the first error; later ones are usually downstream of it. Record pass or fail for the trial as a whole.
 3. **Axial coding.** Group the sentences into 5–10 failure modes. Give each an id (FM-01), a one-line definition and one example trace. An LLM can propose clusters; you decide them.
 4. **Count.** Tally traces per failure mode. The top three by frequency, weighted by cost to you, are what you work on.
 5. **Triage each mode.** Ask which fix is cheapest:
@@ -157,7 +157,7 @@ Keep the result in `factory/taxonomy.yaml`:
   graders: [scope]
 ```
 
-The classification in step 5 is the same as System 4's escape table: a spec gap is an S1 escape, a runtime failure is an S2 escape. Run error analysis by hand inside the weekly S4 review until the patterns are stable; that is Phase A of System 4.
+The classification in step 5 is the same as System 3's escape table: a spec gap is an S1 escape, a runtime failure is an S2 escape. Run error analysis by hand inside the weekly S3 review until the patterns are stable; that is Phase A of System 3.
 
 ## Playbook: LLM judges
 
@@ -254,7 +254,7 @@ Start with the bold rows; add others only when a decision depends on them.
 | --- | --- | --- | --- |
 | **First-pass rate** | Tasks passing `VerifyRunner` on the first attempt ÷ tasks started | S2 quality trend | Ledger `task`, `gate` |
 | **Tokens per passing task** | All tokens in a handover ÷ tasks that passed | Headline efficiency | Langfuse usage, ledger |
-| **Escape rate per stage** | Problems caught later than the stage that should have caught them, by stage | System 4's headline | Ledger `escape` |
+| **Escape rate per stage** | Problems caught later than the stage that should have caught them, by stage | System 3's headline | Ledger `escape` |
 | **Stall rate** | Tasks escalated because they stalled ÷ tasks | Where agents get stuck; entry to behavioural evals | Ledger `task_event` Abandon whose reason starts "not making progress" (a stall fails the task; it is not a `needs_decision`) |
 | **Spend per user** | £ per user per month against the £750 budget | Budget and alerts | APIM v2 |
 | Reruns per task | Verify failures before pass | Main cost lever | Ledger `task.reruns` |
@@ -281,7 +281,7 @@ Three views, each built for one decision:
 
 - **Run view** (Langfuse trace): why did this run fail? Opened from a ledger row.
 - **Factory health** (daily, ledger queries): first-pass rate, tokens per passing task, stall rate, spend per user, each against last week.
-- **Improvement review** (weekly, System 4): escape rate per stage and the top failure modes, which feed the error-analysis playbook.
+- **Improvement review** (weekly, System 3): escape rate per stage and the top failure modes, which feed the error-analysis playbook.
 
 Alert on few things, all actionable: a user above 80% of budget; stall rate double its 4-week average; a spike in ACS denials for one rule; the regression suite's pass^3 dropping after a merge to the factory.
 
@@ -289,7 +289,7 @@ Alert on few things, all actionable: a user above 80% of budget; stall rate doub
 
 Run the code graders on every production run, since they are cheap. Run LLM judges on a sample of about 10% of runs. Send runs where graders disagree, or a judge returns UNKNOWN, to an annotation queue; they are the first traces you read in the next error-analysis pass.
 
-One rule from System 4 applies here too: track escapes, never raw finding counts. A metric with no decision behind it is a panel nobody opens; delete it.
+One rule from System 3 applies here too: track escapes, never raw finding counts. A metric with no decision behind it is a panel nobody opens; delete it.
 
 ### Anatomy of one run's trace
 
@@ -314,23 +314,23 @@ Three conventions make the rest easy:
 
 - Tag each trial's trace with `task_id`, `suite_run_id` and `harness_version`, so a filter gives you one run.
 - Name scores `grader.<name>` with values 1 (pass), 0 (fail) or null (unknown).
-- Write every grader result to the ledger first and Langfuse second. The ledger is what System 4 reads.
+- Write every grader result to the ledger first and Langfuse second. The ledger is what System 3 reads.
 
-## Worked example: Quote lost-update (D-0042)
+## Worked example: Booking lost-update (D-0042)
 
 The same slice the factory plan uses, taken once through the whole loop. The trace contents below are illustrative; yours will differ, which is the point of looking.
 
-1. **Look.** Run the pricing-v3 handover through S2, 5 trials, plus the 11 existing tasks rerun 3 times each. That gives about 38 traces.
-2. **Name.** Open coding produces notes such as: "added rowversion but retried forever on conflict"; "edited `PricingController` outside writes"; "tcOptimistic passes but the new test only asserts no exception". Axial coding groups them into, say, FM-01 unbounded retry, FM-03 scope breach, FM-05 weak test.
+1. **Look.** Run the fares-v3 handover through S2, 5 trials, plus the 11 existing tasks rerun 3 times each. That gives about 38 traces.
+2. **Name.** Open coding produces notes such as: "added rowversion but retried forever on conflict"; "edited `FaresController` outside writes"; "tcOptimistic passes but the new test only asserts no exception". Axial coding groups them into, say, FM-01 unbounded retry, FM-03 scope breach, FM-05 weak test.
 3. **Triage.**
    - FM-01 is a spec gap: D-0042 never said what to do on conflict. Add a grill-me question ("retry or surface to the caller?") and a gate clause. That is an S1 escape.
    - FM-03 has an obvious fix: tighten the executor's ACS policy. Add task S2-0001 with the scope grader so it stays fixed.
    - FM-05 recurs and code cannot see it. Write the test-gaming judge, then calibrate it on 40 labelled trials.
 4. **Test.** Bind S2-0001 to S2-0003 in `s2-regression`, each with build, tests, the D-0042 check, scope, and the judge where relevant.
 5. **Measure.** Change one thing, e.g. the executor prompt. Rerun the suite with the same trials and compare pass^3 and tokens per passing task against the previous `harness_version`.
-6. **Feed System 4.** Each failure mode becomes a ledger `escape` event classified by stage. The next weekly review starts from those counts.
+6. **Feed System 3.** Each failure mode becomes a ledger `escape` event classified by stage. The next weekly review starts from those counts.
 
-What proves the loop works: a new task fails on the old prompt and passes on the new one. That is the same proof the factory plan asks of every System 4 proposal.
+What proves the loop works: a new task fails on the old prompt and passes on the new one. That is the same proof the factory plan asks of every System 3 proposal.
 
 ## Starter plan: first two weeks
 
@@ -339,7 +339,7 @@ The goal for two weeks is one regression suite you trust, not a framework. Each 
 **Week 1: look and name**
 
 - [ ] Tag S2 traces with `task_id`, `trial`, `harness_version`
-- [ ] Run the 11 existing tasks 3 times each and the pricing-v3 slice 5 times
+- [ ] Run the 11 existing tasks 3 times each and the fares-v3 slice 5 times
 - [ ] Open-code every trace in a Langfuse annotation queue, one sentence each
 - [ ] Cluster into 5–10 failure modes and write `factory/taxonomy.yaml` with counts
 - [ ] Triage each mode as spec, fix or grader

@@ -23,7 +23,7 @@ let tests: (string * (unit -> unit)) list =
                   check (not (loneSurrogate f.Text)) $"budget {budget}: broken pair"
                   check (f.Text.Length <= budget) $"budget {budget}: over budget"
 
-      "review diff: a path git quotes (non-ASCII, quote or backslash) is read as the path a finding cites", fun () ->
+      "review diff: a path git bookings (non-ASCII, booking or backslash) is read as the path a finding cites", fun () ->
           let diff =
               String.concat "\n"
                   [ "diff --git \"a/src/caf\\303\\251.cs\" \"b/src/caf\\303\\251.cs\""
@@ -39,7 +39,7 @@ let tests: (string * (unit -> unit)) list =
           let d = Diff.parse diff
           equal (Set.ofList [ 2 ]) d.Added.["src/café.cs"] "octal-escaped UTF-8"
           // the second '+++' line sits inside the first hunk's counts only if the counts were wrong; here the hunk ended
-          equal (Set.ofList [ 2 ]) d.Added.["src/say \"hi\".cs"] "escaped quote"
+          equal (Set.ofList [ 2 ]) d.Added.["src/say \"hi\".cs"] "escaped booking"
 
       "paths: a segment with many stars does not take exponential time", fun () ->
           let pat = PathPattern.createOrFail (String.replicate 14 "*a" + "*b")

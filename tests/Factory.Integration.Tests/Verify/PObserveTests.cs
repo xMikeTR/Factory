@@ -15,7 +15,7 @@ public sealed class PObserveTests : IDisposable
     public PObserveTests()
     {
         var behaviour = Directory.CreateDirectory(Path.Combine(_worktree, "behaviour")).FullName;
-        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures/handover/behaviour/quotes-writes.p"), Path.Combine(behaviour, "quotes-writes.p"));
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures/handover/behaviour/bookings-writes.p"), Path.Combine(behaviour, "bookings-writes.p"));
     }
 
     private Task<Factory.Harness.ProcessResult> CheckAsync(params string[] log) => RunCheckAsync("", log);
@@ -35,7 +35,7 @@ public sealed class PObserveTests : IDisposable
         if (!Enabled) return; // opt-in
 
         var r = await CheckAsync(
-            "12:00:01 INFO quotes: write accepted",
+            "12:00:01 INFO bookings: write accepted",
             "12:00:01 INFO pobserve eCommitted 1",
             "12:00:02 INFO pobserve eCommitted 2",
             "12:00:03 DEBUG unrelated line",
@@ -58,7 +58,7 @@ public sealed class PObserveTests : IDisposable
         Assert.Contains("lost update: 2 commits, value 1", r.Output);
     }
 
-    /// live4: five tests each committed their own quote at version 1; one stream read that as lost updates.
+    /// live4: five tests each committed their own booking at version 1; one stream read that as lost updates.
     [Fact]
     public async Task Each_key_is_checked_as_its_own_history()
     {
@@ -105,7 +105,7 @@ public sealed class PObserveTests : IDisposable
     {
         if (!Enabled) return; // opt-in
 
-        var r = await CheckAsync("12:00:01 INFO quotes: write accepted", "12:00:02 INFO {\"event\":\"eCommitted\",\"rev\":1}");
+        var r = await CheckAsync("12:00:01 INFO bookings: write accepted", "12:00:02 INFO {\"event\":\"eCommitted\",\"rev\":1}");
 
         Assert.True(r.ExitCode == 3, r.Output);
         Assert.Contains("no events", r.Output);

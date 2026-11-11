@@ -2,14 +2,14 @@
   "schema": "designc.handover.elements/2",
   "elements": [
     {
-      "id": "Quotes",
-      "name": "Quotes",
+      "id": "Bookings",
+      "name": "Bookings",
       "kind": "softwareSystem",
       "in_scope": false
     },
     {
-      "id": "Quotes/Quotes API",
-      "name": "Quotes API",
+      "id": "Bookings/Bookings API",
+      "name": "Bookings API",
       "kind": "container",
       "code": [
         "src/Api/**"
@@ -18,13 +18,13 @@
       "in_scope": true
     },
     {
-      "id": "Quotes/Quotes DB",
-      "name": "Quotes DB",
+      "id": "Bookings/Bookings DB",
+      "name": "Bookings DB",
       "kind": "container",
       "in_scope": false
     },
     {
-      "id": "Quotes/Mail",
+      "id": "Bookings/Mail",
       "name": "Mail",
       "kind": "container",
       "code": [
@@ -36,8 +36,8 @@
   ],
   "relationships": [
     {
-      "from": "Quotes/Quotes API",
-      "to": "Quotes/Quotes DB"
+      "from": "Bookings/Bookings API",
+      "to": "Bookings/Bookings DB"
     }
   ],
   "events": [],

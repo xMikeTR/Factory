@@ -98,18 +98,18 @@ module PlanValidator =
         |> Array.choose (fun tok -> match PathPattern.create tok with Ok p -> Some p.Value | Error _ -> None)
         |> Array.exists (fun tok -> areas |> List.exists (fun a -> PathPattern.matches a tok || PathPattern.matches a (tok + "/_")))
 
-    /// Shell words of a command, quotes kept inside a word; `;`, `&`, `|`, `(`, `)` and newlines
+    /// Shell words of a command, bookings kept inside a word; `;`, `&`, `|`, `(`, `)` and newlines
     /// end a command and come out as the word "|".
     let private shellWords (run: string) =
         let words = ResizeArray<string>()
         let word = Text.StringBuilder()
         let flush () = if word.Length > 0 then words.Add(word.ToString()); word.Clear() |> ignore
-        let mutable quote = None
+        let mutable booking = None
         for c in run do
-            match quote, c with
-            | Some q, _ when c = q -> quote <- None; word.Append c |> ignore
+            match booking, c with
+            | Some q, _ when c = q -> booking <- None; word.Append c |> ignore
             | Some _, _ -> word.Append c |> ignore
-            | None, ('"' | '\'') -> quote <- Some c; word.Append c |> ignore
+            | None, ('"' | '\'') -> booking <- Some c; word.Append c |> ignore
             | None, (' ' | '\t') -> flush ()
             | None, (';' | '&' | '|' | '(' | ')' | '\n') -> flush (); words.Add "|"
             | None, _ -> word.Append c |> ignore

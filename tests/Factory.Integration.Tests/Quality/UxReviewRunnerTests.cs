@@ -11,7 +11,7 @@ public class UxReviewRunnerTests
 {
     // Writes one screenshot named by the convention and one file that does not follow it.
     private const string Command =
-        "printf png > \"$FACTORY_SCREENSHOT_DIR/quotes-api__ready__desktop.png\" && printf x > \"$FACTORY_SCREENSHOT_DIR/stray.png\"";
+        "printf png > \"$FACTORY_SCREENSHOT_DIR/bookings-api__ready__desktop.png\" && printf x > \"$FACTORY_SCREENSHOT_DIR/stray.png\"";
 
     [Fact]
     public async Task Screenshots_are_kept_and_ledgered_and_without_the_judge_nothing_is_scored()
@@ -22,7 +22,7 @@ public class UxReviewRunnerTests
         var r = await UxReviewRunner.RunAsync(h.Services, h.Handover, "ux-1", Command, h.Repo, judge: false, default);
 
         var shot = Assert.Single(r.Shots);
-        Assert.Equal(("quotes-api", "ready", "desktop"), (shot.ElementSlug, shot.State, shot.Breakpoint));
+        Assert.Equal(("bookings-api", "ready", "desktop"), (shot.ElementSlug, shot.State, shot.Breakpoint));
         Assert.Empty(r.Scores);
         Assert.Equal("taken", Assert.Single(h.Rows(LedgerKinds.UxScreenshots)).Outcome);
         Assert.Empty(h.Rows(LedgerKinds.UxJudge));
@@ -44,7 +44,7 @@ public class UxReviewRunnerTests
         Assert.Equal((4, 3, 5), (score.Hierarchy, score.Clarity, score.Consistency));
         var row = Assert.Single(h.Rows(LedgerKinds.UxJudge));
         Assert.Equal("gradient", row.Outcome);
-        Assert.Equal("quotes-api", row.Element);
-        Assert.Contains("quotes-api", UxReviewRunner.Render(r));
+        Assert.Equal("bookings-api", row.Element);
+        Assert.Contains("bookings-api", UxReviewRunner.Render(r));
     }
 }

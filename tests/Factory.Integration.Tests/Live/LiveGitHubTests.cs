@@ -11,7 +11,7 @@ namespace Factory.Integration.Tests.Live;
 
 using Core = Factory.Core.Core;
 
-/// Opt-in: FACTORY_LIVE_GITHUB=owner/repo (a private copy of pricing-sample) and
+/// Opt-in: FACTORY_LIVE_GITHUB=owner/repo (a private copy of fares-sample) and
 /// FACTORY_LIVE_APPROVER=<login>. Opens a real PR for T-001 in tiered mode, checks the tier
 /// and reasons reached the PR body and the ledger, then closes the PR and deletes its branch.
 public class LiveGitHubTests
@@ -35,18 +35,18 @@ public class LiveGitHubTests
                 {
                     new
                     {
-                        id = "T-001", title = "Add QuoteStatus", instructions = "Add the QuoteStatus enum.",
-                        elements = new[] { "Pricing Platform/Quotes DB" }, writes = new[] { "src/Pricing.Data/**" },
-                        testWrites = new[] { "tests/Pricing.Data.Tests/**" }, dependsOn = Array.Empty<string>(), covers = new[] { "D-0001" },
-                        verify = new[] { new { name = "file exists", kind = "invariant", run = $"sh {TeamHarness.QuoteStatusTest}", timeoutSeconds = 30 } },
+                        id = "T-001", title = "Add BookingStatus", instructions = "Add the BookingStatus enum.",
+                        elements = new[] { "Fares Platform/Bookings DB" }, writes = new[] { "src/Fares.Data/**" },
+                        testWrites = new[] { "tests/Fares.Data.Tests/**" }, dependsOn = Array.Empty<string>(), covers = new[] { "D-0001" },
+                        verify = new[] { new { name = "file exists", kind = "invariant", run = $"sh {TeamHarness.BookingStatusTest}", timeoutSeconds = 30 } },
                     },
                 },
             })),
-            Say("Approach: add QuoteStatus.cs"),
-            Call("write_file", new { path = TeamHarness.QuoteStatusTest, content = "test -f src/Pricing.Data/QuoteStatus.cs\n" }),
-            Call("declare_done", new { summary = "red test for QuoteStatus" }), Say("done"),
-            Call("write_file", new { path = "src/Pricing.Data/QuoteStatus.cs", content = "public enum QuoteStatus { Draft }\n" }),
-            Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+            Say("Approach: add BookingStatus.cs"),
+            Call("write_file", new { path = TeamHarness.BookingStatusTest, content = "test -f src/Fares.Data/BookingStatus.cs\n" }),
+            Call("declare_done", new { summary = "red test for BookingStatus" }), Say("done"),
+            Call("write_file", new { path = "src/Fares.Data/BookingStatus.cs", content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
 
         var result = await WorkflowHost.RunAsync(S2Workflow.Build(h.Services), new StartRun(TeamHarness.RunId, h.WriteHandoverJson()),
             new NoHuman(), default);

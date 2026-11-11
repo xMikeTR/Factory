@@ -10,7 +10,7 @@ open Factory.Core
 open Factory.Core.Tests.Support
 
 let p = PathPattern.createOrFail
-let examples = Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "examples", "pricing-v3")
+let examples = Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "examples", "fares-v3")
 let handoverJson = File.ReadAllText(Path.Combine(examples, "handover.json"))
 let planJson = File.ReadAllText(Path.Combine(examples, "plan.json"))
 
@@ -30,8 +30,8 @@ let errorsOf pl = match PlanValidator.validate handover pl with Ok _ -> [] | Err
 let validated = lazy (match PlanValidator.validate handover plan with Ok v -> v | Error es -> failwithf "%A" es)
 let limits = { MaxTurns = 3; MaxVerifyAttempts = 2 }
 let abOptions : DecisionOption list =
-    [ { Id = "A"; Summary = "one history for the run"; Consequence = "tests must not share a quote id" }
-      { Id = "B"; Summary = "key each event by quote id"; Consequence = "the parser partitions by key" } ]
+    [ { Id = "A"; Summary = "one history for the run"; Consequence = "tests must not share a booking id" }
+      { Id = "B"; Summary = "key each event by booking id"; Consequence = "the parser partitions by key" } ]
 let outcome name code = { Name = name; ExitCode = code; DurationMs = 10L; OutputTail = "" }
 let red = match RedEvidence.Create([ outcome "a" 1 ], AssertionFailure) with Ok r -> r | Error e -> failwith e
 let authored = TestsAuthored red
@@ -48,15 +48,15 @@ let tests: (string * (unit -> unit)) list =
           for bad in [ "../x"; "/etc/passwd"; "C:/x"; "src/{a,b}/**"; "src/[ab]"; "src/a**b"; "src//x"; "" ] do
               check (Result.isError (PathPattern.create bad)) $"should reject '{bad}'"
       "paths: normalises", fun () ->
-          equal "src/Quotes" (p "./src\\Quotes/").Value "normalised"
+          equal "src/Bookings" (p "./src\\Bookings/").Value "normalised"
       "paths: glob matching", fun () ->
           check (PathPattern.matches (p "src/**") "src/a/b.cs") "** deep"
           check (PathPattern.matches (p "src/*.cs") "src/a.cs") "* in segment"
           check (not (PathPattern.matches (p "src/*.cs") "src/a/b.cs")) "* does not cross /"
           check (PathPattern.matches (p "src/**/Data/*.cs") "src/x/y/Data/Q.cs") "** in middle"
       "paths: overlap", fun () ->
-          check (PathPattern.mayOverlap (p "src/Quotes.Data/**") (p "src/Quotes.Data/Logging/**")) "nested globs"
-          check (not (PathPattern.mayOverlap (p "src/PricingApi/**") (p "src/ReferralWorker/**"))) "sibling dirs"
+          check (PathPattern.mayOverlap (p "src/Bookings.Data/**") (p "src/Bookings.Data/Logging/**")) "nested globs"
+          check (not (PathPattern.mayOverlap (p "src/FaresApi/**") (p "src/EscalationWorker/**"))) "sibling dirs"
           check (PathPattern.mayOverlap (p "src/a.cs") (p "src/*.cs")) "exact vs glob"
           check (not (PathPattern.mayOverlap (p "src/a.cs") (p "src/b.cs"))) "distinct files"
           // live3/live4: `*` stays inside one segment, so these cannot match the same file.
@@ -66,14 +66,14 @@ let tests: (string * (unit -> unit)) list =
           check (PathPattern.mayOverlap (p "src/*.cs") (p "src/a*")) "two wild segments"
           check (PathPattern.mayOverlap (p "db/**") (p "db/migrations/*.sql")) "** covers a deeper glob"
       "paths: containment", fun () ->
-          check (PathPattern.isWithin (p "src/Quotes.Data/Logging/**") (p "src/Quotes.Data/**")) "nested"
-          check (not (PathPattern.isWithin (p "src/Quotes*/**") (p "src/Quotes.Data/**"))) "prefix glob escapes"
-          check (PathPattern.isWithin (p "src/Quotes.Data/Q.cs") (p "src/**/*.cs")) "exact in glob"
+          check (PathPattern.isWithin (p "src/Bookings.Data/Logging/**") (p "src/Bookings.Data/**")) "nested"
+          check (not (PathPattern.isWithin (p "src/Bookings*/**") (p "src/Bookings.Data/**"))) "prefix glob escapes"
+          check (PathPattern.isWithin (p "src/Bookings.Data/Q.cs") (p "src/**/*.cs")) "exact in glob"
 
       // ---------- validator ----------
       "validator: example plan is valid", fun () -> equal [] (errorsOf plan) "errors"
       "validator: write outside element", fun () ->
-          let es = errorsOf (withTask "T-002" (fun t -> { t with Writes = [ p "src/Quotes.Data/Hack.cs" ] }))
+          let es = errorsOf (withTask "T-002" (fun t -> { t with Writes = [ p "src/Bookings.Data/Hack.cs" ] }))
           check (es |> List.exists (function WriteOutsideElement _ -> true | _ -> false)) $"%A{es}"
       "validator: protected write", fun () ->
           let es = errorsOf (withTask "T-001" (fun t -> { t with Writes = p "registry/decisions/**" :: t.Writes }))
@@ -113,11 +113,11 @@ let tests: (string * (unit -> unit)) list =
           let es = errorsOf { plan with HandoverDigest = "sha256:stale" }
           check (es |> List.exists (function HandoverMismatch _ -> true | _ -> false)) $"%A{es}"
       "validator: test writes must not overlap writes", fun () ->
-          let es = errorsOf (withTask "T-001" (fun t -> { t with Writes = p "tests/Quotes.Data.Tests/**" :: t.Writes }))
+          let es = errorsOf (withTask "T-001" (fun t -> { t with Writes = p "tests/Bookings.Data.Tests/**" :: t.Writes }))
           check (es |> List.exists (function TestWritesOverlapWrites(TaskId "T-001", _, _) -> true | _ -> false)) $"%A{es}"
       "validator: test write outside element", fun () ->
-          let es = errorsOf (withTask "T-002" (fun t -> { t with TestWrites = p "tests/Quotes.Data.Tests/**" :: t.TestWrites }))
-          check (List.contains (TestWriteOutsideElement(TaskId "T-002", p "tests/Quotes.Data.Tests/**")) es) $"%A{es}"
+          let es = errorsOf (withTask "T-002" (fun t -> { t with TestWrites = p "tests/Bookings.Data.Tests/**" :: t.TestWrites }))
+          check (List.contains (TestWriteOutsideElement(TaskId "T-002", p "tests/Bookings.Data.Tests/**")) es) $"%A{es}"
       "validator: invariant must run something under test writes or a protected path", fun () ->
           let es = errorsOf (withTask "T-002" (fun t -> { t with TestWrites = [] }))
           check (List.contains (InvariantNotUnderTestWrites(TaskId "T-002", "unit: retry from fresh read")) es) $"%A{es}"
@@ -126,10 +126,10 @@ let tests: (string * (unit -> unit)) list =
               withTask "T-001" (fun t ->
                   { t with Verify = Automated { Name = "pobserve"; Kind = Invariant; Run = run; Cleanup = None; TimeoutSeconds = 60 } :: t.Verify })
           let arity es = es |> List.contains (PObserveCheckArity(TaskId "T-001", "pobserve"))
-          let wrong = "L=$(mktemp -d) && dotnet test tests/Quotes.Data.Tests && pobserve-check db/pmodel/PSpec Optimistic"
+          let wrong = "L=$(mktemp -d) && dotnet test tests/Bookings.Data.Tests && pobserve-check db/pmodel/PSpec Optimistic"
           check (arity (errorsOf (withRun wrong))) "two arguments"
           check (arity (errorsOf (withRun "pobserve-check a b c d"))) "four arguments"
-          let right = "L=$(mktemp -d) && dotnet test tests/Quotes.Data.Tests && pobserve-check db/pmodel/PSpec Optimistic \"$L\"; echo done"
+          let right = "L=$(mktemp -d) && dotnet test tests/Bookings.Data.Tests && pobserve-check db/pmodel/PSpec Optimistic \"$L\"; echo done"
           check (not (arity (errorsOf (withRun right)))) $"three arguments: %A{errorsOf (withRun right)}"
       "validator: a negative PObserve check uses --expect-violation, never !", fun () ->
           let withRun run =
@@ -161,9 +161,9 @@ let tests: (string * (unit -> unit)) list =
           // A1 -> B1 -> A2 where A1, A2 share files and B1 is elsewhere: A and B must be one team.
           let mk id writes deps =
               { (task "T-002") with Id = TaskId id; Writes = [ p writes ]; DependsOn = deps |> List.map TaskId; Covers = [] }
-          let a1 = { mk "A1" "src/PricingApi/One.cs" [] with Covers = [] }
-          let b1 = { (mk "B1" "src/ReferralWorker/X.cs" [ "A1" ]) with Elements = [ ElementId "Pricing Platform/Referral Worker" ]; TestWrites = [ p "tests/ReferralWorker.Tests/**" ]; Verify = (task "T-003").Verify }
-          let a2 = mk "A2" "src/PricingApi/One.cs" [ "B1" ]
+          let a1 = { mk "A1" "src/FaresApi/One.cs" [] with Covers = [] }
+          let b1 = { (mk "B1" "src/EscalationWorker/X.cs" [ "A1" ]) with Elements = [ ElementId "Fares Platform/Escalation Worker" ]; TestWrites = [ p "tests/EscalationWorker.Tests/**" ]; Verify = (task "T-003").Verify }
+          let a2 = mk "A2" "src/FaresApi/One.cs" [ "B1" ]
           let t1 = task "T-001"
           let pl = { plan with Tasks = [ t1; a1; b1; a2 ] }
           match PlanValidator.validate handover pl with
@@ -334,7 +334,7 @@ let tests: (string * (unit -> unit)) list =
       "red run: assertion and compile failures are red, each with its kind", fun () ->
           let failing name tail = { outcome name 1 with OutputTail = tail }
           equal (Red AssertionFailure) (RedRun.classify [ failing "a" "Failed!  - Failed: 7"; outcome "b" 0 ]) "assertions"
-          equal (Red BuildFailure) (RedRun.classify [ failing "a" "Quote.cs(3,5): error CS0246: QuoteStatus"; failing "b" "Failed: 1" ]) "compile"
+          equal (Red BuildFailure) (RedRun.classify [ failing "a" "Booking.cs(3,5): error CS0246: BookingStatus"; failing "b" "Failed: 1" ]) "compile"
       "red run: a check the sandbox could not run is no evidence, whatever the other checks did", fun () ->
           let failing name code tail = { outcome name code with OutputTail = tail }
           let nuget = failing "P model check" 1 "Optimistic.csproj : error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json."
@@ -428,23 +428,23 @@ let tests: (string * (unit -> unit)) list =
       // ---------- fitness ----------
       "fitness: a code edge between two elements must be a modelled relationship, in that direction", fun () ->
           let el id area = { Id = ElementId id; Name = id; CodeAreas = [ PathPattern.createOrFail area ]; Risk = Low; InScope = true; Repo = None }
-          let elements = [ el "api" "src/Api/**"; el "rating" "src/Rating/**"; el "db" "src/Db/**" ]
-          let rels = [ { From = ElementId "api"; To = ElementId "rating" } ]
+          let elements = [ el "api" "src/Api/**"; el "surcharge" "src/Surcharge/**"; el "db" "src/Db/**" ]
+          let rels = [ { From = ElementId "api"; To = ElementId "surcharge" } ]
           let edge a b = { Source = a; Target = b }
           let vs es = Fitness.violations elements rels es |> List.map (fun v -> v.FromElement.Value, v.ToElement.Value)
-          equal [] (vs [ edge "src/Api/Api.csproj" "src/Rating/Rating.csproj" ]) "modelled"
-          equal [ "rating", "api" ] (vs [ edge "src/Rating/Rating.csproj" "src/Api/Api.csproj" ]) "the model says api -> rating, not back"
+          equal [] (vs [ edge "src/Api/Api.csproj" "src/Surcharge/Surcharge.csproj" ]) "modelled"
+          equal [ "surcharge", "api" ] (vs [ edge "src/Surcharge/Surcharge.csproj" "src/Api/Api.csproj" ]) "the model says api -> surcharge, not back"
           equal [ "api", "db" ] (vs [ edge "src/Api/Api.csproj" "src/Db/Db.csproj" ]) "no relationship"
           equal [] (vs [ edge "src/Api/Api.csproj" "src/Api/Api.Tests.csproj" ]) "inside one element"
           equal [] (vs [ edge "src/Api/Api.csproj" "src/Shared/Shared.csproj" ]) "unowned code is not judged"
       "fitness: only element pairs the baseline did not already cross are new", fun () ->
           let v a b = { Edge = { Source = "x"; Target = "y" }; FromElement = ElementId a; ToElement = ElementId b }
-          let isNew = Fitness.newSince [ v "api" "db" ] [ v "api" "db"; v "rating" "db" ] |> List.map (fun x -> x.FromElement.Value)
-          equal [ "rating" ] isNew "api->db is debt, rating->db is new"
+          let isNew = Fitness.newSince [ v "api" "db" ] [ v "api" "db"; v "surcharge" "db" ] |> List.map (fun x -> x.FromElement.Value)
+          equal [ "surcharge" ] isNew "api->db is debt, surcharge->db is new"
       "fitness: debt is each element pair the baseline crossed that the code still crosses, once", fun () ->
           let v a b src = { Edge = { Source = src; Target = "y" }; FromElement = ElementId a; ToElement = ElementId b }
-          let pairs = Fitness.debt [ v "api" "db" "a"; v "web" "db" "w" ] [ v "api" "db" "a"; v "api" "db" "b"; v "rating" "db" "r" ]
-          equal [ ElementId "api", ElementId "db" ] pairs "web->db was removed, rating->db is new, api->db once"
+          let pairs = Fitness.debt [ v "api" "db" "a"; v "web" "db" "w" ] [ v "api" "db" "a"; v "api" "db" "b"; v "surcharge" "db" "r" ]
+          equal [ ElementId "api", ElementId "db" ] pairs "web->db was removed, surcharge->db is new, api->db once"
 
       "fitness: a hand-written rule forbids edges by path and only new crossings are the task's", fun () ->
           let rule = { From = PathPattern.createOrFail "src/Domain/**"; To = PathPattern.createOrFail "src/Infra/**"; Why = "domain must not know infrastructure" }
@@ -463,15 +463,15 @@ let tests: (string * (unit -> unit)) list =
           let v =
               Merge.decide Merge.defaultPolicy
                   { Teams = d.Waves |> List.collect (fun w -> w.Teams); Handover = handover; ChangedLines = 120
-                    ChangedFiles = [ "src/Quotes.Data/Quote.cs" ] }
+                    ChangedFiles = [ "src/Bookings.Data/Booking.cs" ] }
           equal TwoApprovals v.Tier "tier"
           check (v.Blocks |> List.exists (function ManualVerifyPending _ -> true | _ -> false)) $"%A{v.Blocks}"
       "merge: a file outside every team's writes is a scope leak block", fun () ->
-          let team = { Id = TeamId "t"; Tasks = [ task "T-002" ]; Writes = [ p "src/PricingApi/**" ]; Elements = [] }
+          let team = { Id = TeamId "t"; Tasks = [ task "T-002" ]; Writes = [ p "src/FaresApi/**" ]; Elements = [] }
           let v = Merge.decide Merge.defaultPolicy { Teams = [ team ]; Handover = handover; ChangedLines = 5; ChangedFiles = [ "Directory.Build.props" ] }
           equal [ ScopeLeak "Directory.Build.props" ] v.Blocks "blocks"
       "merge: a change under a protected path is its own block", fun () ->
-          let team = { Id = TeamId "t"; Tasks = [ task "T-002" ]; Writes = [ p "src/PricingApi/**" ]; Elements = [] }
+          let team = { Id = TeamId "t"; Tasks = [ task "T-002" ]; Writes = [ p "src/FaresApi/**" ]; Elements = [] }
           let h = { handover with ProtectedPaths = [ p ".github/**" ] }
           let v = Merge.decide Merge.defaultPolicy { Teams = [ team ]; Handover = h; ChangedLines = 5; ChangedFiles = [ ".github/workflows/ci.yml" ] }
           equal [ ProtectedPathChanged ".github/workflows/ci.yml" ] v.Blocks "blocks"
@@ -487,8 +487,8 @@ let tests: (string * (unit -> unit)) list =
           equal [] (Merge.countedManual Auto [ r "T-001: playtest" "" Verified ]) "a record names a person"
       "merge: small low-risk change auto-merges", fun () ->
           let h = { handover with Elements = handover.Elements |> List.map (fun e -> { e with Risk = Low }) }
-          let team = { Id = TeamId "t"; Tasks = [ task "T-002" ]; Writes = [ p "src/PricingApi/**" ]; Elements = [ ElementId "Pricing Platform/Pricing API" ] }
-          let v = Merge.decide Merge.defaultPolicy { Teams = [ team ]; Handover = h; ChangedLines = 40; ChangedFiles = [ "src/PricingApi/Q.cs" ] }
+          let team = { Id = TeamId "t"; Tasks = [ task "T-002" ]; Writes = [ p "src/FaresApi/**" ]; Elements = [ ElementId "Fares Platform/Fares API" ] }
+          let v = Merge.decide Merge.defaultPolicy { Teams = [ team ]; Handover = h; ChangedLines = 40; ChangedFiles = [ "src/FaresApi/Q.cs" ] }
           equal AutoMerge v.Tier "tier"
           equal [] v.Blocks "no blocks"
       "merge: every block stops the merge in every mode", fun () ->
@@ -576,16 +576,16 @@ let tests: (string * (unit -> unit)) list =
                   Decisions = handover.Decisions |> List.map (fun d -> { d with Statement = d.Statement + " Retry once on conflict." }) }
           let r = Regeneration.between handover after plan
           equal [ DecisionId "D-0042" ] r.Changed "changed"
-          equal [ TaskId "T-001"; TaskId "T-004" ] r.Rerun "rerun (Quotes DB tasks; T-002/T-003 depend on T-001 but are not bound)"
+          equal [ TaskId "T-001"; TaskId "T-004" ] r.Rerun "rerun (Bookings DB tasks; T-002/T-003 depend on T-001 but are not bound)"
       "regeneration: a rebound decision re-runs tasks on the old and the new elements", fun () ->
           let after =
               { handover with
-                  Decisions = handover.Decisions |> List.map (fun d -> { d with Binds = [ ElementId "Pricing Platform/Referral Worker" ] }) }
+                  Decisions = handover.Decisions |> List.map (fun d -> { d with Binds = [ ElementId "Fares Platform/Escalation Worker" ] }) }
           equal [ TaskId "T-001"; TaskId "T-003"; TaskId "T-004" ] (Regeneration.between handover after plan).Rerun "rerun"
       "regeneration: an added or removed decision counts as changed", fun () ->
           let added =
-              { Id = DecisionId "D-0043"; Statement = "Quotes are priced in the cedant's currency."
-                Binds = [ ElementId "Pricing Platform/Pricing API" ]; Checks = [] }
+              { Id = DecisionId "D-0043"; Statement = "Bookings are priced in the partner's currency."
+                Binds = [ ElementId "Fares Platform/Fares API" ]; Checks = [] }
           let after = { handover with Decisions = handover.Decisions @ [ added ] }
           let r = Regeneration.between handover after plan
           equal [ DecisionId "D-0043" ] r.Changed "added"
@@ -600,7 +600,7 @@ let tests: (string * (unit -> unit)) list =
   <ItemGroup>
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="coverlet.collector" Version="6.0.2"><PrivateAssets>all</PrivateAssets><IncludeAssets>runtime; build</IncludeAssets></PackageReference>
-    <ProjectReference Include="..\..\src\Pricing.Api\Pricing.Api.csproj" />
+    <ProjectReference Include="..\..\src\Fares.Api\Fares.Api.csproj" />
   </ItemGroup>
 </Project>"""
           equal (Ok ()) (ProjectFileChange.check (Some before) after) "edit"
@@ -642,15 +642,15 @@ let tests: (string * (unit -> unit)) list =
           check (not (ProjectFileChange.affectsRestore "P/Probe.pproj") && not (ProjectFileChange.isProject "Probe.pproj")) "a P project is not restored"
       // ---------- context pack ----------
       "context pack defaults: project file, one convention test, existing in-scope files", fun () ->
-          let repo = [ "src/Pricing.Data/Pricing.Data.csproj"; "src/Pricing.Data/Quote.cs"; "src/Pricing.Data/QuotesDbContext.cs"
-                       "tests/Pricing.Data.Tests/Pricing.Data.Tests.csproj"; "tests/Pricing.Data.Tests/QuoteTests.cs"; "tests/Pricing.Data.Tests/OtherTests.cs"
-                       "src/Pricing.Api/Program.cs" ]
-          let got = ContextPack.defaults repo [ p "src/Pricing.Data/**" ] [ p "tests/Pricing.Data.Tests/**" ]
-          check (List.contains "src/Pricing.Data/Pricing.Data.csproj" got) "project file of the write root"
-          check (List.contains "src/Pricing.Data/Quote.cs" got && List.contains "src/Pricing.Data/QuotesDbContext.cs" got) "files under writes"
-          check (List.contains "tests/Pricing.Data.Tests/Pricing.Data.Tests.csproj" got) "test project file"
+          let repo = [ "src/Fares.Data/Fares.Data.csproj"; "src/Fares.Data/Booking.cs"; "src/Fares.Data/BookingsDbContext.cs"
+                       "tests/Fares.Data.Tests/Fares.Data.Tests.csproj"; "tests/Fares.Data.Tests/BookingTests.cs"; "tests/Fares.Data.Tests/OtherTests.cs"
+                       "src/Fares.Api/Program.cs" ]
+          let got = ContextPack.defaults repo [ p "src/Fares.Data/**" ] [ p "tests/Fares.Data.Tests/**" ]
+          check (List.contains "src/Fares.Data/Fares.Data.csproj" got) "project file of the write root"
+          check (List.contains "src/Fares.Data/Booking.cs" got && List.contains "src/Fares.Data/BookingsDbContext.cs" got) "files under writes"
+          check (List.contains "tests/Fares.Data.Tests/Fares.Data.Tests.csproj" got) "test project file"
           equal 1 (got |> List.filter (fun f -> f.EndsWith "Tests.cs") |> List.length) "exactly one convention test file"
-          check (not (List.contains "src/Pricing.Api/Program.cs" got)) "nothing outside the task's roots"
+          check (not (List.contains "src/Fares.Api/Program.cs" got)) "nothing outside the task's roots"
           equal got (List.distinct got) "no duplicates"
       "context pack select: defaults first, valid nominations kept with their reason", fun () ->
           let exists f = f <> "src/Missing.cs"
@@ -767,7 +767,7 @@ let tests: (string * (unit -> unit)) list =
           | Ok h -> equal handover h "round trip"
           | Error es -> failwithf "%A" es
       "json: relationships round-trip, and a handover frozen before they existed has none", fun () ->
-          let rel = { From = ElementId "Pricing Platform/Pricing API"; To = ElementId "Pricing Platform/Rating Engine" }
+          let rel = { From = ElementId "Fares Platform/Fares API"; To = ElementId "Fares Platform/Surcharge Engine" }
           match Json.parseHandover (Json.writeHandover { handover with Relationships = [ rel ] }) with
           | Ok h -> equal [ rel ] h.Relationships "round trip"
           | Error es -> failwithf "%A" es

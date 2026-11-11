@@ -19,7 +19,7 @@ import pobserve.runtime.events.PEvent;
  * (int, bool, string); an event the spec does not observe is not generated and so is skipped, as is any
  * line without the marker. A marked line that does not fit its event is an error, never a silent skip.
  * The key names the entity whose history the spec follows (one spec instance per key, e.g. one per
- * quote); without one, every event is in the single partition "run". Events are ordered by position.
+ * booking); without one, every event is in the single partition "run". Events are ordered by position.
  */
 public class EventLineParser implements Parser<PEvent<?>> {
     private static final Pattern LINE = Pattern.compile("(?:^|\\s)pobserve\\s+([A-Za-z_]\\w*)(?:\\s+(.*\\S))?\\s*$");

@@ -28,7 +28,7 @@ public class ContextRecordingTests
 
         Assert.Equal("builder", p.GetProperty("role").GetString());
         Assert.Equal("file", p.GetProperty("source").GetString());
-        Assert.StartsWith("sha256:1956c88a", p.GetProperty("bundle_id").GetString());
+        Assert.StartsWith("sha256:4a57987a", p.GetProperty("bundle_id").GetString());
         var proc = Assert.Single(p.GetProperty("procedures").EnumerateArray());
         Assert.Equal(("change-ui-list", "2", "30fead3d350b4809"),
             (proc.GetProperty("id").GetString(), proc.GetProperty("version").GetString(), proc.GetProperty("hash").GetString()));

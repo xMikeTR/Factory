@@ -1,0 +1,65 @@
+{
+  "handover": { "id": "fares-v3", "digest": "sha256:3f1c9a0e" },
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Add rowversion concurrency token to Booking",
+      "instructions": "Add a rowversion column to Bookings via a migration and map it as the EF Core concurrency token on the Booking entity. Stale writes must raise DbUpdateConcurrencyException.",
+      "elements": ["Fares Platform/Bookings DB"],
+      "writes": ["src/Bookings.Data/**", "db/migrations/**"],
+      "testWrites": ["tests/Bookings.Data.Tests/**"],
+      "dependsOn": [],
+      "covers": ["D-0042"],
+      "verify": [
+        { "name": "unit: stale write rejected", "kind": "invariant",
+          "run": "dotnet test tests/Bookings.Data.Tests --filter Category=Concurrency", "timeoutSeconds": 300 },
+        { "name": "P trace replay: two writers, second rejected", "kind": "self-seeded",
+          "run": "./scripts/verify/two-writers.sh assert", "cleanup": "./scripts/verify/two-writers.sh cleanup", "timeoutSeconds": 180 }
+      ]
+    },
+    {
+      "id": "T-002",
+      "title": "Fares API retries a rejected booking write from a fresh read",
+      "instructions": "On DbUpdateConcurrencyException, re-read the booking and reapply the change. Do not swallow the exception after the retry budget.",
+      "elements": ["Fares Platform/Fares API"],
+      "writes": ["src/FaresApi/**"],
+      "testWrites": ["tests/FaresApi.Tests/**"],
+      "dependsOn": ["T-001"],
+      "covers": [],
+      "verify": [
+        { "name": "unit: retry from fresh read", "kind": "invariant",
+          "run": "dotnet test tests/FaresApi.Tests --filter Category=Concurrency", "timeoutSeconds": 300 }
+      ]
+    },
+    {
+      "id": "T-003",
+      "title": "Escalation Worker retries a rejected booking write from a fresh read",
+      "instructions": "Same retry behaviour as the Fares API, in the escalation update path.",
+      "elements": ["Fares Platform/Escalation Worker"],
+      "writes": ["src/EscalationWorker/**"],
+      "testWrites": ["tests/EscalationWorker.Tests/**"],
+      "dependsOn": ["T-001"],
+      "covers": [],
+      "verify": [
+        { "name": "unit: retry from fresh read", "kind": "invariant",
+          "run": "dotnet test tests/EscalationWorker.Tests --filter Category=Concurrency", "timeoutSeconds": 300 }
+      ]
+    },
+    {
+      "id": "T-004",
+      "title": "Log eCommitted on every successful booking write",
+      "instructions": "Emit the eCommitted event (logging contract) with the committed value after each successful write, in the format PObserve expects.",
+      "elements": ["Fares Platform/Bookings DB"],
+      "writes": ["src/Bookings.Data/Logging/**"],
+      "testWrites": [],
+      "dependsOn": ["T-001"],
+      "covers": [],
+      "verify": [
+        { "name": "PObserve: NoLostUpdate over test logs", "kind": "invariant",
+          "run": "./scripts/verify/pobserve.sh NoLostUpdate artifacts/test-logs", "timeoutSeconds": 300 },
+        { "name": "log format reviewed by platform team", "kind": "manual",
+          "instructions": "Confirm the eCommitted log line matches the event vocabulary and lands in the central log store." }
+      ]
+    }
+  ]
+}

@@ -9,9 +9,10 @@ using OpenAI;
 
 namespace Factory.Harness;
 
-/// Which wire protocol the gateway speaks. FACTORY_PROVIDER = openai (default) | anthropic | vertex.
+/// Which wire protocol the gateway speaks. FACTORY_PROVIDER = openai (default) | anthropic | vertex | claude-code.
+/// `claude-code` runs the local `claude` CLI on your Claude subscription (`claude login`): no key, no gateway.
 /// `vertex` is Claude on Google Vertex AI with Application Default Credentials: no key, no gateway.
-public enum ModelProvider { Anthropic, OpenAICompatible, Vertex }
+public enum ModelProvider { Anthropic, OpenAICompatible, Vertex, ClaudeCode }
 
 /// Agents never call a provider directly: Vertex with Application Default Credentials (Claude via the
 /// Anthropic client, others over Vertex's OpenAI-compatible endpoint), the native Anthropic client, or
@@ -38,14 +39,15 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
             null or "openai" => ModelProvider.OpenAICompatible,
             "anthropic" => ModelProvider.Anthropic,
             "vertex" => ModelProvider.Vertex,
-            var other => throw new FactoryRejectedException("FACTORY_PROVIDER is invalid", [$"'{other}' is not openai|anthropic|vertex"]),
+            "claude-code" => ModelProvider.ClaudeCode,
+            var other => throw new FactoryRejectedException("FACTORY_PROVIDER is invalid", [$"'{other}' is not openai|anthropic|vertex|claude-code"]),
         };
         var vertex = provider == ModelProvider.Vertex;
         var anthropic = provider != ModelProvider.OpenAICompatible; // Claude model ids and defaults on both Claude providers
         var project = vertex ? Get("FACTORY_VERTEX_PROJECT") ?? Get("GOOGLE_CLOUD_PROJECT")
             ?? throw new FactoryRejectedException("no Vertex project", ["set FACTORY_VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT"]) : null;
         var region = vertex ? Get("FACTORY_VERTEX_REGION") ?? Get("CLOUD_ML_REGION") ?? "global" : null;
-        var key = vertex ? "" : Get("FACTORY_GATEWAY_KEY") ?? (anthropic ? Get("ANTHROPIC_API_KEY") : null)
+        var key = vertex || provider == ModelProvider.ClaudeCode ? "" : Get("FACTORY_GATEWAY_KEY") ?? (anthropic ? Get("ANTHROPIC_API_KEY") : null)
             ?? throw new FactoryRejectedException("no gateway key",
                 [anthropic ? "set FACTORY_GATEWAY_KEY or ANTHROPIC_API_KEY" : "set FACTORY_GATEWAY_KEY"]);
         var url = vertex ? null : Get("FACTORY_GATEWAY_URL") ?? (anthropic ? null : "http://localhost:4000/v1");
@@ -75,6 +77,7 @@ public sealed record GatewayOptions(ModelProvider Provider, Uri? Endpoint, strin
         // Application Default Credentials (gcloud auth application-default login, or the VM's service account).
         // Claude models use Anthropic's Vertex client; any other model id (Gemini, Model Garden) goes through Vertex's
         // OpenAI-compatible endpoint, so the reviewer can be another family on the same login.
+        ModelProvider.ClaudeCode => new ClaudeCodeChatClient(ModelFor(tier)),
         ModelProvider.Vertex when VertexAuthPolicy.IsClaude(ModelFor(tier)) => VertexClaudeClient(ModelFor(tier)),
         ModelProvider.Vertex => VertexOpenAIClient(ModelFor(tier)),
         ModelProvider.OpenAICompatible => new OpenAIClient(new ApiKeyCredential(ApiKey), OpenAIOptions(ModelFor(tier)))

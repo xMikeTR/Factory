@@ -9,23 +9,23 @@ namespace Factory.Integration.Tests.Verify;
 
 public class AcceptanceVerifyTests
 {
-    private const string Spec = "tests/acceptance/quote-form/AC-0107.spec.ts";
+    private const string Spec = "tests/acceptance/booking-form/AC-0107.spec.ts";
 
     private const string Report = """
         { "suites": [
-            { "title": "AC-0107.spec.ts", "file": "quote-form/AC-0107.spec.ts", "suites": [
-                { "title": "AC-0107 Quote Form", "file": "quote-form/AC-0107.spec.ts", "specs": [
-                    { "title": "ready", "ok": true, "file": "quote-form/AC-0107.spec.ts", "tests": [] },
-                    { "title": "error", "ok": false, "file": "quote-form/AC-0107.spec.ts", "tests": [
+            { "title": "AC-0107.spec.ts", "file": "booking-form/AC-0107.spec.ts", "suites": [
+                { "title": "AC-0107 Booking Form", "file": "booking-form/AC-0107.spec.ts", "specs": [
+                    { "title": "ready", "ok": true, "file": "booking-form/AC-0107.spec.ts", "tests": [] },
+                    { "title": "error", "ok": false, "file": "booking-form/AC-0107.spec.ts", "tests": [
                         { "results": [ { "attachments": [ { "name": "trace", "path": "test-results/trace.zip" } ] } ] } ] } ] } ] },
-            { "title": "other", "file": "quote-api/AC-0200.spec.ts", "specs": [
-                { "title": "ok", "ok": true, "file": "quote-api/AC-0200.spec.ts", "tests": [] } ] } ] }
+            { "title": "other", "file": "booking-api/AC-0200.spec.ts", "specs": [
+                { "title": "ok", "ok": true, "file": "booking-api/AC-0200.spec.ts", "tests": [] } ] } ] }
         """;
 
     [Fact]
     public void A_failing_spec_is_reported_once_at_its_frozen_path_with_its_trace()
     {
-        var failures = PlaywrightReport.Failures(Report, [Spec, "tests/acceptance/quote-api/AC-0200.spec.ts"]);
+        var failures = PlaywrightReport.Failures(Report, [Spec, "tests/acceptance/booking-api/AC-0200.spec.ts"]);
 
         var f = Assert.Single(failures);
         Assert.Equal(Spec, f.File);
@@ -42,7 +42,7 @@ public class AcceptanceVerifyTests
     public void Acceptance_files_are_hashed_like_designc_hashed_them()
     {
         var dir = Path.Combine(Path.GetTempPath(), "s2-ac-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.Combine(dir, "tests", "acceptance", "quote-form"));
+        Directory.CreateDirectory(Path.Combine(dir, "tests", "acceptance", "booking-form"));
         File.WriteAllText(Path.Combine(dir, Spec), "// GENERATED\n");
 
         var hashes = AcceptanceFiles.Hashes(dir);
@@ -57,10 +57,10 @@ public class AcceptanceVerifyTests
         var handover = new HandoverRef("20261013-aa", [], "W-1");
         var run = new List<LedgerEvent>
         {
-            new("run-1", "S2", "integration_verify", LedgerKinds.UiAcceptanceFailed, TaskId: "T-001", Element: "Pricing/Quote Form",
-                Outcome: "failed", Payload: """{"ac":"AC-0107","spec":"tests/acceptance/quote-form/AC-0107.spec.ts","commit":"abcdef1234"}""") { TraceId = null },
-            new("run-1", "S2", "integration_verify", LedgerKinds.UiAcceptanceFailed, TaskId: "T-003", Element: "Pricing/Quote Form",
-                Outcome: "failed", Payload: """{"ac":"AC-0107","spec":"tests/acceptance/quote-form/AC-0107.spec.ts","commit":"abcdef1234"}""") { TraceId = null },
+            new("run-1", "S2", "integration_verify", LedgerKinds.UiAcceptanceFailed, TaskId: "T-001", Element: "Fares/Booking Form",
+                Outcome: "failed", Payload: """{"ac":"AC-0107","spec":"tests/acceptance/booking-form/AC-0107.spec.ts","commit":"abcdef1234"}""") { TraceId = null },
+            new("run-1", "S2", "integration_verify", LedgerKinds.UiAcceptanceFailed, TaskId: "T-003", Element: "Fares/Booking Form",
+                Outcome: "failed", Payload: """{"ac":"AC-0107","spec":"tests/acceptance/booking-form/AC-0107.spec.ts","commit":"abcdef1234"}""") { TraceId = null },
         };
 
         var rows = RegistryLedgerProjector.Project(run, handover, new Factory.Core.Limits(8, 3));

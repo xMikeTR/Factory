@@ -132,13 +132,13 @@ public class ScopedWorkspaceTests : IDisposable
         public Task<ProcessResult> RunAsync(string command, string workdir, TimeSpan timeout, IReadOnlyDictionary<string, string> env, CancellationToken ct)
         {
             Commands.Add(command);
-            return Task.FromResult(new ProcessResult(0, "page: Quotes", TimeSpan.Zero, false));
+            return Task.FromResult(new ProcessResult(0, "page: Bookings", TimeSpan.Zero, false));
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     [Fact]
-    public async Task The_implementer_gets_playwright_cli_only_for_a_self_check_run()
+    public void The_implementer_gets_playwright_cli_only_for_a_self_check_run()
     {
         var ws = new ScopedWorkspace(_root, [], [], [], new TurnSignals());
         Assert.DoesNotContain("playwright_cli", ws.ImplementerTools().Select(t => t.Name));
@@ -152,9 +152,9 @@ public class ScopedWorkspaceTests : IDisposable
         var sandbox = new RecordingSandbox();
         var ws = new ScopedWorkspace(_root, [], [], [], new TurnSignals(), sandbox);
 
-        Assert.StartsWith("exit 0", await ws.PlaywrightCli("open http://localhost:3000/quotes"));
+        Assert.StartsWith("exit 0", await ws.PlaywrightCli("open http://localhost:3000/bookings"));
         Assert.StartsWith("exit 0", await ws.PlaywrightCli("snapshot"));
-        Assert.Equal(["playwright-cli open http://localhost:3000/quotes", "playwright-cli snapshot"], sandbox.Commands);
+        Assert.Equal(["playwright-cli open http://localhost:3000/bookings", "playwright-cli snapshot"], sandbox.Commands);
 
         Assert.StartsWith("DENIED", await ws.PlaywrightCli("open https://prod.example.com"));
         Assert.StartsWith("DENIED", await ws.PlaywrightCli("install --skills"));
@@ -164,14 +164,14 @@ public class ScopedWorkspaceTests : IDisposable
     }
 
     [Fact]
-    public void Repro_and_diagnosis_cannot_write_and_report_through_their_own_tool()
+    public async Task Repro_and_diagnosis_cannot_write_and_report_through_their_own_tool()
     {
         var signals = new TurnSignals();
         var ws = new ScopedWorkspace(_root, [], [], [], signals);
         foreach (var tools in new[] { ws.ReproTools(), ws.DiagnosisTools() })
             Assert.DoesNotContain(tools.Select(t => t.Name), n => n is "write_file" or "delete_file" or "run_command");
         var diagnose = ws.DiagnosisTools().OfType<Microsoft.Extensions.AI.AIFunction>().Single(t => t.Name == "submit_diagnosis");
-        diagnose.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments { ["finding"] = "button is outside the form" }).AsTask().Wait();
+        await diagnose.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments { ["finding"] = "button is outside the form" });
         Assert.Equal("button is outside the form", signals.Diagnosis);
     }
 
@@ -215,11 +215,11 @@ public class ScopedWorkspaceTests : IDisposable
 
         var answer = await submit.InvokeAsync(new()
         {
-            ["note"] = "change Quote.cs first",
-            ["context"] = System.Text.Json.JsonDocument.Parse("""[{"path":"src/A.cs","reason":"calls Quote"},{"path":"src/Missing.cs","reason":"x"}]""").RootElement.Clone(),
+            ["note"] = "change Booking.cs first",
+            ["context"] = System.Text.Json.JsonDocument.Parse("""[{"path":"src/A.cs","reason":"calls Booking"},{"path":"src/Missing.cs","reason":"x"}]""").RootElement.Clone(),
         });
 
-        Assert.Equal("change Quote.cs first", signals.ApproachNote);
+        Assert.Equal("change Booking.cs first", signals.ApproachNote);
         Assert.Equal(["src/A.cs"], signals.ContextSelection!.Entries.Select(e => e.Path));
         Assert.Contains("src/Missing.cs", answer?.ToString());
         Assert.Contains("does not exist", answer?.ToString());

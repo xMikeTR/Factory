@@ -1,6 +1,6 @@
 # factory-s2: coding pipeline
 
-System 2 of the design-to-code factory. It takes a **frozen handover** from System 1 (Designc) and turns it into merged code. Every step it takes is recorded in a ledger, so System 4 can learn from it.
+System 2 of the design-to-code factory. It takes a **frozen handover** from System 1 (Designc) and turns it into merged code. Every step it takes is recorded in a ledger, so System 3 can learn from it.
 
 The rule behind every feature: **agents propose, deterministic code and humans decide.** Only two places call a model: the planner, and the turn loop inside each team. Plan validation, dispatch, task state, merge rules and gates are plain code, and the parts that must be correct are written in F#.
 
@@ -12,6 +12,7 @@ New here? Open [docs/guide.html](docs/guide.html) for a walkthrough. [ARCHITECTU
 - [Quick start](#quick-start): see it work in two commands, no model needed
 - [Configure a real run](#configure-a-real-run): providers, routing, budget, contracts
 - [Run it](#run-it), then [what is left behind](#new-projects-and-run-results)
+- [Selfcheck](#selfcheck-local-ci): the checks CI would run, on a commit, locally
 - [Commands](#commands), [Jira mirror](#jira-mirror), [status](#status), [layout of the code](#layout)
 - [Interfaces with designc](#interfaces-with-designc), [design decisions](#design-decisions)
 
@@ -43,9 +44,9 @@ No agents or network needed:
 dotnet run --project tests/Factory.Core.Tests            # all passed
 
 # 2. Validate and dispatch the example handover
-dotnet run --project src/Factory.S2 -- validate --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
-dotnet run --project src/Factory.S2 -- dispatch --handover examples/pricing-v3/handover.json --plan examples/pricing-v3/plan.json
-#   wave 0: team-T-001 [T-001, T-004]      (both write under src/Quotes.Data)
+dotnet run --project src/Factory.S2 -- validate --handover examples/fares-v3/handover.json --plan examples/fares-v3/plan.json
+dotnet run --project src/Factory.S2 -- dispatch --handover examples/fares-v3/handover.json --plan examples/fares-v3/plan.json
+#   wave 0: team-T-001 [T-001, T-004]      (both write under src/Bookings.Data)
 #   wave 1: team-T-002 [T-002], team-T-003 [T-003]   (parallel)
 ```
 
@@ -58,6 +59,7 @@ A real run needs a model. Pick one provider:
 | Any OpenAI-compatible gateway | `FACTORY_GATEWAY_URL=https://<gateway>/v1`, `FACTORY_GATEWAY_KEY`, and `FACTORY_MODEL_FRONTIER`, `_STANDARD`, `_SMALL` (aliases) | The default |
 | Anthropic (native client) | `FACTORY_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` | Public API unless `FACTORY_GATEWAY_URL` is set. Models default to `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-4-5` |
 | Claude on Vertex AI | `FACTORY_PROVIDER=vertex`, `FACTORY_VERTEX_PROJECT`, optional `FACTORY_VERTEX_REGION` (default `global`) | gcloud Application Default Credentials: no key, no gateway. `claude-*` models use the Anthropic client; others (e.g. `google/gemini-2.5-pro`) use Vertex's OpenAI-compatible endpoint, so the reviewer can be a Gemini on the same login |
+| Claude subscription (local `claude` CLI) | `FACTORY_PROVIDER=claude-code`, then `claude login` once | No key, no gateway. Each model call is one `claude -p` process with its own tools off; the factory's tools are offered as text and parsed back from a JSON reply. `ANTHROPIC_API_KEY` is removed from the child so it cannot override the login. It is the same Claude family, so the reviewer needs `FACTORY_REVIEWER_SAME_FAMILY=allow` with dry-run merges |
 
 **Reviewer and QA run on a different model family.** Set `FACTORY_REVIEWER_PROVIDER` / `_GATEWAY_URL` / `_GATEWAY_KEY` / `_MODEL_*`, and declare `FACTORY_MODEL_FAMILY` and `FACTORY_REVIEWER_MODEL_FAMILY`; start-up refuses otherwise. With one provider only, set `FACTORY_REVIEWER_SAME_FAMILY=allow`: dry-run merges only (not `--github`), and those reviews are stamped same-family.
 
@@ -93,7 +95,7 @@ A handover frozen with compiled contracts (designc `contracts/`) lists them. `FA
 ## Run it
 
 ```bash
-dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/pricing-v3/handover.json \
+dotnet run --project src/Factory.S2 -- run --handover <registry>/handovers/fares-v3/handover.json \
     --repo <target repo> --registry <registry repo> [--base main] [--github | --azdo] [--run-id <id to resume>]
 ```
 
@@ -136,7 +138,7 @@ span per model call and an `execute_tool` span per tool call); every ledger row 
 `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_HEADERS`), to Langfuse or any OTLP collector:
 
 ```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:3000/api/public/otel OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:3100/api/public/otel OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $(printf %s "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | base64 -w0)"
 ```
 
@@ -283,7 +285,34 @@ finds the completed PR. Azure DevOps has no approval-comment path yet, so tiered
 the console. PR descriptions over Azure DevOps' 4000-character limit are cut with a note.
 
 Opt-in live test (opens and closes a real PR):
-`FACTORY_LIVE_GITHUB=xMikeTR/pricing-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`
+`FACTORY_LIVE_GITHUB=xMikeTR/fares-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`
+
+## Selfcheck (local CI)
+
+Checks what is **committed**, in a clean worktree and a container with no network, and records the result on the commit as a git note. It calls no model.
+
+```mermaid
+flowchart LR
+  C[commit] --> W[clean git worktree]
+  W -->|dotnet restore, nuget.org only| R[restore]
+  R -->|--network none| B[build]
+  B --> T1[tests-core] --> T2[tests-integration] --> S[sabotage] --> K[contracts] --> D[docs]
+  D --> N[git note refs/notes/selfcheck + JSON on stdout]
+  N --> H[pre-push hook gates main and release/*]
+```
+
+### Use it
+
+1. Build the runner image once: `FACTORY_CONTAINER_ENGINE=docker docker/runner/build.sh` (Podman is the default engine).
+2. Check HEAD: `FACTORY_CONTAINER_ENGINE=docker scripts/selfcheck.sh`. Progress goes to stderr, one JSON record to stdout. Commit first; uncommitted changes are not checked.
+3. The `contracts` stage compares the fixtures under `tests/Factory.Integration.Tests/Fixtures/designc` with designc. Point it at a checkout with `--designc <dir>` (else `FACTORY_DESIGNC_DIR`, else `../designc`). A fixture behind designc HEAD is a warning; `--strict-contracts` makes it a failure.
+4. Other forms: `--commit <sha>`, `--stage build|tests-core|tests-integration|sabotage|contracts|docs` for one stage, `--local` to run on the host. A `--stage` or `--local` pass is printed but exits 1, because it never counts as a pass.
+5. See the last result: `scripts/selfcheck.sh --status [sha]`. It exits 0 only for a full, container, passing record.
+6. Gate pushes: `scripts/selfcheck.sh --install-hook`. A push to `main` or `release/*` is refused unless the tip commit has a current container pass (tip only; `--no-verify` skips it). An existing hook that is not ours is never overwritten.
+
+Exit codes: 0 pass, 1 a check failed, 2 could not run, 3 no record (`--status` only). A failed stage does not stop the later ones. A record is current only while `checks_hash` matches (`scripts/selfcheck.sh` and `scripts/selfcheck/**`; `--checks-hash [sha]` prints it).
+
+The `docs` stage fails when a doc line is over its length limit, when the README test counts differ from the run, or when an old system name is still used. It is the reason a test-count change belongs in the same commit as the tests.
 
 ## Commands
 
@@ -319,13 +348,13 @@ Ledger to Jira, never the other way. Each work item's state is compared with its
 
 ## Status
 
-Tests: Core 327/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 778/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
+Tests: Core 327/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 783/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|
 | Rules: paths, plan validation, dispatch, task state, merge tiers, regeneration | `Factory.Core` (F#) | Built, tested |
 | MAF workflow, teams, sandbox, verify, quality gates (mutation, coverage, fitness, UI guard) | `Factory.S2`, `Factory.Harness`, `Factory.Quality.*` | Built, tested; run live on real models |
-| Work intake: work items, WIP/dependency/conflict/budget scheduler, digest, S4 metrics | `Core/Work.fs`, `Scheduler.fs`, `Board.fs`, `Digest.fs`, `Metrics.fs` | Built; a person still pulls (`item_pulled` is human-only). The digest lists `item_budget` rows under Waiting, as designc does |
+| Work intake: work items, WIP/dependency/conflict/budget scheduler, digest, S3 metrics | `Core/Work.fs`, `Scheduler.fs`, `Board.fs`, `Digest.fs`, `Metrics.fs` | Built; a person still pulls (`item_pulled` is human-only). The digest lists `item_budget` rows under Waiting, as designc does |
 | Per-run registry streams and single-writer fold | `Harness/Registry/RunLedgerStream`, `LedgerFold` | Built |
 | UI acceptance: frozen spec hash check, Playwright run, `ui_acceptance_failed`, repair runs, bug intake, token lint | `Core/UiAcceptance.fs`, `VerifyRunner`, `S2/Repair.cs`, `BugIntake` | Built |
 | Item budget: measure, report, and refuse a new run when exceeded | `Core/ItemBudget.fs`, `ItemBudgetReport` | Built |
@@ -369,8 +398,8 @@ src/Factory.S2/          C#: the MAF workflow
   Integrations.cs        GitHub (gh CLI) / Azure DevOps (az CLI) / dry-run PRs; console human channel
 prompts/                 planner, task-planner and executor system prompts (reviewed like code)
 schemas/                 plan and handover JSON Schemas
-sql/ledger.sql           Postgres ledger + System 4 starter views
-examples/pricing-v3/     Quote lost-update handover and a valid plan
+sql/ledger.sql           Postgres ledger + System 3 starter views
+examples/fares-v3/     Booking lost-update handover and a valid plan
 ```
 
 ## Interfaces with designc
@@ -394,7 +423,7 @@ examples/pricing-v3/     Quote lost-update handover and a valid plan
   - designc answers with `payload.option` (the chosen id) and/or `payload.note` on
     `needs_decision_resolved`. An id that was never offered answers nothing: the run stays parked
     and the ledger records `resolution_rejected`.
-- **Ledger kinds** (`LedgerKinds`) and the `task` event payload (`Json.encodeTaskEvent`). System 4
+- **Ledger kinds** (`LedgerKinds`) and the `task` event payload (`Json.encodeTaskEvent`). System 3
   queries depend on these.
 
 ## Design decisions

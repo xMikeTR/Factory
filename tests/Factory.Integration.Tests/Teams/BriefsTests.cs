@@ -71,16 +71,16 @@ public class BriefsTests
             new S2Config([]), CancellationToken.None);
         PackFile[] context =
         [
-            new("src/Quote.cs", ContextSource.TaskWritten, "class Quote {}", false),
-            new("src/Repo.cs", ContextSource.NewNominated("Quote is loaded here"), "class Repo {}", false),
+            new("src/Booking.cs", ContextSource.TaskWritten, "class Booking {}", false),
+            new("src/Repo.cs", ContextSource.NewNominated("Booking is loaded here"), "class Repo {}", false),
             new("src/Big.cs", ContextSource.Default, "class Big {", true),
         ];
 
         var brief = Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null, context).Text;
 
         Assert.Contains("## Context", brief);
-        Assert.Contains("### `src/Quote.cs` (written by this task)\n```\nclass Quote {}\n```", brief);
-        Assert.Contains("### `src/Repo.cs` (Quote is loaded here)", brief);
+        Assert.Contains("### `src/Booking.cs` (written by this task)\n```\nclass Booking {}\n```", brief);
+        Assert.Contains("### `src/Repo.cs` (Booking is loaded here)", brief);
         Assert.Contains("### `src/Big.cs` (truncated to fit the context budget)", brief);
         Assert.DoesNotContain("## Context", Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null).Text);
     }
@@ -92,14 +92,14 @@ public class BriefsTests
     {
         var handover = await new DesigncHandoverReader().LoadAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"),
             new S2Config([]), CancellationToken.None);
-        PackFile[] context = [new("src/Quote.cs", ContextSource.TaskWritten, "class Quote {}", false)];
+        PackFile[] context = [new("src/Booking.cs", ContextSource.TaskWritten, "class Booking {}", false)];
 
-        var brief = Briefs.Task(handover, Plans.Task("T-004"), [], "note", "Quote.exists failed", "chose B", context);
+        var brief = Briefs.Task(handover, Plans.Task("T-004"), [], "note", "Booking.exists failed", "chose B", context);
 
         Assert.Contains("## How this task is verified", brief.Stable);
         Assert.DoesNotContain("## Context", brief.Stable);
         Assert.StartsWith("\n## Context", brief.Turn);
-        foreach (var turn in new[] { "note", "Quote.exists failed", "chose B" }) Assert.Contains(turn, brief.Turn);
+        foreach (var turn in new[] { "note", "Booking.exists failed", "chose B" }) Assert.Contains(turn, brief.Turn);
         Assert.Equal(brief.Stable + brief.Turn, brief.Text);
         Assert.Equal([brief.Stable, brief.Turn], brief.Messages.Select(m => m.Text));
         Assert.Equal([brief.Stable], Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null).Messages.Select(m => m.Text));

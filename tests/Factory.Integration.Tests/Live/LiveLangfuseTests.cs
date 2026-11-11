@@ -13,18 +13,18 @@ using static Factory.Integration.Tests.Support.ScriptedChatClient;
 namespace Factory.Integration.Tests.Live;
 
 /// Opt-in: FACTORY_LIVE_LANGFUSE=1 with LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY (and
-/// LANGFUSE_HOST, default http://localhost:3000), e.g. `. ~/Desktop/Coding/langfuse-local/env.sh`.
+/// LANGFUSE_HOST, default http://localhost:3100), e.g. `. ~/Desktop/Coding/langfuse-local/env.sh`.
 /// Exports one scripted task over plain OTLP and reads the trace back from the Langfuse API.
 public class LiveLangfuseTests
 {
     private static readonly bool Enabled = Environment.GetEnvironmentVariable("FACTORY_LIVE_LANGFUSE") == "1";
-    private const string NewFile = "src/Pricing.Data/QuoteStatus.cs";
+    private const string NewFile = "src/Fares.Data/BookingStatus.cs";
 
     [Fact]
     public async Task A_task_trace_reaches_Langfuse_with_the_attribute_contract()
     {
         if (!Enabled) return; // opt-in
-        var host = (Environment.GetEnvironmentVariable("LANGFUSE_HOST") is { Length: > 0 } h0 ? h0 : "http://localhost:3000").TrimEnd('/');
+        var host = (Environment.GetEnvironmentVariable("LANGFUSE_HOST") is { Length: > 0 } h0 ? h0 : "http://localhost:3100").TrimEnd('/');
         var secret = Environment.GetEnvironmentVariable("LANGFUSE_SECRET_KEY")!;
         var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Environment.GetEnvironmentVariable("LANGFUSE_PUBLIC_KEY")}:{secret}"));
 
@@ -37,10 +37,10 @@ public class LiveLangfuseTests
         }))
         {
             var model = new ScriptedChatClient(
-                Say("Approach: add QuoteStatus.cs"),
+                Say("Approach: add BookingStatus.cs"),
                 Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
-                Call("write_file", new { path = NewFile, content = "public enum QuoteStatus { Draft }\n" }),
-                Call("declare_done", new { summary = "added QuoteStatus" }), Say("done"));
+                Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+                Call("declare_done", new { summary = "added BookingStatus" }), Say("done"));
             using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
             var task = Plans.Covering("T-001", ["D-0042"], Plans.Auto("file exists", $"test -f {NewFile}"));
             var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(task), new Dictionary<string, DecisionAnswer>(), default);
@@ -71,7 +71,7 @@ public class LiveLangfuseTests
         Assert.Equal("S2", meta.GetProperty("attributes.factory.system").GetString());
         Assert.Equal("T-001", meta.GetProperty("attributes.factory.task").GetString());
         Assert.Equal("D-0042", meta.GetProperty("attributes.factory.decision")[0].GetString());
-        Assert.Equal("Pricing Platform/Quotes DB", meta.GetProperty("attributes.factory.element")[0].GetString());
+        Assert.Equal("Fares Platform/Bookings DB", meta.GetProperty("attributes.factory.element")[0].GetString());
         Assert.Equal(1, meta.GetProperty("attributes.factory.attempt").GetInt32());
         Assert.Equal(1, meta.GetProperty("attributes.factory.score.task_passed").GetInt32());
         Assert.Equal(FactoryTelemetry.Tag, meta.GetProperty("attributes.langfuse.trace.tags")[0].GetString());

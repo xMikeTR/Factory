@@ -38,10 +38,10 @@ public sealed class ContractGateTests : IDisposable
     {
         var ledger = new MemoryLedger();
 
-        var outcomes = await Run(ledger, new ContractConvention("echo 'removed GET /quotes' && exit 1", "true"));
+        var outcomes = await Run(ledger, new ContractConvention("echo 'removed GET /bookings' && exit 1", "true"));
 
         Assert.Equal(1, outcomes[0].ExitCode);
-        Assert.Contains("removed GET /quotes", outcomes[0].OutputTail);
+        Assert.Contains("removed GET /bookings", outcomes[0].OutputTail);
         Assert.Equal(0, outcomes[1].ExitCode);
     }
 

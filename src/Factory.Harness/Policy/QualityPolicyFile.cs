@@ -17,7 +17,7 @@ public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Threshold
     IReadOnlyList<ForbiddenDependency>? ForbidRules = null, IReadOnlyList<string>? FlakyCommands = null,
     IReadOnlyList<ForbiddenDependency>? ForbidNamespaceRules = null, UiPolicy? Ui = null)
 {
-    /// Namespace dependencies this repo forbids, read from the compiled assemblies (ArchUnitNET). Patterns are namespace paths: Pricing/Domain/**.
+    /// Namespace dependencies this repo forbids, read from the compiled assemblies (ArchUnitNET). Patterns are namespace paths: Fares/Domain/**.
     public IReadOnlyList<ForbiddenDependency> ForbidNamespaces => ForbidNamespaceRules ?? [];
 
     /// Commands (substrings) whose plain failure is re-run once alone: the repo says they are flaky.
@@ -40,7 +40,7 @@ public sealed record QualityPolicy(QualityMode Mode, QualityThresholds Threshold
 ///     forbid:                         # hand-written fitness rules: project references the repo forbids
 ///       - { from: "src/Domain/**", to: "src/Infra/**", why: "the domain layer is pure" }
 ///     forbidNamespaces:               # the same, between namespaces (dotted globs), judged on the compiled assemblies
-///       - { from: "Pricing.Domain.**", to: "Pricing.Infra.**", why: "the domain layer is pure" }
+///       - { from: "Fares.Domain.**", to: "Fares.Infra.**", why: "the domain layer is pure" }
 ///     ui: { globs: [...], testGlobs: [...] }  # UI regression guard (on when present; {} = default globs); the contract is .factory/ui-contract.yaml
 ///     flaky: ["dotnet test --filter Slow"]  # commands (substrings) whose failure is re-run once alone
 ///     mutationMinScore: 0.8           # share of mutants on changed lines the tests must kill

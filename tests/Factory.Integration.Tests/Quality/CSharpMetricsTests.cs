@@ -7,7 +7,7 @@ namespace Factory.Integration.Tests.Quality;
 public class CSharpMetricsTests
 {
     private const string Source = """
-        namespace Pricing;
+        namespace Fares;
 
         public class Rater
         {
@@ -32,15 +32,15 @@ public class CSharpMetricsTests
     {
         var fns = CSharpMetrics.Measure("src/Rater.cs", Source);
 
-        Assert.Equal(1, fns.Single(f => f.Name == "Pricing.Rater.Straight").Cyclomatic);
+        Assert.Equal(1, fns.Single(f => f.Name == "Fares.Rater.Straight").Cyclomatic);
         // if, &&, foreach, if, ||, and two non-default switch arms (the discard arm is the else)
-        Assert.Equal(1 + 7, fns.Single(f => f.Name == "Pricing.Rater.Branchy").Cyclomatic);
+        Assert.Equal(1 + 7, fns.Single(f => f.Name == "Fares.Rater.Branchy").Cyclomatic);
     }
 
     [Fact]
     public void A_function_has_its_file_first_line_and_length()
     {
-        var f = CSharpMetrics.Measure("src/Rater.cs", Source).Single(f => f.Name == "Pricing.Rater.Branchy");
+        var f = CSharpMetrics.Measure("src/Rater.cs", Source).Single(f => f.Name == "Fares.Rater.Branchy");
 
         Assert.Equal("src/Rater.cs", f.File);
         Assert.Equal(7, f.Line);
@@ -50,7 +50,7 @@ public class CSharpMetricsTests
     [Fact]
     public void Constructors_are_functions_too()
     {
-        Assert.Contains(CSharpMetrics.Measure("src/Rater.cs", Source), f => f.Name == "Pricing.Rater..ctor");
+        Assert.Contains(CSharpMetrics.Measure("src/Rater.cs", Source), f => f.Name == "Fares.Rater..ctor");
     }
 
     [Fact]

@@ -20,7 +20,7 @@ module AssertionGuard =
         codeExtensions.Contains(System.IO.Path.GetExtension(name).ToLowerInvariant())
         && (testName.IsMatch name || parts[.. parts.Length - 2] |> Array.exists (fun d -> testFolders.Contains(d.ToLowerInvariant())))
 
-    // xUnit/NUnit/MSTest, FluentAssertions, Expecto, Unquote, Jest/Vitest/Playwright expect, node/python assert.
+    // xUnit/NUnit/MSTest, FluentAssertions, Expecto, Unbooking, Jest/Vitest/Playwright expect, node/python assert.
     let private assertion =
         Regex(@"\bAssert\.\w+|\.Should\(\)|\bExpect\.\w+|\btest\s*<@|=!|\bexpect(\.\w+)*\s*\(|\bassert(\.\w+)*\s*\(|^\s*assert\s", RegexOptions.Compiled ||| RegexOptions.Multiline)
 

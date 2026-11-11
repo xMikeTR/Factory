@@ -5,9 +5,9 @@ open Factory.Core.Tests.Support
 
 let tests: (string * (unit -> unit)) list =
     [ "ux: the slug matches designc's element slug", fun () ->
-          equal "quotes-quote-ui" (UxReview.slug "Quotes/Quote UI") "slug"
+          equal "bookings-booking-ui" (UxReview.slug "Bookings/Booking UI") "slug"
       "ux: a screenshot name is element, state and breakpoint; anything else is not a shot", fun () ->
-          equal (Some("quotes-quote-ui", "empty", "mobile")) (UxReview.parseShot "out/quotes-quote-ui__empty__mobile.png" |> Option.map (fun s -> s.ElementSlug, s.State, s.Breakpoint)) "shot"
+          equal (Some("bookings-booking-ui", "empty", "mobile")) (UxReview.parseShot "out/bookings-booking-ui__empty__mobile.png" |> Option.map (fun s -> s.ElementSlug, s.State, s.Breakpoint)) "shot"
           equal None (UxReview.parseShot "out/readme.png") "no parts"
           equal None (UxReview.parseShot "out/a__b__c.jpg") "not png"
       "ux: scores outside 1 to 5 are not recorded", fun () ->

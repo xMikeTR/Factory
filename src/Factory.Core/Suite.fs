@@ -16,7 +16,7 @@ module Suite =
     let private atRoot (path: string) = not (path.Contains '/')
     let private isTestProject (content: string) =
         content.Contains "Microsoft.NET.Test.Sdk" || content.Contains "<IsTestProject>true</IsTestProject>"
-    let private quote (s: string) = "'" + s.Replace("'", "'\\''") + "'"
+    let private booking (s: string) = "'" + s.Replace("'", "'\\''") + "'"
 
     /// npm's placeholder from `npm init`: no tests, and it always fails.
     let private placeholder (script: string) = script.Contains "no test specified"
@@ -51,12 +51,12 @@ module Suite =
                 match projects |> List.filter (snd >> isTestProject) |> List.map fst |> List.sort with
                 | [] -> None
                 | tests ->
-                    let words = tests |> List.map quote |> String.concat " "
+                    let words = tests |> List.map booking |> String.concat " "
                     Some $"for p in {words}; do dotnet test \"$p\" || s=1; done"
         let npm =
             let withTests = packages |> List.filter (fun (p, text) -> inRepo p && hasTestScript text) |> List.map (fst >> directory) |> List.sort
             if List.contains "" withTests then [ "npm test || s=1" ]
-            else withTests |> List.map (fun d -> $"(cd {quote d} && npm test) || s=1")
+            else withTests |> List.map (fun d -> $"(cd {booking d} && npm test) || s=1")
         match dotnet, npm with
         | Some "dotnet test || s=1", [] -> SuitePlan.Command "dotnet test"
         | None, [] -> SuitePlan.NoSuite

@@ -5,9 +5,9 @@ namespace Factory.Integration.Tests.Registry;
 
 public class BugIntakeTests
 {
-    private const string Spec = "tests/acceptance/quote-form/AC-0107.spec.ts";
+    private const string Spec = "tests/acceptance/booking-form/AC-0107.spec.ts";
     private static readonly BugIntakeRequest Good =
-        new("BUG-1", "premium lost on 500", Spec, "spec_gap", "REQ-7", "AC-0107 error state", null, "pipeline");
+        new("BUG-1", "fee lost on 500", Spec, "spec_gap", "REQ-7", "AC-0107 error state", null, "pipeline");
 
     private static string TempRegistry()
     {
@@ -40,7 +40,7 @@ public class BugIntakeTests
     }
 
     [Theory]
-    [InlineData("src/Quote.spec.ts", "spec_gap", "REQ-7", "g")]       // not an acceptance spec
+    [InlineData("src/Booking.spec.ts", "spec_gap", "REQ-7", "g")]       // not an acceptance spec
     [InlineData(Spec, "typo", "REQ-7", "g")]                          // unknown origin
     [InlineData(Spec, "spec_gap", "", "g")]                           // origin without its reference
     [InlineData(Spec, "spec_gap", "REQ-7", "")]                       // no countermeasure

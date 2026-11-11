@@ -20,12 +20,12 @@ public class CiReportTests
         handover = new { id = h.Id, digest = h.Digest },
         tasks = new object[]
         {
-            new { id = "T-001", title = "Data", instructions = "x", elements = new[] { "Pricing Platform/Quotes DB" },
-                  writes = new[] { "src/Pricing.Data/**" }, testWrites = new[] { "tests/Pricing.Data.Tests/**" }, dependsOn = Array.Empty<string>(), covers = new[] { "D-0001" },
-                  verify = new[] { new { name = "f", kind = "invariant", run = "sh tests/Pricing.Data.Tests/a.sh", timeoutSeconds = 30 } } },
-            new { id = "T-002", title = "Api", instructions = "x", elements = new[] { "Pricing Platform/Pricing API" },
-                  writes = new[] { "src/Pricing.Api/**" }, testWrites = new[] { "tests/Pricing.Api.Tests/**" }, dependsOn = new[] { "T-001" }, covers = Array.Empty<string>(),
-                  verify = new[] { new { name = "g", kind = "invariant", run = "sh tests/Pricing.Api.Tests/b.sh", timeoutSeconds = 30 } } },
+            new { id = "T-001", title = "Data", instructions = "x", elements = new[] { "Fares Platform/Bookings DB" },
+                  writes = new[] { "src/Fares.Data/**" }, testWrites = new[] { "tests/Fares.Data.Tests/**" }, dependsOn = Array.Empty<string>(), covers = new[] { "D-0001" },
+                  verify = new[] { new { name = "f", kind = "invariant", run = "sh tests/Fares.Data.Tests/a.sh", timeoutSeconds = 30 } } },
+            new { id = "T-002", title = "Api", instructions = "x", elements = new[] { "Fares Platform/Fares API" },
+                  writes = new[] { "src/Fares.Api/**" }, testWrites = new[] { "tests/Fares.Api.Tests/**" }, dependsOn = new[] { "T-001" }, covers = Array.Empty<string>(),
+                  verify = new[] { new { name = "g", kind = "invariant", run = "sh tests/Fares.Api.Tests/b.sh", timeoutSeconds = 30 } } },
         },
     });
 
@@ -43,7 +43,7 @@ public class CiReportTests
     {
         using var h = await HarnessAsync();
 
-        var why = await CiReport.RecordAsync(h.Services, Run, "unit tests", "Expected 3 got 2", ["src/Pricing.Api/Quote.cs"], null, "abc1234", default);
+        var why = await CiReport.RecordAsync(h.Services, Run, "unit tests", "Expected 3 got 2", ["src/Fares.Api/Booking.cs"], null, "abc1234", default);
 
         Assert.Null(why);
         var row = Assert.Single(await Rows(h, Run), e => e.Kind == LedgerKinds.CiFailed);
@@ -58,7 +58,7 @@ public class CiReportTests
         using var h = await HarnessAsync();
         Directory.CreateDirectory(h.Services.Settings.RegistryPath);
 
-        Assert.Null(await CiReport.RecordAsync(h.Services, Run, "unit tests", "log", ["src/Pricing.Api/Quote.cs"], null, "abc1234", default));
+        Assert.Null(await CiReport.RecordAsync(h.Services, Run, "unit tests", "log", ["src/Fares.Api/Booking.cs"], null, "abc1234", default));
 
         var line = Assert.Single(File.ReadAllLines(Path.Combine(h.Services.Settings.RegistryPath, "ledger", "pipeline.jsonl")), l => l.Contains("\"kind\":\"outcome\""));
         Assert.Empty(DesigncSchema.Validate(line));
@@ -72,7 +72,7 @@ public class CiReportTests
     public async Task A_test_file_is_blamed_on_the_task_whose_tests_it_is()
     {
         using var h = await HarnessAsync();
-        await CiReport.RecordAsync(h.Services, Run, "unit tests", "log", ["tests/Pricing.Data.Tests/QuoteTests.cs"], null, null, default);
+        await CiReport.RecordAsync(h.Services, Run, "unit tests", "log", ["tests/Fares.Data.Tests/BookingTests.cs"], null, null, default);
         Assert.Equal("T-001", Assert.Single(await Rows(h, Run), e => e.Kind == LedgerKinds.CiFailed).TaskId);
     }
 
@@ -100,7 +100,7 @@ public class CiReportTests
     {
         using var h = await HarnessAsync();
         var log = string.Concat(Enumerable.Repeat("noise\n", 2000)) + "THE REAL ERROR";
-        await CiReport.RecordAsync(h.Services, Run, "unit tests", log, ["src/Pricing.Api/Quote.cs"], null, "abc1234", default);
+        await CiReport.RecordAsync(h.Services, Run, "unit tests", log, ["src/Fares.Api/Booking.cs"], null, "abc1234", default);
 
         var repair = await Repair.FromFailedRunAsync(h.Services, Run, default);
 

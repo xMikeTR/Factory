@@ -25,8 +25,8 @@ public class DesigncHandoverElementsContractTests
     {
         var h = await LoadExample();
         Assert.Equal(
-            [("Quotes/Quotes API", "Quotes API", RiskLevel.Medium, new[] { "src/Api/**", "src/Shared" }),
-             ("Quotes/Quotes API/Pricing", "Pricing", RiskLevel.High, new[] { "src/Api/Pricing/**" })],
+            [("Bookings/Bookings API", "Bookings API", RiskLevel.Medium, new[] { "src/Api/**", "src/Shared" }),
+             ("Bookings/Bookings API/Fares", "Fares", RiskLevel.High, new[] { "src/Api/Fares/**" })],
             h.Elements.Select(e => (e.Id.Value, e.Name, e.Risk, e.CodeAreas.Select(p => p.Value).ToArray())));
     }
 
@@ -40,7 +40,7 @@ public class DesigncHandoverElementsContractTests
     [Fact]
     public async Task Events_are_the_event_vocabulary()
     {
-        Assert.Equal(["QuoteRequested", "QuoteSaved", "QuotePriced"], (await LoadExample()).EventVocabulary);
+        Assert.Equal(["BookingRequested", "BookingSaved", "BookingPriced"], (await LoadExample()).EventVocabulary);
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public class DesigncHandoverElementsContractTests
     {
         var item = await LoadExample("handover-elements-2.json");
         Assert.Equal(
-            [("Quotes/Quotes API", true), ("Quotes/Mail", false)],
+            [("Bookings/Bookings API", true), ("Bookings/Mail", false)],
             item.Elements.Select(e => (e.Id.Value, e.InScope)));
         Assert.All((await LoadExample()).Elements, e => Assert.True(e.InScope));
     }
@@ -85,8 +85,8 @@ public class DesigncHandoverElementsContractTests
     public async Task Frozen_acceptance_specs_are_read_with_their_hash_and_a_handover_without_specs_has_none()
     {
         var dir = Path.Combine(Path.GetTempPath(), "s2-specs-" + Guid.NewGuid().ToString("N"));
-        var specPath = "tests/acceptance/quotes-api/AC-1.spec.ts";
-        Directory.CreateDirectory(Path.Combine(dir, "tests", "acceptance", "quotes-api"));
+        var specPath = "tests/acceptance/bookings-api/AC-1.spec.ts";
+        Directory.CreateDirectory(Path.Combine(dir, "tests", "acceptance", "bookings-api"));
         var elements = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "handover-elements-2.json"));
         await File.WriteAllTextAsync(Path.Combine(dir, "elements.json"), elements);
         await File.WriteAllTextAsync(Path.Combine(dir, specPath), "// GENERATED\n");
@@ -106,11 +106,11 @@ public class DesigncHandoverElementsContractTests
     public async Task Design_version_acceptance_criteria_and_loop_specs_are_carried_and_a_loop_spec_must_be_frozen()
     {
         var dir = Path.Combine(Path.GetTempPath(), "s2-loop-" + Guid.NewGuid().ToString("N"));
-        var spec = "tests/acceptance/quotes-api/AC-1.spec.ts";
-        Directory.CreateDirectory(Path.Combine(dir, "tests", "acceptance", "quotes-api"));
+        var spec = "tests/acceptance/bookings-api/AC-1.spec.ts";
+        Directory.CreateDirectory(Path.Combine(dir, "tests", "acceptance", "bookings-api"));
         Directory.CreateDirectory(Path.Combine(dir, "acceptance"));
         var elements = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "handover-elements-2.json"));
-        const string criterion = "id: AC-1\nrequirement: DEMO-1\nelement: \"Quotes/Quotes API\"\nstates: [ready]\n";
+        const string criterion = "id: AC-1\nrequirement: DEMO-1\nelement: \"Bookings/Bookings API\"\nstates: [ready]\n";
         await File.WriteAllTextAsync(Path.Combine(dir, "elements.json"), elements);
         await File.WriteAllTextAsync(Path.Combine(dir, "acceptance", "AC-1.yaml"), criterion);
         await File.WriteAllTextAsync(Path.Combine(dir, spec), "// GENERATED\n");
@@ -125,7 +125,7 @@ public class DesigncHandoverElementsContractTests
 
         Assert.Equal("r-abc123", h.DesignVersion.Value);
         var c = Assert.Single(h.AcceptanceCriteria);
-        Assert.Equal(("AC-1", "Quotes/Quotes API", criterion), (c.Id, c.Element, c.Text));
+        Assert.Equal(("AC-1", "Bookings/Bookings API", criterion), (c.Id, c.Element, c.Text));
         Assert.Equal([spec], h.LoopSpecs);
         var back = FactoryCore.ParseHandover(FactoryCore.HandoverJson(h));
         Assert.Equal("r-abc123", back.DesignVersion.Value);
@@ -158,7 +158,7 @@ public class DesigncHandoverElementsContractTests
         await Assert.ThrowsAnyAsync<Exception>(() => new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None));
     }
 
-    private static async Task<Handover> LoadWithContracts(string contractsYaml, string agentsJson, string? policyText = "name: quote-bot\n")
+    private static async Task<Handover> LoadWithContracts(string contractsYaml, string agentsJson, string? policyText = "name: booking-bot\n")
     {
         var dir = Path.Combine(Path.GetTempPath(), "s2-contracts-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(dir, "contracts"));
@@ -168,33 +168,33 @@ public class DesigncHandoverElementsContractTests
         var files = $"  - {{ path: \"elements.json\", hash: {DesigncHandoverReader.Hash16(elements)} }}\n  - {{ path: \"agents.json\", hash: {DesigncHandoverReader.Hash16(agentsJson)} }}\n";
         if (policyText is not null)
         {
-            await File.WriteAllTextAsync(Path.Combine(dir, "contracts", "quote-bot.yaml"), policyText);
-            files += $"  - {{ path: \"contracts/quote-bot.yaml\", hash: {DesigncHandoverReader.Hash16(policyText)} }}\n";
+            await File.WriteAllTextAsync(Path.Combine(dir, "contracts", "booking-bot.yaml"), policyText);
+            files += $"  - {{ path: \"contracts/booking-bot.yaml\", hash: {DesigncHandoverReader.Hash16(policyText)} }}\n";
         }
         await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"),
             $"id: 20261019-contracts\nelements: \"elements.json\"\nagents: \"agents.json\"\n{contractsYaml}files:\n{files}");
         return await new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None);
     }
 
-    private const string TwoAgents = "{\"schema\":\"designc.handover.agents/1\",\"agents\":[{\"id\":\"Q/Quote Bot\",\"name\":\"Quote Bot\",\"autonomy\":\"approve-writes\",\"tools\":[]},{\"id\":\"Q/Plain\",\"name\":\"Plain\",\"autonomy\":\"suggest\",\"tools\":[]}]}";
+    private const string TwoAgents = "{\"schema\":\"designc.handover.agents/1\",\"agents\":[{\"id\":\"Q/Booking Bot\",\"name\":\"Booking Bot\",\"autonomy\":\"approve-writes\",\"tools\":[]},{\"id\":\"Q/Plain\",\"name\":\"Plain\",\"autonomy\":\"suggest\",\"tools\":[]}]}";
 
     [Fact]
     public async Task Contracts_are_read_and_a_suggest_agent_needs_none()
     {
-        var h = await LoadWithContracts("contracts: {\"result\":\"contracts/result.json\",\"agents\":{\"Q/Quote Bot\":\"contracts/quote-bot.yaml\"},\"uncontracted\":[]}\n", TwoAgents);
+        var h = await LoadWithContracts("contracts: {\"result\":\"contracts/result.json\",\"agents\":{\"Q/Booking Bot\":\"contracts/booking-bot.yaml\"},\"uncontracted\":[]}\n", TwoAgents);
         var c = Assert.Single(h.Contracts);
-        Assert.Equal(("Q/Quote Bot", "contracts/quote-bot.yaml"), (c.Agent, c.Policy));
+        Assert.Equal(("Q/Booking Bot", "contracts/booking-bot.yaml"), (c.Agent, c.Policy));
         Assert.Empty(h.Uncovered);
-        Assert.Equal("Q/Quote Bot", FactoryCore.ParseHandover(FactoryCore.HandoverJson(h)).Contracts.Single().Agent); // survives the run-dir copy
+        Assert.Equal("Q/Booking Bot", FactoryCore.ParseHandover(FactoryCore.HandoverJson(h)).Contracts.Single().Agent); // survives the run-dir copy
     }
 
     [Fact]
     public async Task An_agent_with_no_contract_is_uncovered_unless_listed_uncontracted_and_old_handovers_load()
     {
         var none = await LoadWithContracts("", TwoAgents, null);
-        Assert.Equal(["Q/Quote Bot"], none.Uncovered);
+        Assert.Equal(["Q/Booking Bot"], none.Uncovered);
         Assert.Empty(none.Contracts);
-        var listed = await LoadWithContracts("contracts: {\"uncontracted\":[\"Q/Quote Bot\"],\"agents\":{}}\n", TwoAgents, null);
+        var listed = await LoadWithContracts("contracts: {\"uncontracted\":[\"Q/Booking Bot\"],\"agents\":{}}\n", TwoAgents, null);
         Assert.Empty(listed.Uncovered);
         Assert.Empty((await LoadExample()).Uncovered); // no agents.json: nothing to judge
     }
@@ -202,7 +202,7 @@ public class DesigncHandoverElementsContractTests
     [Fact]
     public async Task A_policy_that_is_not_a_frozen_file_is_refused()
     {
-        await Assert.ThrowsAnyAsync<Exception>(() => LoadWithContracts("contracts: {\"agents\":{\"Q/Quote Bot\":\"contracts/other.yaml\"}}\n", TwoAgents));
+        await Assert.ThrowsAnyAsync<Exception>(() => LoadWithContracts("contracts: {\"agents\":{\"Q/Booking Bot\":\"contracts/other.yaml\"}}\n", TwoAgents));
     }
 
     [Theory]
@@ -216,13 +216,13 @@ public class DesigncHandoverElementsContractTests
         var w = new StringWriter();
         if (refuses) Assert.Throws<FactoryRejectedException>(() => Factory.S2.CliOptions.RequireContracts(h, mode, w));
         else Factory.S2.CliOptions.RequireContracts(h, mode, w);
-        Assert.Equal(warns, w.ToString().Contains("Q/Quote Bot"));
+        Assert.Equal(warns, w.ToString().Contains("Q/Booking Bot"));
     }
 
     [Fact]
     public async Task Require_passes_when_every_agent_is_covered()
     {
-        var h = await LoadWithContracts("contracts: {\"agents\":{\"Q/Quote Bot\":\"contracts/quote-bot.yaml\"}}\n", TwoAgents);
+        var h = await LoadWithContracts("contracts: {\"agents\":{\"Q/Booking Bot\":\"contracts/booking-bot.yaml\"}}\n", TwoAgents);
         Factory.S2.CliOptions.RequireContracts(h, "require", new StringWriter());
     }
 }

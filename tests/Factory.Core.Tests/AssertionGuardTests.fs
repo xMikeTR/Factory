@@ -13,7 +13,7 @@ let tests: (string * (unit -> unit)) list =
           equal false (AssertionGuard.isTestFile "src/Calc.cs") "source"
           equal false (AssertionGuard.isTestFile "tests/fixtures/data.json") "not code"
           equal false (AssertionGuard.isTestFile "src/Testing.cs") "name only contains test"
-      "assertion guard: counts xUnit, FluentAssertions, Expecto, Unquote and expect/assert calls", fun () ->
+      "assertion guard: counts xUnit, FluentAssertions, Expecto, Unbooking and expect/assert calls", fun () ->
           let src =
               "Assert.Equal(1, x);\nx.Should().Be(1);\nExpect.equal a b \"m\"\ntest <@ a = b @>\na =! b\n"
               + "expect(x).toBe(1);\nawait expect.soft(page).toHaveURL('/');\nassert.equal(a, b);\nassert(x)\n"

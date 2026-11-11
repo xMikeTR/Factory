@@ -10,7 +10,7 @@ namespace Factory.Integration.Tests.Quality;
 
 public class AgentQaRunnerTests
 {
-    private const string Req = "T-001: quote status";
+    private const string Req = "T-001: booking status";
 
     private static object Test(string id, string kind, string command) => new { id, requirement = Req, kind, command };
 
@@ -18,8 +18,8 @@ public class AgentQaRunnerTests
     {
         var h = await TeamHarness.CreateAsync(model, new Limits(4, 3));
         var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
-        await File.WriteAllTextAsync(Path.Combine(integration, "src/Pricing.Data/QuoteStatus.cs"), "enum QuoteStatus {}\n");
-        await h.Services.Git.CommitAllAsync(integration, "the run's work", default); // integrated = base + QuoteStatus.cs
+        await File.WriteAllTextAsync(Path.Combine(integration, "src/Fares.Data/BookingStatus.cs"), "enum BookingStatus {}\n");
+        await h.Services.Git.CommitAllAsync(integration, "the run's work", default); // integrated = base + BookingStatus.cs
         var runner = new AgentQaRunner(h.Services.Agents, h.Services.Git, h.Services.Sandboxes, "main", _ => [Req], ["ls"], TimeSpan.FromSeconds(30));
         return (h, runner, integration);
     }
@@ -28,8 +28,8 @@ public class AgentQaRunnerTests
     public async Task A_new_test_red_on_the_base_branch_and_green_on_the_integrated_result_is_judged_as_such()
     {
         var model = new ScriptedChatClient(
-            Call("write_file", new { path = "tests/qa/status.sh", content = "test -f src/Pricing.Data/QuoteStatus.cs\n" }),
-            Call("submit_qa_tests", new { tests = new[] { Test("status", "new", "sh tests/qa/status.sh"), Test("quote", "characterisation", "test -f src/Pricing.Data/Quote.cs") } }),
+            Call("write_file", new { path = "tests/qa/status.sh", content = "test -f src/Fares.Data/BookingStatus.cs\n" }),
+            Call("submit_qa_tests", new { tests = new[] { Test("status", "new", "sh tests/qa/status.sh"), Test("booking", "characterisation", "test -f src/Fares.Data/Booking.cs") } }),
             Say("done"));
         var (h, runner, integration) = await SetUpAsync(model);
         using var _ = h;
@@ -38,7 +38,7 @@ public class AgentQaRunnerTests
 
         Assert.False(run.TimedOut);
         Assert.Equal([Req], run.Requirements);
-        Assert.Equal([("status", QaKind.New, QaOutcome.QaFailed, QaOutcome.QaPassed), ("quote", QaKind.Characterisation, QaOutcome.QaPassed, QaOutcome.QaPassed)],
+        Assert.Equal([("status", QaKind.New, QaOutcome.QaFailed, QaOutcome.QaPassed), ("booking", QaKind.Characterisation, QaOutcome.QaPassed, QaOutcome.QaPassed)],
             run.Tests.Select(t => (t.Id, t.Kind, t.OnBaseline, t.OnIntegrated)));
         Assert.Empty(Qa.judge(CoreHelpers.ToList(run.Requirements), CoreHelpers.ToList(run.Tests)));
     }
@@ -47,14 +47,14 @@ public class AgentQaRunnerTests
     public async Task The_author_writes_only_under_tests_qa()
     {
         var model = new ScriptedChatClient(
-            Call("write_file", new { path = "src/Pricing.Data/Quote.cs", content = "// tampered\n" }),
+            Call("write_file", new { path = "src/Fares.Data/Booking.cs", content = "// tampered\n" }),
             Call("submit_qa_tests", new { tests = Array.Empty<object>() }), Say("done"));
         var (h, runner, integration) = await SetUpAsync(model);
         using var _ = h;
 
         await runner.RunAsync(TeamHarness.RunId, integration, default);
 
-        Assert.Equal("// quote\n", await File.ReadAllTextAsync(Path.Combine(integration, "src/Pricing.Data/Quote.cs")));
+        Assert.Equal("// booking\n", await File.ReadAllTextAsync(Path.Combine(integration, "src/Fares.Data/Booking.cs")));
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public class AgentQaRunnerTests
     public async Task A_follow_up_run_measures_the_tests_the_author_left_without_asking_the_author_again()
     {
         var model = new ScriptedChatClient(
-            Call("write_file", new { path = "tests/qa/status.sh", content = "test -f src/Pricing.Data/QuoteStatus.cs\n" }),
+            Call("write_file", new { path = "tests/qa/status.sh", content = "test -f src/Fares.Data/BookingStatus.cs\n" }),
             Call("submit_qa_tests", new { tests = new[] { Test("status", "new", "sh tests/qa/status.sh") } }), Say("done"));
         var (h, runner, integration) = await SetUpAsync(model);
         using var _ = h;

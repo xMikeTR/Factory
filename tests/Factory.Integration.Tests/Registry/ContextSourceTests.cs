@@ -1,3 +1,4 @@
+using Factory.Integration.Tests.Support;
 using System.Text.Json.Nodes;
 using Factory.Harness.Registry;
 using Xunit;
@@ -27,7 +28,7 @@ public class ContextSourceTests
         var fetched = Assert.IsType<BundleFetch.Fetched>(ContextBundle.Parse(Example, Request(), "file"));
         var b = fetched.Bundle;
 
-        Assert.Equal("sha256:1956c88a2f776703359ec9f6b4eb920a6cc9b0df775270fcdcf8e4871c26be8d", b.BundleId);
+        Assert.Equal("sha256:4a57987a80e976e2ab1ec2ca7b18f908b2d0c01778161568fe045f4f9a5df3ec", b.BundleId);
         Assert.Equal("builder", b.Role);
         Assert.Equal("20261102-abcd1234", b.Handover);
         Assert.Equal(["Tags/Tags API", "Tags/Tags UI"], b.Elements);
@@ -123,7 +124,7 @@ public class ContextSourceTests
         File.WriteAllText(Path.Combine(dir, "bundles", "builder.json"), Example);
 
         var fetched = Assert.IsType<BundleFetch.Fetched>(await new FileContextSource(dir).FetchAsync(Request(), default));
-        Assert.StartsWith("sha256:1956c88a", fetched.Bundle.BundleId);
+        Assert.StartsWith("sha256:4a57987a", fetched.Bundle.BundleId);
     }
 
     [Fact]
@@ -177,7 +178,7 @@ public class ContextSourceTests
         var dir = TempDir();
         var script = Path.Combine(dir, "node");
         File.WriteAllText(script, "#!/bin/sh\n[ \"$1\" = warm-up ] && exit 0\n" + body.Replace("\r", ""));
-        File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        Scripts.MakeExecutable(script);
         // A parallel fork can hold a just-written script open for a moment (ETXTBSY); one successful exec ends that window.
         for (var attempt = 0; ; attempt++)
         {
@@ -204,7 +205,7 @@ public class ContextSourceTests
         var node = FakeNode($"echo 'a warning' >&2\ncat '{json}'");
 
         var fetched = Assert.IsType<BundleFetch.Fetched>(await Cli(node).FetchAsync(Request(), default));
-        Assert.StartsWith("sha256:1956c88a", fetched.Bundle.BundleId);
+        Assert.StartsWith("sha256:4a57987a", fetched.Bundle.BundleId);
     }
 
     [Fact]

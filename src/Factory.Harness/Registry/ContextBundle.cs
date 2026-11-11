@@ -118,7 +118,7 @@ public sealed partial record ContextBundle(
                 {
                     if (!first) sb.Append(',');
                     first = false;
-                    Quote(p.Name, sb);
+                    Booking(p.Name, sb);
                     sb.Append(':');
                     Canonical(p.Value, sb);
                 }
@@ -130,12 +130,12 @@ public sealed partial record ContextBundle(
                 foreach (var e in v.EnumerateArray()) { if (i++ > 0) sb.Append(','); Canonical(e, sb); }
                 sb.Append(']');
                 break;
-            case JsonValueKind.String: Quote(v.GetString()!, sb); break;
+            case JsonValueKind.String: Booking(v.GetString()!, sb); break;
             default: sb.Append(v.GetRawText()); break;
         }
     }
 
-    private static void Quote(string s, StringBuilder sb)
+    private static void Booking(string s, StringBuilder sb)
     {
         sb.Append('"');
         for (var i = 0; i < s.Length; i++)

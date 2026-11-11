@@ -188,7 +188,7 @@ public class TraceReaderTests
         Assert.Null(RegistryLedgerProjector.TaskRowCause("passed", new TaskEnd(TraceOutcome.TracePassed, Microsoft.FSharp.Core.FSharpOption<TraceCause>.None)));
     }
 
-    private const string Id1 = "sha256:1956c88a2f776703359ec9f6b4eb920a6cc9b0df775270fcdcf8e4871c26be8d";
+    private const string Id1 = "sha256:4a57987a80e976e2ab1ec2ca7b18f908b2d0c01778161568fe045f4f9a5df3ec";
 
     private static LedgerEvent Context(int second, string task, string payload) =>
         At(second, new(RunId, "S2", "context", LedgerKinds.Context, TaskId: task, Payload: payload));
