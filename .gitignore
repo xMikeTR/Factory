@@ -6,3 +6,6 @@ obj/
 .claude/current-plan-scope.json
 SESSION_HANDOFF.md
 __pycache__/
+
+# Local note, not part of the repo
+docs/qa-gate-in-harness.md
