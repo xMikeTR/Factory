@@ -22,7 +22,7 @@
 <h1>designc and factory-s2: getting started</h1>
 <p class="note">designc (System 1) is the desktop app where you design. factory-s2 (System 2) is the pipeline that turns a frozen design into a pull request for you to merge. They share files, not a server: the design folder (also called the registry) and its ledger.</p>
 <p class="note">The design folder holds the model, requirements, decisions and ledger as plain files. It can sit inside your code repo (for example <code>design/</code>) or beside it, and a new empty folder is fine.</p>
-<nav><a href="#idea">The idea</a><a href="#first">First 10 minutes</a><a href="#terms">Terms</a><a href="#s1">Using designc</a><a href="#s2">Running factory-s2</a><a href="#loop">The whole loop</a><a href="#safety">What is guarded</a><a href="#more">Where to read more</a></nav>
+<nav><a href="#idea">The idea</a><a href="#first">First 10 minutes</a><a href="#terms">Terms</a><a href="#s1">Using designc</a><a href="#s2">Running factory-s2</a><a href="#new">Beyond the first run</a><a href="#loop">The whole loop</a><a href="#safety">What is guarded</a><a href="#more">Where to read more</a></nav>
 
 <h2 id="idea">The idea</h2>
 <p>The design is the source of truth and code is a build output. Models propose; deterministic checks and people decide. An agent never writes anything without a policy check, and writes need a person's approval.</p>
@@ -147,6 +147,49 @@ dotnet run --project src/Factory.S2 -- run \
 <tr><td><code>FACTORY_PLAYWRIGHT_CLI</code></td><td>on</td><td>Set to <code>0</code> to stop the implementer using the browser tool.</td></tr>
 </table>
 <p class="note">Start with tight limits and loosen them as the numbers justify it. Per-repo policy lives in <code>.factory/</code> files (integration, merge, quality, npm, UI contract); see the factory-s2 README and <code>ARCHITECTURE.md</code>.</p>
+
+<h2 id="new">Beyond the first run</h2>
+<p>Four things you switch on once a single run works. Each is independent. The map first:</p>
+<pre>handover (from designc)
+  requirement_risk, requirement_data_class ──► router ──► model per task (small / standard / frontier)
+  elements with repo Api / Ui              ──► validator ──► one repo per task, contract-first order
+  contracts_api (OpenAPI pinned)           ──► Api and Ui tasks run in parallel
+                                                    │
+  prices + spend (budget-import) ──► cost steers the router, caps stop a run
+  ledger ──► jira-mirror ──► Jira issue state (and evidence comments)</pre>
+
+<h3>Pick a model per task (the router)</h3>
+<ol>
+<li>Turn it on: <code>FACTORY_ROUTING=catalog</code>. The default <code>env</code> keeps the single <code>FACTORY_MODEL_*</code> models.</li>
+<li>Edit <code>catalog/models.yaml</code>: one row per model with tier, family, price. Nothing else names a model.</li>
+<li>Optional: set minimum tier per risk in <code>.factory/policy.yaml</code> under <code>routing:</code>. Without it the defaults apply.</li>
+<li>Run. Each task and role is routed once at the start and logged as a <code>route</code> row in the ledger.</li>
+<li>After a few runs, look at what it learned: <code>factory-s2 router-stats --repo .</code>.</li>
+</ol>
+<p class="note">Risk comes from the handover (designc writes it from the Jira labels you mapped). With none, the router uses the highest risk among the task's elements.</p>
+
+<h3>Make cost count (prices and budget)</h3>
+<ol>
+<li>Export prices and spend from wherever you collect them (a CSV or JSON in the factory's own format, <code>schemas/budget-import.schema.json</code>).</li>
+<li><code>factory-s2 budget-import --repo . --prices prices.csv --spend spend.csv</code>. Imported prices replace the catalog's placeholders.</li>
+<li>Set caps in <code>policy.yaml</code> under <code>budget:</code> (<code>itemCost</code>, <code>userMonthlyCost</code>, <code>softAt</code>, <code>downgradeAt</code>). Rows priced 0 tie, so real prices matter before cost can steer anything.</li>
+<li><code>factory-s2 budget --repo . --registry r</code> checks the caps; exit 2 means exceeded, and <code>run</code> then exits 4.</li>
+</ol>
+
+<h3>Build an app split across two repos</h3>
+<ol>
+<li>In designc, set <code>repos</code>, put <code>d.repo</code> on the containers, and pin an OpenAPI file in <code>contracts/openapi/</code> (designc guide, section 8.1). Freeze.</li>
+<li>Give the run both repos: <code>--repo Api=../api --repo Ui=../ui</code>. The first is the primary. The names are <code>Api</code> and <code>Ui</code>.</li>
+<li>The validator keeps every task in one repo. If the planner mixes two repos in one task, or builds a dependency loop that crosses repos while the writes overlap (<em>CrossRepoCycle</em>), the plan is sent back with the reason.</li>
+<li>With the OpenAPI file pinned, Api and Ui tasks run in parallel. Without it, every Ui task waits for the Api tasks.</li>
+</ol>
+
+<h3>Mirror state to Jira</h3>
+<ol>
+<li>Dry run first (the default): <code>factory-s2 jira-mirror --registry r --snapshot jira.json</code>. It prints the moves it would make and flags drift, where a person changed the issue. Drift is never overwritten.</li>
+<li>Set <code>JIRA_URL</code>, <code>JIRA_TOKEN</code> (and <code>JIRA_USER</code> for Basic auth) to read live issues instead of a snapshot. Jira Cloud only.</li>
+<li>Add <code>--apply</code> to write the moves, and <code>--comment</code> to also post the evidence: item, run, commit, latest result per gate.</li>
+</ol>
 
 <h2 id="loop">The whole loop</h2>
 <ol>
