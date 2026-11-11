@@ -423,7 +423,7 @@ public class TeamRunnerTests
     }
 
     [Fact]
-    public async Task Only_the_TestAuthor_may_declare_a_mutant_equivalent()
+    public void Only_the_TestAuthor_may_declare_a_mutant_equivalent()
     {
         var policy = new Factory.Harness.RoleAllowListPolicy();
         var none = new Dictionary<string, object?>();

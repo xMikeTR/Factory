@@ -1,6 +1,6 @@
 # factory-s2: coding pipeline
 
-System 2 of the design-to-code factory. It takes a **frozen handover** from System 1 (Designc) and turns it into merged code. Every step it takes is recorded in a ledger, so System 4 can learn from it.
+System 2 of the design-to-code factory. It takes a **frozen handover** from System 1 (Designc) and turns it into merged code. Every step it takes is recorded in a ledger, so System 3 can learn from it.
 
 The rule behind every feature: **agents propose, deterministic code and humans decide.** Only two places call a model: the planner, and the turn loop inside each team. Plan validation, dispatch, task state, merge rules and gates are plain code, and the parts that must be correct are written in F#.
 
@@ -12,6 +12,7 @@ New here? Open [docs/guide.html](docs/guide.html) for a walkthrough. [ARCHITECTU
 - [Quick start](#quick-start): see it work in two commands, no model needed
 - [Configure a real run](#configure-a-real-run): providers, routing, budget, contracts
 - [Run it](#run-it), then [what is left behind](#new-projects-and-run-results)
+- [Selfcheck](#selfcheck-local-ci): the checks CI would run, on a commit, locally
 - [Commands](#commands), [Jira mirror](#jira-mirror), [status](#status), [layout of the code](#layout)
 - [Interfaces with designc](#interfaces-with-designc), [design decisions](#design-decisions)
 
@@ -286,6 +287,33 @@ the console. PR descriptions over Azure DevOps' 4000-character limit are cut wit
 Opt-in live test (opens and closes a real PR):
 `FACTORY_LIVE_GITHUB=xMikeTR/fares-sample FACTORY_LIVE_APPROVER=<login> dotnet test tests/Factory.Integration.Tests --filter LiveGitHub`
 
+## Selfcheck (local CI)
+
+Checks what is **committed**, in a clean worktree and a container with no network, and records the result on the commit as a git note. It calls no model.
+
+```mermaid
+flowchart LR
+  C[commit] --> W[clean git worktree]
+  W -->|dotnet restore, nuget.org only| R[restore]
+  R -->|--network none| B[build]
+  B --> T1[tests-core] --> T2[tests-integration] --> S[sabotage] --> K[contracts] --> D[docs]
+  D --> N[git note refs/notes/selfcheck + JSON on stdout]
+  N --> H[pre-push hook gates main and release/*]
+```
+
+### Use it
+
+1. Build the runner image once: `FACTORY_CONTAINER_ENGINE=docker docker/runner/build.sh` (Podman is the default engine).
+2. Check HEAD: `FACTORY_CONTAINER_ENGINE=docker scripts/selfcheck.sh`. Progress goes to stderr, one JSON record to stdout. Commit first; uncommitted changes are not checked.
+3. The `contracts` stage compares the fixtures under `tests/Factory.Integration.Tests/Fixtures/designc` with designc. Point it at a checkout with `--designc <dir>` (else `FACTORY_DESIGNC_DIR`, else `../designc`). A fixture behind designc HEAD is a warning; `--strict-contracts` makes it a failure.
+4. Other forms: `--commit <sha>`, `--stage build|tests-core|tests-integration|sabotage|contracts|docs` for one stage, `--local` to run on the host. A `--stage` or `--local` pass is printed but exits 1, because it never counts as a pass.
+5. See the last result: `scripts/selfcheck.sh --status [sha]`. It exits 0 only for a full, container, passing record.
+6. Gate pushes: `scripts/selfcheck.sh --install-hook`. A push to `main` or `release/*` is refused unless the tip commit has a current container pass (tip only; `--no-verify` skips it). An existing hook that is not ours is never overwritten.
+
+Exit codes: 0 pass, 1 a check failed, 2 could not run, 3 no record (`--status` only). A failed stage does not stop the later ones. A record is current only while `checks_hash` matches (`scripts/selfcheck.sh` and `scripts/selfcheck/**`; `--checks-hash [sha]` prints it).
+
+The `docs` stage fails when a doc line is over its length limit, when the README test counts differ from the run, or when an old system name is still used. It is the reason a test-count change belongs in the same commit as the tests.
+
 ## Commands
 
 Per-command flags are the header comment of `src/Factory.S2/Program.cs`.
@@ -320,13 +348,13 @@ Ledger to Jira, never the other way. Each work item's state is compared with its
 
 ## Status
 
-Tests: Core 328/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 788/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
+Tests: Core 327/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 783/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|
 | Rules: paths, plan validation, dispatch, task state, merge tiers, regeneration | `Factory.Core` (F#) | Built, tested |
 | MAF workflow, teams, sandbox, verify, quality gates (mutation, coverage, fitness, UI guard) | `Factory.S2`, `Factory.Harness`, `Factory.Quality.*` | Built, tested; run live on real models |
-| Work intake: work items, WIP/dependency/conflict/budget scheduler, digest, S4 metrics | `Core/Work.fs`, `Scheduler.fs`, `Board.fs`, `Digest.fs`, `Metrics.fs` | Built; a person still pulls (`item_pulled` is human-only). The digest lists `item_budget` rows under Waiting, as designc does |
+| Work intake: work items, WIP/dependency/conflict/budget scheduler, digest, S3 metrics | `Core/Work.fs`, `Scheduler.fs`, `Board.fs`, `Digest.fs`, `Metrics.fs` | Built; a person still pulls (`item_pulled` is human-only). The digest lists `item_budget` rows under Waiting, as designc does |
 | Per-run registry streams and single-writer fold | `Harness/Registry/RunLedgerStream`, `LedgerFold` | Built |
 | UI acceptance: frozen spec hash check, Playwright run, `ui_acceptance_failed`, repair runs, bug intake, token lint | `Core/UiAcceptance.fs`, `VerifyRunner`, `S2/Repair.cs`, `BugIntake` | Built |
 | Item budget: measure, report, and refuse a new run when exceeded | `Core/ItemBudget.fs`, `ItemBudgetReport` | Built |
@@ -370,7 +398,7 @@ src/Factory.S2/          C#: the MAF workflow
   Integrations.cs        GitHub (gh CLI) / Azure DevOps (az CLI) / dry-run PRs; console human channel
 prompts/                 planner, task-planner and executor system prompts (reviewed like code)
 schemas/                 plan and handover JSON Schemas
-sql/ledger.sql           Postgres ledger + System 4 starter views
+sql/ledger.sql           Postgres ledger + System 3 starter views
 examples/fares-v3/     Booking lost-update handover and a valid plan
 ```
 
@@ -395,7 +423,7 @@ examples/fares-v3/     Booking lost-update handover and a valid plan
   - designc answers with `payload.option` (the chosen id) and/or `payload.note` on
     `needs_decision_resolved`. An id that was never offered answers nothing: the run stays parked
     and the ledger records `resolution_rejected`.
-- **Ledger kinds** (`LedgerKinds`) and the `task` event payload (`Json.encodeTaskEvent`). System 4
+- **Ledger kinds** (`LedgerKinds`) and the `task` event payload (`Json.encodeTaskEvent`). System 3
   queries depend on these.
 
 ## Design decisions

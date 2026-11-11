@@ -161,7 +161,7 @@ public class GitWorkspaceTests
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, $"#!/bin/sh\necho ran > '{marker}'\n");
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        Scripts.MakeExecutable(path);
     }
 
     [Theory]

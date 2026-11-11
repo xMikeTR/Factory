@@ -747,7 +747,8 @@
       ],
       "optional": [
         "item",
-        "report"
+        "report",
+        "visual"
       ],
       "enums": {
         "outcome": [
@@ -762,7 +763,8 @@
         "outcome": "string",
         "failures": "array",
         "item": "string",
-        "report": "string"
+        "report": "string",
+        "visual": "object"
       },
       "rules": [
         "failures_shape"
