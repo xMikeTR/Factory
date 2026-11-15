@@ -163,6 +163,13 @@ internal sealed class DispatchExecutor(FactoryServices svc) : Executor("Dispatch
         // A split project cuts an integration branch in every repo; a single-repo run, the one.
         foreach (var git in svc.RepoGits.Count > 0 ? svc.RepoGits.Values : [svc.Git])
             await git.EnsureIntegrationAsync(msg.RunId, svc.Settings.BaseBranch, cancellationToken);
+        // The ui: check's spec, manifests, approved pictures and page test, once, by the Factory, in the repo that holds the UI.
+        var uiHandover = svc.LoadHandover(msg.RunId);
+        if (!uiHandover.Ui.IsEmpty)
+        {
+            var uiGit = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
+            await UiContractSeed.SeedAsync(uiGit, msg.RunId, uiGit.IntegrationPath(msg.RunId), uiHandover, svc.Settings.RunDir(msg.RunId), cancellationToken);
+        }
         await NextAsync(msg.RunId, 0, dispatch, context, cancellationToken);
     }
 

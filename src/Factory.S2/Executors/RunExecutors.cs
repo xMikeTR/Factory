@@ -173,6 +173,12 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             return;
         }
 
+        if (await UiBaselinesChangedAsync(msg.RunId, integration, cancellationToken) is { } uiChanged)
+        {
+            await context.SendMessageAsync(uiChanged, cancellationToken: cancellationToken);
+            return;
+        }
+
         var outcomes = new List<VerifyOutcome>();
         if (split)
         {
@@ -232,6 +238,18 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             payload: JsonSerializer.Serialize(new { drift = lines }), ct: ct);
         return new RunFinished(runId, "integration_failed",
             "The frozen acceptance specs changed after the handover was frozen:\n" + string.Join("\n", lines.Select(l => "- " + l)));
+    }
+
+    /// The approved pictures, specs, manifests, page tests, Vitest config and preview helper are the Factory's: any difference from what
+    /// was seeded fails the run before a check runs, and every screen is judged failed. Null means nothing moved (or nothing was seeded).
+    private async Task<RunFinished?> UiBaselinesChangedAsync(string runId, string integration, CancellationToken ct)
+    {
+        var drift = await UiContractSeed.DriftAsync(integration, svc.Settings.RunDir(runId), ct);
+        if (drift.Count == 0) return null;
+        await svc.LogAsync(runId, "integration_verify", LedgerKinds.Verify, outcome: "ui_baselines_modified",
+            payload: JsonSerializer.Serialize(new { drift }), ct: ct);
+        return new RunFinished(runId, "integration_failed",
+            "The approved UI files changed after they were seeded:\n" + string.Join("\n", drift.Select(l => "- " + l)));
     }
 
     /// The decisions' checks run against the registry; `p check` needs the registry's P sources compiled once, in the
