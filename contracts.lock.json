@@ -1,5 +1,5 @@
 {
-  "designc_commit": "aa03fd0929ea5661b416f5d888d857cf35939995",
+  "designc_commit": "e3ac01cf33246c01229010f53dc2fb9950a92ef9",
   "files": [
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/ledger_schema.json",

@@ -62,6 +62,7 @@
     "trace_shape",
     "ref_shape",
     "fail_needs_note",
+    "preview_rendered_shape",
     "hash_not_blank",
     "ended_needs_reason",
     "aborted_needs_reason",
@@ -995,6 +996,44 @@
         "trace_id": "string"
       },
       "rules": []
+    },
+    "ui_pinned": {
+      "stream": "designc.jsonl",
+      "required": [
+        "pack",
+        "registry",
+        "hash"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "pack": "string",
+        "registry": "string",
+        "hash": "string"
+      },
+      "rules": [
+        "hash_not_blank"
+      ]
+    },
+    "ui_preview_rendered": {
+      "stream": "designc.jsonl",
+      "required": [
+        "screen",
+        "spec_hash",
+        "files",
+        "image"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "screen": "string",
+        "spec_hash": "string",
+        "files": "object",
+        "image": "string"
+      },
+      "rules": [
+        "preview_rendered_shape"
+      ]
     },
     "unapproved_change": {
       "stream": "agents.jsonl",
