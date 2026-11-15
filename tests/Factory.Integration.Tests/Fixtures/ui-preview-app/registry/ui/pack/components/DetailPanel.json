@@ -1,0 +1,30 @@
+{
+  "name": "DetailPanel",
+  "import": "@your-org/ui",
+  "category": "detail",
+  "description": "Label/value pairs for one selected record.",
+  "useWhen": [
+    "Showing the record selected in a table or list"
+  ],
+  "props": {
+    "title": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "data": {
+    "record": {
+      "shape": "record",
+      "required": true
+    }
+  },
+  "states": [
+    "empty",
+    "loading",
+    "ready"
+  ],
+  "status": "bound",
+  "source": {
+    "path": "packages/ui/src/DetailPanel.tsx"
+  }
+}

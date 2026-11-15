@@ -1,0 +1,230 @@
+{
+  "screen": "bordereaux",
+  "component": "BordereauxList",
+  "intent": "Underwriters browse received bordereaux, filter by cedant and period, see total premium, and open one to see its details.",
+  "ticket": "RE-1234",
+  "template": "list-detail",
+  "data": {
+    "bordereaux": {
+      "shape": "table",
+      "source": "GET /api/bordereaux",
+      "sample": [
+        {
+          "Cedant": "Atlantic Mutual Re",
+          "Period": "2026-Q3",
+          "Lines": 412,
+          "Premium": "$2,140,000",
+          "Status": "Validated"
+        },
+        {
+          "Cedant": "Nordic Marine",
+          "Period": "2026-Q3",
+          "Lines": 188,
+          "Premium": "$964,500",
+          "Status": "Exceptions"
+        },
+        {
+          "Cedant": "Iberia Property",
+          "Period": "2026-Q3",
+          "Lines": 905,
+          "Premium": "$3,302,750",
+          "Status": "Validated"
+        },
+        {
+          "Cedant": "Pacific Casualty",
+          "Period": "2026-Q2",
+          "Lines": 267,
+          "Premium": "$1,118,200",
+          "Status": "Pending"
+        },
+        {
+          "Cedant": "Atlantic Mutual Re",
+          "Period": "2026-Q2",
+          "Lines": 398,
+          "Premium": "$2,005,900",
+          "Status": "Validated"
+        }
+      ]
+    },
+    "totalPremium": {
+      "shape": "money",
+      "source": "GET /api/bordereaux/summary",
+      "sample": {
+        "amount": 9531350,
+        "currency": "USD"
+      }
+    },
+    "selected": {
+      "shape": "record",
+      "source": "GET /api/bordereaux/:id",
+      "sample": {
+        "Cedant": "Nordic Marine",
+        "Period": "2026-Q3",
+        "Received": "2026-10-04",
+        "Lines": "188",
+        "Exceptions": "7 lines missing location",
+        "Premium": "$964,500"
+      }
+    }
+  },
+  "slots": {
+    "header": [
+      {
+        "id": "hdr",
+        "component": "PageHeader",
+        "props": {
+          "title": "Bordereaux"
+        }
+      }
+    ],
+    "header.actions": [
+      {
+        "id": "export",
+        "component": "Button",
+        "props": {
+          "label": "Export",
+          "variant": "secondary",
+          "onClick": "exportBordereaux"
+        },
+        "locator": {
+          "role": "button",
+          "name": "Export"
+        }
+      }
+    ],
+    "summary": [
+      {
+        "id": "premium",
+        "component": "MetricCard",
+        "props": {
+          "label": "Total premium",
+          "tone": "neutral"
+        },
+        "bind": {
+          "value": "totalPremium"
+        },
+        "why": "Single headline figure for the filtered set"
+      }
+    ],
+    "filters": [
+      {
+        "id": "filters",
+        "component": "FilterBar",
+        "props": {
+          "fields": "cedant,period"
+        },
+        "locator": {
+          "role": "combobox",
+          "name": "Cedant"
+        }
+      }
+    ],
+    "main": [
+      {
+        "id": "table",
+        "component": "DataTable",
+        "props": {
+          "density": "compact",
+          "rowAction": "selectBordereau"
+        },
+        "bind": {
+          "rows": "bordereaux"
+        },
+        "why": "Many records, compared by cedant, period, premium"
+      }
+    ],
+    "aside": [
+      {
+        "id": "detail",
+        "component": "DetailPanel",
+        "props": {
+          "title": "Bordereau"
+        },
+        "bind": {
+          "record": "selected"
+        }
+      }
+    ]
+  },
+  "states": {
+    "loading": {
+      "initial": true,
+      "pending": [
+        "bordereaux",
+        "totalPremium",
+        "selected"
+      ]
+    },
+    "ready": {
+      "description": "List loaded, a row selected"
+    },
+    "filtered": {
+      "description": "Cedant filter applied"
+    },
+    "empty": {
+      "description": "Filter matches nothing",
+      "data": {
+        "bordereaux": [],
+        "totalPremium": {
+          "amount": 0,
+          "currency": "USD"
+        },
+        "selected": null
+      }
+    },
+    "error": {
+      "failed": [
+        "bordereaux",
+        "totalPremium"
+      ],
+      "error": "Bordereaux could not be loaded",
+      "data": {
+        "selected": null
+      }
+    }
+  },
+  "transitions": [
+    {
+      "from": "loading",
+      "to": "ready",
+      "on": {
+        "event": "data arrives"
+      }
+    },
+    {
+      "from": "loading",
+      "to": "error",
+      "on": {
+        "event": "request fails"
+      }
+    },
+    {
+      "from": "ready",
+      "to": "filtered",
+      "on": {
+        "fill": {
+          "role": "combobox",
+          "name": "Cedant"
+        }
+      }
+    },
+    {
+      "from": "filtered",
+      "to": "empty",
+      "on": {
+        "event": "no match"
+      }
+    },
+    {
+      "from": "filtered",
+      "to": "ready",
+      "on": {
+        "click": {
+          "role": "button",
+          "name": "Clear all"
+        }
+      }
+    }
+  ],
+  "status": "minted"
+}

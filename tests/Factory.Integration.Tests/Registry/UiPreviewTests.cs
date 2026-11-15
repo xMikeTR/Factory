@@ -87,6 +87,14 @@ public class UiPreviewTests
         Assert.Single(UiPreview.SpecRefusals("not json", "bordereaux"));
     }
 
+    [Fact]
+    public void Warnings_around_designcs_json_do_not_hide_its_clauses()
+    {
+        var out1 = "DeprecationWarning: x\n{ \"gate\": { \"clauses\": [ { \"kind\": \"ui\", \"text\": \"pack bad\" } ] } }\n";
+
+        Assert.Equal(["pack bad"], UiPreview.SpecRefusals(out1, "bordereaux"));
+    }
+
     [Theory]
     [InlineData(0, false, """{"success":true,"numFailedTests":0,"numPassedTests":5}""", UiPreviewOutcome.Rendered)]
     [InlineData(1, false, """{"success":false,"numFailedTests":2,"numPassedTests":3}""", UiPreviewOutcome.CouldNotRun)]

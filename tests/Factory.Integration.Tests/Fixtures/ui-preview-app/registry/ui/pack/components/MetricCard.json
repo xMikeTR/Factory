@@ -1,0 +1,38 @@
+{
+  "name": "MetricCard",
+  "import": "@your-org/ui",
+  "category": "metric",
+  "description": "A single headline figure with label and optional comparison.",
+  "useWhen": [
+    "One number the user should notice at a glance"
+  ],
+  "avoidWhen": [
+    "A trend over time — use a chart"
+  ],
+  "props": {
+    "label": {
+      "type": "string",
+      "required": true
+    },
+    "tone": {
+      "type": "token",
+      "token": "tone"
+    }
+  },
+  "data": {
+    "value": {
+      "shape": "money",
+      "required": true
+    }
+  },
+  "states": [
+    "loading",
+    "error",
+    "ready"
+  ],
+  "status": "bound",
+  "source": {
+    "path": "packages/ui/src/MetricCard.tsx"
+  },
+  "notes": "Currently money only. Needs a number/percent variant before use elsewhere."
+}

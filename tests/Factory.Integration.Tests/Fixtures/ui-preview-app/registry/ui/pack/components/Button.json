@@ -1,0 +1,41 @@
+{
+  "name": "Button",
+  "import": "@your-org/ui",
+  "category": "action",
+  "description": "Triggers an action. One primary button per region at most.",
+  "useWhen": [
+    "A user-initiated action such as Export or New"
+  ],
+  "avoidWhen": [
+    "Navigation to another page — use a link"
+  ],
+  "props": {
+    "label": {
+      "type": "string",
+      "required": true
+    },
+    "variant": {
+      "type": "enum",
+      "values": [
+        "primary",
+        "secondary",
+        "ghost"
+      ],
+      "required": true
+    },
+    "onClick": {
+      "type": "action",
+      "required": true
+    }
+  },
+  "data": {},
+  "states": [
+    "ready",
+    "loading",
+    "disabled"
+  ],
+  "status": "bound",
+  "source": {
+    "path": "packages/ui/src/Button.tsx"
+  }
+}

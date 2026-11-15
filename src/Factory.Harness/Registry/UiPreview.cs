@@ -67,7 +67,9 @@ public static partial class UiPreview
     {
         try
         {
-            using var doc = JsonDocument.Parse(checkJson);
+            var start = checkJson.IndexOf('{');
+            var end = checkJson.LastIndexOf('}');
+            using var doc = JsonDocument.Parse(start >= 0 && end > start ? checkJson[start..(end + 1)] : checkJson);
             var refusals = new List<string>();
             if (doc.RootElement.TryGetProperty("gate", out var gate) && gate.TryGetProperty("clauses", out var clauses))
                 foreach (var c in clauses.EnumerateArray())
