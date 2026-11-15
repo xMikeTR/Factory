@@ -19,6 +19,8 @@ Pin the Vitest version. `toMatchScreenshot` is marked experimental in the API do
 
 ## 1. Preview run
 
+Status: **built (F1)**. The app provides `ui-contract/preview/` (the kit's helper), `ui-contract/registry.ts` (`components` by manifest name, `layouts` by template name) and a `ui-preview` Vitest project; the Factory writes the spec, manifests and generated test into a scratch worktree of HEAD, never into your checkout. Only the runner image renders (`LocalSandbox` exits 2). Vitest 5 writes its JSON report to `.vitest/json/output.json`; the run reads it from there.
+
 `factory-s2 preview --registry <dir> --screen <screen> --repo <app>`. This runs before any freeze, on a minted or bound spec. No agent: the preview test is generated from the spec (one `previewTests(spec, …)` call).
 
 1. Refuses a dirty worktree, a spec that fails designc's spec checks (via the headless core), or a screen with no spec.

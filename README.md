@@ -331,6 +331,7 @@ Per-command flags are the header comment of `src/Factory.S2/Program.cs`.
 | `budget` `--repo . [--registry r] [--no-report]` | Item budget; exit 2 when exceeded, then `run` exits 4 |
 | `budget-import`, `router-stats` | Prices and spend in; what the router learned out |
 | `parity` `--registry r --item W-1 [--repo .] [--base-url u]` | Designc recorder at HEAD (work VM); see `docs/parity-runbook.md` |
+| `preview` `--registry r --screen s --repo app [--designc d]` | Renders a screen's spec with the app's library in the runner image (scratch worktree at HEAD; `FACTORY_UI_PREVIEW_CMD`) into `ui/previews/<screen>/` and appends `ui_preview_rendered`; exit 0 / 3 could not run / 2; see `docs/ui-contract-verify.md` §1 |
 | `parity-decisions` `--registry r` | A needs_decision per failed parity scenario; exit 2 when raised |
 | `intake` `--registry r --id BUG-1 --spec ... --origin ... --ref ...` | Bug intake |
 | `jira-mirror` `--registry r [--snapshot jira.json] [--apply [--comment]]` | One-way mirror of ledger state to Jira; see below |
