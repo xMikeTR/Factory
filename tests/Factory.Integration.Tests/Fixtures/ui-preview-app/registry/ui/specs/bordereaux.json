@@ -1,6 +1,7 @@
 {
   "screen": "bordereaux",
   "component": "BordereauxList",
+  "file": "src/BordereauxList.tsx",
   "intent": "Underwriters browse received bordereaux, filter by cedant and period, see total premium, and open one to see its details.",
   "ticket": "RE-1234",
   "template": "list-detail",

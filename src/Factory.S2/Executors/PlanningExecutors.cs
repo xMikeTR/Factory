@@ -32,6 +32,7 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
         var handoverCopy = svc.Settings.HandoverCopyPath(msg.RunId);
         if (!File.Exists(handoverCopy)) File.Copy(msg.HandoverPath, handoverCopy);
         var handover = svc.LoadHandover(msg.RunId); // fail fast on a malformed package
+        HandoverInput.CopyUiPreviewsToRun(handover, msg.HandoverPath, runDir);
         // A resume is a new attempt, and names the procedures it runs with: each trace says which prompts and policies ran it.
         await svc.LogAsync(msg.RunId, "start", LedgerKinds.RunStarted,
             payload: Procedures.RunStartedPayload(Procedures.Fingerprint(AppContext.BaseDirectory, svc.Settings.RepoPath)), ct: cancellationToken);
