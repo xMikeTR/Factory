@@ -59,7 +59,8 @@ let private specHandover: Handover =
       Uncovered = []
       ApiContracts = []
       RequirementRisk = None
-      RequirementDataClass = None }
+      RequirementDataClass = None
+      Ui = [] }
 
 let private specConfig: TaskSpecConfig =
     { SmallMaxWrites = 4
@@ -352,6 +353,17 @@ let tests: (string * (unit -> unit)) list =
           equal None (get plain).RequirementDataClass "absent"
           let back = get (Json.writeHandover (get (withKeys "high" "internal")))
           equal (Some High, Some "internal") (back.RequirementRisk, back.RequirementDataClass) "round trip"
+      "ui: Handover.Ui round-trips through the run-dir JSON, and a handover JSON without it parses to no screens", fun () ->
+          let txt p = { Path = p; Sha256 = "ab"; Text = "{}" }
+          let screen =
+              { Screen = "bordereaux"; Component = "BordereauxList"; File = "src/BordereauxList.tsx"; Spec = txt "ui/specs/bordereaux.json"
+                Template = txt "ui/pack/templates/list-detail.json"; Components = [ txt "ui/pack/components/Button.json" ]
+                Previews = [ "ready-chromium-linux.png", "cd" ]; Holdout = Some "ef"
+                HoldoutCases = [ { Criterion = "AC-UI-1"; Case = 4; State = "ready"; Sha256 = "01" } ] }
+          let back = match Json.parseHandover (Json.writeHandover { specHandover with Ui = [ screen ] }) with Ok h -> h | Error es -> failwithf "%A" es
+          equal [ screen ] back.Ui "round trip"
+          let old = match Json.parseHandover (Json.writeHandover specHandover) with Ok h -> h | Error es -> failwithf "%A" es
+          equal [] old.Ui "none"
       "router: taskSpec carries the repo of the task's elements, None when the design declares none", fun () ->
           let h = { specHandover with Elements = [ { elem "a" Low with Repo = Some "Api" }; { elem "b" High with Repo = Some "Ui" } ] }
           equal (Some "Api") (Router.taskSpec specConfig h (specTask [ "a" ] 1 0) Role.Implementer 0 Set.empty).Repo "api"

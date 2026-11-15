@@ -48,6 +48,7 @@
     "run_started",
     "run_ended",
     "parity_result",
+    "ui_result",
     "trace",
     "outcome"
   ],
@@ -63,6 +64,8 @@
     "ref_shape",
     "fail_needs_note",
     "preview_rendered_shape",
+    "preview_approved_shape",
+    "spec_bound_shape",
     "hash_not_blank",
     "ended_needs_reason",
     "aborted_needs_reason",
@@ -1015,6 +1018,24 @@
         "hash_not_blank"
       ]
     },
+    "ui_preview_approved": {
+      "stream": "designc.jsonl",
+      "required": [
+        "screen",
+        "spec",
+        "files"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "screen": "string",
+        "spec": "string",
+        "files": "object"
+      },
+      "rules": [
+        "preview_approved_shape"
+      ]
+    },
     "ui_preview_rendered": {
       "stream": "designc.jsonl",
       "required": [
@@ -1033,6 +1054,47 @@
       },
       "rules": [
         "preview_rendered_shape"
+      ]
+    },
+    "ui_result": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "screen",
+        "commit",
+        "outcome"
+      ],
+      "optional": [
+        "item"
+      ],
+      "enums": {
+        "outcome": [
+          "pass",
+          "fail",
+          "could_not_run"
+        ]
+      },
+      "types": {
+        "screen": "string",
+        "commit": "string|null",
+        "outcome": "string",
+        "item": "string"
+      },
+      "rules": []
+    },
+    "ui_spec_bound": {
+      "stream": "designc.jsonl",
+      "required": [
+        "screen",
+        "hash"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "screen": "string",
+        "hash": "string"
+      },
+      "rules": [
+        "spec_bound_shape"
       ]
     },
     "unapproved_change": {

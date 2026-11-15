@@ -102,7 +102,8 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
                 _ => FSharpOption<RiskLevel>.None
             },
             Str(manifest, "requirement_data_class") is ("public" or "internal" or "regulated") and { } dataClass
-                ? FSharpOption<string>.Some(dataClass) : FSharpOption<string>.None);
+                ? FSharpOption<string>.Some(dataClass) : FSharpOption<string>.None,
+            Core.ToList(new List<UiScreen>()));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }

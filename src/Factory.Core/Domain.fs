@@ -86,6 +86,26 @@ type Reference = { Key: string; Kind: string }
 /// file inside the handover and that file's hash16. The policy is whatever the team's compiler produced; S2 does not read it here.
 type AgentContract = { Agent: string; Policy: string; Hash: string }
 
+/// A text file the handover carries for a UI screen (`ui.json` names it with its sha256): kept in the record because the run needs
+/// the text after the handover directory is gone.
+type UiText = { Path: string; Sha256: string; Text: string }
+
+/// A holdout acceptance case, named by hash only (handover `ui.json` `holdout_cases`). The case itself never reaches the Factory's run.
+type UiHoldoutCase = { Criterion: string; Case: int; State: string; Sha256: string }
+
+/// One bound UI screen of a handover (`ui.json`). `Component` and `File` are read from the spec. `Previews` is (path under
+/// `ui/previews/<screen>/`, sha256); `Holdout` is the holdout sample's sha256, never its content.
+type UiScreen =
+    { Screen: string
+      Component: string
+      File: string
+      Spec: UiText
+      Template: UiText
+      Components: UiText list
+      Previews: (string * string) list
+      Holdout: string option
+      HoldoutCases: UiHoldoutCase list }
+
 type Handover =
     { Id: string
       Digest: string
@@ -121,7 +141,9 @@ type Handover =
       /// Risk the requirement declares (handover.yaml `requirementRisk`, critical reads as high); None when absent or unknown.
       RequirementRisk: RiskLevel option
       /// Data class the requirement declares (`requirementDataClass`: public|internal|regulated); None when absent or unknown.
-      RequirementDataClass: string option }
+      RequirementDataClass: string option
+      /// The bound UI screens (handover.yaml `ui`); empty when the handover has none, and for a handover JSON frozen before they were carried.
+      Ui: UiScreen list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 
