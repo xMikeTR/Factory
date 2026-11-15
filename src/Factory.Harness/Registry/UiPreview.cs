@@ -109,6 +109,10 @@ public static partial class UiPreview
         catch (JsonException) { return UiPreviewOutcome.Error; }
     }
 
+    /// Vitest 5's json reporter writes its report to a file and prints only where; null when the output names none.
+    public static string? ReportPath(string output) =>
+        ReportLine().Match(output) is { Success: true } m ? m.Groups[1].Value.Trim() : null;
+
     public static string Sha256Hex(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
 
     /// `ui_preview_rendered {screen, spec_hash, files, image}` (designc's `docs/ui-preview-rendered.example.json`), written the
@@ -141,6 +145,9 @@ public static partial class UiPreview
         var id = "s2-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Body(null))))[..32];
         return new RegistryEvent("designc.jsonl", id, Body(id));
     }
+
+    [GeneratedRegex(@"JSON report written to (.+)")]
+    private static partial Regex ReportLine();
 
     [GeneratedRegex("^[a-z0-9-]+$")]
     private static partial Regex ScreenName();

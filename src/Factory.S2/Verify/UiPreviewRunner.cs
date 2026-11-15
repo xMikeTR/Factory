@@ -86,7 +86,9 @@ public sealed class UiPreviewRunner(ISandboxFactory sandboxes, Func<DateTimeOffs
         var command = UiPreview.Command(r.Screen, r.Command);
         var run = await sandbox.RunAsync(command, worktree, r.Timeout ?? DefaultTimeout,
             new Dictionary<string, string> { ["CHROME_PATH"] = ChromePath, ["CI"] = "1" }, ct);
-        switch (UiPreview.Interpret(run.ExitCode, run.TimedOut, run.Output))
+        // The report file is the worktree's own: the sandbox mounts it at the same path, so the path it prints is readable here.
+        var report = UiPreview.ReportPath(run.Output) is { } path && File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : run.Output;
+        switch (UiPreview.Interpret(run.ExitCode, run.TimedOut, report))
         {
             case UiPreviewOutcome.Error:
                 return new(2, $"the preview run did not produce a readable result (exit {run.ExitCode}{(run.TimedOut ? ", timed out" : "")}):\n" + run.Tail(3000));

@@ -126,6 +126,13 @@ public class UiPreviewTests
     }
 
     [Fact]
+    public void Vitest_5_names_its_json_report_file_in_the_output()
+    {
+        Assert.Equal("/tmp/w/.vitest/json/output.json", UiPreview.ReportPath("x\nJSON report written to /tmp/w/.vitest/json/output.json\n"));
+        Assert.Null(UiPreview.ReportPath("{\"success\":true}"));
+    }
+
+    [Fact]
     public void Hashes_are_lower_case_sha256_hex()
     {
         Assert.Equal("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", UiPreview.Sha256Hex([]));
