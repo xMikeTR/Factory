@@ -23,6 +23,7 @@
     <Compile Include="MetricsTests.fs" />
     <Compile Include="BoardTests.fs" />
     <Compile Include="ContextQualityTests.fs" />
+    <Compile Include="UiSpecTests.fs" />
     <Compile Include="RouterTests.fs" />
     <Compile Include="LearningTests.fs" />
     <Compile Include="SplitRepoTests.fs" />
