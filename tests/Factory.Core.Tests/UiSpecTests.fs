@@ -29,8 +29,30 @@ let private report =
         {"title":"error placements","status":"failed","failureMessages":["Error: Placement 'hdr' has no element with data-ui-id=\"hdr\" in state 'error'. x"]},
         {"title":"error aria","status":"failed","failureMessages":["AssertionError: tree differs"]}]}]}"""
 
+let private el id name = { Id = ElementId id; Name = name; CodeAreas = []; Risk = Low; InScope = true; Repo = None }
+let private tk id elements writes =
+    { Id = TaskId id; Title = ""; Instructions = ""; Elements = elements |> List.map ElementId; Writes = writes |> List.map PathPattern.createOrFail
+      TestWrites = []; DependsOn = []; Covers = []; Verify = [] }
+
 let tests : (string * (unit -> unit)) list =
-    [ "ui code check: the kit's good page passes", fun () -> equal [] (rules good) "no problems"
+    [ "ui blame: tasks that link the component's element or write its file", fun () ->
+          let els = [ el "E1" "BordereauxList"; el "E2" "Other" ]
+          let ts = [ tk "T-1" [ "E1" ] []; tk "T-2" [ "E2" ] [ "src/BordereauxList.tsx" ]; tk "T-3" [ "E2" ] [ "src/other/**" ] ]
+          let element, blamed = UiBlame.tasks els ts "BordereauxList" "src/BordereauxList.tsx"
+          equal (Some "E1") element "element"
+          equal [ TaskId "T-1"; TaskId "T-2" ] blamed "blamed"
+          equal [] (snd (UiBlame.tasks els ts "Nobody" "src/none.tsx")) "none"
+      "ui report: a failure under another screen's describe is not this screen's", fun () ->
+          let r = """{"testResults":[{"assertionResults":[
+              {"title":"empty pixels","ancestorTitles":["other page"],"status":"failed","failureMessages":["x"]},
+              {"title":"empty pixels","ancestorTitles":["bordereaux page"],"status":"passed","failureMessages":[]}]}]}"""
+          equal [] (UiReport.failures "bordereaux" r) "none"
+          equal 1 (UiReport.executed "bordereaux" r) "executed"
+      "integration: a could_not_run ui check is the environment's, a failed one is the code's", fun () ->
+          let o code tail = { Name = "ui:b"; ExitCode = code; DurationMs = 1L; OutputTail = tail }
+          check (IntegrationRun.classify [ o 3 "could_not_run: page pixels need the runner image" ] = IntegrationReading.Unrunnable [ "ui:b" ]) "unrunnable"
+          check (IntegrationRun.classify [ o 1 "placement-pixels in empty" ] = IntegrationReading.CodeFailures) "code"
+      "ui code check: the kit's good page passes", fun () -> equal [] (rules good) "no problems"
       "ui code check: a dropped data-ui-id is placement-missing", fun () ->
           equal [ "placement-missing" ] (rules (good.Replace("data-ui-id=\"hdr\" ", ""))) "rule"
       "ui code check: a placement on the wrong component", fun () ->

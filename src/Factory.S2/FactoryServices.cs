@@ -42,6 +42,9 @@ public sealed record FactorySettings(
     /// Runs the frozen acceptance specs in integration verify (when the handover has any); writes
     /// Playwright's JSON report to $PLAYWRIGHT_JSON_OUTPUT_NAME. The gate has no model in the loop.
     string AcceptanceCommand = "npx playwright test --reporter=json",
+    /// Runs the generated page tests (`ui-contract/tests/*.page.test.tsx`) in integration verify, in the runner image; Vitest's
+    /// JSON reporter must write its report (the default prints its path). FACTORY_UI_CMD.
+    string UiCommand = "npx vitest run --project ui-page --reporter=json",
     /// Raw-value ban over generated UI (stylelint writing JSON to $FACTORY_LINT_REPORT). Runs in integration
     /// verify only when the handover froze design tokens; null is off.
     string? TokenLintCommand = null,
@@ -83,6 +86,7 @@ public sealed record FactorySettings(
         Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)),
         UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
         AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),
+        UiCommand: Env("FACTORY_UI_CMD", "npx vitest run --project ui-page --reporter=json"),
         TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"),
         PlaywrightCli: Environment.GetEnvironmentVariable("FACTORY_PLAYWRIGHT_CLI") != "0",
         ScreenshotCommand: Environment.GetEnvironmentVariable("FACTORY_SCREENSHOT_CMD"));

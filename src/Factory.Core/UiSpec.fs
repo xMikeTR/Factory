@@ -143,27 +143,58 @@ describe("@SCREEN@ page", () => {
 
 type UiFailure = { State: string; Kind: string; Placement: string option; Detail: string }
 
+/// Who a failing screen is blamed on: the tasks that link the element named like the page component, or write the page's file.
+/// No task at all is a gap in the plan, reported by the caller, never a reason to blame everyone.
+[<RequireQualifiedAccess>]
+module UiBlame =
+    let tasks (elements: ElementSpec list) (tasks: PlannedTask list) (component': string) (file: string) : string option * TaskId list =
+        let element = elements |> List.tryFind (fun e -> e.Name = component')
+        let blamed =
+            tasks
+            |> List.filter (fun t ->
+                (element |> Option.exists (fun e -> List.contains e.Id t.Elements))
+                || t.Writes |> List.exists (fun w -> PathPattern.matches w file))
+            |> List.map (fun t -> t.Id)
+        element |> Option.map (fun e -> e.Id.Value), blamed
+
 /// Reads a Vitest JSON report of the generated page test. A failed `<state> placements` test is
 /// `placement-missing` when the kit says the element is absent, else `placement-pixels`.
 [<RequireQualifiedAccess>]
 module UiReport =
-    let failures (screen: string) (reportJson: string) : UiFailure list =
+    /// (state, kind, status, message) of this screen's tests. A test under another screen's `describe` is not this screen's.
+    let private results (screen: string) (reportJson: string) =
         let start = reportJson.IndexOf '{'
         use d = JsonDocument.Parse(if start > 0 then reportJson.Substring start else reportJson)
-        let results =
+        let all =
             match d.RootElement.TryGetProperty "testResults" with
-            | true, files when files.ValueKind = JsonValueKind.Array -> [ for f in files.EnumerateArray() do match f.TryGetProperty "assertionResults" with | true, a -> yield! a.EnumerateArray() | _ -> () ]
+            | true, files when files.ValueKind = JsonValueKind.Array ->
+                [ for f in files.EnumerateArray() do
+                      match f.TryGetProperty "assertionResults" with
+                      | true, a -> yield! a.EnumerateArray() |> Seq.map (fun r -> r.Clone())
+                      | _ -> () ]
             | _ -> []
-        [ for r in results do
+        [ for r in all do
               let status = match r.TryGetProperty "status" with | true, s -> s.GetString() | _ -> ""
               let title = match r.TryGetProperty "title" with | true, t -> t.GetString() | _ -> ""
+              let ours =
+                  match r.TryGetProperty "ancestorTitles" with
+                  | true, a when a.ValueKind = JsonValueKind.Array && a.GetArrayLength() > 0 -> a[0].GetString() = screen + " page"
+                  | _ -> true
               let i = title.LastIndexOf ' '
-              if status = "failed" && i > 0 then
-                  let state, kind = title.Substring(0, i), title.Substring(i + 1)
+              if ours && i > 0 then
                   let msg =
                       match r.TryGetProperty "failureMessages" with
                       | true, m when m.ValueKind = JsonValueKind.Array -> String.Join("\n", [ for x in m.EnumerateArray() -> x.GetString() ])
                       | _ -> ""
+                  yield title.Substring(0, i), title.Substring(i + 1), status, msg ]
+
+    /// How many of this screen's tests ran to a verdict (passed or failed): fewer than 3 per state means some never ran.
+    let executed (screen: string) (reportJson: string) : int =
+        results screen reportJson |> List.filter (fun (_, _, st, _) -> st = "passed" || st = "failed") |> List.length
+
+    let failures (screen: string) (reportJson: string) : UiFailure list =
+        [ for (state, kind, status, msg) in results screen reportJson do
+              if status = "failed" then
                   let missing = Regex.Match(msg, "Placement '([a-z0-9-]+)' has no element with data-ui-id")
                   let shot = Regex.Match(msg, $"ui__{Regex.Escape screen}__{Regex.Escape state}__([a-z0-9-]+)")
                   let kind, placement =
@@ -171,5 +202,4 @@ module UiReport =
                       | "placements" when missing.Success -> "placement-missing", Some missing.Groups[1].Value
                       | "placements" -> "placement-pixels", (if shot.Success then Some shot.Groups[1].Value else None)
                       | k -> k, None
-                  let detail = (msg.Split('\n').[0]).Trim()
-                  yield { State = state; Kind = kind; Placement = placement; Detail = detail } ]
+                  yield { State = state; Kind = kind; Placement = placement; Detail = (msg.Split('\n').[0]).Trim() } ]

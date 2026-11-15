@@ -41,6 +41,7 @@ public static class RegistryLedgerProjector
             else if (e.Kind == LedgerKinds.Verify && e.Decision is not null && Check(e) is { } check) rows.Add((e.Ts, check));
         }
         rows.AddRange(AcceptanceFailures(run, handover));
+        rows.AddRange(UiResults(run, handover));
         rows.AddRange(Outcomes(run));
         if (HandoverClosed(run, handover) is { } closed) rows.Add(closed);
         // Stable: ties keep source order.
@@ -313,6 +314,30 @@ public static class RegistryLedgerProjector
                 w.WriteString("commit", commit);
             }));
         }
+    }
+
+    /// `ui_result`: one screen's verdict on one commit. A repeat for the same (screen, commit) is a re-check: the latest wins.
+    /// A row with no screen or commit says nothing designc could key on, so it stays in S2's own ledger.
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> UiResults(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    {
+        var latest = new Dictionary<(string, string), (LedgerEvent E, string Outcome)>();
+        foreach (var e in run.Where(e => e.Kind == LedgerKinds.UiResult && e.Payload is not null))
+        {
+            using var doc = TryParse(e.Payload!);
+            if (doc is null) continue;
+            if (Prop(doc.RootElement, "screen")?.GetString() is not { Length: > 0 } screen || Prop(doc.RootElement, "commit")?.GetString() is not { Length: > 0 } commit) continue;
+            var outcome = Prop(doc.RootElement, "outcome")?.GetString();
+            if (outcome is not ("pass" or "fail" or "could_not_run")) continue;
+            latest[(screen, commit)] = (e, outcome);
+        }
+        foreach (var ((screen, commit), (e, outcome)) in latest)
+            yield return (e.Ts, Row(Pipeline, "ui_result", e, w =>
+            {
+                w.WriteString("screen", screen);
+                w.WriteString("commit", commit);
+                w.WriteString("outcome", outcome);
+                if (handover.WorkItem is { } item) w.WriteString("item", item);
+            }));
     }
 
     /// Run ends that are a verdict on the work, and the evidence kind designc's `outcome.ref` names. Other failed ends
