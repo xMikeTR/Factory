@@ -10,10 +10,15 @@ using Microsoft.FSharp.Core;
 
 namespace Factory.S2;
 
-public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, string command)
+public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, string command, bool writesResult = true)
 {
     private ValueTask LogAsync(string runId, string kind, string? outcome = null, string? payload = null, CancellationToken ct = default) =>
         ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", kind, Outcome: outcome, Payload: payload), ct);
+
+    /// The `ui_result` of a screen on the integration commit. The executor writes it itself (writesResult: false) once the holdout has spoken.
+    public ValueTask WriteResultAsync(string runId, string screen, string commit, string outcome, Handover handover, CancellationToken ct) =>
+        LogAsync(runId, LedgerKinds.UiResult, outcome: outcome,
+            payload: JsonSerializer.Serialize(new { screen, commit, outcome, item = FSharpOption<string>.get_IsSome(handover.WorkItem) ? handover.WorkItem.Value : null }), ct: ct);
 
     /// The ui: check, once per screen of the handover: the static code check of the page file, then the generated page tests (aria,
     /// pixels, placements, per state) in the runner image. Each failure is a `ui_check_failed` row per blamed task; each screen
@@ -88,8 +93,7 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
                         Payload: JsonSerializer.Serialize(new { screen = screen.Screen, state = f.State, placement = f.Placement, kind = f.Kind, detail = f.Kind == "code" ? f.Detail : null, commit })), ct);
             await LogAsync(runId, LedgerKinds.Verify, outcome: outcome == "pass" ? "passed" : "failed",
                 payload: JsonSerializer.Serialize(new { name = "ui:" + screen.Screen, ExitCode = outcome == "pass" ? 0 : outcome == "fail" ? 1 : 3, kinds = failures.Select(f => f.Kind).Distinct() }), ct: ct);
-            await LogAsync(runId, LedgerKinds.UiResult, outcome: outcome,
-                payload: JsonSerializer.Serialize(new { screen = screen.Screen, commit, outcome, item = FSharpOption<string>.get_IsSome(handover.WorkItem) ? handover.WorkItem.Value : null }), ct: ct);
+            if (writesResult) await WriteResultAsync(runId, screen.Screen, commit, outcome, handover, ct);
             outcomes.Add(new VerifyOutcome("ui:" + screen.Screen, outcome == "pass" ? 0 : outcome == "fail" ? 1 : 3, sw.ElapsedMilliseconds, summary));
         }
         return outcomes;

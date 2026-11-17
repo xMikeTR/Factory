@@ -52,6 +52,7 @@ public static class LedgerKinds
     public const string UiAcceptanceFailed = "ui_acceptance_failed"; // element + payload {ac, spec, commit, trace}: a frozen Playwright spec failed on this task's element
     public const string UiCheckFailed = "ui_check_failed"; // task + element + payload {screen, state?, placement?, kind, detail?, commit}: the ui: check failed on this task's page
     public const string UiResult = "ui_result"; // outcome pass|fail|could_not_run + payload {screen, commit, outcome}: one screen's ui: verdict on the integration commit
+    public const string HoldoutFailed = "holdout_failed"; // task + element + payload {screen, state} (UI holdout) or {screen, criterion, state} (acceptance holdout): a holdout the visible checks did not catch. Never trees, steps, data or a trace path. Run ledger only
     public const string CiFailed = "ci_failed";     // task + payload {check, log, files, commit}: CI failed after the run ended (factory-s2 ci-report); a repair run reads it
     public const string Diagnosis = "diagnosis";    // task + payload {finding}: the s2-diagnosis agent's explanation of a failed frozen spec, folded into the repair brief
     public const string Reproduction = "reproduction"; // payload {report, steps}: the s2-repro agent's steps for a reported escape; intake still needs a failing spec

@@ -29,6 +29,10 @@ public static class Repair
                 LedgerKinds.UiAcceptanceFailed =>
                     $"Frozen acceptance spec {S("spec")} (acceptance {S("ac")}{(e.Element is null ? "" : $" on element {e.Element}")}) failed on integration at {S("commit")}."
                     + (S("trace") is { Length: > 0 } t ? "\nTrace:\n" + (t.Length > TraceChars ? t[..TraceChars] + " …" : t) : ""),
+                // Screen, criterion and state only: the holdout's data and the runner's output never reach a brief.
+                LedgerKinds.HoldoutFailed =>
+                    $"A hidden check of screen {S("screen")}{(S("criterion") is { Length: > 0 } cr ? $" (acceptance {cr})" : "")} failed in state \"{S("state")}\"{(e.Element is null ? "" : $" on element {e.Element}")}. "
+                    + "The page does not render the data it will get; do not special-case sample values.",
                 LedgerKinds.CiFailed =>
                     $"CI check \"{S("check")}\" failed{(S("commit") is { Length: > 0 } c ? $" at {c}" : "")}. End of its log:\n{S("log")}",
                 LedgerKinds.TokenLintViolation =>

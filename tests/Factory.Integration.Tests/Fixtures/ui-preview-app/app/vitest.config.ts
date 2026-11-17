@@ -3,6 +3,7 @@
  *
  *   ui-preview  renders ui-contract/tests/*.preview.test.tsx and writes the baselines people approve (run by `factory-s2 preview`)
  *   ui-page     ui-contract/tests/*.page.test.tsx: the built page against the approved baselines (run by the Factory's ui: check; never -u)
+ *   ui-holdout  ui-contract/tests/*.holdout.test.tsx: the page rendering sample data it never saw (ARIA only; the Factory writes the test and the data into a scratch copy)
  *
  * Baselines are generated in the runner image, never on a laptop: fonts differ, and the platform is part of the file name.
  */
@@ -47,6 +48,7 @@ export default defineConfig({
     projects: [
       { extends: true, test: { name: "ui-preview", include: ["ui-contract/tests/*.preview.test.tsx"], browser: browser() } },
       { extends: true, test: { name: "ui-page", include: ["ui-contract/tests/*.page.test.tsx"], browser: browser() } },
+      { extends: true, test: { name: "ui-holdout", include: ["ui-contract/tests/*.holdout.test.tsx"], browser: browser() } },
     ],
   },
 });

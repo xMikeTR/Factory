@@ -197,7 +197,8 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         if (!frozen.IsEmpty)
             outcomes.Add(await AcceptanceAsync(msg.RunId, integration, cancellationToken));
 
-        outcomes.AddRange(await UiChecksAsync(msg.RunId, integration, timeout, cancellationToken));
+        var uiOutcomes = await UiChecksAsync(msg.RunId, integration, timeout, cancellationToken);
+        outcomes.AddRange(uiOutcomes);
 
         if (s.TokenLintCommand is not null && FSharpOption<string>.get_IsSome(svc.LoadHandover(msg.RunId).DesignTokens))
             outcomes.Add(await TokenLintAsync(msg.RunId, integration, cancellationToken));
@@ -210,6 +211,14 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
                 apiGit.IntegrationPath(msg.RunId), uiWs.IntegrationPath(msg.RunId), timeout, cancellationToken));
 
         var failed = outcomes.Where(o => o.ExitCode != 0).ToList();
+        // The holdout runs only when everything visible passed, and before QA: nothing deterministic runs after it.
+        HoldoutRun? holdout = null;
+        if (failed.Count == 0)
+        {
+            holdout = await HoldoutAsync(msg.RunId, integration, timeout, cancellationToken);
+            failed.AddRange(holdout.Outcomes);
+        }
+        await WriteUiResultsAsync(msg.RunId, integration, uiOutcomes, holdout, cancellationToken);
         object next = failed.Count > 0
             ? IntegrationVerdict(msg.RunId, failed)
             : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);
@@ -247,8 +256,35 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         var handover = svc.LoadHandover(runId);
         if (handover.Ui.IsEmpty) return [];
         var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
-        return await new UiPageCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand)
+        return await new UiPageCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, writesResult: false)
             .RunAsync(runId, handover, svc.LoadValidatedPlan(runId).Plan.Tasks, git, integration, timeout, ct);
+    }
+
+    private async Task<HoldoutRun> HoldoutAsync(string runId, string integration, TimeSpan timeout, CancellationToken ct)
+    {
+        var handover = svc.LoadHandover(runId);
+        if (handover.Ui.IsEmpty) return new HoldoutRun([], []);
+        var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
+        return await new UiHoldoutCheck(svc.Ledger, svc.Sandboxes, svc.Settings.RegistryPath, svc.Settings.UiHoldoutCommand)
+            .RunAsync(runId, handover, svc.LoadValidatedPlan(runId).Plan.Tasks, git, timeout, ct);
+    }
+
+    /// One `ui_result` per screen, after the holdout: fail when the ui: check or the holdout failed, could_not_run when either could not run,
+    /// pass only when ui: and the holdout (or no holdout was frozen) both passed. A holdout that did not run (other checks failed first) adds nothing.
+    private async Task WriteUiResultsAsync(string runId, string integration, List<VerifyOutcome> uiOutcomes, HoldoutRun? holdout, CancellationToken ct)
+    {
+        var handover = svc.LoadHandover(runId);
+        if (handover.Ui.IsEmpty) return;
+        var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
+        var commit = await git.HeadAsync(integration, ct);
+        var page = new UiPageCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, writesResult: false);
+        foreach (var screen in handover.Ui)
+        {
+            var uiExit = uiOutcomes.FirstOrDefault(o => o.Name == "ui:" + screen.Screen)?.ExitCode ?? 0;
+            var h = holdout is not null && holdout.Screens.TryGetValue(screen.Screen, out var r) ? r : "pass";
+            var outcome = uiExit == 1 || h == "fail" ? "fail" : uiExit != 0 || h == "could_not_run" ? "could_not_run" : "pass";
+            await page.WriteResultAsync(runId, screen.Screen, commit, outcome, handover, ct);
+        }
     }
 
     /// The approved pictures, specs, manifests, page tests, Vitest config and preview helper are the Factory's: any difference from what

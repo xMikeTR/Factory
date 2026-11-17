@@ -61,7 +61,14 @@ public sealed record FactorySettings(
     /// `--repo Api=../api --repo Ui=../ui`: repo name to full path. Null or empty is the single-repo form (RepoPath only).
     IReadOnlyDictionary<string, string>? Repos = null,
     /// From the primary repo's `contract:` section: the breaking-change and client-compile commands of a split project.
-    ContractConvention? Contract = null)
+    ContractConvention? Contract = null,
+    /// Runs the generated holdout test (`ui-contract/tests/*.holdout.test.tsx`) in a scratch copy of the integration branch; Vitest's JSON
+    /// reporter must write its report. The comparison is ARIA only, so no runner image is needed. FACTORY_UI_HOLDOUT_CMD.
+    string UiHoldoutCommand = "npx vitest run --project ui-holdout --reporter=json",
+    /// How many times one holdout (screen, or screen and criterion) may fail on one work item before a person decides. FACTORY_HOLDOUT_RETRIES.
+    int HoldoutRetries = 2,
+    /// designc's app folder (scripts/designc-core.js), which generates the acceptance holdout specs. FACTORY_DESIGNC_DIR; null is none.
+    string? DesigncDir = null)
 {
     /// The names the plan validator checks task repos against; empty means unchecked (single repo).
     public string[] RepoNames => Repos is null ? [] : [.. Repos.Keys];
@@ -87,6 +94,9 @@ public sealed record FactorySettings(
         UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
         AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),
         UiCommand: Env("FACTORY_UI_CMD", "npx vitest run --project ui-page --reporter=json"),
+        UiHoldoutCommand: Env("FACTORY_UI_HOLDOUT_CMD", "npx vitest run --project ui-holdout --reporter=json"),
+        HoldoutRetries: int.TryParse(Environment.GetEnvironmentVariable("FACTORY_HOLDOUT_RETRIES"), out var retries) && retries >= 0 ? retries : 2,
+        DesigncDir: Environment.GetEnvironmentVariable("FACTORY_DESIGNC_DIR") is { Length: > 0 } designc ? designc : null,
         TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"),
         PlaywrightCli: Environment.GetEnvironmentVariable("FACTORY_PLAYWRIGHT_CLI") != "0",
         ScreenshotCommand: Environment.GetEnvironmentVariable("FACTORY_SCREENSHOT_CMD"));

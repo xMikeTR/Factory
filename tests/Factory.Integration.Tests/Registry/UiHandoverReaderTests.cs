@@ -14,7 +14,7 @@ public class UiHandoverReaderTests
     [Fact]
     public async Task ui_json_becomes_the_screens_with_texts_previews_and_holdout_hashes()
     {
-        var h = UiHandoverDir.Create();
+        var h = UiHandoverDir.Create(holdoutSha: new string('a', 64));
         var ui = (await Load(h.Dir)).Ui.Single();
         Assert.Equal(("bordereaux", "BordereauxList", "src/BordereauxList.tsx"), (ui.Screen, ui.Component, ui.File));
         Assert.Equal("ui/specs/bordereaux.json", ui.Spec.Path);

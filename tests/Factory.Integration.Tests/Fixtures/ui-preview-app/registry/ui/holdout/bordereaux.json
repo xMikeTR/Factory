@@ -1,0 +1,16 @@
+{
+  "bordereaux": [
+    { "Cedant": "Baltic Specialty", "Period": "2026-Q1", "Lines": 73, "Premium": "$311,400", "Status": "Pending" },
+    { "Cedant": "Meridian Agricultural Mutual", "Period": "2026-Q1", "Lines": 1204, "Premium": "$5,870,150", "Status": "Exceptions" },
+    { "Cedant": "Cape Coastal Re", "Period": "2025-Q4", "Lines": 9, "Premium": "$48,000", "Status": "Validated" }
+  ],
+  "totalPremium": { "amount": 6229550, "currency": "USD" },
+  "selected": {
+    "Cedant": "Meridian Agricultural Mutual",
+    "Period": "2026-Q1",
+    "Received": "2026-04-11",
+    "Lines": "1204",
+    "Exceptions": "31 lines missing location",
+    "Premium": "$5,870,150"
+  }
+}

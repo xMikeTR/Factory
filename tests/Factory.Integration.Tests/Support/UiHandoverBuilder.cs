@@ -16,7 +16,7 @@ public sealed record UiHandoverDir(string Dir, string Screen, string UiJsonPath)
 
     /// `previews`: path under ui/previews/<screen>/ to bytes; null writes a stand-in file for every name the spec expects.
     /// `holdout`: the sample's sha256 and a hidden case, listed by hash only (never copied).
-    public static UiHandoverDir Create(IReadOnlyDictionary<string, byte[]>? previews = null, string workItem = "W-ui", Func<string, string>? spec = null)
+    public static UiHandoverDir Create(IReadOnlyDictionary<string, byte[]>? previews = null, string workItem = "W-ui", Func<string, string>? spec = null, bool holdout = true, string? holdoutSha = null)
     {
         var dir = Directory.CreateTempSubdirectory("ui-handover").FullName;
         var files = new Dictionary<string, string>();
@@ -45,6 +45,7 @@ public sealed record UiHandoverDir(string Dir, string Screen, string UiJsonPath)
             File.WriteAllBytes(full, bytes);
         }
 
+        var holdoutFile = Path.Combine(Registry, "ui", "holdout", Screen0 + ".json");
         var ui = new JsonObject
         {
             ["schema"] = "designc.handover.ui/1",
@@ -62,7 +63,9 @@ public sealed record UiHandoverDir(string Dir, string Screen, string UiJsonPath)
                     ["files"] = new JsonObject(pics.OrderBy(p => p.Key, StringComparer.Ordinal)
                         .Select(p => KeyValuePair.Create(p.Key, (JsonNode?)Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(p.Value))))),
                 },
-                ["holdout"] = new JsonObject { ["path"] = "ui/holdout/bordereaux.json", ["sha256"] = new string('a', 64) },
+                ["holdout"] = holdout
+                    ? new JsonObject { ["path"] = "ui/holdout/bordereaux.json", ["sha256"] = holdoutSha ?? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(holdoutFile))) }
+                    : null,
                 ["holdout_cases"] = new JsonArray(),
             }),
         };
