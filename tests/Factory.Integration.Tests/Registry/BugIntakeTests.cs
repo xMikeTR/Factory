@@ -1,4 +1,5 @@
 using Factory.Harness.Registry;
+using Factory.Integration.Tests.Support;
 using Xunit;
 
 namespace Factory.Integration.Tests.Registry;
@@ -51,5 +52,24 @@ public class BugIntakeTests
             DateTimeOffset.UnixEpoch, CancellationToken.None);
         Assert.NotNull(why);
         Assert.False(File.Exists(Path.Combine(reg, "ledger", "designc.jsonl")));
+    }
+
+    private static Task<string?> TryAsync(BugIntakeRequest r) =>
+        BugIntake.RecordAsync(TempRegistry(), r, DateTimeOffset.UnixEpoch, CancellationToken.None);
+
+    [Fact]
+    public async Task Intake_accepts_exactly_the_caught_by_values_of_the_pinned_schema()
+    {
+        Assert.Equal(DesigncSchema.StringList("caught_by"), BugIntake.CaughtByValues);
+        foreach (var value in DesigncSchema.StringList("caught_by"))
+            Assert.Null(await TryAsync(Good with { CaughtBy = value }));
+        Assert.NotNull(await TryAsync(Good with { CaughtBy = "nope" }));
+    }
+
+    [Fact]
+    public async Task A_catalogue_gap_origin_closes_and_is_a_known_designc_origin()
+    {
+        Assert.Contains("catalogue_gap", DesigncSchema.StringList("origins"));
+        Assert.Null(await TryAsync(Good with { Origin = "catalogue_gap", Reference = "Button" }));
     }
 }

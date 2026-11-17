@@ -99,6 +99,7 @@ type DefectOrigin =
     | DesignError of DecisionId
     | TranslationOrigin of TaskId
     | GateGap of gate: string
+    | CatalogueGap of catalogueComponent: string
 
 [<RequireQualifiedAccess>]
 module DefectOrigin =
@@ -109,6 +110,7 @@ module DefectOrigin =
         | DesignError _ -> "design_error"
         | TranslationOrigin _ -> "translation_error"
         | GateGap _ -> "gate_gap"
+        | CatalogueGap _ -> "catalogue_gap"
 
     /// The ledger origin plus the one reference that origin needs (requirement, decision, task or gate).
     let parse (origin: string) (reference: string) : Result<DefectOrigin, string> =
@@ -119,7 +121,8 @@ module DefectOrigin =
             | "design_error" -> Ok(DesignError(DecisionId reference))
             | "translation_error" -> Ok(TranslationOrigin(TaskId reference))
             | "gate_gap" -> Ok(GateGap reference)
-            | other -> Error $"Unknown origin '{other}': expected spec_gap, design_error, translation_error or gate_gap."
+            | "catalogue_gap" -> Ok(CatalogueGap reference)
+            | other -> Error $"Unknown origin '{other}': expected spec_gap, design_error, translation_error, gate_gap or catalogue_gap."
 
 /// The countermeasure: a new or strengthened gate. A bug is not closed without one.
 type NewGate = { Gate: string; Strengthens: string option }
