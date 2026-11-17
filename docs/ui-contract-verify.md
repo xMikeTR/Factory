@@ -51,6 +51,10 @@ Rows project into the registry ledger as designc's escape stages `ui-code`, `ui-
 
 ## 3. Guards
 
+Status: built (F3). Both policy layers, `ScopedWorkspace` (snapshot refusal, holdout read and list, the UI paths in `S2Config.Default.ProtectedPaths`) and `UiGuard` placement ids are in; the sabotage rows below run in `Sabotage/UiSabotageTests.cs` and `SabotageTests.cs`.
+
+Four kit-hook rows flip to DENY here (the hook allows them on a draft screen): writing a draft spec, writing a new spec, rendering a draft screen's previews, and rendering through the npm script.
+
 **Policy.** The row list is the kit hook's test table (`.claude/hooks/ui-contract-guard.test.mjs`). For `RoleAllowListPolicy` and `policies/s2/*.yaml`, every Factory build role is denied:
 - writes to `ui-contract/previews/**` (placements included) and `ui-contract/specs/**`, always. Unlike the hook, there is no draft-screen exception: the Factory never hand-writes previews. The same applies to `ui-contract/preview/**` (the helper), the hook itself, and the generated tests;
 - any read, search, shell read or write of `ui-contract/holdout/**` and `ui/holdout/**`;
@@ -62,7 +66,7 @@ Still allowed: reading approved previews and specs, writing the page and page te
 
 The preview run is not an agent run, so it is outside these rules. Contract-tested against both policy layers, like the read-only references.
 
-**UiGuard.** A new `UiItemKind.PlacementId`. The spec's placement ids are contract items, so a missing `data-ui-id` is `ContractMissing`. A page test that is gone or skipped is already caught as `UiTest` or `SkippedTest`.
+**UiGuard.** A new `UiItemKind.PlacementId`, scanned from `data-ui-id` attributes. The spec's placement ids are contract items only for the task that owns the page (it writes the spec's `file`, or links the element named like the component), so a missing `data-ui-id` is `ContractMissing` at that task's verify. The guard runs whenever the handover binds screens, with or without a `ui:` policy section. Any task dropping a `data-ui-id` the baseline had is `Removed`. A page test that is gone or skipped is already caught as `UiTest` or `SkippedTest`.
 
 **AssertionGuard.** No change: it already counts Vitest `expect` calls. The generated tests loop over states, so the count only drops if a state is removed from the spec, and the spec is frozen.
 
@@ -110,13 +114,15 @@ What Vitest adds to the Factory's `parity` command and the legacy migration. Vit
 - **Debugging a parity failure.** Trace view snapshots the DOM and, since 5.1, the ARIA tree per step. Run the scenario's steps as a page test and replay the failing step.
 - **What not to change.** Tier 1's normaliser (shape not data, one record per table, masks, `expect` sort and filter) does more than Vitest's ARIA matcher. Keep it. Vitest's `contain` matching and regex names are useful for hand-written checks, not as a replacement.
 
+Known gap: `npm test -- -u` (Vitest reached through an npm script alias) is not seen by the `vitest` token rule; the sandbox command allow-list is the mitigation, and drift catches any changed picture at integration verify.
+
 Not useful here: in-source testing, benchmarking, type testing. Sharding (`--shard` with the blob reporter and `--merge-reports`) is worth having once one run builds many screens.
 
 ## Slices
 
 1. **Preview run.** `factory-s2 preview`, `ui_preview_rendered`, the generated preview test, sandbox command and exit codes.
 2. **`ui:` check.** `Handover.Ui`, setup, drift, `Core/UiSpec.fs` code check, `FACTORY_UI_CMD`, `ui_check_failed`, projection.
-3. **Guards.** Policy rows, `UiItemKind.PlacementId`, the sabotage table.
+3. **Guards (built, F3).** Policy rows, `UiItemKind.PlacementId`, the sabotage table.
 4. **Feedback and evidence.** ARIA diff first, trace view text, HTML report as evidence; `UxReview` against approved previews.
 5. **Parity.** HAR to MSW handlers, request logging and comparison.
 6. **UI mutation**, report mode, incremental per task and full at merge.
