@@ -98,11 +98,11 @@ On failure, the agent gets text before pictures, which keeps tokens per passing 
 
 `UxReview` already reads freeze-time screenshots named `<element-slug>__<state>__<breakpoint>.png`. Feed it the approved preview and the built page's screenshot per state. The judge explains differences against the picture the person approved, not just the acceptance text. It stays a gradient: never a gate, never blocks.
 
-## 6. UI mutation
+## 6. UI mutation (built, F6)
 
 A visual test with too loose a threshold lets real changes through. In the kit's demo, changing the metric's tone failed `ready` and `filtered` but passed `empty`: the red "$0" was under the page-wide 0.1% ratio. That survivor is now killed by default, because placements are screenshotted on their own (`placement-pixels`).
 
-What remains is generated mutants. `QualityGate` runs UI mutants from the spec in a scratch build, in report mode alongside code mutation: swap each token prop to another value of its group, and remove each placement. Every mutant must fail at least one state; survivors are reported, not blocking. Timing: incremental on changed files per task, a full run at merge to main, no nightly.
+What remains is generated mutants, built in F6: `UiMutants.generate` makes them from the spec, manifests and frozen tokens (swap each token prop to another value of its group, remove each placement), and `UiMutantCheck` runs them in a scratch checkout after the holdout, in report mode. Every mutant must fail at least one page test; survivors are reported in a `ui_mutants` row, never blocking. Cap: `FACTORY_UI_MUTANTS_MAX`. Code mutation per task is whole-file with the changed-line filter; the full run is `factory-s2 mutation-full` after merge, not nightly.
 
 ## 7. For parity
 

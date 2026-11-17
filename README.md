@@ -164,6 +164,8 @@ The `ui:` check runs `FACTORY_UI_CMD` (default `npx vitest run --project ui-page
 
 The holdout runs after the `ui:` check, only when everything visible passed, and before QA: `FACTORY_UI_HOLDOUT_CMD` (default `npx vitest run --project ui-holdout --reporter=json`) runs the registry's hidden sample in a scratch copy of the integration branch. Acceptance cases marked `holdout: true` need `FACTORY_DESIGNC_DIR` (designc's app folder; its `holdout-spec` generates them) and are `could_not_run` without it. `FACTORY_HOLDOUT_RETRIES` (default 2) is the number of failing runs of the same holdout (per work item) the build is asked to repair; the next one raises a `needs_decision` instead. Docker case: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter UiHoldoutDocker`. See `docs/ui-contract-verify.md` §2.
 
+UI mutants run after the holdout passes and before QA, when `quality.mutation` is not `off`: each generated mutant (a token prop turned to another value of its group, or a placement removed) is written into the page in a scratch checkout and judged by the page tests (`FACTORY_UI_CMD`). A `ui_mutants` row per screen lists killed, survived, skipped and could-not-run mutants; it never changes the verdict. `FACTORY_UI_MUTANTS_MAX` (default 40) caps the mutants per screen, cut in generate order. Docker case: `--filter UiMutantCheck`.
+
 ### Sandbox
 
 Commands run in a per-team Docker container (`FACTORY_SANDBOX=docker`, the default) built
@@ -331,6 +333,7 @@ Per-command flags are the header comment of `src/Factory.S2/Program.cs`.
 | `rerun` `--handover h --plan p.json --task T-001 [--k 3] --repo .` | k fresh attempts at one task, nothing merged |
 | `close` `--repo . --run-id id [--registry r] [--by you]` | Record the merge and close the handover |
 | `qa` `--repo . --run-id id` | Follow-up QA, no author |
+| `mutation-full` `--repo . --run-id id` | Stryker over every file at the merged commit (refused before `close`); report only, a `verify`/`close` row `mutation_full`. `FACTORY_MUTATION_FULL_TIMEOUT_MIN` (default 120) |
 | `ci-report` `--repo . --run-id id --check ...` | Record a CI failure against the run |
 | `digest` `--registry r [--last-look ms] [--wip 3] [--notify-state f]` | What needs you, what failed, what is done |
 | `pull-plan`, `metrics` `--registry r` | Read-only reports |
