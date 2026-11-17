@@ -13,7 +13,7 @@ namespace Factory.S2;
 public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, string command, bool writesResult = true, string? runDir = null, string? registry = null)
 {
     /// The default reporters: `default` prints each failure's diff and step timeline, `json` writes the report the check reads,
-    /// `html` writes the report folder (`UiPreview.HtmlReportDir`) kept as evidence.
+    /// `html` writes the report folder (`UiPreview.HtmlReportDir`), kept as evidence only when the check fails.
     public const string DefaultCommand = "npx vitest run --project ui-page --reporter=default --reporter=json --reporter=html";
 
     /// The same command for runs that only need the JSON report (mutants judge dozens of pages): no terminal report, no HTML.
@@ -131,7 +131,7 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
                             feedback = fb?.Text, images = fb is null ? null : fb.Images.ToArray(),
                         })), ct);
                 }
-            await KeepHtmlReportAsync(runId, screen.Screen, integration, ct);
+            if (outcome == "fail") await KeepHtmlReportAsync(runId, screen.Screen, integration, ct);
             await LogAsync(runId, LedgerKinds.Verify, outcome: outcome == "pass" ? "passed" : "failed",
                 payload: JsonSerializer.Serialize(new { name = "ui:" + screen.Screen, ExitCode = outcome == "pass" ? 0 : outcome == "fail" ? 1 : 3, kinds = failures.Select(f => f.Kind).Distinct() }), ct: ct);
             if (writesResult) await WriteResultAsync(runId, screen.Screen, commit, outcome, handover, ct);
@@ -161,7 +161,7 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
         return kept;
     }
 
-    /// The HTML report (with Vitest's trace viewer) copied to `evidence/ui/<screen>/html/` after every run, and a `verify` row `ui` / `evidence` that names it.
+    /// The HTML report (with Vitest's trace viewer) copied to `evidence/ui/<screen>/html/` only when the screen's check FAILED (a passing run keeps nothing), and a `verify` row `ui` / `evidence` that names it.
     /// A run that wrote none adds no row; that is never a failure.
     private async Task KeepHtmlReportAsync(string runId, string screen, string integration, CancellationToken ct)
     {

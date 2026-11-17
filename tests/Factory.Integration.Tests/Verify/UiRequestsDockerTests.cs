@@ -60,8 +60,8 @@ public sealed class UiRequestsDockerTests : IDisposable
         return new(handover, git, integration, new MemoryLedger());
     }
 
-    private static Task<List<VerifyOutcome>> RunAsync(Seeded s) =>
-        new UiPageCheck(s.Ledger, new DockerSandboxFactory(new DockerSandboxOptions()), UiPageCheck.DefaultCommand)
+    private static Task<List<VerifyOutcome>> RunAsync(Seeded s, string? runDir = null) =>
+        new UiPageCheck(s.Ledger, new DockerSandboxFactory(new DockerSandboxOptions()), UiPageCheck.DefaultCommand, runDir: runDir)
             .RunAsync("r1", s.Handover, Core.ToList([Writer("T-1", "src/BordereauxList.tsx")]), s.Git, s.Integration, TimeSpan.FromMinutes(10), default);
 
     /// The raw vitest run of the page tests (default reporter, so the console output is in it).
@@ -130,8 +130,11 @@ public sealed class UiRequestsDockerTests : IDisposable
         var previews = await RenderApprovedAsync();
 
         var good = await SeedAsync(previews, null, null);
-        var pass = Assert.Single(await RunAsync(good));
+        var goodRun = Directory.CreateTempSubdirectory("ui-good-run").FullName;
+        var pass = Assert.Single(await RunAsync(good, goodRun));
         Assert.True(pass.ExitCode == 0, pass.OutputTail);
+        Assert.False(Directory.Exists(Path.Combine(goodRun, "evidence", "ui")), "a passing run keeps no HTML report");
+        Assert.DoesNotContain(good.Ledger.Events, e => e.Outcome == "evidence");
         Assert.DoesNotContain(good.Ledger.Events, e => e.Kind == LedgerKinds.UiCheckFailed);
 
         var bad = await SeedAsync(previews, "UnlistedCall", null);
