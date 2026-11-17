@@ -15,6 +15,7 @@ public static partial class RegistryLedgerProjector
 
     private static IEnumerable<(DateTimeOffset, RegistryEvent)> StageVerdicts(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
     {
+        var requests = VerifyRequests(run);
         var verdicts = new List<Verdict>();
         verdicts.AddRange(UiVerdicts(run));
         verdicts.AddRange(HoldoutVerdicts(run));
@@ -27,7 +28,7 @@ public static partial class RegistryLedgerProjector
                 w.WriteString("run", v.Source.RunId);
                 w.WriteString("stage", v.Stage);
                 w.WriteString("outcome", v.Outcome);
-                w.WriteNull("change_ts");
+                if (ChangeTs(requests, v) is { } changed) w.WriteNumber("change_ts", changed); else w.WriteNull("change_ts");
                 if (v.Task is not null) w.WriteString("task", v.Task);
                 if (v.Element is not null) w.WriteString("element", v.Element);
                 if (v.Screen is not null) w.WriteString("screen", v.Screen);
@@ -48,6 +49,25 @@ public static partial class RegistryLedgerProjector
                     w.WriteEndArray();
                 }
             }));
+    }
+
+    /// When each task last asked to be verified: the task-event rows of type verify_requested (what the agent changed is checked from then).
+    private static List<(string Task, DateTimeOffset Ts)> VerifyRequests(IReadOnlyList<LedgerEvent> run)
+    {
+        var requests = new List<(string, DateTimeOffset)>();
+        foreach (var e in run.Where(e => e is { Kind: LedgerKinds.TaskEvent, TaskId: not null, Payload: not null }))
+        {
+            using var doc = TryParse(e.Payload!);
+            if (doc is not null && Str(doc.RootElement, "type") == "verify_requested") requests.Add((e.TaskId!, e.Ts));
+        }
+        return requests;
+    }
+
+    /// A task's verdict: that task's latest request not after the verdict. A run-level one: the latest of any task. None: null, so time to signal skips it.
+    private static long? ChangeTs(List<(string Task, DateTimeOffset Ts)> requests, Verdict v)
+    {
+        var before = requests.Where(r => r.Ts <= v.Source.Ts && (v.Task is null || r.Task == v.Task)).ToList();
+        return before.Count == 0 ? null : before.Max(r => r.Ts).ToUnixTimeMilliseconds();
     }
 
     private static string? Str(JsonElement obj, string name) =>

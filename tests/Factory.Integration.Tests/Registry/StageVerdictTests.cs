@@ -220,3 +220,65 @@ public class StageVerdictAcceptanceReviewQaTests
         Assert.DoesNotContain("SECRET", v.GetRawText());
     }
 }
+
+public class StageVerdictChangeTsTests
+{
+    private const string RunId = "run-1";
+    private static readonly DateTimeOffset T0 = DateTimeOffset.FromUnixTimeMilliseconds(1_791_400_000_000);
+    private static long Ms(int second) => T0.AddSeconds(second).ToUnixTimeMilliseconds();
+    private static LedgerEvent At(int second, LedgerEvent e) => e with { Ts = T0.AddSeconds(second), TraceId = null };
+
+    private static LedgerEvent Requested(int s, string task) =>
+        At(s, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: task, TeamId: "t", Outcome: "Verifying", Payload: """{"type":"verify_requested"}"""));
+
+    private static LedgerEvent Other(int s, string task) =>
+        At(s, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: task, TeamId: "t", Outcome: "Running", Payload: """{"type":"turn_started"}"""));
+
+    private static LedgerEvent UiFail(int s, string task) =>
+        At(s, new(RunId, "S2", "integration_verify", LedgerKinds.UiCheckFailed, TaskId: task, Outcome: "failed", Payload: """{"screen":"a","state":"ready","kind":"aria","commit":"c"}"""));
+
+    private static LedgerEvent Qa(int s) => At(s, new(RunId, "S2", "qa", LedgerKinds.Verify, Outcome: "failed", Payload: "{}"));
+
+    private static long? ChangeTs(JsonElement v) => v.GetProperty("change_ts") is { ValueKind: JsonValueKind.Number } n ? n.GetInt64() : null;
+
+    [Fact]
+    public void A_task_verdicts_change_ts_is_the_tasks_latest_verify_requested_before_it()
+    {
+        var v = Assert.Single(StageVerdictTests.Verdicts([Requested(1, "T-1"), Requested(3, "T-1"), Requested(9, "T-1"), Other(4, "T-1"), Requested(2, "T-2"), UiFail(5, "T-1")]));
+        Assert.Equal(Ms(3), ChangeTs(v));
+    }
+
+    [Fact]
+    public void A_verify_requested_at_the_verdicts_own_time_counts_and_a_later_one_does_not()
+    {
+        Assert.Equal(Ms(5), ChangeTs(Assert.Single(StageVerdictTests.Verdicts([Requested(5, "T-1"), UiFail(5, "T-1")]))));
+        Assert.Null(ChangeTs(Assert.Single(StageVerdictTests.Verdicts([UiFail(5, "T-1"), Requested(6, "T-1")]))));
+    }
+
+    [Fact]
+    public void A_task_with_no_verify_requested_gives_null()
+    {
+        Assert.Null(ChangeTs(Assert.Single(StageVerdictTests.Verdicts([Requested(1, "T-2"), UiFail(5, "T-1")]))));
+    }
+
+    [Fact]
+    public void A_run_level_verdicts_change_ts_is_the_latest_verify_requested_of_any_task_before_it()
+    {
+        var v = Assert.Single(StageVerdictTests.Verdicts([Requested(1, "T-1"), Requested(4, "T-2"), Requested(2, "T-3"), Qa(6), Requested(8, "T-1")]));
+        Assert.Equal(Ms(4), ChangeTs(v));
+    }
+
+    [Fact]
+    public void A_run_with_no_verify_requested_at_all_gives_null_for_a_run_level_verdict()
+    {
+        Assert.Null(ChangeTs(Assert.Single(StageVerdictTests.Verdicts([Qa(6)]))));
+    }
+
+    [Fact]
+    public void The_change_ts_is_never_later_than_the_verdicts_own_ts_so_every_row_validates()
+    {
+        var run = new[] { Requested(1, "T-1"), UiFail(5, "T-1"), Qa(6) };
+        foreach (var e in RegistryLedgerProjector.Project(run.ToList(), new("h", []), new(5, 3)).Where(e => e.Line.Contains("stage_verdict")))
+            Assert.Empty(DesigncSchema.Validate(e.Line));
+    }
+}
