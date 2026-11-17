@@ -125,6 +125,24 @@ module Json =
                 let co = obj q v
                 { Criterion = str q co "criterion"; Case = int q co "case" 0; State = str q co "state"; Sha256 = str q co "sha256" }) }
 
+    let private decodeNamedTest p n =
+        let o = obj p n
+        { Kind = str p o "kind"; Path = str p o "path"; Command = optStr o "command"; Via = optStr o "via" }
+
+    let private decodeTestMap p n =
+        let o = obj p n
+        { Elements =
+            collect (arr p o "elements") (fun q v ->
+                let eo = obj q v
+                { Element = str q eo "element"
+                  Repo = optStr eo "repo"
+                  FailToPass = collect (arr q eo "failToPass") decodeNamedTest
+                  PassToPass = collect (arr q eo "passToPass") decodeNamedTest })
+          Unmapped =
+            collect (arr p o "unmapped") (fun q v ->
+                let uo = obj q v
+                str q uo "element", str q uo "reason") }
+
     let parseHandover (text: string) : Result<Handover, string list> =
         run text (fun o ->
             { Id = str "$" o "id"
@@ -169,7 +187,8 @@ module Json =
                 (match optStr o "requirementDataClass" with
                  | Some ("public" | "internal" | "regulated" as d) -> Some d
                  | _ -> None)
-              Ui = collect (arr "$" o "ui") decodeUiScreen })
+              Ui = collect (arr "$" o "ui") decodeUiScreen
+              Tests = (match o.["tests"] with null -> None | v -> Some(decodeTestMap "$.tests" v)) })
 
     // ---------- plan ----------
 
@@ -302,7 +321,23 @@ module Json =
                                   match s.Holdout with Some h -> "holdout", JsonValue.Create h | None -> ()
                                   "holdoutCases",
                                   JsonArray(s.HoldoutCases |> List.map (fun c -> node [ "criterion", JsonValue.Create c.Criterion; "case", JsonValue.Create c.Case; "state", JsonValue.Create c.State; "sha256", JsonValue.Create c.Sha256 ]) |> Array.ofList) ]
-                       "ui", JsonArray(h.Ui |> List.map screen |> Array.ofList) ]
+                       "ui", JsonArray(h.Ui |> List.map screen |> Array.ofList)
+                   match h.Tests with
+                   | Some t ->
+                       let named (n: NamedTest) =
+                           node [ "kind", JsonValue.Create n.Kind
+                                  "path", JsonValue.Create n.Path
+                                  match n.Command with Some c -> "command", JsonValue.Create c | None -> ()
+                                  match n.Via with Some v -> "via", JsonValue.Create v | None -> () ]
+                       let element (e: ElementTests) =
+                           node [ "element", JsonValue.Create e.Element
+                                  match e.Repo with Some r -> "repo", JsonValue.Create r | None -> ()
+                                  "failToPass", JsonArray(e.FailToPass |> List.map named |> Array.ofList)
+                                  "passToPass", JsonArray(e.PassToPass |> List.map named |> Array.ofList) ]
+                       "tests",
+                       node [ "elements", JsonArray(t.Elements |> List.map element |> Array.ofList)
+                              "unmapped", JsonArray(t.Unmapped |> List.map (fun (e, r) -> node [ "element", JsonValue.Create e; "reason", JsonValue.Create r ]) |> Array.ofList) ]
+                   | None -> () ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     // ---------- task events (the ledger payload a runner replays on resume) ----------

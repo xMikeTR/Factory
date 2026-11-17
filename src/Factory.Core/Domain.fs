@@ -106,6 +106,15 @@ type UiScreen =
       Holdout: string option
       HoldoutCases: UiHoldoutCase list }
 
+/// One test a handover names (`tests.json`, designc.handover.tests/1). `Command` is None for a test designc lists but cannot run.
+type NamedTest = { Kind: string; Path: string; Command: string option; Via: string option }
+
+/// The tests designc mapped to one element: the ones that must turn green (acceptance, the ui page test) and the existing ones that must stay green.
+type ElementTests = { Element: string; Repo: string option; FailToPass: NamedTest list; PassToPass: NamedTest list }
+
+/// handover.yaml `tests`: per element, plus the elements with code and no covering test (element, reason).
+type TestMap = { Elements: ElementTests list; Unmapped: (string * string) list }
+
 type Handover =
     { Id: string
       Digest: string
@@ -143,7 +152,9 @@ type Handover =
       /// Data class the requirement declares (`requirementDataClass`: public|internal|regulated); None when absent or unknown.
       RequirementDataClass: string option
       /// The bound UI screens (handover.yaml `ui`); empty when the handover has none, and for a handover JSON frozen before they were carried.
-      Ui: UiScreen list }
+      Ui: UiScreen list
+      /// The test map (handover.yaml `tests`); None when the handover has none, and for a handover JSON frozen before it was carried.
+      Tests: TestMap option }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

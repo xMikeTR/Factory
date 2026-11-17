@@ -1,5 +1,5 @@
 {
-  "designc_commit": "ac69622049ce86776efcdf2120808316e80dba5e",
+  "designc_commit": "30824e73427558cdbfc83bc13af4d035f4318691",
   "files": [
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/ledger_schema.json",
@@ -28,6 +28,10 @@
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/ui-result.json",
       "source": "docs/ui-result.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-tests.json",
+      "source": "docs/handover-tests.example.json"
     }
   ]
 }

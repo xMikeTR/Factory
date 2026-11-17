@@ -60,7 +60,8 @@ let private specHandover: Handover =
       ApiContracts = []
       RequirementRisk = None
       RequirementDataClass = None
-      Ui = [] }
+      Ui = []
+      Tests = None }
 
 let private specConfig: TaskSpecConfig =
     { SmallMaxWrites = 4
@@ -364,6 +365,18 @@ let tests: (string * (unit -> unit)) list =
           equal [ screen ] back.Ui "round trip"
           let old = match Json.parseHandover (Json.writeHandover specHandover) with Ok h -> h | Error es -> failwithf "%A" es
           equal [] old.Ui "none"
+      "tests: Handover.Tests round-trips through the run-dir JSON, and a handover JSON without it parses to None", fun () ->
+          let t k p c v = { Kind = k; Path = p; Command = c; Via = v }
+          let map =
+              { Elements =
+                  [ { Element = "a"; Repo = Some "Api"; FailToPass = [ t "acceptance" "tests/acceptance/a/AC-1.spec.ts" (Some "npx playwright test x") None ]
+                      PassToPass = [ t "node" "tests/x.test.js" None (Some "co-located") ] }
+                    { Element = "b"; Repo = None; FailToPass = []; PassToPass = [] } ]
+                Unmapped = [ "b", "no existing test references its code" ] }
+          let back = match Json.parseHandover (Json.writeHandover { specHandover with Tests = Some map }) with Ok h -> h | Error es -> failwithf "%A" es
+          equal (Some map) back.Tests "round trip"
+          let old = match Json.parseHandover (Json.writeHandover specHandover) with Ok h -> h | Error es -> failwithf "%A" es
+          equal None old.Tests "none"
       "router: taskSpec carries the repo of the task's elements, None when the design declares none", fun () ->
           let h = { specHandover with Elements = [ { elem "a" Low with Repo = Some "Api" }; { elem "b" High with Repo = Some "Ui" } ] }
           equal (Some "Api") (Router.taskSpec specConfig h (specTask [ "a" ] 1 0) Role.Implementer 0 Set.empty).Repo "api"

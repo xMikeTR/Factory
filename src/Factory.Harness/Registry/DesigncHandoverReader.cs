@@ -75,6 +75,7 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         var references = References(manifest, errors);
         var (contracts, uncovered) = Contracts(manifest, files, errors);
         var ui = UiScreens(manifest, files, errors);
+        var tests = Tests(manifest, files, errors);
 
         if (errors.Count > 0) Reject(handoverDir, errors);
         return new Handover(
@@ -104,7 +105,8 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             },
             Str(manifest, "requirement_data_class") is ("public" or "internal" or "regulated") and { } dataClass
                 ? FSharpOption<string>.Some(dataClass) : FSharpOption<string>.None,
-            Core.ToList(ui));
+            Core.ToList(ui),
+            tests);
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
@@ -159,6 +161,29 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); }
         return screens;
+    }
+
+    /// `tests`: the derived tests.json (designc.handover.tests/1). None when handover.yaml has no `tests` key; any other schema is refused.
+    private static FSharpOption<TestMap> Tests(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
+    {
+        if (Str(manifest, "tests") is not { } path) return FSharpOption<TestMap>.None;
+        if (!files.TryGetValue(path, out var json)) { errors.Add($"handover.yaml: tests '{path}' is not among the frozen files"); return FSharpOption<TestMap>.None; }
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.GetProperty("schema").GetString() != "designc.handover.tests/1") { errors.Add($"{path}: schema is not designc.handover.tests/1"); return FSharpOption<TestMap>.None; }
+            static FSharpOption<string> Opt(JsonElement e, string key) =>
+                e.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? FSharpOption<string>.Some(v.GetString()!) : FSharpOption<string>.None;
+            Microsoft.FSharp.Collections.FSharpList<NamedTest> Named(JsonElement arr) => Core.ToList(arr.EnumerateArray()
+                .Select(t => new NamedTest(t.GetProperty("kind").GetString()!, t.GetProperty("path").GetString()!, Opt(t, "command"), Opt(t, "via"))));
+            var elements = root.GetProperty("elements").EnumerateArray()
+                .Select(e => new ElementTests(e.GetProperty("element").GetString()!, Opt(e, "repo"), Named(e.GetProperty("fail_to_pass")), Named(e.GetProperty("pass_to_pass")))).ToList();
+            var unmapped = root.GetProperty("unmapped").EnumerateArray()
+                .Select(u => Tuple.Create(u.GetProperty("element").GetString()!, u.GetProperty("reason").GetString()!)).ToList();
+            return FSharpOption<TestMap>.Some(new TestMap(Core.ToList(elements), Core.ToList(unmapped)));
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); return FSharpOption<TestMap>.None; }
     }
 
     public static string Sha256(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));

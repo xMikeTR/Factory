@@ -131,7 +131,7 @@ public class UiGuardLoopTests
         var b = h.Handover;
         var handover = new Handover(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
-            b.RequirementRisk, b.RequirementDataClass, parsed.Ui);
+            b.RequirementRisk, b.RequirementDataClass, parsed.Ui, b.Tests);
         return (h, handover);
     }
 
@@ -171,7 +171,7 @@ public class UiGuardLoopTests
         var elsewhere = new Handover(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
             b.RequirementRisk, b.RequirementDataClass,
-            FsCore.ToList(b.Ui.Select(s => new UiScreen(s.Screen, s.Component, "src/Other/Page.tsx", s.Spec, s.Template, s.Components, s.Previews, s.Holdout, s.HoldoutCases))));
+            FsCore.ToList(b.Ui.Select(s => new UiScreen(s.Screen, s.Component, "src/Other/Page.tsx", s.Spec, s.Template, s.Components, s.Previews, s.Holdout, s.HoldoutCases))), b.Tests);
 
         var result = await new TeamRunner(h.Services, elsewhere, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
 

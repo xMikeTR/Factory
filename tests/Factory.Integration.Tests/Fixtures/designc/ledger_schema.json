@@ -21,13 +21,30 @@
     "S1-lint",
     "S1-p",
     "S1-grill",
+    "ui-spec",
+    "ui-preview",
+    "ui-code",
+    "ui-visual",
+    "acceptance",
+    "holdout",
+    "parity",
+    "review",
+    "qa",
     "pipeline"
   ],
   "origins": [
     "spec_gap",
     "design_error",
     "translation_error",
-    "gate_gap"
+    "gate_gap",
+    "catalogue_gap"
+  ],
+  "escape_buckets": [
+    "caught",
+    "not_captured",
+    "state_not_recorded",
+    "not_flagged",
+    "triage"
   ],
   "pipeline_stream": "pipeline.jsonl",
   "pipeline_kinds": [
@@ -49,6 +66,7 @@
     "run_ended",
     "parity_result",
     "ui_result",
+    "stage_verdict",
     "trace",
     "outcome"
   ],
@@ -70,6 +88,8 @@
     "ended_needs_reason",
     "aborted_needs_reason",
     "caught_by_member",
+    "bucket_member",
+    "verdict_shape",
     "origin_member"
   ],
   "kinds": {
@@ -252,15 +272,19 @@
         "traces",
         "origin",
         "ref",
-        "run"
+        "run",
+        "screen",
+        "bucket"
       ],
       "enums": {},
       "types": {
-        "run": "string"
+        "run": "string",
+        "screen": "string"
       },
       "rules": [
         "caught_by_member",
         "origin_member",
+        "bucket_member",
         "ref_shape"
       ]
     },
@@ -815,6 +839,51 @@
         "handover": "string"
       },
       "rules": []
+    },
+    "stage_verdict": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "run",
+        "stage",
+        "outcome",
+        "change_ts"
+      ],
+      "optional": [
+        "task",
+        "element",
+        "screen",
+        "item",
+        "round",
+        "failures"
+      ],
+      "enums": {
+        "stage": [
+          "ui-code",
+          "ui-visual",
+          "acceptance",
+          "holdout",
+          "review",
+          "qa"
+        ],
+        "outcome": [
+          "pass",
+          "fail",
+          "could_not_run"
+        ]
+      },
+      "types": {
+        "run": "string",
+        "task": "string",
+        "element": "string",
+        "screen": "string",
+        "item": "string",
+        "round": "number",
+        "failures": "array",
+        "change_ts": "number|null"
+      },
+      "rules": [
+        "verdict_shape"
+      ]
     },
     "suite_run": {
       "stream": "factory.jsonl",
