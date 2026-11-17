@@ -25,6 +25,7 @@
     <Compile Include="ContextQualityTests.fs" />
     <Compile Include="UiSpecTests.fs" />
     <Compile Include="UiPolicyFactsTests.fs" />
+    <Compile Include="TestPlanTests.fs" />
     <Compile Include="RouterTests.fs" />
     <Compile Include="LearningTests.fs" />
     <Compile Include="SplitRepoTests.fs" />

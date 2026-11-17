@@ -82,6 +82,9 @@ public static class Briefs
             }
         }
 
+        if (TestPlan.ofHandover(handover, task)?.Value is { } named && TestPlan.briefSection(named)?.Value is { } testsSection)
+            sb.AppendLine().AppendLine(testsSection);
+
         // Fixed for the phase, so it belongs to the cached part of the brief.
         if (bundle?.Render() is { Length: > 0 } rendered) sb.AppendLine().Append(rendered);
 

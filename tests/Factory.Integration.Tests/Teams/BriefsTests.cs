@@ -65,6 +65,31 @@ public class BriefsTests
     }
 
     [Fact]
+    public async Task The_tests_section_names_the_tests_and_commands_of_the_tasks_elements_and_the_prompt_points_to_it()
+    {
+        var plain = await new DesigncHandoverReader().LoadAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"),
+            new S2Config([]), CancellationToken.None);
+        Assert.DoesNotContain("## Tests for this task", Briefs.Task(plain, Plans.Task("T-004"), [], null, null, null).Text);
+
+        var handover = plain.WithTests(TestMaps.Map(
+            [TestMaps.Element("Fares Platform/Bookings DB",
+                [TestMaps.Named("acceptance", "tests/acceptance/db/AC-1.spec.ts", "npx playwright test tests/acceptance/db/AC-1.spec.ts")],
+                [TestMaps.Named("dotnet", "tests/Fares.Data.Tests/Fares.Data.Tests.csproj", "dotnet test tests/Fares.Data.Tests/Fares.Data.Tests.csproj", "project-ref")])],
+            ("Fares Platform/Bookings DB", "no existing test references its code")));
+        var brief = Briefs.Task(handover, Plans.Task("T-004"), [], null, null, null).Text;
+
+        Assert.Contains("## Tests for this task", brief);
+        Assert.Contains("Must pass at integration (frozen; do not edit):\n- `tests/acceptance/db/AC-1.spec.ts`".Replace("\n", Environment.NewLine), brief);
+        Assert.Contains("- `tests/Fares.Data.Tests/Fares.Data.Tests.csproj`", brief);
+        Assert.Contains("dotnet test tests/Fares.Data.Tests/Fares.Data.Tests.csproj", brief);
+        Assert.Contains("No existing test covers Fares Platform/Bookings DB; the tests you write are its only cover.", brief);
+
+        var prompt = Briefs.Prompt("implementer");
+        Assert.Contains("Tests for this task", prompt);
+        Assert.DoesNotContain("build and run the relevant tests as you go", prompt);
+    }
+
+    [Fact]
     public async Task The_context_section_inlines_each_file_with_why_it_is_there_and_marks_truncation()
     {
         var handover = await new DesigncHandoverReader().LoadAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"),
