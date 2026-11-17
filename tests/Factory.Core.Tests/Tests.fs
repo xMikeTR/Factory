@@ -814,6 +814,29 @@ let tests: (string * (unit -> unit)) list =
           let ms = [ m "1" Killed; m "2" Survived ]
           equal [] (Mutation.check { MinScore = 1.0 } Map.empty (Mutation.confirmedEquivalents (set [ "2" ]) (set [ "2" ])) ranges ms) "confirmed"
           check (not (List.isEmpty (Mutation.check { MinScore = 1.0 } Map.empty (Mutation.confirmedEquivalents (set [ "2" ]) Set.empty) ranges ms))) "declared only"
+      "mutation: the summary scores the changed lines overall and per file, with what the file was held to", fun () ->
+          let m id file line st = { Id = id; File = file; Line = line; Mutator = "x"; Status = st }
+          let ranges = [ { File = "A.cs"; First = 10; Last = 20 }; { File = "B.cs"; First = 1; Last = 5 } ]
+          let ms = [ m "1" "A.cs" 12 Killed; m "2" "A.cs" 15 Survived; m "3" "A.cs" 99 Survived; m "4" "B.cs" 2 Timeout; m "5" "B.cs" 3 NoCoverage; m "6" "B.cs" 4 Killed; m "7" "C.cs" 1 Survived ]
+          let s = Mutation.summary { MinScore = 0.8 } (Map.ofList [ "A.cs", 0.4 ]) Set.empty ranges ms
+          equal (Some(3.0 / 5.0)) s.Score "overall: 3 of 5 mutants on changed lines"
+          equal [ "A.cs"; "B.cs" ] (s.Files |> List.map (fun f -> f.File)) "files with changed mutants, in order"
+          let a = s.Files.[0]
+          equal (Some 0.5) a.Score "A score"
+          equal 0.4 a.Required "A held to its lower baseline"
+          equal (Some 0.4) a.Baseline "A baseline"
+          equal (1, 1, 0, 0) (a.Killed, a.Survived, a.NoCoverage, a.Timeout) "A counts"
+          let b = s.Files.[1]
+          equal 0.8 b.Required "B held to the threshold"
+          equal None b.Baseline "B no baseline"
+          equal (1, 0, 1, 1) (b.Killed, b.Survived, b.NoCoverage, b.Timeout) "B counts"
+          equal None (Mutation.summary { MinScore = 0.8 } Map.empty Set.empty ranges []).Score "nothing to judge"
+          equal [] (Mutation.summary { MinScore = 0.8 } Map.empty Set.empty ranges []).Files "no files"
+      "mutation: a confirmed equivalent is left out of the summary, as in the check", fun () ->
+          let m id st = { Id = id; File = "A.cs"; Line = 12; Mutator = "x"; Status = st }
+          let ranges = [ { File = "A.cs"; First = 10; Last = 20 } ]
+          let s = Mutation.summary { MinScore = 1.0 } Map.empty (set [ "2" ]) ranges [ m "1" Killed; m "2" Survived ]
+          equal (Some 1.0) s.Score "equivalent excluded"
       "red evidence: tests that already pass are red evidence only if they kill a mutant", fun () ->
           check (Result.isError (RedEvidence.CreateAgainstMutant([ outcome "a" 0 ], 0))) "no kill"
           check (Result.isError (RedEvidence.CreateAgainstMutant([], 1))) "no outcomes"

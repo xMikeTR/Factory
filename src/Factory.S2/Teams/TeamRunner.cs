@@ -710,29 +710,43 @@ internal sealed class TaskLoop(
         var declared = run.Mutants.Where(m => _claims.ContainsKey(MutantKey(m))).Select(m => m.Id).ToHashSet();
         var confirmedIds = run.Mutants.Where(m => _confirmed.Contains(MutantKey(m))).Select(m => m.Id).ToHashSet();
         var equivalents = Mutation.confirmedEquivalents(SetModule.OfSeq(declared), SetModule.OfSeq(confirmedIds));
-        var violations = Mutation.check(policy.Thresholds, MapModule.Empty<string, double>(), equivalents, Core.ToList(ranges), Core.ToList(run.Mutants));
+        var changed = Core.ToList(ranges);
+        var mutants = Core.ToList(run.Mutants);
+        var baselines = MapModule.Empty<string, double>();
+        var violations = Mutation.check(policy.Thresholds, baselines, equivalents, changed, mutants);
         if (!violations.IsEmpty)
         {
             // A file that already scored lower before the run is held to that score, not the threshold.
             var scores = await BaselineScoresAsync(runner, violations.Select(v => v.File).ToList(), ct);
             if (scores is null) return new VerifyOutcome("mutation", 124, elapsed, "the mutation tool did not finish on the baseline");
-            violations = Mutation.check(policy.Thresholds, MapModule.OfSeq(scores.Select(kv => Tuple.Create(kv.Key, kv.Value))), equivalents, Core.ToList(ranges), Core.ToList(run.Mutants));
+            baselines = MapModule.OfSeq(scores.Select(kv => Tuple.Create(kv.Key, kv.Value)));
+            violations = Mutation.check(policy.Thresholds, baselines, equivalents, changed, mutants);
         }
+        var summary = Mutation.summary(policy.Thresholds, baselines, equivalents, changed, mutants);
         if (violations.IsEmpty)
         {
-            if (policy.Mode == QualityMode.Report) await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, "clean", JsonSerializer.Serialize(new { attempt }), _teamId, _taskId, ct);
+            if (policy.Mode == QualityMode.Report) await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, "clean", MutationPayload(attempt, summary, null), _teamId, _taskId, ct);
             return null;
         }
         var lines = violations.SelectMany(v => v.Survivors.Select(m =>
             $"- id={m.Id} {m.File}:{m.Line} {m.Mutator} (file scored {v.Score:P0}, needs {v.Required:P0})"
             + (_rejected.Contains(MutantKey(m)) ? $" - you declared it equivalent and the reviewer did not accept it: {_claims[MutantKey(m)]}" : ""))).ToList();
         var block = policy.Mode == QualityMode.Block;
-        await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, block ? "blocked" : "reported",
-            JsonSerializer.Serialize(new { attempt, survivors = lines }), _teamId, _taskId, ct);
+        await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, block ? "blocked" : "reported", MutationPayload(attempt, summary, lines), _teamId, _taskId, ct);
         return block ? new VerifyOutcome("mutation", 1, elapsed,
             "Your tests pass, but mutants of the code this task changed survived them, so they do not pin the behaviour. "
             + "Strengthen the tests so each of these changes would make one fail. If a change truly cannot be observed by any test, "
             + "declare it with declare_equivalent (a reviewer must accept it):\n" + string.Join("\n", lines)) : null;
+    }
+
+    /// The evidence of a mutation row: the score over the changed lines and each file's counts (null where there is nothing to judge).
+    private static string MutationPayload(int attempt, MutationSummary summary, IReadOnlyList<string>? survivors)
+    {
+        static double? Opt(Microsoft.FSharp.Core.FSharpOption<double> o) => o is null ? null : o.Value;
+        var files = summary.Files.Select(f => new { file = f.File, score = Opt(f.Score), required = f.Required, baseline = Opt(f.Baseline), killed = f.Killed, survived = f.Survived, no_coverage = f.NoCoverage, timeout = f.Timeout });
+        return survivors is null
+            ? JsonSerializer.Serialize(new { attempt, score = Opt(summary.Score), files })
+            : JsonSerializer.Serialize(new { attempt, score = Opt(summary.Score), files, survivors });
     }
 
     /// A check that timed out (exit 124 after the gate's isolated re-run) says nothing about the code, so

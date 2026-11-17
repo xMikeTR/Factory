@@ -498,6 +498,46 @@ public class TeamRunnerTests
         Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "reported");
     }
 
+    private static System.Text.Json.JsonElement PayloadOf(TeamHarness h, string outcome) =>
+        System.Text.Json.JsonDocument.Parse(h.Rows(LedgerKinds.Verify).First(e => e.Stage == "mutation" && e.Outcome == outcome).Payload!).RootElement;
+
+    [Fact]
+    public async Task In_report_mode_a_clean_mutation_row_carries_the_score_and_the_files()
+    {
+        var model = TestsThenImpl();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Report));
+        h.Mutation.Then(Killed("a"), Killed("b"), Killed("c"), Killed("d"), Survivor()); // 80%, passes
+
+        await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        var p = PayloadOf(h, "clean");
+        Assert.Equal(0.8, p.GetProperty("score").GetDouble(), 3);
+        var file = Assert.Single(p.GetProperty("files").EnumerateArray());
+        Assert.Equal(NewFile, file.GetProperty("file").GetString());
+        Assert.Equal(0.8, file.GetProperty("required").GetDouble(), 3);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, file.GetProperty("baseline").ValueKind);
+        Assert.Equal((4, 1, 0, 0), (file.GetProperty("killed").GetInt32(), file.GetProperty("survived").GetInt32(), file.GetProperty("no_coverage").GetInt32(), file.GetProperty("timeout").GetInt32()));
+        Assert.Equal(1, p.GetProperty("attempt").GetInt32());
+    }
+
+    [Fact]
+    public async Task Reported_and_blocked_mutation_rows_carry_the_score_too()
+    {
+        foreach (var (mode, outcome) in new[] { (QualityMode.Report, "reported"), (QualityMode.Block, "blocked") })
+        {
+            var model = TestsThenImpl(Say("I cannot strengthen these"));
+            using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(mode));
+            h.Mutation.Then(Survivor(), Killed());
+
+            await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+            var p = PayloadOf(h, outcome);
+            Assert.Equal(0.5, p.GetProperty("score").GetDouble(), 3);
+            Assert.Equal(NewFile, p.GetProperty("files")[0].GetProperty("file").GetString());
+            Assert.True(p.TryGetProperty("survivors", out _));
+        }
+    }
+
     [Fact]
     public async Task A_mutation_run_that_times_out_parks_the_task_as_an_environment_problem()
     {
