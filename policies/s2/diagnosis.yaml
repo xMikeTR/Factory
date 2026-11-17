@@ -9,6 +9,16 @@ description: "Read-only: explains a TranslationError from the trace; its finding
 scope: agent
 default_action: deny
 rules:
+  - name: deny-holdout-read
+    condition: "tool_name == 'read_file' and args.reads_holdout == 'true'"
+    action: deny
+    message: "holdout samples are not for any agent: they are never read or listed"
+    priority: 100
+  - name: deny-holdout-read-list
+    condition: "tool_name == 'list_files' and args.reads_holdout == 'true'"
+    action: deny
+    message: "holdout samples are not for any agent: they are never read or listed"
+    priority: 100
   - name: allow-read-file
     condition: "tool_name == 'read_file'"
     action: allow

@@ -9,6 +9,36 @@ description: "Writes code inside writes; the tests are fixed by then."
 scope: agent
 default_action: deny
 rules:
+  - name: deny-preview-update
+    condition: "tool_name == 'run_command' and args.updates_snapshots == 'true'"
+    action: deny
+    message: "previews are approved in designc; the Factory never updates them"
+    priority: 100
+  - name: deny-ui-contract-shell
+    condition: "tool_name == 'run_command' and args.touches_ui_contract == 'true'"
+    action: deny
+    message: "shell commands may not change the UI contract files or reach the holdout"
+    priority: 100
+  - name: deny-ui-contract-write
+    condition: "tool_name == 'write_file' and args.ui_protected_path == 'true'"
+    action: deny
+    message: "the UI contract files (previews, specs, manifests, page tests, Vitest config) are the Factory's seeded baseline; build roles never write them"
+    priority: 100
+  - name: deny-ui-contract-write-delete
+    condition: "tool_name == 'delete_file' and args.ui_protected_path == 'true'"
+    action: deny
+    message: "the UI contract files (previews, specs, manifests, page tests, Vitest config) are the Factory's seeded baseline; build roles never write them"
+    priority: 100
+  - name: deny-holdout-read
+    condition: "tool_name == 'read_file' and args.reads_holdout == 'true'"
+    action: deny
+    message: "holdout samples are not for any agent: they are never read or listed"
+    priority: 100
+  - name: deny-holdout-read-list
+    condition: "tool_name == 'list_files' and args.reads_holdout == 'true'"
+    action: deny
+    message: "holdout samples are not for any agent: they are never read or listed"
+    priority: 100
   - name: allow-read-file
     condition: "tool_name == 'read_file'"
     action: allow

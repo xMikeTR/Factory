@@ -1,3 +1,5 @@
+using Factory.Core;
+
 namespace Factory.Harness;
 
 public sealed record PolicyDecision(bool Allowed, string Reason)
@@ -52,6 +54,28 @@ public sealed class RoleAllowListPolicy : IToolPolicy
             return PolicyDecision.Deny($"role '{role}' may not call '{toolName}'");
         if (toolName == "run_command" && args.TryGetValue("command", out var c) && c?.ToString()?.Contains("--no-verify", StringComparison.Ordinal) == true)
             return PolicyDecision.Deny("--no-verify is not allowed: hooks are not skipped");
-        return PolicyDecision.Allow();
+        return UiContractRules.Check(toolName, args) is { } denial ? PolicyDecision.Deny(denial) : PolicyDecision.Allow();
     }
+}
+
+/// The UI contract's denials, asked of UiPolicyFacts so that RoleAllowListPolicy, the yaml rules (through AcsToolPolicy's derived args) and
+/// ScopedWorkspace share one source of facts. Only the roles that hold these tools reach here, and the tools are the only ones that carry
+/// paths or commands: build roles are the ones with write_file and run_command, so no draft-screen exception exists for them.
+internal static class UiContractRules
+{
+    public const string PreviewUpdate = "previews are approved in designc; the Factory never updates them";
+    public const string ContractWrite = "the UI contract files (previews, specs, manifests, page tests, Vitest config) are the Factory's seeded baseline; build roles never write them";
+    public const string ContractShell = "shell commands may not change the UI contract files or reach the holdout";
+    public const string HoldoutRead = "holdout samples are not for any agent: they are never read or listed";
+
+    private static string? Arg(IReadOnlyDictionary<string, object?> args, string key) => args.TryGetValue(key, out var v) ? v?.ToString() : null;
+
+    public static string? Check(string tool, IReadOnlyDictionary<string, object?> args) => tool switch
+    {
+        "run_command" when Arg(args, "command") is { } c => UiPolicyFacts.updatesSnapshots(c) ? PreviewUpdate : UiPolicyFacts.touchesUiContract(c) ? ContractShell : null,
+        "write_file" or "delete_file" when Arg(args, "path") is { } p => UiPolicyFacts.isUiProtected(p) ? ContractWrite : null,
+        "read_file" when Arg(args, "path") is { } p => UiPolicyFacts.isHoldout(p) ? HoldoutRead : null,
+        "list_files" when Arg(args, "directory") is { } d => UiPolicyFacts.isHoldout(d) ? HoldoutRead : null,
+        _ => null,
+    };
 }
