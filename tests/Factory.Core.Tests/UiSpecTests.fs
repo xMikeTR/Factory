@@ -88,6 +88,11 @@ let tests : (string * (unit -> unit)) list =
           check (not (t.Contains "pageTests(")) "no pageTests"
           check (t.Contains "await open(\"empty\")") "every test waits for the page root before it looks"
           check (not (t.Contains "error aria")) "only given states"
+      "ui page test: logs every request MSW saw to .factory/requests/<screen>/<state>.json", fun () ->
+          let t = UiPageTest.text "bordereaux" "BordereauxList" "src/BordereauxList.tsx" [ "default" ]
+          for e in [ "request:match"; "request:unhandled"; "response:mocked" ] do check (t.Contains $"worker.events.on(\"{e}\"") e
+          check (t.Contains "server.commands.writeFile(`.factory/requests/bordereaux/${current}.json`") "path"
+          check (t.Contains "import { page, server } from \"vitest/browser\"") "server import"
       "ui report: failures map to kinds, states and placements", fun () ->
           let fs = UiReport.failures "bordereaux" report
           equal 4 fs.Length "four failures"

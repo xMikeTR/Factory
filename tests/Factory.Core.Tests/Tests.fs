@@ -894,6 +894,7 @@ let tests: (string * (unit -> unit)) list =
     @ Factory.Core.Tests.UiSpecTests.tests
     @ Factory.Core.Tests.UiFeedbackTests.tests
     @ Factory.Core.Tests.UiMutantsTests.tests
+    @ Factory.Core.Tests.RequestParityTests.tests
     @ Factory.Core.Tests.UiPolicyFactsTests.tests
     @ Factory.Core.Tests.TestPlanTests.tests
     @ Factory.Core.Tests.TestPlanTests.affectedTests

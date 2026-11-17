@@ -121,8 +121,8 @@ module UiBaseline =
 [<RequireQualifiedAccess>]
 module UiPageTest =
     let private header = """import React from "react";
-import { describe, test, expect } from "vitest";
-import { page } from "vitest/browser";
+import { describe, test, expect, afterEach } from "vitest";
+import { page, server } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import spec from "../specs/@SCREEN@.json";
 import { @COMPONENT@ as Page } from "../../@FILE@";
@@ -130,9 +130,36 @@ import { ariaFiles, checkAria, checkPixels, checkPlacements, handlersFor, useWor
 
 const approvedAria = ariaFiles(import.meta.glob("../previews/**/*.aria.yml", { query: "?raw", import: "default", eager: true }) as Record<string, string>);
 
+type Logged = { method: string; path: string; matched: boolean; body: string | null; status: number | null };
+
 describe("@SCREEN@ page", () => {
   const worker = useWorker();
+
+  // Every request the page makes, matched or not, written to .factory/requests/@SCREEN@/<state>.json for the Factory's request check
+  // (it judges the files, this test does not). The body is kept as text so the Factory can shape it; nothing here is committed or ledgered.
+  const byId = new Map<string, Logged>();
+  const byState: Record<string, Logged[]> = {};
+  let current = "";
+  let bodies: Promise<unknown>[] = [];
+  const note = (matched: boolean) => ({ request, requestId }: any) => {
+    const e: Logged = { method: request.method, path: new URL(request.url).pathname, matched, body: null, status: null };
+    byId.set(requestId, e);
+    (byState[current] ??= []).push(e);
+    bodies.push(request.clone().text().then((t: string) => { e.body = t || null; }, () => {}));
+  };
+  worker.events.on("request:match", note(true));
+  worker.events.on("request:unhandled", note(false));
+  worker.events.on("response:mocked", ({ response, requestId }: any) => { const e = byId.get(requestId); if (e) e.status = response.status; });
+  afterEach(async () => {
+    await Promise.all(bodies);
+    bodies = [];
+    const seen = new Set<string>();
+    const rows = (byState[current] ?? []).filter((e) => { const k = JSON.stringify(e); return !seen.has(k) && seen.add(k); });
+    await server.commands.writeFile(`.factory/requests/@SCREEN@/${current}.json`, JSON.stringify(rows, null, 1));
+  });
+
   const open = async (state: string) => {
+    current = state;
     worker.use(...handlersFor(spec as any, state));
     await render(<div data-testid="ui-root"><Page /></div>);
     await expect.element(page.getByTestId("ui-root")).toBeInTheDocument();

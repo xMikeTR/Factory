@@ -102,6 +102,26 @@ public sealed class UiRequestsDockerTests : IDisposable
         }
     }
 
+    private static List<JsonElement> Log(Seeded s, string state) =>
+        JsonDocument.Parse(File.ReadAllText(Path.Combine(s.Integration, ".factory", "requests", "bordereaux", state + ".json"))).RootElement.EnumerateArray().ToList();
+
+    /// Slice 2: the generated page test writes what MSW saw, per state, with allowWrite set in the fixture's vitest.config.ts.
+    [Fact]
+    public async Task The_page_test_writes_a_request_log_per_state_with_the_unlisted_call_marked_unhandled()
+    {
+        if (!Docker || UiPreviewFixture.DesigncDir() is null) return;
+        var s = await SeedAsync(await RenderApprovedAsync(), "UnlistedCall", null);
+        await RunAsync(s);
+
+        var ready = Log(s, "ready");
+        Assert.Contains(ready, e => e.GetProperty("method").GetString() == "GET" && e.GetProperty("path").GetString() == "/api/bordereaux"
+            && e.GetProperty("matched").GetBoolean() && e.GetProperty("status").GetInt32() == 200);
+        Assert.Contains(ready, e => e.GetProperty("path").GetString() == "/api/bordereaux/B-2" && e.GetProperty("matched").GetBoolean());
+        Assert.Contains(ready, e => e.GetProperty("path").GetString() == "/api/unlisted" && !e.GetProperty("matched").GetBoolean());
+        Assert.Contains(Log(s, "error"), e => e.GetProperty("path").GetString() == "/api/bordereaux" && e.GetProperty("status").GetInt32() == 500);
+        Assert.Contains(Log(s, "loading"), e => e.GetProperty("path").GetString() == "/api/bordereaux");
+    }
+
     [Fact]
     public void The_recorded_runs_say_the_same()
     {

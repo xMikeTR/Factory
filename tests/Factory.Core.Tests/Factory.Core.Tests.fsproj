@@ -27,6 +27,7 @@
     <Compile Include="UiFeedbackTests.fs" />
     <Compile Include="UiMutantsTests.fs" />
     <Compile Include="UiPolicyFactsTests.fs" />
+    <Compile Include="RequestParityTests.fs" />
     <Compile Include="TestPlanTests.fs" />
     <Compile Include="RouterTests.fs" />
     <Compile Include="LearningTests.fs" />

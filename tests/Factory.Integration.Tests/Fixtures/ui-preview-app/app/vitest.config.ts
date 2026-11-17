@@ -45,6 +45,8 @@ export default defineConfig({
     },
   },
   test: {
+    // The page tests write their request log (.factory/requests/<screen>/<state>.json) with server.commands.writeFile from vitest/browser.
+    api: { allowWrite: true },
     projects: [
       { extends: true, test: { name: "ui-preview", include: ["ui-contract/tests/*.preview.test.tsx"], browser: browser() } },
       { extends: true, test: { name: "ui-page", include: ["ui-contract/tests/*.page.test.tsx"], browser: browser() } },

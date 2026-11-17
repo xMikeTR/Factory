@@ -1,5 +1,5 @@
 {
-  "designc_commit": "ccd76698fc93fb39aade35506d0277eb2ab1399a",
+  "designc_commit": "d7f58990ef6f73f2f5ae0bf103d49218862bca31",
   "files": [
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/ledger_schema.json",
@@ -36,6 +36,18 @@
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/stage-verdict.json",
       "source": "docs/stage-verdict.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/parity-cases.json",
+      "source": "docs/parity-cases.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/parity-requests.schema.json",
+      "source": "docs/parity-requests.schema.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/parity-requests.example.json",
+      "source": "docs/parity-requests.example.json"
     }
   ]
 }
