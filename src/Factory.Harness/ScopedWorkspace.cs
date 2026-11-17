@@ -289,6 +289,7 @@ public sealed class ScopedWorkspace(
     public string ReadFile([Description("repo-relative path")] string path)
     {
         if (!TryResolve(path, out var full, out var error)) return error;
+        if (UiPolicyFacts.isHoldout(RelativeTo(full))) return $"DENIED: {UiContractRules.HoldoutRead}.";
         if (!File.Exists(full)) return $"ERROR: {path} does not exist";
         var text = File.ReadAllText(full);
         return text.Length <= MaxReadChars ? text : text[..MaxReadChars] + "\n…(truncated)";
@@ -298,10 +299,11 @@ public sealed class ScopedWorkspace(
     public string ListFiles([Description("repo-relative directory, '.' for root")] string directory)
     {
         if (!TryResolve(directory, out var full, out var error)) return error;
+        if (UiPolicyFacts.isHoldout(RelativeTo(full))) return $"DENIED: {UiContractRules.HoldoutRead}.";
         if (!Directory.Exists(full)) return $"ERROR: {directory} is not a directory";
         var files = Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(_root, f).Replace('\\', '/'))
-            .Where(f => !IsHidden(f) && !f.StartsWith(".factory/"))
+            .Where(f => !IsHidden(f) && !f.StartsWith(".factory/") && !UiPolicyFacts.isHoldout(f))
             .Order(StringComparer.Ordinal)
             .Take(501)
             .ToList();
@@ -346,6 +348,9 @@ public sealed class ScopedWorkspace(
         var cmd = command.Trim();
         if (!commandAllowList.Any(prefix => cmd == prefix || cmd.StartsWith(prefix + " ", StringComparison.Ordinal)))
             return $"DENIED: only these commands are allowed: {string.Join(", ", commandAllowList)}";
+        // The same facts the policy layers use, so a command cannot be allowed here that they would deny.
+        if (UiPolicyFacts.updatesSnapshots(cmd)) return $"DENIED: {UiContractRules.PreviewUpdate}.";
+        if (UiPolicyFacts.touchesUiContract(cmd)) return $"DENIED: {UiContractRules.ContractShell}.";
         if (cmd.IndexOfAny([';', '&', '|', '`', '$', '>', '<', '\n', '\r']) >= 0)
             return "DENIED: shell operators are not allowed; run one command at a time.";
         // Hooks are the gate layers' first line: an agent may not skip them.

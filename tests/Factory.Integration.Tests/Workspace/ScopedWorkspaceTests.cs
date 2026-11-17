@@ -73,6 +73,78 @@ public class ScopedWorkspaceTests : IDisposable
         Assert.Empty(sandbox.Commands);
     }
 
+    [Theory]
+    [InlineData("npx vitest run -u")]
+    [InlineData("npx vitest run --project ui-page --update")]
+    [InlineData("npx vitest run --project ui-preview -u claims.preview")]
+    [InlineData("npm run ui:preview")]
+    [InlineData("npm run ui:preview -- bordereaux.preview")]
+    [InlineData("npx vitest run --project ui-page --reporter=json -u")]
+    public async Task A_snapshot_update_is_refused_even_on_an_allow_listed_prefix(string command)
+    {
+        var sandbox = new RecordingSandbox();
+        var ws = new ScopedWorkspace(_root, [], [], ["npx vitest", "npm run"], new TurnSignals(), sandbox);
+        var output = await ws.RunCommand(command);
+        Assert.StartsWith("DENIED", output);
+        Assert.Contains("previews are approved in designc", output);
+        Assert.Empty(sandbox.Commands);
+    }
+
+    [Theory]
+    [InlineData("npx vitest run --project ui-page")]
+    [InlineData("npx vitest related src/pages/Claims.tsx --run")]
+    [InlineData("npm run ui:holdout")]
+    public async Task The_page_tests_and_the_holdout_runner_still_run(string command)
+    {
+        var sandbox = new RecordingSandbox();
+        var ws = new ScopedWorkspace(_root, [], [], ["npx vitest", "npm run"], new TurnSignals(), sandbox);
+        Assert.StartsWith("exit 0", await ws.RunCommand(command));
+        Assert.Equal([command], sandbox.Commands);
+    }
+
+    [Theory]
+    [InlineData("ui-contract/holdout/bordereaux.json")]
+    [InlineData("ui/holdout/bordereaux.json")]
+    [InlineData("src/../ui-contract/holdout/bordereaux.json")]
+    [InlineData("./ui-contract\\holdout\\bordereaux.json")]
+    public void The_holdout_is_not_readable_even_when_it_is_there(string path)
+    {
+        foreach (var f in new[] { "ui-contract/holdout/bordereaux.json", "ui/holdout/bordereaux.json" })
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(_root, f))!);
+            File.WriteAllText(Path.Combine(_root, f), "{\"Cedant\":\"secret\"}");
+        }
+        var ws = new ScopedWorkspace(_root, [], [], [], new TurnSignals());
+        var output = ws.ReadFile(path);
+        Assert.StartsWith("DENIED", output);
+        Assert.DoesNotContain("secret", output);
+    }
+
+    [Fact]
+    public void A_listing_leaves_out_the_holdout_as_it_does_the_factory_folder()
+    {
+        foreach (var f in new[] { "ui-contract/holdout/bordereaux.json", "ui/holdout/bordereaux.json", "ui-contract/specs/bordereaux.json", ".factory/policy.yaml", "src/a.cs" })
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(_root, f))!);
+            File.WriteAllText(Path.Combine(_root, f), "x");
+        }
+        var ws = new ScopedWorkspace(_root, [], [], [], new TurnSignals());
+        Assert.Equal(["src/a.cs", "ui-contract/specs/bordereaux.json"], ws.ListFiles(".").Split('\n'));
+        Assert.DoesNotContain("holdout", ws.ListFiles("ui-contract"));
+        Assert.StartsWith("DENIED", ws.ListFiles("ui-contract/holdout"));
+    }
+
+    [Theory]
+    [InlineData("rm ui-contract/previews/bordereaux/ready.png")]
+    [InlineData("cat ui-contract/holdout/bordereaux.json")]
+    public async Task A_shell_command_on_the_ui_contract_is_refused_before_the_sandbox(string command)
+    {
+        var sandbox = new RecordingSandbox();
+        var ws = new ScopedWorkspace(_root, [], [], ["rm", "cat"], new TurnSignals(), sandbox);
+        Assert.StartsWith("DENIED", await ws.RunCommand(command));
+        Assert.Empty(sandbox.Commands);
+    }
+
     [Fact]
     public async Task Without_a_sandbox_commands_are_refused()
     {

@@ -22,8 +22,9 @@ public class SabotageTests : IDisposable
     private readonly string _root = Directory.CreateTempSubdirectory("sabotage-").FullName;
     private readonly List<string> _dirs = [];
 
+    /// What every real run protects: the same list the handover reader hands the workspace.
     private static readonly IReadOnlyList<PathPattern> Protected =
-        [PathPatternModule.createOrFail(".factory/**"), PathPatternModule.createOrFail("tests/acceptance/**"), PathPatternModule.createOrFail("ui-contract/previews/**")];
+        S2Config.Default.ProtectedPaths.Append("tests/acceptance/**").Select(PathPatternModule.createOrFail).ToList();
 
     private ScopedWorkspace Agent(IReadOnlyDictionary<string, string>? references = null) =>
         new(_root, [PathPatternModule.createOrFail("**")], Protected.ToList(), [], new TurnSignals(), references: references);
