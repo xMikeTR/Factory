@@ -32,6 +32,8 @@ designc's **Approve previews** then records `ui_preview_approved` with the same 
 
 ## 2. In a run
 
+Status: built (F2), except the holdout (step 4, F4). Where the build differs from the first sketch: the Factory seeds the contract once per run on the integration branch (not into each worktree); the generated page test has three separate tests per state (`aria`, `pixels`, `placements`) so each kind is independent; the generated test renders `<Page />` with no props, so a page must reach every spec state by default (a page that needs props is a spec gap); `ui_check_failed` stays in the run ledger, and only `ui_result` and the run outcome are projected (the `caught_by` stages move to F8); a run that cannot run the page tests (no runner image, no report) is `could_not_run`, exit 3, and ends `integration_unrunnable`, never a pass.
+
 The handover's `ui.json` (`designc.handover.ui/1`) lists, per screen: the bound spec, the pack manifests and templates it uses, and the approved preview files with hashes. `Handover.Ui` is an interface widening, like `WorkItem` was.
 
 **Setup.** At worktree creation the Factory writes the frozen previews into `ui-contract/previews/<screen>/` and the frozen spec into `ui-contract/specs/`. It also writes the generated page test, always (the spec carries `component` plus an optional `file` field naming the page file). The test author does not write it.

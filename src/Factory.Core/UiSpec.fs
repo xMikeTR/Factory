@@ -116,7 +116,8 @@ module UiBaseline =
 [<RequireQualifiedAccess>]
 module UiPageTest =
     let private header = """import React from "react";
-import { describe, test } from "vitest";
+import { describe, test, expect } from "vitest";
+import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import spec from "../specs/@SCREEN@.json";
 import { @COMPONENT@ as Page } from "../../@FILE@";
@@ -126,14 +127,15 @@ const approvedAria = ariaFiles(import.meta.glob("../previews/**/*.aria.yml", { q
 
 describe("@SCREEN@ page", () => {
   const worker = useWorker();
-  const open = (state: string) => {
+  const open = async (state: string) => {
     worker.use(...handlersFor(spec as any, state));
-    render(<div data-testid="ui-root"><Page /></div>);
+    await render(<div data-testid="ui-root"><Page /></div>);
+    await expect.element(page.getByTestId("ui-root")).toBeInTheDocument();
   };
 """
-    let private perState = """  test("@S@ aria", async () => { open("@S@"); await checkAria(spec as any, "@S@", "../previews", approvedAria); });
-  test("@S@ pixels", async () => { open("@S@"); await checkPixels(spec as any, "@S@"); });
-  test("@S@ placements", async () => { open("@S@"); await checkPlacements(spec as any, "@S@"); });
+    let private perState = """  test("@S@ aria", async () => { await open("@S@"); await checkAria(spec as any, "@S@", "../previews", approvedAria); });
+  test("@S@ pixels", async () => { await open("@S@"); await checkPixels(spec as any, "@S@"); });
+  test("@S@ placements", async () => { await open("@S@"); await checkPlacements(spec as any, "@S@"); });
 """
 
     let text (screen: string) (component': string) (file: string) (states: string list) : string =
@@ -200,6 +202,9 @@ module UiReport =
                   let kind, placement =
                       match kind with
                       | "placements" when missing.Success -> "placement-missing", Some missing.Groups[1].Value
-                      | "placements" -> "placement-pixels", (if shot.Success then Some shot.Groups[1].Value else None)
+                      | "placements" ->
+                          // Vitest names the files it writes `<name>-actual-<browser>-<platform>.png`: the placement id is what comes before that.
+                          let id = if shot.Success then Some(Regex.Replace(shot.Groups[1].Value, "(-(actual|expected|diff|reference))?-(chromium|firefox|webkit)-[a-z0-9]+$", "")) else None
+                          "placement-pixels", id
                       | k -> k, None
                   yield { State = state; Kind = kind; Placement = placement; Detail = (msg.Split('\n').[0]).Trim() } ]

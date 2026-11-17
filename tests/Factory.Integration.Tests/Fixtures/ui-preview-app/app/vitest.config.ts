@@ -2,6 +2,7 @@
  * Vitest browser mode for the UI contract (the app's side; the Factory writes no config).
  *
  *   ui-preview  renders ui-contract/tests/*.preview.test.tsx and writes the baselines people approve (run by `factory-s2 preview`)
+ *   ui-page     ui-contract/tests/*.page.test.tsx: the built page against the approved baselines (run by the Factory's ui: check; never -u)
  *
  * Baselines are generated in the runner image, never on a laptop: fonts differ, and the platform is part of the file name.
  */
@@ -35,9 +36,17 @@ const browser = () => ({
 
 export default defineConfig({
   plugins: [react()],
+  publicDir: "public", // mockServiceWorker.js (npx msw init public)
+  resolve: {
+    alias: {
+      "@your-org/ui/layouts": resolve(import.meta.dirname, "src/mock-ui.tsx"),
+      "@your-org/ui": resolve(import.meta.dirname, "src/mock-ui.tsx"),
+    },
+  },
   test: {
     projects: [
       { extends: true, test: { name: "ui-preview", include: ["ui-contract/tests/*.preview.test.tsx"], browser: browser() } },
+      { extends: true, test: { name: "ui-page", include: ["ui-contract/tests/*.page.test.tsx"], browser: browser() } },
     ],
   },
 });

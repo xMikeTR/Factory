@@ -25,7 +25,7 @@ let private report =
     """{"testResults":[{"assertionResults":[
         {"title":"default aria","status":"passed","failureMessages":[]},
         {"title":"empty pixels","status":"failed","failureMessages":["Error: screenshot differs ui__bordereaux__empty"]},
-        {"title":"empty placements","status":"failed","failureMessages":["Error: Expected ui__bordereaux__empty__premium to match"]},
+        {"title":"empty placements","status":"failed","failureMessages":["Error: Expected ui__bordereaux__empty__premium-actual-chromium-linux.png to match"]},
         {"title":"error placements","status":"failed","failureMessages":["Error: Placement 'hdr' has no element with data-ui-id=\"hdr\" in state 'error'. x"]},
         {"title":"error aria","status":"failed","failureMessages":["AssertionError: tree differs"]}]}]}"""
 
@@ -86,6 +86,7 @@ let tests : (string * (unit -> unit)) list =
           for s in [ "default"; "empty" ] do
               for k in [ "aria"; "pixels"; "placements" ] do check (t.Contains $"test(\"{s} {k}\"") $"{s} {k}"
           check (not (t.Contains "pageTests(")) "no pageTests"
+          check (t.Contains "await open(\"empty\")") "every test waits for the page root before it looks"
           check (not (t.Contains "error aria")) "only given states"
       "ui report: failures map to kinds, states and placements", fun () ->
           let fs = UiReport.failures "bordereaux" report
