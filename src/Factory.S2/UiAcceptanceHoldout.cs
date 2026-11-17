@@ -102,7 +102,7 @@ public sealed class UiAcceptanceHoldout(FactoryServices svc, string? designcDir)
             }
             var paths = planned.Select(p => p.Path).ToList();
             var command = svc.Settings.AcceptanceCommand + " " + string.Join(" ", paths.Select(p => "'" + p + "'"));
-            var (outcome, found) = await svc.Verify.AcceptanceAsync(runId, command, scratch.Path, paths, ct, logTail: false);
+            var (outcome, found) = await svc.Verify.AcceptanceAsync(runId, command, scratch.Path, paths, ct, stage: "holdout_acceptance", logTail: false);
             result = outcome;
             failures = found.ToList();
         }

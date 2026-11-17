@@ -18,6 +18,9 @@ public static partial class RegistryLedgerProjector
         var verdicts = new List<Verdict>();
         verdicts.AddRange(UiVerdicts(run));
         verdicts.AddRange(HoldoutVerdicts(run));
+        verdicts.AddRange(AcceptanceVerdicts(run));
+        verdicts.AddRange(ReviewVerdicts(run));
+        verdicts.AddRange(QaVerdicts(run));
         foreach (var v in verdicts)
             yield return (v.Source.Ts, Row(Pipeline, "stage_verdict", v.Source, w =>
             {
@@ -119,6 +122,51 @@ public static partial class RegistryLedgerProjector
                     ? a.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => new Failure(x.GetString())).ToList() : [];
                 yield return new Verdict(e, "holdout", "fail", Screen: screen, Failures: states);
             }
+        }
+    }
+
+    /// A frozen spec that failed blames tasks (`ui_acceptance_failed`); the visible acceptance run's own verify row gives the
+    /// run-level pass, or a fail when it blamed no task. The holdout's acceptance run is ledgered under its own stage and skipped.
+    private static IEnumerable<Verdict> AcceptanceVerdicts(IReadOnlyList<LedgerEvent> run)
+    {
+        var failed = new List<(LedgerEvent, string, string?, Failure)>();
+        foreach (var e in run.Where(e => e.Kind == LedgerKinds.UiAcceptanceFailed && e.TaskId is not null && e.Payload is not null))
+        {
+            using var doc = TryParse(e.Payload!);
+            if (doc is null || Str(doc.RootElement, "ac") is not { } ac) continue;
+            failed.Add((e, "acceptance", null, new Failure(Criterion: ac)));
+        }
+        foreach (var v in Blamed(failed)) yield return v;
+
+        foreach (var e in run.Where(e => e is { Kind: LedgerKinds.Verify, Stage: "integration_verify", Payload: not null }))
+        {
+            using var doc = TryParse(e.Payload!);
+            if (doc is null || Str(doc.RootElement, "name") != "acceptance") continue;
+            if (e.Outcome == "passed") yield return new Verdict(e, "acceptance", "pass");
+            else if (e.Outcome == "failed" && failed.Count == 0) yield return new Verdict(e, "acceptance", "fail");
+        }
+    }
+
+    /// One verdict per review round. A round's number is in its payload; the element is the task's (review rows carry none).
+    private static IEnumerable<Verdict> ReviewVerdicts(IReadOnlyList<LedgerEvent> run)
+    {
+        foreach (var e in run.Where(e => e is { Kind: LedgerKinds.Review, TaskId: not null, Payload: not null }))
+        {
+            var outcome = e.Outcome switch { "passed" or "accepted" => "pass", "blocked" => "fail", "malformed" => "could_not_run", _ => null };
+            using var doc = TryParse(e.Payload!);
+            if (outcome is null || doc is null || Prop(doc.RootElement, "round") is not { ValueKind: JsonValueKind.Number } r || !r.TryGetInt32(out var round) || round < 1) continue;
+            var element = run.LastOrDefault(t => t.Kind == LedgerKinds.TaskEvent && t.TaskId == e.TaskId && t.Element is not null)?.Element;
+            yield return new Verdict(e, "review", outcome, e.TaskId, element, Round: round);
+        }
+    }
+
+    /// QA runs once on the integrated result, so its verdict is the run's.
+    private static IEnumerable<Verdict> QaVerdicts(IReadOnlyList<LedgerEvent> run)
+    {
+        foreach (var e in run.Where(e => e is { Kind: LedgerKinds.Verify, Stage: "qa" }))
+        {
+            var outcome = e.Outcome switch { "passed" => "pass", "failed" => "fail", "timeout" => "could_not_run", _ => null };
+            if (outcome is not null) yield return new Verdict(e, "qa", outcome);
         }
     }
 }

@@ -63,12 +63,13 @@ public class AcceptanceVerifyTests
                 Outcome: "failed", Payload: """{"ac":"AC-0107","spec":"tests/acceptance/booking-form/AC-0107.spec.ts","commit":"abcdef1234"}""") { TraceId = null },
         };
 
-        var rows = RegistryLedgerProjector.Project(run, handover, new Factory.Core.Limits(8, 3));
+        // stage_verdict rows are covered by StageVerdictTests; this one is about the ui_acceptance_failed row
+        var rows = RegistryLedgerProjector.Project(run, handover, new Factory.Core.Limits(8, 3)).Where(r => !r.Line.Contains("stage_verdict")).ToList();
 
         var row = Assert.Single(rows);
         Assert.Equal("pipeline.jsonl", row.Stream);
         Assert.Empty(DesigncSchema.Validate(row.Line));
         Assert.Contains("\"task\":\"W-1\"", row.Line);
-        Assert.Empty(RegistryLedgerProjector.Project(run, new HandoverRef("20261013-aa", []), new Factory.Core.Limits(8, 3)));
+        Assert.Empty(RegistryLedgerProjector.Project(run, new HandoverRef("20261013-aa", []), new Factory.Core.Limits(8, 3)).Where(r => !r.Line.Contains("stage_verdict")));
     }
 }

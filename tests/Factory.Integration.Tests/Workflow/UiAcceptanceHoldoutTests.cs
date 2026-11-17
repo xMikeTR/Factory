@@ -62,6 +62,8 @@ public sealed class UiAcceptanceHoldoutTests : IDisposable
         Assert.False(File.Exists(Path.Combine(s.Harness.Services.Git.IntegrationPath(TeamHarness.RunId), run.Files[0])));
         Assert.Empty(s.Harness.Rows(LedgerKinds.HoldoutFailed));
         Assert.Equal("pass", Assert.Single(s.Harness.Rows(LedgerKinds.UiResult)).Outcome);
+        // The holdout's own acceptance run is ledgered under its own stage, so it is never mistaken for the visible acceptance run (stage_verdict).
+        Assert.Contains(s.Harness.Rows(LedgerKinds.Verify), r => r.Stage == "holdout_acceptance" && r.Payload!.Contains("\"name\":\"acceptance\""));
     }
 
     [Fact]

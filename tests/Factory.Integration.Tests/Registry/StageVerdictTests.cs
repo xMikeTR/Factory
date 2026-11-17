@@ -136,3 +136,87 @@ public class StageVerdictTests
         }
     }
 }
+
+public class StageVerdictAcceptanceReviewQaTests
+{
+    private const string RunId = "run-1";
+    private static readonly DateTimeOffset T0 = DateTimeOffset.FromUnixTimeMilliseconds(1_791_400_000_000);
+    private static LedgerEvent At(int second, LedgerEvent e) => e with { Ts = T0.AddSeconds(second), TraceId = null };
+    private static string S(JsonElement e, string p) => e.GetProperty(p).GetString()!;
+    private static List<JsonElement> Verdicts(params LedgerEvent[] run) => StageVerdictTests.Verdicts(run);
+
+    private static LedgerEvent AcFail(int s, string task, string ac, string? element = "App/Portal") =>
+        At(s, new(RunId, "S2", "integration_verify", LedgerKinds.UiAcceptanceFailed, TaskId: task, Element: element, Outcome: "failed",
+            Payload: $$"""{"ac":"{{ac}}","spec":"tests/acceptance/portal/{{ac}}.spec.ts","commit":"abc","trace":"SECRET trace"}"""));
+
+    private static LedgerEvent AcVerify(int s, string outcome, string stage = "integration_verify") =>
+        At(s, new(RunId, "S2", stage, LedgerKinds.Verify, Outcome: outcome,
+            Payload: """{"name":"acceptance","command":"npx playwright test","ExitCode":0,"ms":9,"failing":[],"tail":"SECRET tail"}"""));
+
+    [Fact]
+    public void A_failing_frozen_spec_is_an_acceptance_fail_per_task_with_the_criterion_and_no_trace()
+    {
+        var all = Verdicts(AcFail(1, "T-1", "AC-1"), AcFail(2, "T-1", "AC-2"), AcFail(3, "T-2", "AC-1"));
+        Assert.Equal([("T-1", 2), ("T-2", 1)], all.Select(v => (S(v, "task"), v.GetProperty("failures").GetArrayLength())));
+        Assert.All(all, v => { Assert.Equal(("acceptance", "fail"), (S(v, "stage"), S(v, "outcome"))); Assert.DoesNotContain("SECRET", v.GetRawText()); });
+        Assert.Equal("AC-1", S(all[0].GetProperty("failures")[0], "criterion"));
+    }
+
+    [Fact]
+    public void A_passing_acceptance_verify_is_a_run_level_pass_and_the_holdout_runs_own_acceptance_row_is_not_one()
+    {
+        var v = Assert.Single(Verdicts(AcVerify(1, "passed"), AcVerify(2, "passed", "holdout_acceptance")));
+        Assert.Equal(("acceptance", "pass"), (S(v, "stage"), S(v, "outcome")));
+        Assert.False(v.TryGetProperty("task", out _));
+        Assert.DoesNotContain("SECRET", v.GetRawText());
+    }
+
+    [Fact]
+    public void A_failed_acceptance_run_that_blames_no_task_is_still_a_run_level_fail()
+    {
+        var v = Assert.Single(Verdicts(AcVerify(1, "failed")));
+        Assert.Equal(("acceptance", "fail"), (S(v, "stage"), S(v, "outcome")));
+        Assert.Empty(Verdicts(AcVerify(1, "failed"), AcFail(2, "T-1", "AC-1")).Where(x => !x.TryGetProperty("task", out _)));
+    }
+
+    private static LedgerEvent Review(int s, string task, string outcome, int round) =>
+        At(s, new(RunId, "S2", "review", LedgerKinds.Review, TaskId: task, TeamId: "team-1", Outcome: outcome,
+            Payload: $$$"""{"round":{{{round}}},"tree":"t","detail":{"blocking":[{"message":"SECRET finding"}]}}"""));
+
+    private static LedgerEvent TaskRow(int s, string task, string element) =>
+        At(s, new(RunId, "S2", "task", LedgerKinds.TaskEvent, TaskId: task, TeamId: "team-1", Element: element, Outcome: "Running"));
+
+    [Theory]
+    [InlineData("passed", "pass")]
+    [InlineData("accepted", "pass")]
+    [InlineData("blocked", "fail")]
+    [InlineData("malformed", "could_not_run")]
+    public void A_review_round_maps_its_outcome_and_carries_its_round(string source, string outcome)
+    {
+        var v = Assert.Single(Verdicts(TaskRow(1, "T-1", "App/Portal"), Review(2, "T-1", source, 2)));
+        Assert.Equal(("review", outcome, "T-1", "App/Portal", 2), (S(v, "stage"), S(v, "outcome"), S(v, "task"), S(v, "element"), v.GetProperty("round").GetInt32()));
+        Assert.DoesNotContain("SECRET", v.GetRawText());
+    }
+
+    [Fact]
+    public void Each_review_round_is_its_own_verdict_so_a_fail_then_a_pass_shows_the_recovery()
+    {
+        var all = Verdicts(Review(1, "T-1", "blocked", 1), Review(2, "T-1", "passed", 2));
+        Assert.Equal([("fail", 1), ("pass", 2)], all.Select(v => (S(v, "outcome"), v.GetProperty("round").GetInt32())));
+    }
+
+    private static LedgerEvent Qa(int s, string outcome) =>
+        At(s, new(RunId, "S2", "qa", LedgerKinds.Verify, Outcome: outcome, Payload: """{"requirements":[],"tests":2,"findings":["SECRET finding"]}"""));
+
+    [Theory]
+    [InlineData("passed", "pass")]
+    [InlineData("failed", "fail")]
+    [InlineData("timeout", "could_not_run")]
+    public void Qa_is_a_run_level_verdict(string source, string outcome)
+    {
+        var v = Assert.Single(Verdicts(Qa(1, source)));
+        Assert.Equal(("qa", outcome), (S(v, "stage"), S(v, "outcome")));
+        Assert.False(v.TryGetProperty("task", out _));
+        Assert.DoesNotContain("SECRET", v.GetRawText());
+    }
+}
