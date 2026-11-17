@@ -123,10 +123,13 @@ export function ariaFiles(glob: Record<string, string>): Record<string, string> 
   }));
 }
 
-/** One MSW worker for a describe block. */
+/**
+ * One MSW worker for a describe block. MSW 3 renamed `onUnhandledRequest` to `onUnhandledFrame`: the old name is ignored and the
+ * default is "warn" (proved in Fixtures/msw/kit-onUnhandledRequest.txt), so this copy of the kit helper uses the new one.
+ */
 export function useWorker() {
   const worker = setupWorker();
-  beforeAll(async () => { await worker.start({ quiet: true, onUnhandledRequest: "error" }); });
+  beforeAll(async () => { await worker.start({ quiet: true, onUnhandledFrame: "error" }); });
   afterEach(() => { releaseHeld(); worker.resetHandlers(); });
   afterAll(() => worker.stop());
   return worker;

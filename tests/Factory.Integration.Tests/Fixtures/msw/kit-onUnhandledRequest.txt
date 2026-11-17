@@ -1,0 +1,143 @@
+exit 0
+
+ RUN  v5.1.0 <tmp>/ws/worktrees/r1/integration
+
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/bordereaux
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/bordereaux/summary
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/bordereaux/B-2
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading placements
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > ready aria
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > ready pixels
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > ready placements
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > filtered aria
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > filtered pixels
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > filtered placements
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > empty aria
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > empty pixels
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > empty placements
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > error aria
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > error pixels
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > error placements
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+ ✓  ui-page (chromium)  ui-contract/tests/bordereaux.page.test.tsx (15 tests) 3523ms
+   ✓ bordereaux page (15)
+     ✓ loading placements 424ms
+     ✓ ready placements 456ms
+     ✓ filtered placements 433ms
+     ✓ empty placements 426ms
+     ✓ error placements 423ms
+
+ Test Files  1 passed (1)
+      Tests  15 passed (15)
+   Start at  17:47:12
+   Duration  5.74s (tests 74%, worker 17%, import 9%)
+
