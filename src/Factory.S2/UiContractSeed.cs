@@ -72,6 +72,16 @@ public static class UiContractSeed
         return map;
     }
 
+    /// Seeded files whose bytes still equal the baseline recorded at seeding; empty when none was recorded.
+    public static async Task<HashSet<string>> UnchangedSeededAsync(string integration, string runDir, CancellationToken ct)
+    {
+        var path = Path.Combine(runDir, BaselineFile);
+        if (!File.Exists(path)) return [];
+        var baseline = JsonSerializer.Deserialize<Dictionary<string, string>>(await File.ReadAllTextAsync(path, ct))!;
+        var now = Hashes(integration);
+        return [.. baseline.Where(kv => now.TryGetValue(kv.Key, out var h) && h == kv.Value).Select(kv => kv.Key)];
+    }
+
     /// Lines naming each modified, missing or added (previews only) file; empty when no baseline was recorded or nothing moved.
     public static async Task<IReadOnlyList<string>> DriftAsync(string integration, string runDir, CancellationToken ct)
     {

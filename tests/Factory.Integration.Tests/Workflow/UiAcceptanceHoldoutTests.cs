@@ -54,7 +54,7 @@ public sealed class UiAcceptanceHoldoutTests : IDisposable
     {
         var (s, result) = await RunAsync(FakeDesignc());
 
-        Assert.True(result?.Status == "merge_blocked", result?.Status + ": " + result?.Detail);
+        Assert.True(result?.Status == "ready_for_review", result?.Status + ": " + result?.Detail);
         var run = Assert.Single(s.Sandboxes.AcceptanceHoldoutRuns);
         Assert.Equal(["tests/acceptance/bordereauxlist/AC-UI-1.holdout-4.spec.ts"], run.Files);
         Assert.Contains("'tests/acceptance/bordereauxlist/AC-UI-1.holdout-4.spec.ts'", run.Command);

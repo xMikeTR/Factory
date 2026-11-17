@@ -58,8 +58,7 @@ public sealed class UiHoldoutWorkflowTests
     {
         var (s, result) = await RunAsync(UiHandoverDir.Create(holdout: false));
 
-        Assert.True(result?.Status == "merge_blocked", result?.Status + ": " + result?.Detail);
-        Assert.Contains("is under a protected path", result!.Detail); // the seeded ui-contract files are the Factory's: the run got past integration verify to the merge gate
+        Assert.True(result?.Status == "ready_for_review", result?.Status + ": " + result?.Detail);
         var row = Assert.Single(s.Harness.Rows(LedgerKinds.Verify), e => e.Outcome == "no_holdout");
         Assert.Equal("bordereaux", P(row).GetProperty("screen").GetString());
         Assert.Empty(s.Sandboxes.HoldoutRuns);
@@ -71,8 +70,7 @@ public sealed class UiHoldoutWorkflowTests
     {
         var (s, result) = await RunAsync(UiHandoverDir.Create());
 
-        Assert.True(result?.Status == "merge_blocked", result?.Status + ": " + result?.Detail);
-        Assert.Contains("is under a protected path", result!.Detail); // the seeded ui-contract files are the Factory's: the run got past integration verify to the merge gate
+        Assert.True(result?.Status == "ready_for_review", result?.Status + ": " + result?.Detail);
         var run = Assert.Single(s.Sandboxes.HoldoutRuns);
         Assert.True(run.Test && run.Sample);
         Assert.Contains("--project ui-holdout", run.Command);

@@ -75,5 +75,18 @@ public sealed class UiContractSeedTests : IDisposable
         Assert.Contains(await UiContractSeed.DriftAsync(s.Integration, s.RunDir, default), l => l.Contains("vitest.config.ts"));
     }
 
+    [Fact]
+    public async Task Only_seeded_files_still_equal_to_the_baseline_are_exempt_from_the_protected_path_block()
+    {
+        var s = await SeedAsync();
+        var spec = "ui-contract/specs/bordereaux.json";
+        var png = "ui-contract/previews/bordereaux/ready-chromium-linux.png";
+        File.AppendAllText(Path.Combine(s.Integration, png), "x");
+        var seeded = await UiContractSeed.UnchangedSeededAsync(s.Integration, s.RunDir, default);
+        Assert.Contains(spec, seeded);
+        Assert.DoesNotContain(png, seeded); // a seeded file that differs now still blocks
+        Assert.DoesNotContain("ui-contract/specs/other.json", seeded); // a file never seeded still blocks
+    }
+
     public void Dispose() => Directory.Delete(_state, recursive: true);
 }

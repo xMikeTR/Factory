@@ -508,16 +508,26 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
     /// Lines and files changed against the base, summed over every repo of a split run.
     private async Task<(int Lines, List<string> Files)> DiffStatsAsync(string runId, CancellationToken ct)
     {
-        if (!svc.IsSplit) return await svc.Git.DiffStatsAsync(runId, svc.Settings.BaseBranch, ct);
+        if (!svc.IsSplit) return await WithoutSeededUiFilesAsync(runId, svc.Git, await svc.Git.DiffStatsAsync(runId, svc.Settings.BaseBranch, ct), ct);
         var lines = 0;
         var files = new List<string>();
         foreach (var repo in SplitMerge.Order(svc.RepoGits.Keys))
         {
-            var (l, f) = await svc.RepoGits[repo].DiffStatsAsync(runId, svc.Settings.BaseBranch, ct);
+            var (l, f) = await WithoutSeededUiFilesAsync(runId, svc.RepoGits[repo], await svc.RepoGits[repo].DiffStatsAsync(runId, svc.Settings.BaseBranch, ct), ct, isUiRepo: repo == "Ui");
             lines += l;
             files.AddRange(f);
         }
         return (lines, files);
+    }
+
+    /// The seeded ui-contract files sit under protected paths, but they are the Factory's own: a file whose bytes still equal the
+    /// baseline recorded at seeding (the same one integration verify's drift check compares) is not a change to judge. Anything else stays.
+    private async Task<(int Lines, List<string> Files)> WithoutSeededUiFilesAsync(string runId, GitWorkspace git,
+        (int Lines, List<string> Files) diff, CancellationToken ct, bool isUiRepo = true)
+    {
+        if (!isUiRepo || diff.Files.Count == 0) return diff;
+        var seeded = await UiContractSeed.UnchangedSeededAsync(git.IntegrationPath(runId), svc.Settings.RunDir(runId), ct);
+        return (diff.Lines, diff.Files.Where(f => !seeded.Contains(f)).ToList());
     }
 
     /// Carries out what the merge policy decided: stop at the PR, park, block, wait for approval, merge now or enable auto-merge.
