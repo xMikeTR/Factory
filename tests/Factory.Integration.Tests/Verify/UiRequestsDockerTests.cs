@@ -122,6 +122,28 @@ public sealed class UiRequestsDockerTests : IDisposable
         Assert.Contains(Log(s, "loading"), e => e.GetProperty("path").GetString() == "/api/bordereaux");
     }
 
+    /// Slice 3, done-when part 1: a page that calls an endpoint the spec does not list fails ui: with a `request` row naming it.
+    [Fact]
+    public async Task A_page_calling_an_unlisted_endpoint_fails_ui_with_a_request_row_and_the_real_page_passes()
+    {
+        if (!Docker || UiPreviewFixture.DesigncDir() is null) return;
+        var previews = await RenderApprovedAsync();
+
+        var good = await SeedAsync(previews, null, null);
+        var pass = Assert.Single(await RunAsync(good));
+        Assert.True(pass.ExitCode == 0, pass.OutputTail);
+        Assert.DoesNotContain(good.Ledger.Events, e => e.Kind == LedgerKinds.UiCheckFailed);
+
+        var bad = await SeedAsync(previews, "UnlistedCall", null);
+        var fail = Assert.Single(await RunAsync(bad));
+        Assert.Equal(1, fail.ExitCode);
+        var rows = bad.Ledger.Events.Where(e => e.Kind == LedgerKinds.UiCheckFailed).Select(e => JsonDocument.Parse(e.Payload!).RootElement).ToList();
+        var row = Assert.Single(rows);
+        Assert.Equal("request", row.GetProperty("kind").GetString());
+        Assert.Contains("GET /api/unlisted", row.GetProperty("detail").GetString());
+        Assert.Contains("GET /api/unlisted", fail.OutputTail);
+    }
+
     [Fact]
     public void The_recorded_runs_say_the_same()
     {

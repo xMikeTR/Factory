@@ -171,6 +171,8 @@ let private same =
       "num:ref 0", "empty", true
       "num:EUR #,##0", "empty", true ]
 
+let private log m p b : LoggedRequest = { Method = m; Path = p; Matched = true; Body = b }
+
 let tests : (string * (unit -> unit)) list =
     [ "shape: the port matches designc's Parity.shape on a table of values (2026-Q3 is text:A?)", fun () ->
           for text, want in shapes do
@@ -178,4 +180,21 @@ let tests : (string * (unit -> unit)) list =
       "sameShape: the port matches designc's Parity.sameShape", fun () ->
           for a, b, want in same do
               equal want (Shape.sameShape a b) (a + " ~ " + b)
+      "compare: an endpoint outside the spec fails and is named with its method", fun () ->
+          let r = RequestParity.compare [ log "GET" "/api/bordereaux" None; log "GET" "/api/unlisted" None ] [ "GET /api/bordereaux" ] None
+          equal [ "unlisted request: GET /api/unlisted is not in the spec's data sources" ] r.Failures "failures"
+      "compare: a listed endpoint no state called fails; :param matches any segment and numeric ids template to :id", fun () ->
+          let r = RequestParity.compare [ log "GET" "/api/bordereaux/B-2" None; log "GET" "/api/bordereaux/17" None ] [ "GET /api/bordereaux/:id"; "GET /api/bordereaux/summary" ] None
+          equal [ "never called: GET /api/bordereaux/summary is in the spec's data sources but no state requested it" ] r.Failures "failures"
+      "compare: a request body shape that differs from legacy fails; the same shape passes; no baseline compares nothing", fun () ->
+          let mine = Some(Obj(Map [ "name", Leaf "text:Aa" ]))
+          let theirs = Some(Obj(Map [ "name", Leaf "text:Aa"; "n", Leaf "num:0" ]))
+          let leg b = Some [ { Method = "POST"; Path = "/api/x"; Request = b } ]
+          check ((RequestParity.compare [ log "POST" "/api/x" mine ] [ "POST /api/x" ] (leg mine)).Failures.IsEmpty) "same"
+          check ((RequestParity.compare [ log "POST" "/api/x" mine ] [ "POST /api/x" ] (leg theirs)).Failures.Length = 1) "differs"
+          check ((RequestParity.compare [ log "POST" "/api/x" mine ] [ "POST /api/x" ] None).Failures.IsEmpty) "no baseline"
+      "compare: a legacy endpoint the spec drops is a note, not a failure", fun () ->
+          let r = RequestParity.compare [ log "GET" "/api/a" None ] [ "GET /api/a" ] (Some [ { Method = "GET"; Path = "/api/old"; Request = None } ])
+          check r.Failures.IsEmpty "no failure"
+          equal [ "dropped: legacy called GET /api/old and the spec does not list it" ] r.Notes "notes"
     ]

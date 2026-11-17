@@ -56,6 +56,14 @@ public class StageVerdictTests
     }
 
     [Fact]
+    public void A_request_failure_is_a_ui_code_fail_because_the_endpoint_is_a_code_fault_not_a_look()
+    {
+        var v = Assert.Single(Verdicts([UiFail(1, "T-1", "request", detail: "unlisted request: GET /api/unlisted")]));
+        Assert.Equal(("ui-code", "fail"), (S(v, "stage"), S(v, "outcome")));
+        Assert.DoesNotContain("/api/unlisted", v.GetRawText());
+    }
+
+    [Fact]
     public void Code_and_visual_failures_of_one_task_are_two_verdicts_and_two_tasks_are_two_rows()
     {
         var all = Verdicts([UiFail(1, "T-1", "code"), UiFail(2, "T-1", "aria", "ready"), UiFail(3, "T-2", "aria", "ready")]);

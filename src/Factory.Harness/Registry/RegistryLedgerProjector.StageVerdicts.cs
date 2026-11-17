@@ -90,7 +90,7 @@ public static partial class RegistryLedgerProjector
         {
             using var doc = TryParse(e.Payload!);
             if (doc is null || Str(doc.RootElement, "screen") is not { } screen || Str(doc.RootElement, "kind") is not { } kind) continue;
-            var stage = kind == "code" ? "ui-code" : "ui-visual";
+            var stage = kind is "code" or "request" ? "ui-code" : "ui-visual"; // a wrong or missing endpoint is a code fault, not a look
             failed.Add((e, stage, screen, new Failure(Str(doc.RootElement, "state"), kind, Str(doc.RootElement, "placement"))));
         }
         foreach (var v in Blamed(failed)) yield return v;

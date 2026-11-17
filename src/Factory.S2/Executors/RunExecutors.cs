@@ -265,7 +265,7 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         var handover = svc.LoadHandover(runId);
         if (handover.Ui.IsEmpty) return [];
         var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
-        return await new UiPageCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, writesResult: false, runDir: svc.Settings.RunDir(runId))
+        return await new UiPageCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, writesResult: false, runDir: svc.Settings.RunDir(runId), registry: svc.Settings.RegistryPath)
             .RunAsync(runId, handover, svc.LoadValidatedPlan(runId).Plan.Tasks, git, integration, timeout, ct);
     }
 

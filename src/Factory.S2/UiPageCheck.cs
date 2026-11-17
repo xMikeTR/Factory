@@ -10,7 +10,7 @@ using Microsoft.FSharp.Core;
 
 namespace Factory.S2;
 
-public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, string command, bool writesResult = true, string? runDir = null)
+public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, string command, bool writesResult = true, string? runDir = null, string? registry = null)
 {
     /// The default reporters: `default` prints each failure's diff and step timeline, `json` writes the report the check reads,
     /// `html` writes the report folder (`UiPreview.HtmlReportDir`) kept as evidence.
@@ -87,12 +87,21 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
                 catch (JsonException) { ranOk = false; notRun = "the page test report could not be read:\n" + tail; }
             }
 
+            if (ranOk && report is not null && !failures.Any(f => f.Kind == "code"))
+                try
+                {
+                    var found = UiRequestCheck.Check(integration, screen.Screen, screen.Spec.Text, registry);
+                    if (found is null) { ranOk = false; notRun = $"the page tests wrote no request log for '{screen.Screen}' (the vitest config needs api.allowWrite)"; }
+                    else foreach (var f in found.Failures) failures.Add((null, null, "request", f));
+                }
+                catch (Exception e) when (e is JsonException or IOException) { ranOk = false; notRun = "the request log could not be read: " + e.Message; }
+
             var outcome = failures.Count > 0 ? "fail" : ranOk ? "pass" : "could_not_run";
             var (element, blamed) = UiBlame.tasks(handover.Elements, tasks, screen.Component, screen.File);
             var elementId = FSharpOption<string>.get_IsSome(element) ? element.Value : null;
             var blamedIds = blamed.Select(t => t.Value).ToList();
             var lines = failures.Select(f => $"{screen.Screen}{(f.State is null ? "" : " / " + f.State)}: {f.Kind}{(f.Placement is null ? "" : " " + f.Placement)}"
-                + (f.Kind == "code" ? " - " + f.Detail : "")).ToList();
+                + (f.Kind is "code" or "request" ? " - " + f.Detail : "")).ToList();
             var summary = outcome switch
             {
                 "pass" => $"ui:{screen.Screen} passed",
@@ -118,7 +127,7 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
                     await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.UiCheckFailed, TaskId: task, Element: elementId, Outcome: "failed",
                         Payload: JsonSerializer.Serialize(new
                         {
-                            screen = screen.Screen, state = f.State, placement = f.Placement, kind = f.Kind, detail = f.Kind == "code" ? f.Detail : null, commit,
+                            screen = screen.Screen, state = f.State, placement = f.Placement, kind = f.Kind, detail = f.Kind is "code" or "request" ? f.Detail : null, commit,
                             feedback = fb?.Text, images = fb is null ? null : fb.Images.ToArray(),
                         })), ct);
                 }

@@ -24,6 +24,22 @@ public sealed class FakeUiSandboxes(ISandboxFactory inner, string[] states) : IS
 
     public async Task<ICommandSandbox> ForTeamAsync(string teamId, string worktree, CancellationToken ct) => new Sandbox(this, await inner.ForTeamAsync(teamId, worktree, ct));
 
+    /// What the generated page test writes: one request per endpoint the spec lists, matched, as a faithful page would make them.
+    private void WriteRequestLog(string workdir)
+    {
+        var spec = Path.Combine(workdir, "ui-contract", "specs", Screen + ".json");
+        if (!File.Exists(spec)) return;
+        using var doc = JsonDocument.Parse(File.ReadAllText(spec));
+        var rows = new List<object>();
+        if (doc.RootElement.TryGetProperty("data", out var data))
+            foreach (var d in data.EnumerateObject())
+                if (d.Value.TryGetProperty("source", out var src) && src.GetString()!.Split(' ') is [var m, var path])
+                    rows.Add(new { method = m, path = path.Replace(":id", "1"), matched = true, body = (string?)null, status = 200 });
+        var dir = Path.Combine(workdir, ".factory", "requests", Screen);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "ready.json"), JsonSerializer.Serialize(rows));
+    }
+
     private string PageReport() => JsonSerializer.Serialize(new
     {
         testResults = new[] { new { assertionResults = states.SelectMany(s => new[] { "aria", "pixels", "placements" }.Select(k =>
@@ -48,7 +64,7 @@ public sealed class FakeUiSandboxes(ISandboxFactory inner, string[] states) : IS
         public string Kind => "docker";
         public async Task<ProcessResult> RunAsync(string command, string workdir, TimeSpan timeout, IReadOnlyDictionary<string, string> env, CancellationToken ct)
         {
-            if (command.Contains("--project ui-page")) { owner.PageRuns++; return new(0, owner.PageReport(), TimeSpan.Zero, false); }
+            if (command.Contains("--project ui-page")) { owner.PageRuns++; owner.WriteRequestLog(workdir); return new(0, owner.PageReport(), TimeSpan.Zero, false); }
             if (command.Contains("--project ui-holdout"))
             {
                 owner.HoldoutRuns.Add((workdir, File.Exists(Path.Combine(workdir, "ui-contract", "tests", owner.Screen + ".holdout.test.tsx")),
