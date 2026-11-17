@@ -20,7 +20,7 @@ public sealed record RegistryEvent(string Stream, string EventId, string Line);
 /// Projects System 2's own ledger onto designc's registry streams. Pure: the same run gives the
 /// same bytes, ts is the source row's ts, and event_id is a hash of the row's content, so a row
 /// written twice is the same row (designc dedupes on event_id and flags V5 on a mismatch).
-public static class RegistryLedgerProjector
+public static partial class RegistryLedgerProjector
 {
     public const string By = "factory-s2";
     private const string Pipeline = "pipeline.jsonl";
@@ -42,6 +42,7 @@ public static class RegistryLedgerProjector
         }
         rows.AddRange(AcceptanceFailures(run, handover));
         rows.AddRange(UiResults(run, handover));
+        rows.AddRange(StageVerdicts(run, handover));
         rows.AddRange(Outcomes(run));
         if (HandoverClosed(run, handover) is { } closed) rows.Add(closed);
         // Stable: ties keep source order.
