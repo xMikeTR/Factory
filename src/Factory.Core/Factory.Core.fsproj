@@ -48,6 +48,7 @@
     <Compile Include="Trace.fs" />
     <Compile Include="TestPlan.fs" />
     <Compile Include="UiSpec.fs" />
+    <Compile Include="UiFeedback.fs" />
     <Compile Include="UiMutants.fs" />
     <Compile Include="UiPolicyFacts.fs" />
     <Compile Include="Json.fs" />
