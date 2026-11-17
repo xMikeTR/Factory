@@ -114,6 +114,21 @@ export function handlersFor(spec: Spec, state: string) {
   });
 }
 
+/** A recorded response (a minimal HAR, as `factory-s2 replay` writes it): status and a JSON or text body. */
+export type ReplayGroup = { method: string; path: string; responses: { status: number; mimeType: string; body: string }[] };
+
+/** Handlers that replay recorded responses: the same method and path are served in recorded order and the last one repeats. */
+export function replayHandlers(groups: ReplayGroup[]) {
+  return groups.map((g) => {
+    let n = 0;
+    const route = (http as any)[g.method.toLowerCase()];
+    return route(g.path, () => {
+      const r = g.responses[Math.min(n++, g.responses.length - 1)];
+      return new HttpResponse(r.body, { status: r.status, headers: { "content-type": r.mimeType } });
+    });
+  });
+}
+
 /** approvedAria: the preview's .aria.yml files keyed `<screen>/<state>`, e.g. from
  *  import.meta.glob('../previews/** /*.aria.yml', { query: '?raw', import: 'default', eager: true }) via ariaFiles(). */
 export function ariaFiles(glob: Record<string, string>): Record<string, string> {

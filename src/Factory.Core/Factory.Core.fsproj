@@ -51,6 +51,7 @@
     <Compile Include="UiFeedback.fs" />
     <Compile Include="UiMutants.fs" />
     <Compile Include="RequestParity.fs" />
+    <Compile Include="HarReplay.fs" />
     <Compile Include="UiPolicyFacts.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="Interop.fs" />

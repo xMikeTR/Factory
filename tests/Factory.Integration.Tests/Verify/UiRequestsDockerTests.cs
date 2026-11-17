@@ -144,6 +144,37 @@ public sealed class UiRequestsDockerTests : IDisposable
         Assert.Contains("GET /api/unlisted", fail.OutputTail);
     }
 
+    /// Slice 4, done-when part 2: the fixture HAR replays the page in the image (exit 0); one entry deleted and the page asks for what is missing (exit 1).
+    [Fact]
+    public async Task The_fixture_har_replays_the_page_with_exit_0_and_a_har_missing_an_entry_exits_1_without_touching_the_checkout()
+    {
+        if (!Docker) return;
+        var fx = await UiPreviewFixture.CreateAsync();
+        var harDir = Path.Combine(fx.Registry, "parity", "har");
+        Directory.CreateDirectory(harDir);
+        Directory.CreateDirectory(Path.Combine(fx.Registry, "parity", "scenarios"));
+        File.WriteAllText(Path.Combine(fx.Registry, "parity", "scenarios", "list.yaml"), "id: list\nscreen: bordereaux\nsteps: []\n");
+        var har = Path.Combine(UiPreviewFixture.FixtureRoot, "..", "har", "bordereaux.har");
+        File.Copy(har, Path.Combine(harDir, "list-legacy.har"));
+        var runner = new UiReplayRunner(new DockerSandboxFactory(new DockerSandboxOptions()));
+        var request = new UiReplayRequest(fx.Registry, "list", fx.Repo, UiPageCheck.DefaultCommand);
+
+        var ok = await runner.RunAsync(request, default);
+        Assert.True(ok.ExitCode == 0, ok.Message);
+
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(har))!;
+        var entries = node["log"]!["entries"]!.AsArray();
+        var detail = entries.First(e => e!["request"]!["url"]!.GetValue<string>().EndsWith("/api/bordereaux/17"))!;
+        entries.Remove(detail);
+        File.WriteAllText(Path.Combine(harDir, "list-legacy.har"), node.ToJsonString());
+        var missing = await runner.RunAsync(request, default);
+        Assert.Equal(1, missing.ExitCode);
+        Assert.EndsWith("hold: GET /api/bordereaux/B-2", missing.Message);
+
+        Assert.Empty((await ProcessRunner.RunAsync("git", ["status", "--porcelain"], fx.Repo, TimeSpan.FromSeconds(30))).Output.Trim());
+        Assert.DoesNotContain("s2-replay-", string.Join("\n", (await ProcessRunner.RunAsync("git", ["worktree", "list"], fx.Repo, TimeSpan.FromSeconds(30))).Output));
+    }
+
     [Fact]
     public void The_recorded_runs_say_the_same()
     {

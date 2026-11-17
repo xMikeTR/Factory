@@ -197,4 +197,20 @@ let tests : (string * (unit -> unit)) list =
           let r = RequestParity.compare [ log "GET" "/api/a" None ] [ "GET /api/a" ] (Some [ { Method = "GET"; Path = "/api/old"; Request = None } ])
           check r.Failures.IsEmpty "no failure"
           equal [ "dropped: legacy called GET /api/old and the spec does not list it" ] r.Notes "notes"
+      "har: entries become groups by method and templated path, in recorded order, the more specific path first, headers not needed", fun () ->
+          let har (m: string, u: string, mime: string, body: string) =
+              $"""{{"request":{{"method":"{m}","url":"{u}"}},"response":{{"status":200,"content":{{"mimeType":"{mime}","text":"{body}"}}}}}}"""
+          let text =
+              "{\"log\":{\"entries\":[" + String.concat "," [ har ("GET", "http://legacy.test/api/a/17", "application/json", "{}")
+                                                              har ("GET", "http://legacy.test/api/a/summary?x=1", "application/json", "[]")
+                                                              har ("GET", "http://legacy.test/api/a/18", "application/json", "{\\\"n\\\":1}")
+                                                              har ("GET", "http://legacy.test/app.png", "image/png", "xx") ] + "]}}"
+          match HarReplay.groups text with
+          | Ok gs ->
+              equal [ "GET /api/a/summary"; "GET /api/a/:id" ] (gs |> List.map (fun g -> g.Method + " " + g.Path)) "groups"
+              equal 2 (gs |> List.find (fun g -> g.Path = "/api/a/:id")).Responses.Length "both recorded, in order"
+          | Error e -> failwith e
+      "har: a HAR with nothing replayable or not JSON is an error, not an empty replay", fun () ->
+          check (match HarReplay.groups "{\"log\":{\"entries\":[]}}" with Error _ -> true | _ -> false) "empty"
+          check (match HarReplay.groups "nope" with Error _ -> true | _ -> false) "not json"
     ]

@@ -406,6 +406,20 @@ try
             return result.ExitCode;
         }
 
+        case "replay":
+        {
+            // Not an agent run, no ledger row: the page against the legacy HAR in a scratch copy of the repo's HEAD (docs/ui-contract-verify.md §7).
+            var image = Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest";
+            ISandboxFactory replaySandboxes = FallbackSandboxFactory.Parse(Environment.GetEnvironmentVariable("FACTORY_SANDBOX")).Contains("docker")
+                ? new DockerSandboxFactory(new DockerSandboxOptions(Image: image))
+                : new LocalSandboxFactory();
+            var result = await new Factory.S2.Verify.UiReplayRunner(replaySandboxes).RunAsync(new Factory.S2.Verify.UiReplayRequest(
+                Required(opts, "registry"), Required(opts, "scenario"), opts.GetValueOrDefault("repo") ?? ".",
+                Environment.GetEnvironmentVariable("FACTORY_UI_CMD") ?? Factory.S2.UiPageCheck.DefaultCommand), CancellationToken.None);
+            (result.ExitCode == 0 ? Console.Out : Console.Error).WriteLine(result.Message);
+            return result.ExitCode;
+        }
+
         case "parity-decisions":
         {
             // One open needs_decision per scenario whose latest parity_result failed: build it like legacy, or ask the PO.
