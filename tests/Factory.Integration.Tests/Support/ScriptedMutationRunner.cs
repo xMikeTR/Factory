@@ -13,6 +13,7 @@ public sealed class ScriptedMutationRunner : IMutationRunner
     public List<string> FullRuns { get; } = [];
 
     public ScriptedMutationRunner Then(params Mutant[] mutants) { _runs.Enqueue(new MutationRun(mutants, false)); return this; }
+    public ScriptedMutationRunner ThenSkipped(string reason) { _runs.Enqueue(new MutationRun([], false, reason)); return this; }
     public ScriptedMutationRunner ThenTimeout() { _runs.Enqueue(new MutationRun([], true)); return this; }
 
     public Task<MutationRun> RunAsync(string worktree, IReadOnlyList<string> files, CancellationToken ct)

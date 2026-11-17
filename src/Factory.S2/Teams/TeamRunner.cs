@@ -706,6 +706,12 @@ internal sealed class TaskLoop(
         var run = await runner.RunAsync(worktree, ranges.Select(r => r.File).Distinct().ToList(), ct);
         var elapsed = (long)(DateTime.UtcNow - started).TotalMilliseconds;
         if (run.TimedOut) return new VerifyOutcome("mutation", 124, elapsed, "the mutation tool did not finish");
+        if (run.Skipped is not null && run.Mutants.Count == 0)
+        {
+            // Nothing was mutated, so there is no evidence either way: a row says why, and the task is not held up.
+            await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, "skipped", JsonSerializer.Serialize(new { attempt, reason = run.Skipped }), _teamId, _taskId, ct);
+            return null;
+        }
         _lastMutants = run.Mutants.GroupBy(m => m.Id).ToDictionary(g => g.Key, g => g.First());
         await JudgeClaimsAsync(run.Mutants, ct);
         var declared = run.Mutants.Where(m => _claims.ContainsKey(MutantKey(m))).Select(m => m.Id).ToHashSet();

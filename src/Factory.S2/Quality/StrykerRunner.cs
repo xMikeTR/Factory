@@ -14,14 +14,20 @@ public sealed class StrykerRunner(ISandboxFactory sandboxes, TimeSpan? timeout =
     {
         foreach (var f in files)
             if (!SafePath.IsMatch(f) || f.Contains("..")) throw new ArgumentException($"not a plain repo-relative path: {f}", nameof(files));
-        return RunCoreAsync(worktree, files, timeout ?? DefaultTimeout, ct);
+        // A glob that matches no file makes Stryker mutate the whole project, so it is never passed on.
+        var missing = files.Where(f => !File.Exists(Path.Combine(worktree, f))).ToList();
+        var skipped = missing.Count == 0 ? null
+            : $"--mutate glob{(missing.Count > 1 ? "s" : "")} {string.Join(", ", missing.Select(f => $"'**/{f}'"))} match{(missing.Count > 1 ? "" : "es")} no file, so no mutant run for {(missing.Count > 1 ? "them" : "it")}";
+        var present = files.Except(missing).ToList();
+        if (present.Count == 0) return Task.FromResult(new MutationRun([], false, skipped));
+        return RunCoreAsync(worktree, present, timeout ?? DefaultTimeout, ct, skipped);
     }
 
     /// No `--mutate`: every file Stryker finds. Its own, longer timeout (FACTORY_MUTATION_FULL_TIMEOUT_MIN).
     public Task<MutationRun> RunAllAsync(string worktree, CancellationToken ct) =>
-        RunCoreAsync(worktree, [], fullTimeout ?? TimeSpan.FromMinutes(120), ct);
+        RunCoreAsync(worktree, [], fullTimeout ?? TimeSpan.FromMinutes(120), ct, null);
 
-    private async Task<MutationRun> RunCoreAsync(string worktree, IReadOnlyList<string> files, TimeSpan limit, CancellationToken ct)
+    private async Task<MutationRun> RunCoreAsync(string worktree, IReadOnlyList<string> files, TimeSpan limit, CancellationToken ct, string? skipped)
     {
         await using var sandbox = await sandboxes.ForTeamAsync("mutation", worktree, ct);
         var solution = Directory.EnumerateFiles(worktree, "*.sln*", SearchOption.TopDirectoryOnly)
@@ -30,11 +36,11 @@ public sealed class StrykerRunner(ISandboxFactory sandboxes, TimeSpan? timeout =
         var mutate = string.Join(' ', files.Select(f => $"--mutate '**/{f}'"));
         var command = $"dotnet-stryker {(solution is null ? "" : $"--solution {solution} ")}{mutate} --reporter json --output {output} --disable-bail";
         var run = await sandbox.RunAsync(command, worktree, limit, new Dictionary<string, string>(), ct);
-        if (run.TimedOut) return new MutationRun([], true);
+        if (run.TimedOut) return new MutationRun([], true, skipped);
 
         var report = await sandbox.RunAsync($"cat $(ls -d {output}/reports/mutation-report.json)", worktree, TimeSpan.FromMinutes(1), new Dictionary<string, string>(), ct);
         return report.Succeeded && report.Output.TrimStart().StartsWith('{')
-            ? new MutationRun(StrykerReport.Parse(report.Output, worktree), false)
-            : new MutationRun([], true);
+            ? new MutationRun(StrykerReport.Parse(report.Output, worktree), false, skipped)
+            : new MutationRun([], true, skipped);
     }
 }

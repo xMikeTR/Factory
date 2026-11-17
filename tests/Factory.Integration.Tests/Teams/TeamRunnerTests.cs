@@ -503,6 +503,22 @@ public class TeamRunnerTests
     private static System.Text.Json.JsonElement PayloadOf(TeamHarness h, string outcome) =>
         System.Text.Json.JsonDocument.Parse(h.Rows(LedgerKinds.Verify).First(e => e.Stage == "mutation" && e.Outcome == outcome).Payload!).RootElement;
 
+    [Theory]
+    [InlineData(QualityMode.Report)]
+    [InlineData(QualityMode.Block)]
+    public async Task A_skipped_mutation_run_logs_a_skipped_row_naming_the_empty_glob_and_never_blocks(QualityMode mode)
+    {
+        var model = TestsThenImpl();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(mode));
+        h.Mutation.ThenSkipped("--mutate glob '**/x/Gone.cs' matches no file, so no mutant run for it");
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Contains("**/x/Gone.cs", PayloadOf(h, "skipped").GetProperty("reason").GetString());
+        Assert.DoesNotContain(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "clean");
+    }
+
     [Fact]
     public async Task In_report_mode_a_clean_mutation_row_carries_the_score_and_the_files()
     {
