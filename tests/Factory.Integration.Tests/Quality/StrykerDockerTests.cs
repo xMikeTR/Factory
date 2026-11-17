@@ -73,6 +73,10 @@ public class StrykerDockerTests
         Assert.NotEmpty(run.Mutants);
         Assert.All(run.Mutants, m => Assert.Equal("src/Calc.cs", m.File));
         Assert.Contains(run.Mutants, m => m.Status.IsKilled);
+        // What Stryker.NET 4.16 fills: coveredBy and killedBy are test ids, resolved to "Class.Method" through testFiles.
+        var killed = run.Mutants.First(m => m.Status.IsKilled);
+        Assert.Equal(["CalcTests.Adds"], killed.CoveredBy);
+        Assert.Equal(["CalcTests.Adds"], killed.KilledBy);
     }
 
     [Fact]

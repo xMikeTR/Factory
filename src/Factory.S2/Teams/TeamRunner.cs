@@ -729,7 +729,7 @@ internal sealed class TaskLoop(
             return null;
         }
         var lines = violations.SelectMany(v => v.Survivors.Select(m =>
-            $"- id={m.Id} {m.File}:{m.Line} {m.Mutator} (file scored {v.Score:P0}, needs {v.Required:P0})"
+            $"- id={m.Id} {m.File}:{m.Line} {m.Mutator}; {Mutation.testsThatRan(m)} (file scored {v.Score:P0}, needs {v.Required:P0})"
             + (_rejected.Contains(MutantKey(m)) ? $" - you declared it equivalent and the reviewer did not accept it: {_claims[MutantKey(m)]}" : ""))).ToList();
         var block = policy.Mode == QualityMode.Block;
         await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, block ? "blocked" : "reported", MutationPayload(attempt, summary, lines), _teamId, _taskId, ct);

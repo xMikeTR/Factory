@@ -357,8 +357,10 @@ public class TeamRunnerTests
         Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "reported");
     }
 
-    private static Mutant Survivor(string id = "m1") => new(id, NewFile, 1, "Equality", MutantStatus.Survived);
-    private static Mutant Killed(string id = "m2") => new(id, NewFile, 1, "Arithmetic", MutantStatus.Killed);
+    private static Mutant Mut(string id, string file, int line, string mutator, MutantStatus status, params string[] ran) =>
+        new(id, file, line, mutator, status, Factory.Core.Core.ToList(ran), Factory.Core.Core.ToList<string>([]));
+    private static Mutant Survivor(string id = "m1") => Mut(id, NewFile, 1, "Equality", MutantStatus.Survived, "BookingTests.Draft");
+    private static Mutant Killed(string id = "m2") => Mut(id, NewFile, 1, "Arithmetic", MutantStatus.Killed);
     private static QualityPolicy MutationOn(QualityMode mode) =>
         new(QualityMode.Off, Tight, new MutationPolicy(mode, new MutationThresholds(0.8)));
 
@@ -381,7 +383,7 @@ public class TeamRunnerTests
 
         Assert.NotEqual(TeamStatus.Passed, result.Status);
         Assert.Equal([NewFile], h.Mutation.Asked.Single());
-        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "blocked" && e.Payload!.Contains("BookingStatus.cs:1"));
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "blocked" && e.Payload!.Contains("BookingStatus.cs:1") && e.Payload!.Contains("tests that ran it: BookingTests.Draft"));
         Assert.Contains(h.Rows(LedgerKinds.TaskEvent), e => e.Payload!.Contains("returned_to_test_author"));
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("mutants of the code this task changed survived"));
     }
@@ -435,7 +437,7 @@ public class TeamRunnerTests
     }
 
     private const string Existing = "src/Fares.Data/Booking.cs";
-    private static Mutant OnExisting(string id, MutantStatus status) => new(id, Existing, 2, "Equality", status);
+    private static Mutant OnExisting(string id, MutantStatus status) => Mut(id, Existing, 2, "Equality", status);
 
     /// The implementation edits a file the baseline already has, so the baseline can be measured.
     private static ScriptedChatClient EditsExisting(params Microsoft.Extensions.AI.ChatResponse[] more) => new([
@@ -562,7 +564,7 @@ public class TeamRunnerTests
             Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("declare_done", new { summary = "impl" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Block));
-        h.Mutation.Then(new Mutant("k1", existing, 1, "Block", MutantStatus.Killed)); // red run: the test killed a mutant of Booking.cs
+        h.Mutation.Then(Mut("k1", existing, 1, "Block", MutantStatus.Killed)); // red run: the test killed a mutant of Booking.cs
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
 
@@ -578,7 +580,7 @@ public class TeamRunnerTests
             Call("write_file", new { path = TestFile, content = "test -f src/Fares.Data/Booking.cs\n" }),
             Call("declare_done", new { summary = "pins Booking" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(2, 3), qualityPolicy: MutationOn(QualityMode.Block));
-        h.Mutation.Then(new Mutant("s1", "src/Fares.Data/Booking.cs", 1, "Block", MutantStatus.Survived));
+        h.Mutation.Then(Mut("s1", "src/Fares.Data/Booking.cs", 1, "Block", MutantStatus.Survived));
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
 

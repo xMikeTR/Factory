@@ -14,7 +14,11 @@ type Mutant =
       File: string
       Line: int
       Mutator: string
-      Status: MutantStatus }
+      Status: MutantStatus
+      /// Names of the tests that ran this mutant, as the tool reported them (empty when none, or when it did not say).
+      CoveredBy: string list
+      /// Names of the tests that failed on it.
+      KilledBy: string list }
 
 /// Minimum mutation score on the lines a task changed. In the protected `.factory/policy.yaml`.
 type MutationThresholds = { MinScore: float }
@@ -75,6 +79,13 @@ module Mutation =
                 else
                     let survivors = ms |> List.filter (fun m -> m.Status = Survived || m.Status = NoCoverage)
                     Some { File = file; Score = s; Required = required; Survivors = survivors })
+
+    /// What a survivor line says about the tests: who ran the mutant, that none reaches it, or that the tool did not say.
+    let testsThatRan (m: Mutant) : string =
+        match m.CoveredBy with
+        | [] when m.Status = NoCoverage -> "no test reaches this line"
+        | [] -> "the tool did not say which tests ran it"
+        | names -> "tests that ran it: " + String.concat ", " names
 
     /// The same mutants `check` judges (changed lines, confirmed equivalents left out), as a score and per-file counts.
     let summary (t: MutationThresholds) (baseline: Map<string, float>) (equivalents: Set<string>) (ranges: ChangedRange list) (mutants: Mutant list) : MutationSummary =
