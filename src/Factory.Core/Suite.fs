@@ -14,7 +14,7 @@ module Suite =
     let ignoredDirectory (name: string) = Set.contains name (set [ "bin"; "obj"; "node_modules"; ".factory"; ".git" ])
     let private inRepo (path: string) = path.Split('/') |> Array.forall (ignoredDirectory >> not)
     let private atRoot (path: string) = not (path.Contains '/')
-    let private isTestProject (content: string) =
+    let isTestProject (content: string) =
         content.Contains "Microsoft.NET.Test.Sdk" || content.Contains "<IsTestProject>true</IsTestProject>"
     let private booking (s: string) = "'" + s.Replace("'", "'\\''") + "'"
 

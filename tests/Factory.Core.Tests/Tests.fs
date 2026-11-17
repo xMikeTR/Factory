@@ -871,6 +871,7 @@ let tests: (string * (unit -> unit)) list =
     @ Factory.Core.Tests.UiSpecTests.tests
     @ Factory.Core.Tests.UiPolicyFactsTests.tests
     @ Factory.Core.Tests.TestPlanTests.tests
+    @ Factory.Core.Tests.TestPlanTests.affectedTests
 
 [<EntryPoint>]
 let main _ =
