@@ -15,17 +15,21 @@ namespace Factory.S2;
 /// ledger and the briefs get screen, criterion and state only.
 public sealed class UiAcceptanceHoldout(FactoryServices svc, string? designcDir)
 {
-    private sealed record Generated(string Text, string Sha256, string State);
+    public sealed record Generated(string Text, string Sha256, string State);
     private sealed record Planned(string Path, string Text, string Screen, string Criterion, string State);
 
     private static string Fixed(string why) => "could_not_run: " + why;
 
-    private async Task<(Generated? Spec, string? Why)> GenerateAsync(UiHoldoutCase c, CancellationToken ct)
+    private Task<(Generated? Spec, string? Why)> GenerateAsync(UiHoldoutCase c, CancellationToken ct) =>
+        GenerateSpecAsync(designcDir!, svc.Settings.RegistryPath, c, ct);
+
+    /// Runs designc's `holdout-spec --json` for one case and parses its output.
+    public static async Task<(Generated? Spec, string? Why)> GenerateSpecAsync(string designcDir, string registryPath, UiHoldoutCase c, CancellationToken ct)
     {
-        var script = Path.Combine(designcDir!, "scripts", "designc-core.js");
+        var script = Path.Combine(designcDir, "scripts", "designc-core.js");
         if (!File.Exists(script)) return (null, "designc's holdout-spec script was not found in FACTORY_DESIGNC_DIR");
         var psi = new ProcessStartInfo("node") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        foreach (var a in new[] { script, "holdout-spec", "--registry", svc.Settings.RegistryPath, "--criterion", c.Criterion, "--case", c.Case.ToString(), "--json" }) psi.ArgumentList.Add(a);
+        foreach (var a in new[] { script, "holdout-spec", "--registry", registryPath, "--criterion", c.Criterion, "--case", c.Case.ToString(), "--json" }) psi.ArgumentList.Add(a);
         try
         {
             using var p = Process.Start(psi);
