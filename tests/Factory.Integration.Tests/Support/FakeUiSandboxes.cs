@@ -17,6 +17,10 @@ public sealed class FakeUiSandboxes(ISandboxFactory inner, string[] states) : IS
     /// What the holdout run saw in its working directory: the generated test and the sample were there while it ran.
     public List<(string Workdir, bool Test, bool Sample, string Command)> HoldoutRuns { get; } = [];
     public int PageRuns { get; private set; }
+    /// Acceptance holdout specs (`*.holdout-<n>.spec.ts`) whose run is reported failed, by file name.
+    public HashSet<string> AcceptanceHoldoutFailing { get; } = [];
+    /// What the acceptance holdout run saw: the spec files that were in its working directory, and the command.
+    public List<(string Workdir, string[] Files, string Command)> AcceptanceHoldoutRuns { get; } = [];
 
     public async Task<ICommandSandbox> ForTeamAsync(string teamId, string worktree, CancellationToken ct) => new Sandbox(this, await inner.ForTeamAsync(teamId, worktree, ct));
 
@@ -50,6 +54,19 @@ public sealed class FakeUiSandboxes(ISandboxFactory inner, string[] states) : IS
                 owner.HoldoutRuns.Add((workdir, File.Exists(Path.Combine(workdir, "ui-contract", "tests", owner.Screen + ".holdout.test.tsx")),
                     File.Exists(Path.Combine(workdir, "ui-contract", "holdout", owner.Screen + ".json")), command));
                 return new(owner.HoldoutOutput is null ? 0 : 1, owner.HoldoutOutput ?? owner.HoldoutReport(workdir), TimeSpan.Zero, false);
+            }
+            if (command.Contains(".holdout-") && command.Contains("playwright"))
+            {
+                var specs = Directory.EnumerateFiles(Path.Combine(workdir, "tests", "acceptance"), "*.holdout-*.spec.ts", SearchOption.AllDirectories)
+                    .Select(f => Path.GetRelativePath(workdir, f).Replace('\\', '/')).Order().ToArray();
+                owner.AcceptanceHoldoutRuns.Add((workdir, specs, command));
+                var report = JsonSerializer.Serialize(new { suites = specs.Select(f => new { file = f, specs = new[] { new { ok = !owner.AcceptanceHoldoutFailing.Contains(Path.GetFileName(f)), file = f } } }).ToArray() });
+                var echo = string.Concat(specs.Select(f => File.ReadAllText(Path.Combine(workdir, f))));
+                var path = Path.Combine(workdir, env["PLAYWRIGHT_JSON_OUTPUT_NAME"]);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                await File.WriteAllTextAsync(path, report, ct);
+                var failed = owner.AcceptanceHoldoutFailing.Count > 0;
+                return new(failed ? 1 : 0, failed ? "Error: expected text but got: " + echo : "", TimeSpan.Zero, false);
             }
             return await real.RunAsync(command, workdir, timeout, env, ct);
         }

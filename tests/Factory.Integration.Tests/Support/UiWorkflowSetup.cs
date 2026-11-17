@@ -13,12 +13,13 @@ public sealed record UiWorkflowSetup(TeamHarness Harness, FakeUiSandboxes Sandbo
 {
     public const string PageElement = "Fares Platform/BordereauxList";
 
-    public static async Task<UiWorkflowSetup> CreateAsync(ScriptedChatClient model, UiHandoverDir ui, bool holdoutInRegistry = true, Limits? limits = null, Factory.S2.Quality.IQaRunner? qa = null, string? holdoutText = null)
+    public static async Task<UiWorkflowSetup> CreateAsync(ScriptedChatClient model, UiHandoverDir ui, bool holdoutInRegistry = true, Limits? limits = null, Factory.S2.Quality.IQaRunner? qa = null, string? holdoutText = null, string? designcDir = null, bool acceptanceCriterion = false)
     {
         FakeUiSandboxes? fake = null;
         var h = await TeamHarness.CreateAsync(model, limits ?? new Limits(8, 3),
             qa: qa,
             seedRepo: repo => UiPreviewFixture.Copy(Path.Combine(UiPreviewFixture.FixtureRoot, "app"), repo),
+            designcDir: designcDir,
             wrapSandboxes: inner => fake = new FakeUiSandboxes(inner, UiSpecStates.ofSpec(File.ReadAllText(Path.Combine(ui.Dir, "ui", "specs", "bordereaux.json"))).ToArray()));
         var uiJson = await HandoverInput.ResolveAsync(ui.Dir, h.StateDir, default);
         var uiHandover = Core.ParseHandover(await File.ReadAllTextAsync(uiJson));
@@ -28,7 +29,7 @@ public sealed record UiWorkflowSetup(TeamHarness Harness, FakeUiSandboxes Sandbo
             Core.ToList([Plans.Pattern("src/Fares.Data/**"), Plans.Pattern("src/BordereauxList.tsx"), Plans.Pattern("tests/Fares.Data.Tests/**")]),
             b.Elements.First().Risk, true, Microsoft.FSharp.Core.FSharpOption<string>.None);
         var handover = new Handover(b.Id, b.Digest, Core.ToList(b.Elements.Append(element)), Core.ToList<BoundDecision>([]), b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
-            b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
+            b.WorkItem, b.DesignTokens, b.DesignVersion, acceptanceCriterion ? Core.ToList(new[] { new AcceptanceCriterion("AC-UI-1", PageElement, "") }) : b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
             b.RequirementRisk, b.RequirementDataClass, uiHandover.Ui);
         var json = Path.Combine(h.StateDir, "handovers", "ui-holdout.json");
         Directory.CreateDirectory(Path.GetDirectoryName(json)!);

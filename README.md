@@ -160,6 +160,8 @@ task's writes and revert them. Other settings (`FACTORY_MAX_TURNS`, `FACTORY_COM
 
 The `ui:` check runs `FACTORY_UI_CMD` (default `npx vitest run --project ui-page --reporter=json`) in the runner image after seeding the handover's `ui-contract/` on the integration branch; see `docs/ui-contract-verify.md` §2. Docker cases: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter UiPageCheck`.
 
+The holdout runs after the `ui:` check, only when everything visible passed, and before QA: `FACTORY_UI_HOLDOUT_CMD` (default `npx vitest run --project ui-holdout --reporter=json`) runs the registry's hidden sample in a scratch copy of the integration branch. Acceptance cases marked `holdout: true` need `FACTORY_DESIGNC_DIR` (designc's app folder; its `holdout-spec` generates them) and are `could_not_run` without it. `FACTORY_HOLDOUT_RETRIES` (default 2) is the number of failing runs of the same holdout (per work item) the build is asked to repair; the next one raises a `needs_decision` instead. Docker case: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter UiHoldoutDocker`. See `docs/ui-contract-verify.md` §2.
+
 ### Sandbox
 
 Commands run in a per-team Docker container (`FACTORY_SANDBOX=docker`, the default) built
