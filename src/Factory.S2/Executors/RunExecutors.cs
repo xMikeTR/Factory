@@ -225,6 +225,9 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             await context.SendMessageAsync(new RunFinished(msg.RunId, "integration_failed", question), cancellationToken: cancellationToken);
             return;
         }
+        // UI mutants are a report, never a gate: they run once everything else has passed, only when mutation is on.
+        if (failed.Count == 0 && svc.Settings.QualityPolicy?.Mutation is { Mode: not QualityMode.Off })
+            await UiMutantsAsync(msg.RunId, timeout, cancellationToken);
         object next = failed.Count > 0
             ? IntegrationVerdict(msg.RunId, failed)
             : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);
@@ -264,6 +267,19 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
         return await new UiPageCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, writesResult: false)
             .RunAsync(runId, handover, svc.LoadValidatedPlan(runId).Plan.Tasks, git, integration, timeout, ct);
+    }
+
+    private async Task UiMutantsAsync(string runId, TimeSpan timeout, CancellationToken ct)
+    {
+        var handover = svc.LoadHandover(runId);
+        if (handover.Ui.IsEmpty) return;
+        var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
+        try { await new UiMutantCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, svc.Settings.UiMutantsMax).RunAsync(runId, handover, handover.DesignTokens, git, timeout, ct); }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            await svc.LogAsync(runId, "ui_mutants", LedgerKinds.Verify, outcome: "could_not_run",
+                payload: JsonSerializer.Serialize(new { reason = e.Message }), ct: ct);
+        }
     }
 
     private async Task<HoldoutRun> HoldoutAsync(string runId, string integration, TimeSpan timeout, CancellationToken ct)

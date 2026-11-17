@@ -67,6 +67,8 @@ public sealed record FactorySettings(
     string UiHoldoutCommand = "npx vitest run --project ui-holdout --reporter=json",
     /// How many times one holdout (screen, or screen and criterion) may fail on one work item before a person decides. FACTORY_HOLDOUT_RETRIES.
     int HoldoutRetries = 2,
+    /// Most UI mutants tried per screen (FACTORY_UI_MUTANTS_MAX); the rest are cut in generate order and the cut is logged.
+    int UiMutantsMax = 40,
     /// designc's app folder (scripts/designc-core.js), which generates the acceptance holdout specs. FACTORY_DESIGNC_DIR; null is none.
     string? DesigncDir = null)
 {
@@ -95,6 +97,7 @@ public sealed record FactorySettings(
         AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),
         UiCommand: Env("FACTORY_UI_CMD", "npx vitest run --project ui-page --reporter=json"),
         UiHoldoutCommand: Env("FACTORY_UI_HOLDOUT_CMD", "npx vitest run --project ui-holdout --reporter=json"),
+        UiMutantsMax: int.TryParse(Environment.GetEnvironmentVariable("FACTORY_UI_MUTANTS_MAX"), out var uiMax) && uiMax > 0 ? uiMax : 40,
         HoldoutRetries: int.TryParse(Environment.GetEnvironmentVariable("FACTORY_HOLDOUT_RETRIES"), out var retries) && retries >= 0 ? retries : 2,
         DesigncDir: Environment.GetEnvironmentVariable("FACTORY_DESIGNC_DIR") is { Length: > 0 } designc ? designc : null,
         TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"),
