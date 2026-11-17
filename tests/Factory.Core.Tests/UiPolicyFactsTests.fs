@@ -84,13 +84,13 @@ let private allow =
 let tests : (string * (unit -> unit)) list =
     [ for name, row in deny -> $"ui policy facts: denies {name}", fun () -> check (denied row) name
       for name, row in allow -> $"ui policy facts: allows {name}", fun () -> check (not (denied row)) name
-      "ui policy facts: only a holdout path is a holdout", fun () ->
+      yield "ui policy facts: only a holdout path is a holdout", fun () ->
           check (not (UiPolicyFacts.isHoldout "ui-contract/previews/a.png")) "previews are not holdout"
           check (not (UiPolicyFacts.isHoldout "src/holdout.ts")) "a file named holdout elsewhere"
-      "ui policy facts: normalise collapses .. and ./ and separators", fun () ->
+      yield "ui policy facts: normalise collapses .. and ./ and separators", fun () ->
           equal "ui-contract/previews/x.png" (UiPolicyFacts.normalise "src/pages/../../ui-contract/previews/x.png") "dotdot"
           equal "ui-contract/previews/x.png" (UiPolicyFacts.normalise "./ui-contract\\previews\\x.png") "separators"
           equal "x.png" (UiPolicyFacts.normalise "../../../x.png") "cannot climb above the virtual root"
-      "ui policy facts: an absolute path keeps its tail after the last anchor", fun () ->
+      yield "ui policy facts: an absolute path keeps its tail after the last anchor", fun () ->
           equal "ui-contract/previews/x.png" (UiPolicyFacts.normalise "/ui/app/ui-contract/previews/x.png") "absolute"
           equal "ui/holdout/b.json" (UiPolicyFacts.normalise "/home/u/ui/holdout/b.json") "ui anchor" ]
