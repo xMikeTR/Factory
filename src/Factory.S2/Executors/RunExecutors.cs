@@ -219,6 +219,12 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             failed.AddRange(holdout.Outcomes);
         }
         await WriteUiResultsAsync(msg.RunId, integration, uiOutcomes, holdout, cancellationToken);
+        // A holdout that has failed past the cap is a question for a person, not for another build.
+        if (holdout is { Outcomes.Count: > 0 } && await HoldoutEscalation.CheckAsync(svc, msg.RunId, svc.LoadHandover(msg.RunId), cancellationToken) is { } question)
+        {
+            await context.SendMessageAsync(new RunFinished(msg.RunId, "integration_failed", question), cancellationToken: cancellationToken);
+            return;
+        }
         object next = failed.Count > 0
             ? IntegrationVerdict(msg.RunId, failed)
             : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);

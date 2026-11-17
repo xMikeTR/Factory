@@ -113,4 +113,46 @@ public sealed class UiHoldoutWorkflowTests
         Assert.Single(s2.Sandboxes.HoldoutRuns);
         Assert.Single(qa2.Asked);
     }
+
+    /// An earlier run of the same handover that failed the same holdout: its copy of the handover and its holdout_failed row.
+    private static void PriorFailure(UiWorkflowSetup s, string priorRunId, string payload = "{\"screen\":\"bordereaux\",\"state\":\"ready\"}")
+    {
+        var svc = s.Harness.Services;
+        Directory.CreateDirectory(svc.Settings.RunDir(priorRunId));
+        File.Copy(s.HandoverJson, svc.Settings.HandoverCopyPath(priorRunId));
+        s.Harness.Ledger.AppendAsync(new LedgerEvent(priorRunId, "S2", "integration_verify", LedgerKinds.HoldoutFailed, TaskId: "T-001", Payload: payload)).AsTask().GetAwaiter().GetResult();
+    }
+
+    [Fact]
+    public async Task The_second_failure_of_the_same_holdout_is_still_repaired_the_third_raises_a_needs_decision()
+    {
+        var (s, result) = await RunAsync(UiHandoverDir.Create(), a => { a.Sandboxes.HoldoutFailing.Add("ready"); PriorFailure(a, "prior-1"); });
+        Assert.Equal("integration_failed", result?.Status);
+        Assert.Empty(s.Harness.Rows(LedgerKinds.NeedsDecision));
+        Assert.Contains("holdout_failed: bordereaux/ready", result!.Detail);
+
+        var (s3, third) = await RunAsync(UiHandoverDir.Create(), a => { a.Sandboxes.HoldoutFailing.Add("ready"); PriorFailure(a, "prior-1"); PriorFailure(a, "prior-2"); });
+        Assert.Equal("integration_failed", third?.Status);
+        Assert.Contains("holdout bordereaux/ready failed 3 times", third!.Detail);
+        var nd = Assert.Single(s3.Harness.Rows(LedgerKinds.NeedsDecision));
+        Assert.Equal("raised", nd.Outcome);
+        var p = P(nd);
+        Assert.StartsWith("ND-", p.GetProperty("id").GetString());
+        Assert.Equal("holdout bordereaux/ready failed 3 times", p.GetProperty("question").GetString());
+        Assert.Equal("keep the holdout; a person writes guidance for the build", p.GetProperty("options")[0].GetProperty("summary").GetString());
+        Assert.Equal("the holdout is wrong; change it in designc and freeze again", p.GetProperty("options")[1].GetProperty("summary").GetString());
+    }
+
+    [Fact]
+    public async Task A_different_screen_or_work_item_does_not_count_toward_the_cap()
+    {
+        var (s, result) = await RunAsync(UiHandoverDir.Create(), a =>
+        {
+            a.Sandboxes.HoldoutFailing.Add("ready");
+            PriorFailure(a, "prior-1", "{\"screen\":\"other\",\"state\":\"ready\"}");
+            PriorFailure(a, "prior-2", "{\"screen\":\"other\",\"state\":\"ready\"}");
+        });
+        Assert.Equal("integration_failed", result?.Status);
+        Assert.Empty(s.Harness.Rows(LedgerKinds.NeedsDecision));
+    }
 }
