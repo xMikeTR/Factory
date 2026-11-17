@@ -8,6 +8,7 @@ using Xunit;
 namespace Factory.Integration.Tests.Gateway;
 
 /// What S2 sends to an OpenAI-compatible gateway, against a local fake of it.
+[Collection(Support.ProcessEnvCollection.Name)]
 public class OpenAIWireTests
 {
     private const string Reply = """

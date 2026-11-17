@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Factory.Integration.Tests.Workspace;
 
+[Collection(Support.ProcessEnvCollection.Name)]
 public class ScopedWorkspaceTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("ws-").FullName;

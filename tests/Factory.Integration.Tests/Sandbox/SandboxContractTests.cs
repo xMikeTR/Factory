@@ -5,6 +5,7 @@ namespace Factory.Integration.Tests.Sandbox;
 
 /// What every ICommandSandbox promises. Run against each implementation; Docker is opt-in
 /// (FACTORY_TEST_DOCKER=1, image built from docker/runner).
+[Collection(Support.ProcessEnvCollection.Name)]
 public abstract class SandboxContract : IDisposable
 {
     protected readonly string Worktree = Directory.CreateTempSubdirectory("sandbox-").FullName;
