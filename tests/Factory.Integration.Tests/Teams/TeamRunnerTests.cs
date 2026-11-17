@@ -752,6 +752,79 @@ public class TeamRunnerTests
         Assert.Contains("What failed last time", second[^1]);
     }
 
+    private const string P2pCommand = "sh tests/p2p.sh";
+
+    private static Handover WithP2p(Handover h, string command) => h.WithTests(TestMaps.Map(
+        [TestMaps.Element("Fares Platform/Bookings DB", [], [TestMaps.Named("shell", "tests/p2p.sh", command)])]));
+
+    private static void SeedP2p(string repo) =>
+        File.WriteAllText(Path.Combine(repo, "tests", "p2p.sh"), "! grep -q BREAK src/Fares.Data/BookingStatus.cs 2>/dev/null\n");
+
+    /// A test the handover names as pass-to-pass shows in the brief, and a change that breaks it comes back with a `p2p failed` row
+    /// carrying the task id, even though the task has no JUnit suite (so no regression check).
+    [Fact]
+    public async Task A_named_pass_to_pass_test_is_in_the_brief_and_a_change_that_breaks_it_is_not_green_until_fixed()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: add BookingStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "BREAK\n" }),
+            Call("declare_done", new { summary = "added" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "fixed" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), seedRepo: SeedP2p);
+
+        var result = await new TeamRunner(h.Services, WithP2p(h.Handover, P2pCommand), TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("## Tests for this task") && m.Text.Contains(P2pCommand));
+        var rows = h.Rows(LedgerKinds.Verify).Where(e => e.Stage == "p2p").ToList();
+        Assert.Equal(["failed", "passed"], rows.Select(e => e.Outcome));
+        Assert.All(rows, e => Assert.Equal("T-001", e.TaskId));
+        Assert.All(rows, e => Assert.NotNull(e.TeamId));
+        Assert.Contains("\"baseline_exit\":0", rows[0].Payload);
+        Assert.Contains("tests/p2p.sh", rows[0].Payload);
+        var baselines = h.Rows(LedgerKinds.Verify).Where(e => e.Stage == "p2p_baseline").ToList();
+        Assert.Single(baselines);
+        Assert.Contains("\"exit\":0", baselines[0].Payload);
+        Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("These tests passed before this task and fail now"));
+    }
+
+    /// A command that already fails on the integration branch cannot say anything about this task: it is logged and never blocks.
+    [Fact]
+    public async Task A_pass_to_pass_command_that_is_red_on_the_baseline_is_logged_and_never_blocks()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: add BookingStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "BREAK\n" }),
+            Call("declare_done", new { summary = "added" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), seedRepo: SeedP2p);
+
+        var result = await new TeamRunner(h.Services, WithP2p(h.Handover, "false"), TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Equal(["baseline_red"], h.Rows(LedgerKinds.Verify).Where(e => e.Stage == "p2p").Select(e => e.Outcome));
+        Assert.Contains("\"exit\":1", h.Rows(LedgerKinds.Verify).Single(e => e.Stage == "p2p_baseline").Payload);
+    }
+
+    /// A task whose element has no named pass-to-pass tests logs `none` and runs as before.
+    [Fact]
+    public async Task A_task_with_no_named_tests_logs_none()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: add BookingStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Equal(["none"], h.Rows(LedgerKinds.Verify).Where(e => e.Stage == "p2p").Select(e => e.Outcome));
+    }
+
     private static async Task<ScriptedChatClient> BreakAndRestoreAsync()
     {
         const string booking = "src/Fares.Data/Booking.cs";

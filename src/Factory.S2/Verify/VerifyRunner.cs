@@ -10,7 +10,7 @@ using Core = Factory.Core.Core;
 
 /// Runs verify entries exactly as the plan declared them. The agent never runs these on its own
 /// behalf and cannot edit them: the plan is frozen, and verify scripts sit under protected paths.
-public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitWorkspace git, TimeSpan? suiteTimeout = null)
+public sealed partial class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitWorkspace git, TimeSpan? suiteTimeout = null)
 {
     /// Automated entries run in order, each against the tree as it found it: whatever a check
     /// writes (generated code, logs) is reverted before the next one starts, so one check cannot

@@ -205,6 +205,10 @@ internal sealed class TaskLoop(
         await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
         {
             green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct, conventionCommand: svc.Settings.Verify?.Command);
+            // P2P on the tests this task names (and the ones its change affects): exit codes, so it runs without a JUnit-writing suite too.
+            if (green.Count > 0 && green.All(o => o.ExitCode == 0)
+                && await svc.Verify.P2pAsync(runId, _teamId, task, attempt, TestPlan.ofHandover(handover, task)?.Value, svc.Git, worktree, ct) is { } named)
+                green.Add(named);
             if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
                 && SuiteDiscovery.Plan(svc.Settings.IntegrationTestCommand, worktree) is SuitePlan.Command suite
                 && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, suite.Item, worktree, ct) is { } regressed)
