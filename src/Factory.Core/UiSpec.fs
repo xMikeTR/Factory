@@ -33,6 +33,11 @@ module UiCodeCheck =
                           | _ -> () ]
         | _ -> []
 
+    /// The placement ids a spec asks the page to carry.
+    let placementIds (specJson: string) : string list =
+        use spec = JsonDocument.Parse specJson
+        placements spec.RootElement |> List.map fst |> List.distinct
+
     let check (specJson: string) (manifestJsons: string list) (code: string) : UiCodeProblem list =
         use spec = JsonDocument.Parse specJson
         let manifests =

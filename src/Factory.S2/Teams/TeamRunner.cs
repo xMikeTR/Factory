@@ -575,10 +575,20 @@ internal sealed class TaskLoop(
     }
 
     /// What the worktree takes away from the UI that is neither authorised nor already gone on the integration branch. Empty when the guard is off.
-    private async Task<List<UiViolation>> UiViolationsAsync(CancellationToken ct) =>
-        svc.Settings.QualityPolicy?.Ui is { } ui
-            ? (await UiGate.CheckAsync(svc.Git, worktree, runId, ui, svc.Settings.UiContract ?? [], await UiAcceptedAsync(ct), ct)).ToList()
-            : [];
+    private async Task<List<UiViolation>> UiViolationsAsync(CancellationToken ct)
+    {
+        // Bound screens (a handover with a `ui` section) switch the guard on even when the policy has no ui section.
+        var ui = svc.Settings.QualityPolicy?.Ui ?? (handover.Ui.IsEmpty ? null : new UiPolicy([], []));
+        if (ui is null) return [];
+        var contract = (svc.Settings.UiContract ?? []).Concat(OwnedPlacements()).ToList();
+        return (await UiGate.CheckAsync(svc.Git, worktree, runId, ui, contract, await UiAcceptedAsync(ct), ct)).ToList();
+    }
+
+    /// The placement ids of the approved specs this task owns: it writes the spec's page file, or is linked to the page's element.
+    private IEnumerable<UiItem> OwnedPlacements() =>
+        handover.Ui.Where(s => !UiBlame.tasks(handover.Elements, ListModule.OfSeq([task]), s.Component, s.File).Item2.IsEmpty)
+            .SelectMany(s => UiCodeCheck.placementIds(s.Spec.Text)).Distinct()
+            .Select(id => new UiItem(UiItemKind.PlacementId, id));
 
     /// A designer's answer to a parked UI removal: A authorises exactly what is missing now; anything else sends the task back to restore it.
     private async Task UiAnswerAsync(DecisionAnswer answer, CancellationToken ct)

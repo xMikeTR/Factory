@@ -5,6 +5,8 @@ type UiItemKind =
     | Route
     | UiTest
     | SkippedTest
+    /// A `data-ui-id` placement of an approved spec (the design contract, not a heuristic find).
+    | PlacementId
 
 /// One thing the UI offers, found by a heuristic scan at the edge: a data-testid, a route, or the title of a UI test.
 /// A skipped test is listed as SkippedTest, never as UiTest.

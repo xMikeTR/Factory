@@ -25,6 +25,7 @@ public static class UiGate
     {
         UiViolation.Removed r => $"- {Describe(r.Item)} existed and is gone",
         UiViolation.NowSkipped s => $"- {Describe(s.Item)} is now skipped",
+        UiViolation.ContractMissing c when c.Item.Kind.Tag == UiItemKind.Tags.PlacementId => $"- {Describe(c.Item)} is a placement of the approved spec for this page and is missing",
         UiViolation.ContractMissing c => $"- {Describe(c.Item)} is in .factory/ui-contract.yaml and is missing",
         _ => throw new ArgumentOutOfRangeException(nameof(v)),
     };
@@ -41,6 +42,7 @@ public static class UiGate
     {
         var t when t == UiItemKind.Tags.TestId => $"data-testid \"{i.Id}\"",
         var t when t == UiItemKind.Tags.Route => $"route \"{i.Id}\"",
+        var t when t == UiItemKind.Tags.PlacementId => $"data-ui-id \"{i.Id}\"",
         _ => $"UI test \"{i.Id}\"",
     };
 
@@ -55,6 +57,7 @@ public static class UiGate
                 "TestId" => UiItemKind.TestId,
                 "Route" => UiItemKind.Route,
                 "SkippedTest" => UiItemKind.SkippedTest,
+                "PlacementId" => UiItemKind.PlacementId,
                 _ => UiItemKind.UiTest,
             }, e.GetProperty("id").GetString()!)).ToList();
 }

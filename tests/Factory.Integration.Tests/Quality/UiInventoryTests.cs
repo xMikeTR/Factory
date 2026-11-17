@@ -36,6 +36,16 @@ public class UiInventoryTests
     }
 
     [Fact]
+    public void Placement_ids_are_read_from_data_ui_id_attributes()
+    {
+        var items = Scan(Tree(("web/src/Page.tsx", "<Button data-ui-id=\"export\" /><Table data-ui-id={'table'} /><p data-testid=\"t\" />")));
+
+        Assert.Contains(new UiItem(UiItemKind.PlacementId, "export"), items);
+        Assert.Contains(new UiItem(UiItemKind.PlacementId, "table"), items);
+        Assert.Contains(new UiItem(UiItemKind.TestId, "t"), items);
+    }
+
+    [Fact]
     public void React_Router_routes_come_from_Route_elements_and_route_objects()
     {
         var items = Scan(Tree(
