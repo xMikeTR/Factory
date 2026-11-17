@@ -91,7 +91,7 @@ public static class ServiceWiring
             sandboxes,
             pullRequests,
             new AgentReviewer(agents, gateways.ReviewerIndependence, settings.CommandAllowList),
-            mutation: new StrykerRunner(sandboxes),
+            mutation: new StrykerRunner(sandboxes, fullTimeout: Factory.S2.Quality.MutationFull.Timeout(Environment.GetEnvironmentVariable("FACTORY_MUTATION_FULL_TIMEOUT_MIN"))),
             qa: qa,
             context: ContextRecording.Source(Environment.GetEnvironmentVariable("FACTORY_CONTEXT_SOURCE"),
                 Environment.GetEnvironmentVariable("FACTORY_CONTEXT_DIR"), Environment.GetEnvironmentVariable("FACTORY_DESIGNC_CORE"), settings.RegistryPath),

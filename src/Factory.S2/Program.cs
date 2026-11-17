@@ -28,6 +28,7 @@ using static Factory.S2.ServiceWiring;
 // factory-s2 parity-decisions --registry ../registry   one open needs_decision (A build like legacy / B ask the PO) per scenario whose latest parity_result failed; exit 2 when any was raised
 // factory-s2 gate-shadow --cases cases.json [--repo .]   the QA gate's jira.transition policy against recorded kit decisions: logs what it would allow or deny (nothing enforced) and lists where it disagrees with the kit
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
+// factory-s2 mutation-full --repo . --run-id <id>   the whole-solution Stryker.NET run on a merged run's commit (report only, FACTORY_MUTATION_FULL_TIMEOUT_MIN, default 120); refused until `close` recorded the merge
 // factory-s2 ci-report --repo . --run-id <id> --check "<CI check>" --log <file | -> [--file a.cs,b.cs | --task T-001] [--commit sha]   a CI failure after the run ended, blamed on the tasks whose write paths own the files; then run --repair <id> (at most FACTORY_MAX_FIX_ROUNDS rounds, default 2)
 // factory-s2 verify --repo . --run-id <id> --check "T-001: <check name>" --by <you> [--outcome done|deferred] [--note "why"]   records a manual check; run again with --run-id <id> to reach the merge (Tiered: --by must be an approver; deferred needs --note)
 // factory-s2 run|rerun ... [--reference key=path]...   binds each read-only reference the handover names (a legacy app) to a folder outside the repo; agents read it with read_reference/list_reference and never write it
@@ -437,6 +438,25 @@ try
             return why is null ? 0 : 1;
         }
 
+        case "mutation-full":
+        {
+            // Report only: after `close`, mutate the whole solution on the merged commit and log the score. Never changes the close.
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
+            var runId = Required(opts, "run-id");
+            if (File.Exists(settings.ReposPath(runId)))
+                settings = settings with { Repos = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(settings.ReposPath(runId))) };
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            var services = Services(settings, runId, env, new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+            var repos = services.IsSplit
+                ? SplitMerge.Order(services.RepoGits.Keys).Select(n => (n, services.RepoGits[n])).ToList()
+                : [("", services.Git)];
+            var result = await Factory.S2.Quality.MutationFull.RunAsync(services.Ledger, runId, repos, services.Mutation!, CancellationToken.None);
+            if (result.Refusal is not null) { Console.Error.WriteLine(result.Refusal); return 1; }
+            foreach (var line in result.Lines) Console.WriteLine(line);
+            return 0;
+        }
+
         case "ci-report":
         {
             // CI failed after the run ended: blame the tasks that own the failing files; run --repair <run-id> then re-runs only those.
@@ -604,7 +624,7 @@ try
         }
 
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|budget-import|router-stats|parity|parity-decisions|preview|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|budget-import|router-stats|parity|parity-decisions|preview|intake|ci-report|verify|mutation-full|repro|ux-review|compare-browser  (see README)");
             return 2;
     }
 }

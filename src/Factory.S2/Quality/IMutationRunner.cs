@@ -10,4 +10,7 @@ public sealed record MutationRun(IReadOnlyList<Mutant> Mutants, bool TimedOut);
 public interface IMutationRunner
 {
     Task<MutationRun> RunAsync(string worktree, IReadOnlyList<string> files, CancellationToken ct);
+
+    /// The whole solution, no `--mutate`: the full run after a merge (long, so its own timeout).
+    Task<MutationRun> RunAllAsync(string worktree, CancellationToken ct);
 }

@@ -80,6 +80,18 @@ public class StrykerDockerTests
     }
 
     [Fact]
+    public async Task A_full_run_mutates_every_file_without_a_mutate_filter()
+    {
+        if (!Enabled) return;
+        var root = await SampleRepoAsync();
+
+        var run = await new StrykerRunner(new DockerSandboxFactory(new DockerSandboxOptions())).RunAllAsync(root, default);
+
+        Assert.False(run.TimedOut);
+        Assert.Contains(run.Mutants, m => m.File == "src/Calc.cs" && m.Status.IsKilled);
+    }
+
+    [Fact]
     public async Task A_qa_environment_service_is_reachable_by_name_from_the_sandbox_and_removed_with_it()
     {
         if (!Enabled) return;
