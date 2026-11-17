@@ -55,7 +55,7 @@ public sealed class UiHoldoutDockerTests : IDisposable
         var ledger = new MemoryLedger();
         var sandboxes = new DockerSandboxFactory(new DockerSandboxOptions());
         var tasks = Core.ToList([Writer("T-1", "src/BordereauxList.tsx")]);
-        var page = new UiPageCheck(ledger, sandboxes, "npx vitest run --project ui-page --reporter=json", writesResult: false);
+        var page = new UiPageCheck(ledger, sandboxes, UiPageCheck.DefaultCommand, writesResult: false);
         var holdout = new UiHoldoutCheck(ledger, sandboxes, fx.Registry, "npx vitest run --project ui-holdout --reporter=json");
 
         async Task<(bool Ui, HoldoutRun Holdout)> JudgeAsync()

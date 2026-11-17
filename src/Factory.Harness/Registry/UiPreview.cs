@@ -109,6 +109,9 @@ public static partial class UiPreview
         catch (JsonException) { return UiPreviewOutcome.Error; }
     }
 
+    /// Where Vitest 5.1's `--reporter=html` writes its report folder (index.html, ui/, attachments/), relative to the app root; `npx vite preview --outDir .vitest` serves it.
+    public const string HtmlReportDir = ".vitest";
+
     /// Vitest 5's json reporter writes its report to a file and prints only where; null when the output names none.
     public static string? ReportPath(string output) =>
         ReportLine().Match(output) is { Success: true } m ? m.Groups[1].Value.Trim() : null;

@@ -10,8 +10,17 @@ using Microsoft.FSharp.Core;
 
 namespace Factory.S2;
 
-public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, string command, bool writesResult = true)
+public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, string command, bool writesResult = true, string? runDir = null)
 {
+    /// The default reporters: `default` prints each failure's diff and step timeline, `json` writes the report the check reads,
+    /// `html` writes the report folder (`UiPreview.HtmlReportDir`) kept as evidence.
+    public const string DefaultCommand = "npx vitest run --project ui-page --reporter=default --reporter=json --reporter=html";
+
+    /// The same command for runs that only need the JSON report (mutants judge dozens of pages): no terminal report, no HTML.
+    public static string JsonOnly(string command) => command.Replace(" --reporter=default", "").Replace(" --reporter=html", "");
+
+    private const string EvidenceRoot = "evidence/ui";
+
     private ValueTask LogAsync(string runId, string kind, string? outcome = null, string? payload = null, CancellationToken ct = default) =>
         ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", kind, Outcome: outcome, Payload: payload), ct);
 
@@ -33,6 +42,7 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
         string? report = null;
         string? couldNot = null;
         var tail = "";
+        var output = "";
         var sw = System.Diagnostics.Stopwatch.StartNew();
         await using (var sandbox = await sandboxes.ForTeamAsync("integration", integration, ct))
         {
@@ -40,10 +50,12 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
             else
             {
                 var report0 = Path.Combine(integration, ".vitest", "json", "output.json");
-                if (File.Exists(report0)) File.Delete(report0);
+                var vitestDir = Path.Combine(integration, Factory.Harness.Registry.UiPreview.HtmlReportDir);
+                if (Directory.Exists(vitestDir)) Directory.Delete(vitestDir, recursive: true); // nothing of an earlier run can be mistaken for this one
                 var run = await sandbox.RunAsync(command, integration, timeout,
                     new Dictionary<string, string> { ["CHROME_PATH"] = UiPreviewRunner.ChromePath, ["CI"] = "1", ["FACTORY_RUN_ID"] = runId }, ct);
                 tail = run.Tail(2000);
+                output = run.Output;
                 var path = Factory.Harness.Registry.UiPreview.ReportPath(run.Output) ?? report0;
                 if (File.Exists(path)) report = await File.ReadAllTextAsync(path, ct);
                 else if (run.Output.TrimStart().StartsWith('{')) report = run.Output;
@@ -87,15 +99,73 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
                 "fail" => string.Join("\n", lines) + (blamedIds.Count == 0 ? "\nno task changes its element or writes " + screen.File : "\ntasks: " + string.Join(", ", blamedIds)),
                 _ => "could_not_run: " + notRun,
             };
+
+            // What the fixing agent is told, per state: text (diff, steps) and picture paths (kept under the run dir). ARIA failing means no picture.
+            var feedback = new Dictionary<string, UiStateFeedback>();
+            foreach (var state in failures.Where(f => f.State is not null).Select(f => f.State!).Distinct())
+            {
+                var fb = UiFeedback.forState(screen.Screen, state,
+                    ListModule.OfSeq(failures.Where(f => f.State == state).Select(f => new UiFailure(state, f.Kind, f.Placement is null ? FSharpOption<string>.None : FSharpOption<string>.Some(f.Placement), f.Detail ?? ""))), output);
+                var kept = KeepImages(integration, screen.Screen, state, fb.Images);
+                feedback[state] = new UiStateFeedback(fb.Text, ListModule.OfSeq(kept));
+            }
+            var told = new HashSet<(string, string)>(); // the state's feedback rides on the first row of each (task, state)
             foreach (var f in failures)
                 foreach (var task in blamedIds)
+                {
+                    var first = f.State is not null && told.Add((task, f.State));
+                    var fb = f.State is not null && first ? feedback[f.State] : null;
                     await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.UiCheckFailed, TaskId: task, Element: elementId, Outcome: "failed",
-                        Payload: JsonSerializer.Serialize(new { screen = screen.Screen, state = f.State, placement = f.Placement, kind = f.Kind, detail = f.Kind == "code" ? f.Detail : null, commit })), ct);
+                        Payload: JsonSerializer.Serialize(new
+                        {
+                            screen = screen.Screen, state = f.State, placement = f.Placement, kind = f.Kind, detail = f.Kind == "code" ? f.Detail : null, commit,
+                            feedback = fb?.Text, images = fb is null ? null : fb.Images.ToArray(),
+                        })), ct);
+                }
+            await KeepHtmlReportAsync(runId, screen.Screen, integration, ct);
             await LogAsync(runId, LedgerKinds.Verify, outcome: outcome == "pass" ? "passed" : "failed",
                 payload: JsonSerializer.Serialize(new { name = "ui:" + screen.Screen, ExitCode = outcome == "pass" ? 0 : outcome == "fail" ? 1 : 3, kinds = failures.Select(f => f.Kind).Distinct() }), ct: ct);
             if (writesResult) await WriteResultAsync(runId, screen.Screen, commit, outcome, handover, ct);
             outcomes.Add(new VerifyOutcome("ui:" + screen.Screen, outcome == "pass" ? 0 : outcome == "fail" ? 1 : 3, sw.ElapsedMilliseconds, summary));
         }
         return outcomes;
+    }
+
+    /// Copies each diff image (and the actual picture beside it) to `evidence/ui/<screen>/<state>/`, so they outlive the worktree; returns
+    /// the diff paths relative to the run dir. A picture the run did not write is left out.
+    private List<string> KeepImages(string integration, string screen, string state, IEnumerable<string> relative)
+    {
+        var kept = new List<string>();
+        if (runDir is null) return kept;
+        foreach (var rel in relative)
+        {
+            var root = Path.GetFullPath(integration);
+            var src = Path.GetFullPath(Path.Combine(integration, rel));
+            if (!src.StartsWith(root + Path.DirectorySeparatorChar) || !File.Exists(src)) continue;
+            var to = Path.Combine(runDir, EvidenceRoot, screen, state);
+            Directory.CreateDirectory(to);
+            File.Copy(src, Path.Combine(to, Path.GetFileName(src)), overwrite: true);
+            var actual = src.Replace("-diff-", "-actual-");
+            if (actual != src && File.Exists(actual)) File.Copy(actual, Path.Combine(to, Path.GetFileName(actual)), overwrite: true);
+            kept.Add($"{EvidenceRoot}/{screen}/{state}/{Path.GetFileName(src)}");
+        }
+        return kept;
+    }
+
+    /// The HTML report (with Vitest's trace viewer) copied to `evidence/ui/<screen>/html/` after every run, and a `verify` row `ui` / `evidence` that names it.
+    /// A run that wrote none adds no row; that is never a failure.
+    private async Task KeepHtmlReportAsync(string runId, string screen, string integration, CancellationToken ct)
+    {
+        var src = Path.Combine(integration, Factory.Harness.Registry.UiPreview.HtmlReportDir);
+        if (runDir is null || !File.Exists(Path.Combine(src, "index.html"))) return;
+        var rel = $"{EvidenceRoot}/{screen}/html";
+        var dst = Path.Combine(runDir, rel);
+        foreach (var f in Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories))
+        {
+            var to = Path.Combine(dst, Path.GetRelativePath(src, f));
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(f, to, overwrite: true);
+        }
+        await ledger.AppendAsync(new LedgerEvent(runId, "S2", "ui", LedgerKinds.Verify, Outcome: "evidence", Payload: JsonSerializer.Serialize(new { screen, path = rel })), ct);
     }
 }

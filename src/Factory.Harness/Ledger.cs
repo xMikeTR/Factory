@@ -50,7 +50,7 @@ public static class LedgerKinds
     public const string AsBuiltEdge = "asbuilt_edge"; // payload {from, to}: an element pair the code crosses with no relationship in the model (debt)
     public const string TokenLintViolation = "token_lint_violation"; // task + payload {file, line, rule, text}: a raw value where a design token belongs
     public const string UiAcceptanceFailed = "ui_acceptance_failed"; // element + payload {ac, spec, commit, trace}: a frozen Playwright spec failed on this task's element
-    public const string UiCheckFailed = "ui_check_failed"; // task + element + payload {screen, state?, placement?, kind, detail?, commit}: the ui: check failed on this task's page
+    public const string UiCheckFailed = "ui_check_failed"; // task + element + payload {screen, state?, placement?, kind, detail?, commit, feedback?, images?}: the ui: check failed on this task's page; feedback = the diff and step text the repair brief carries, images = diff pictures kept under evidence/ui/
     public const string UiResult = "ui_result"; // outcome pass|fail|could_not_run + payload {screen, commit, outcome}: one screen's ui: verdict on the integration commit
     public const string HoldoutFailed = "holdout_failed"; // task + element + payload {screen, state} (UI holdout) or {screen, criterion, state} (acceptance holdout): a holdout the visible checks did not catch. Never trees, steps, data or a trace path. Run ledger only
     public const string CiFailed = "ci_failed";     // task + payload {check, log, files, commit}: CI failed after the run ended (factory-s2 ci-report); a repair run reads it

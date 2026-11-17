@@ -122,12 +122,22 @@ public static class Briefs
 
 /// A task brief in two parts: what every turn of a role on the task repeats, and what this turn adds (the context
 /// pack, which changes as the task writes, and the notes and failures since the last turn).
-public sealed record TaskBrief(string Stable, string Turn)
+public sealed record TaskBrief(string Stable, string Turn, IReadOnlyList<byte[]>? Images = null)
 {
     public string Text => Stable + Turn;
 
     /// One user message per part: PromptCache puts the brief's breakpoint on the first, so the role's next turn on
     /// the task reads tools, instructions and the stable part from cache.
-    public IEnumerable<ChatMessage> Messages =>
-        Turn.Length == 0 ? [new(ChatRole.User, Stable)] : [new(ChatRole.User, Stable), new(ChatRole.User, Turn)];
+    public IEnumerable<ChatMessage> Messages
+    {
+        get
+        {
+            yield return new(ChatRole.User, Stable);
+            if (Turn.Length > 0) yield return new(ChatRole.User, Turn);
+            // Repair pictures (the page check's diff images): one message, each picture a DataContent, the way UxReviewRunner sends shots.
+            if (Images is { Count: > 0 })
+                yield return new(ChatRole.User, [new TextContent("Pictures that go with the failures above: the difference between the approved design and your page."),
+                    .. Images.Select(b => (AIContent)new DataContent(b, "image/png"))]);
+        }
+    }
 }

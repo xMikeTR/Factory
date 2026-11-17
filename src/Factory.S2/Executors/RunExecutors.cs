@@ -265,7 +265,7 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         var handover = svc.LoadHandover(runId);
         if (handover.Ui.IsEmpty) return [];
         var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
-        return await new UiPageCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, writesResult: false)
+        return await new UiPageCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, writesResult: false, runDir: svc.Settings.RunDir(runId))
             .RunAsync(runId, handover, svc.LoadValidatedPlan(runId).Plan.Tasks, git, integration, timeout, ct);
     }
 
@@ -274,7 +274,7 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         var handover = svc.LoadHandover(runId);
         if (handover.Ui.IsEmpty) return;
         var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
-        try { await new UiMutantCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, svc.Settings.UiMutantsMax).RunAsync(runId, handover, handover.DesignTokens, git, timeout, ct); }
+        try { await new UiMutantCheck(svc.Ledger, svc.Sandboxes, UiPageCheck.JsonOnly(svc.Settings.UiCommand), svc.Settings.UiMutantsMax).RunAsync(runId, handover, handover.DesignTokens, git, timeout, ct); }
         catch (Exception e) when (e is not OperationCanceledException)
         {
             await svc.LogAsync(runId, "ui_mutants", LedgerKinds.Verify, outcome: "could_not_run",

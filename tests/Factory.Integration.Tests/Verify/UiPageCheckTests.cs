@@ -41,7 +41,7 @@ public sealed class UiPageCheckTests : IDisposable
             Core.ToList<TaskId>([]), Core.ToList<DecisionId>([]), Core.ToList<VerifyEntry>([]));
 
     private static Task<List<VerifyOutcome>> RunAsync(Seeded s, ISandboxFactory sandboxes, params PlannedTask[] tasks) =>
-        new UiPageCheck(s.Ledger, sandboxes, "npx vitest run --project ui-page --reporter=json")
+        new UiPageCheck(s.Ledger, sandboxes, UiPageCheck.DefaultCommand)
             .RunAsync("r1", s.Handover, Core.ToList(tasks), s.Git, s.Integration, TimeSpan.FromMinutes(10), default);
 
     private static JsonElement Payload(Factory.Harness.LedgerEvent e) => JsonDocument.Parse(e.Payload!).RootElement;

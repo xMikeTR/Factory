@@ -41,7 +41,7 @@ public sealed class UiFeedbackRecorder
         sabotage(integration);
 
         await using var sandbox = await new DockerSandboxFactory(new DockerSandboxOptions()).ForTeamAsync("integration", integration, default);
-        var run = await sandbox.RunAsync("npx vitest run --project ui-page --reporter=default --reporter=json --reporter=html", integration, TimeSpan.FromMinutes(10),
+        var run = await sandbox.RunAsync(UiPageCheck.DefaultCommand, integration, TimeSpan.FromMinutes(10),
             new Dictionary<string, string> { ["CHROME_PATH"] = UiPreviewRunner.ChromePath, ["CI"] = "1" }, default);
         Directory.CreateDirectory(outDir);
         File.WriteAllText(Path.Combine(outDir, name + ".output.txt"), run.Output);

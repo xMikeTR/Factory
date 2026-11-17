@@ -87,6 +87,7 @@ internal sealed class TaskLoop(
 
     private string? _reverted;
     private readonly string? _repair = Repair.Feedback(svc.Settings, runId, task.Id.Value); // what the failed integration said about this task
+    private readonly IReadOnlyList<byte[]> _repairImages = Repair.Images(svc.Settings, runId, task.Id.Value); // and the pictures that go with it
 
     /// Drive the task from whatever state the ledger says it is in to Passed (return null),
     /// Blocked or Failed (return a TeamResult). Every state change goes through ApplyAsync, which
@@ -807,7 +808,7 @@ internal sealed class TaskLoop(
             : $"These changes were outside your writes and were reverted: {_reverted}\n\n{_lastFailures}".TrimEnd();
         if (_repair is not null) failures = $"{_repair}\n\n{failures}".TrimEnd();
         if (_handoff is not null) failures = $"{_handoff}\n\n{failures}".TrimEnd();
-        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context, _bundle);
+        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context, _bundle) with { Images = _repairImages };
     }
 
     private bool InScope(string path, IEnumerable<PathPattern> writable) =>
