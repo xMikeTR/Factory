@@ -13,7 +13,7 @@ public sealed record UiWorkflowSetup(TeamHarness Harness, FakeUiSandboxes Sandbo
 {
     public const string PageElement = "Fares Platform/BordereauxList";
 
-    public static async Task<UiWorkflowSetup> CreateAsync(ScriptedChatClient model, UiHandoverDir ui, bool holdoutInRegistry = true, Limits? limits = null, Factory.S2.Quality.IQaRunner? qa = null)
+    public static async Task<UiWorkflowSetup> CreateAsync(ScriptedChatClient model, UiHandoverDir ui, bool holdoutInRegistry = true, Limits? limits = null, Factory.S2.Quality.IQaRunner? qa = null, string? holdoutText = null)
     {
         FakeUiSandboxes? fake = null;
         var h = await TeamHarness.CreateAsync(model, limits ?? new Limits(8, 3),
@@ -38,7 +38,8 @@ public sealed record UiWorkflowSetup(TeamHarness Harness, FakeUiSandboxes Sandbo
         {
             var dest = Path.Combine(h.Services.Settings.RegistryPath, "ui", "holdout", "bordereaux.json");
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            File.Copy(Path.Combine(UiHandoverDir.Registry, "ui", "holdout", "bordereaux.json"), dest, overwrite: true);
+            if (holdoutText is null) File.Copy(Path.Combine(UiHandoverDir.Registry, "ui", "holdout", "bordereaux.json"), dest, overwrite: true);
+            else File.WriteAllText(dest, holdoutText);
         }
         return new(h, fake!, json, handover, ui);
     }

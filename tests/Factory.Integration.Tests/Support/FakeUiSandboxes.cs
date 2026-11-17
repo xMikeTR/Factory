@@ -26,12 +26,18 @@ public sealed class FakeUiSandboxes(ISandboxFactory inner, string[] states) : IS
             new { ancestorTitles = new[] { Screen + " page" }, title = $"{s} {k}", status = "passed", failureMessages = Array.Empty<string>() })).ToArray() } },
     });
 
-    private string HoldoutReport() => JsonSerializer.Serialize(new
+    /// A runner that echoes the sample it was given into its failure messages, as a real assertion diff would.
+    private string HoldoutReport(string workdir)
+    {
+        var sampleFile = Path.Combine(workdir, "ui-contract", "holdout", Screen + ".json");
+        var echo = File.Exists(sampleFile) ? File.ReadAllText(sampleFile) : "";
+        return JsonSerializer.Serialize(new
     {
         testResults = new[] { new { assertionResults = states.Select(s => HoldoutFailing.Contains(s)
-            ? new { ancestorTitles = new[] { Screen + " holdout" }, title = s, status = "failed", failureMessages = new[] { $"holdout_failed: {Screen}/{s}: the tree differs: SECRET-ROW-DATA" } }
+            ? new { ancestorTitles = new[] { Screen + " holdout" }, title = s, status = "failed", failureMessages = new[] { $"holdout_failed: {Screen}/{s}: the tree differs: SECRET-ROW-DATA {echo}" } }
             : new { ancestorTitles = new[] { Screen + " holdout" }, title = s, status = "passed", failureMessages = Array.Empty<string>() }).ToArray() } },
-    });
+        });
+    }
 
     private sealed class Sandbox(FakeUiSandboxes owner, ICommandSandbox real) : ICommandSandbox
     {
@@ -43,7 +49,7 @@ public sealed class FakeUiSandboxes(ISandboxFactory inner, string[] states) : IS
             {
                 owner.HoldoutRuns.Add((workdir, File.Exists(Path.Combine(workdir, "ui-contract", "tests", owner.Screen + ".holdout.test.tsx")),
                     File.Exists(Path.Combine(workdir, "ui-contract", "holdout", owner.Screen + ".json")), command));
-                return new(owner.HoldoutOutput is null ? 0 : 1, owner.HoldoutOutput ?? owner.HoldoutReport(), TimeSpan.Zero, false);
+                return new(owner.HoldoutOutput is null ? 0 : 1, owner.HoldoutOutput ?? owner.HoldoutReport(workdir), TimeSpan.Zero, false);
             }
             return await real.RunAsync(command, workdir, timeout, env, ct);
         }
