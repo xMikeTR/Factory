@@ -87,7 +87,7 @@ public sealed class UiSabotageTests : IDisposable
             d.Add("./" + f);
             d.Add("src/../" + f);
             d.Add("src/pages/../../" + f);
-            d.Add(f.Replace('/', '\\'));
+            if (f.Contains('/')) d.Add(f.Replace('/', '\\')); // a Windows spelling only when it differs (else a duplicate row)
         }
         return d;
     }
