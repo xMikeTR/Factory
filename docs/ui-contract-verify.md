@@ -120,6 +120,28 @@ Known gap: `npm test -- -u` (Vitest reached through an npm script alias) is not 
 
 Not useful here: in-source testing, benchmarking, type testing. Sharding (`--shard` with the blob reporter and `--merge-reports`) is worth having once one run builds many screens.
 
+## 8. System 3 rows (F8)
+
+**Built (F8).** The registry projection gains designc's `stage_verdict` (pipeline stream): what each verification stage said, so System 3 can compute time to signal, escape rate, and veto and recovery. The Factory writes the rows; designc computes the numbers (D7 part 2).
+
+| Source in the run ledger | Verdict |
+|---|---|
+| `ui_check_failed` kind `code` | `ui-code` `fail`, one row per (task, screen), `failures: [{kind}]` |
+| `ui_check_failed` kind `aria`, `pixels`, `placement-pixels`, `placement-missing` | `ui-visual` `fail`, same grouping, `failures: [{state, kind, placement?}]` |
+| `ui:<screen>` verify that passed, no `ui_check_failed` for that screen in the run | `ui-code` `pass` and `ui-visual` `pass`, no task (exit 3: `could_not_run`) |
+| `holdout_failed` | `holdout` `fail`, per (task, screen): `{state}`, or `{criterion, state}` for an acceptance case |
+| holdout verify row `pass` / `could_not_run` / `no_holdout` | `pass` / `could_not_run` / no row. A `fail` that blamed no task is a run-level `fail` with its states |
+| `ui_acceptance_failed` | `acceptance` `fail` per task, `failures: [{criterion}]` |
+| acceptance verify row (stage `integration_verify`) | `pass`; a `failed` one that blamed no task is a run-level `fail`. The holdout's own acceptance run is ledgered under stage `holdout_acceptance` and gives no acceptance verdict |
+| `review` row | one per round with `round`: `passed`, `accepted` -> `pass`; `blocked` -> `fail`; `malformed` -> `could_not_run` |
+| `verify` stage `qa` | run level: `passed` -> `pass`, `failed` -> `fail`, `timeout` -> `could_not_run` |
+
+- `change_ts` is the epoch ms of the task's latest `verify_requested` task event not after the verdict (a run-level verdict: the latest of any task); `null` when there is none, so time to signal skips it. The ledger rows already carry `ts`, so nothing new is timed.
+- A verdict carries state names, kinds, placement ids and criterion ids only. No `detail`, tail, feedback, trace path or finding text, so nothing a holdout checks can reach designc.
+- `drift` has no run-ledger row today (it ends the run as `integration_failed`), so it is not a verdict.
+- Fixture: `tests/Factory.Integration.Tests/Fixtures/system3/run.jsonl` (hand-written run) and `projected.jsonl` (its projection, validated against the pinned schema; regenerate with `FACTORY_UPDATE_GOLDEN=1`). designc's D7 part 2 uses it.
+- `BugIntake` accepts the 13 `caught_by` values and the `catalogue_gap` origin; a test compares its list with the pinned schema.
+
 ## Slices
 
 1. **Preview run.** `factory-s2 preview`, `ui_preview_rendered`, the generated preview test, sandbox command and exit codes.
@@ -129,6 +151,7 @@ Not useful here: in-source testing, benchmarking, type testing. Sharding (`--sha
 5. **Parity.** HAR to MSW handlers, request logging and comparison.
 6. **UI mutation**, report mode, incremental per task and full at merge.
 7. **Holdout.** `holdout_failed`, the scratch copy, the retry cap.
+8. **System 3 rows (F8).** `stage_verdict` projection.
 
 ## Open questions
 
