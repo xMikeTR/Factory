@@ -47,6 +47,7 @@
     <Compile Include="Learning.fs" />
     <Compile Include="Trace.fs" />
     <Compile Include="UiSpec.fs" />
+    <Compile Include="UiPolicyFacts.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="Interop.fs" />
   </ItemGroup>
