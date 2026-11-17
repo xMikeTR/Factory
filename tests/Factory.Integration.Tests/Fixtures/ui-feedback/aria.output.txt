@@ -1,0 +1,390 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.1.0 [39m[90m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration[39m
+
+ [31m❯[39m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx [2m([22m[2m15 tests[22m[2m | [22m[31m10 failed[39m[2m)[22m[33m 27996[2mms[22m[39m
+   [31m❯[39m bordereaux page [2m(15)[22m
+[31m     [31m×[31m loading aria[39m[33m 5310[2mms[22m[39m
+     [32m✓[39m loading pixels[32m 267[2mms[22m[39m
+[31m     [31m×[31m loading placements[39m[32m 197[2mms[22m[39m
+[31m     [31m×[31m ready aria[39m[33m 5138[2mms[22m[39m
+     [32m✓[39m ready pixels[32m 231[2mms[22m[39m
+[31m     [31m×[31m ready placements[39m[32m 196[2mms[22m[39m
+[31m     [31m×[31m filtered aria[39m[33m 5148[2mms[22m[39m
+     [32m✓[39m filtered pixels[32m 217[2mms[22m[39m
+[31m     [31m×[31m filtered placements[39m[32m 224[2mms[22m[39m
+[31m     [31m×[31m empty aria[39m[33m 5145[2mms[22m[39m
+     [32m✓[39m empty pixels[32m 186[2mms[22m[39m
+[31m     [31m×[31m empty placements[39m[32m 187[2mms[22m[39m
+[31m     [31m×[31m error aria[39m[33m 5144[2mms[22m[39m
+     [32m✓[39m error pixels[32m 198[2mms[22m[39m
+[31m     [31m×[31m error placements[39m[32m 184[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 10 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:18[22m[2m > [22mbordereaux page[2m > [22mloading aria
+[31m[1mAssertionError[22m: expected '- heading "Bordereaux list" [level=1]…' to be '- heading "Bordereaux" [level=1]\n- b…' // Object.is equality[39m
+
+Failure screenshot:
+  - [2m.vitest/attachments/failure-screenshots/bordereaux.page.test.tsx/bordereaux-page---loading-aria.png[22m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- - heading "Bordereaux" [level=1][39m
+[31m+ - heading "Bordereaux[7m list[27m" [level=1][39m
+[2m  - button "Export"[22m
+[2m  - text: Total premium Cedant ▾ Period ▾ Clear all Bordereau[22m
+
+[36m [2m❯[22m checkAria ui-contract/preview/vitest-ui.tsx:[2m58:65[22m[39m
+    [90m 56|[39m     [35mconst[39m want [33m=[39m approvedAria[[32m`[39m[36m${[39mspec[33m.[39mscreen[36m}[39m[32m/[39m[36m${[39mstate[36m}[39m[32m`[39m][33m;[39m
+    [90m 57|[39m     if (want == null) throw new Error(`No approved ARIA tree for ${spe…
+    [90m 58|[39m     await expect.poll(ariaOf, { timeout: 5000, interval: 100 }).toBe(w…
+    [90m   |[39m                                                                 [31m^[39m
+    [90m 59|[39m   }
+    [90m 60|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m18:61[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+[36m [2m❯[22m checkAria ui-contract/preview/vitest-ui.tsx:[2m58:5[22m[39m
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m18:61[22m[39m
+
+
+Trace:
+[2m  step               locator                 start  duration  location[22m
+  react.render       [36mpage                  [39m  +28ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument  [36mgetByTestId('ui-root')[39m  +29ms       1ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+  toBeInTheDocument  [36mgetByTestId('ui-root')[39m  +30ms       0ms  [2mui-contract/preview/vitest-ui.tsx:50:16[22m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:20[22m[2m > [22mbordereaux page[2m > [22mloading placements
+[31m[1mError[22m: [2mexpect([22m[31melement[31m[2m).[22mtoMatchScreenshot[2m()[22m
+
+Screenshot does not match the stored reference.
+151 pixels (ratio 0.01) differ.
+
+Reference screenshot:
+  [32m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/ui-contract/previews/bordereaux/placements/loading__hdr-chromium-linux.png[31m
+
+Actual screenshot:
+  [31m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__loading__hdr-actual-chromium-linux.png[31m
+[2m
+Diff image:
+  /tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__loading__hdr-diff-chromium-linux.png[22m
+[39m
+[36m [2m❯[22m checkPlacements ui-contract/preview/vitest-ui.tsx:[2m73:51[22m[39m
+    [90m 71|[39m     const el = page.getByTestId(ROOT).element().querySelector(`[data-u…
+    [90m 72|[39m     if (!el) throw new Error(`Placement '${id}' has no element with da…
+    [90m 73|[39m     await expect.element(page.elementLocator(el)).toMatchScreenshot(sh…
+    [90m   |[39m                                                   [31m^[39m
+    [90m 74|[39m   }
+    [90m 75|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m20:73[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+
+Trace:
+[2m  step                       locator                                               start  duration  location[22m
+  react.render               [36mpage                                                [39m   +8ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument          [36mgetByTestId('ui-root')                              [39m   +8ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+[31m  toMatchScreenshot [ERROR]  [36mgetByText('Bordereaux listExport', { exact: false })[31m   +9ms     178ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:21[22m[2m > [22mbordereaux page[2m > [22mready aria
+[31m[1mAssertionError[22m: expected '- heading "Bordereaux list" [level=1]…' to be '- heading "Bordereaux" [level=1]\n- b…' // Object.is equality[39m
+
+Failure screenshot:
+  - [2m.vitest/attachments/failure-screenshots/bordereaux.page.test.tsx/bordereaux-page---ready-aria.png[22m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[33m@@ -1,6 +1,6 @@[39m
+[32m- - heading "Bordereaux" [level=1][39m
+[31m+ - heading "Bordereaux[7m list[27m" [level=1][39m
+[2m  - button "Export"[22m
+[2m  - text: Total premium $9,531,350 Cedant ▾ Period ▾ Clear all[22m
+[2m  - table:[22m
+[2m    - rowgroup:[22m
+[2m      - row "Cedant Period Lines Premium Status":[22m
+
+[36m [2m❯[22m checkAria ui-contract/preview/vitest-ui.tsx:[2m58:65[22m[39m
+    [90m 56|[39m     [35mconst[39m want [33m=[39m approvedAria[[32m`[39m[36m${[39mspec[33m.[39mscreen[36m}[39m[32m/[39m[36m${[39mstate[36m}[39m[32m`[39m][33m;[39m
+    [90m 57|[39m     if (want == null) throw new Error(`No approved ARIA tree for ${spe…
+    [90m 58|[39m     await expect.poll(ariaOf, { timeout: 5000, interval: 100 }).toBe(w…
+    [90m   |[39m                                                                 [31m^[39m
+    [90m 59|[39m   }
+    [90m 60|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m21:57[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+[36m [2m❯[22m checkAria ui-contract/preview/vitest-ui.tsx:[2m58:5[22m[39m
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m21:57[22m[39m
+
+
+Trace:
+[2m  step               locator                 start  duration  location[22m
+  react.render       [36mpage                  [39m   +5ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument  [36mgetByTestId('ui-root')[39m   +5ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+  toBeInTheDocument  [36mgetByTestId('ui-root')[39m   +5ms       0ms  [2mui-contract/preview/vitest-ui.tsx:50:16[22m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:23[22m[2m > [22mbordereaux page[2m > [22mready placements
+[31m[1mError[22m: [2mexpect([22m[31melement[31m[2m).[22mtoMatchScreenshot[2m()[22m
+
+Screenshot does not match the stored reference.
+151 pixels (ratio 0.01) differ.
+
+Reference screenshot:
+  [32m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/ui-contract/previews/bordereaux/placements/ready__hdr-chromium-linux.png[31m
+
+Actual screenshot:
+  [31m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__ready__hdr-actual-chromium-linux.png[31m
+[2m
+Diff image:
+  /tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__ready__hdr-diff-chromium-linux.png[22m
+[39m
+[36m [2m❯[22m checkPlacements ui-contract/preview/vitest-ui.tsx:[2m73:51[22m[39m
+    [90m 71|[39m     const el = page.getByTestId(ROOT).element().querySelector(`[data-u…
+    [90m 72|[39m     if (!el) throw new Error(`Placement '${id}' has no element with da…
+    [90m 73|[39m     await expect.element(page.elementLocator(el)).toMatchScreenshot(sh…
+    [90m   |[39m                                                   [31m^[39m
+    [90m 74|[39m   }
+    [90m 75|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m23:69[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+
+Trace:
+[2m  step                       locator                                               start  duration  location[22m
+  react.render               [36mpage                                                [39m   +5ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument          [36mgetByTestId('ui-root')                              [39m   +6ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+[31m  toMatchScreenshot [ERROR]  [36mgetByText('Bordereaux listExport', { exact: false })[31m   +7ms     176ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:24[22m[2m > [22mbordereaux page[2m > [22mfiltered aria
+[31m[1mAssertionError[22m: expected '- heading "Bordereaux list" [level=1]…' to be '- heading "Bordereaux" [level=1]\n- b…' // Object.is equality[39m
+
+Failure screenshot:
+  - [2m.vitest/attachments/failure-screenshots/bordereaux.page.test.tsx/bordereaux-page---filtered-aria.png[22m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[33m@@ -1,6 +1,6 @@[39m
+[32m- - heading "Bordereaux" [level=1][39m
+[31m+ - heading "Bordereaux[7m list[27m" [level=1][39m
+[2m  - button "Export"[22m
+[2m  - text: Total premium $9,531,350 Cedant ▾ Period ▾ Clear all[22m
+[2m  - table:[22m
+[2m    - rowgroup:[22m
+[2m      - row "Cedant Period Lines Premium Status":[22m
+
+[36m [2m❯[22m checkAria ui-contract/preview/vitest-ui.tsx:[2m58:65[22m[39m
+    [90m 56|[39m     [35mconst[39m want [33m=[39m approvedAria[[32m`[39m[36m${[39mspec[33m.[39mscreen[36m}[39m[32m/[39m[36m${[39mstate[36m}[39m[32m`[39m][33m;[39m
+    [90m 57|[39m     if (want == null) throw new Error(`No approved ARIA tree for ${spe…
+    [90m 58|[39m     await expect.poll(ariaOf, { timeout: 5000, interval: 100 }).toBe(w…
+    [90m   |[39m                                                                 [31m^[39m
+    [90m 59|[39m   }
+    [90m 60|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m24:63[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+[36m [2m❯[22m checkAria ui-contract/preview/vitest-ui.tsx:[2m58:5[22m[39m
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m24:63[22m[39m
+
+
+Trace:
+[2m  step               locator                 start  duration  location[22m
+  react.render       [36mpage                  [39m   +4ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument  [36mgetByTestId('ui-root')[39m   +4ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+  toBeInTheDocument  [36mgetByTestId('ui-root')[39m   +4ms       0ms  [2mui-contract/preview/vitest-ui.tsx:50:16[22m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:26[22m[2m > [22mbordereaux page[2m > [22mfiltered placements
+[31m[1mError[22m: [2mexpect([22m[31melement[31m[2m).[22mtoMatchScreenshot[2m()[22m
+
+Screenshot does not match the stored reference.
+151 pixels (ratio 0.01) differ.
+
+Reference screenshot:
+  [32m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/ui-contract/previews/bordereaux/placements/filtered__hdr-chromium-linux.png[31m
+
+Actual screenshot:
+  [31m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__filtered__hdr-actual-chromium-linux.png[31m
+[2m
+Diff image:
+  /tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__filtered__hdr-diff-chromium-linux.png[22m
+[39m
+[36m [2m❯[22m checkPlacements ui-contract/preview/vitest-ui.tsx:[2m73:51[22m[39m
+    [90m 71|[39m     const el = page.getByTestId(ROOT).element().querySelector(`[data-u…
+    [90m 72|[39m     if (!el) throw new Error(`Placement '${id}' has no element with da…
+    [90m 73|[39m     await expect.element(page.elementLocator(el)).toMatchScreenshot(sh…
+    [90m   |[39m                                                   [31m^[39m
+    [90m 74|[39m   }
+    [90m 75|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m26:75[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+
+Trace:
+[2m  step                       locator                                               start  duration  location[22m
+  react.render               [36mpage                                                [39m   +7ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument          [36mgetByTestId('ui-root')                              [39m   +7ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+[31m  toMatchScreenshot [ERROR]  [36mgetByText('Bordereaux listExport', { exact: false })[31m   +8ms     200ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:27[22m[2m > [22mbordereaux page[2m > [22mempty aria
+[31m[1mAssertionError[22m: expected '- heading "Bordereaux list" [level=1]…' to be '- heading "Bordereaux" [level=1]\n- b…' // Object.is equality[39m
+
+Failure screenshot:
+  - [2m.vitest/attachments/failure-screenshots/bordereaux.page.test.tsx/bordereaux-page---empty-aria.png[22m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- - heading "Bordereaux" [level=1][39m
+[31m+ - heading "Bordereaux[7m list[27m" [level=1][39m
+[2m  - button "Export"[22m
+[2m  - text: Total premium $0 Cedant ▾ Period ▾ Clear all No bordereaux match Try a different cedant or period, or clear the filters. Bordereau Select a row to see its details.[22m
+
+[36m [2m❯[22m checkAria ui-contract/preview/vitest-ui.tsx:[2m58:65[22m[39m
+    [90m 56|[39m     [35mconst[39m want [33m=[39m approvedAria[[32m`[39m[36m${[39mspec[33m.[39mscreen[36m}[39m[32m/[39m[36m${[39mstate[36m}[39m[32m`[39m][33m;[39m
+    [90m 57|[39m     if (want == null) throw new Error(`No approved ARIA tree for ${spe…
+    [90m 58|[39m     await expect.poll(ariaOf, { timeout: 5000, interval: 100 }).toBe(w…
+    [90m   |[39m                                                                 [31m^[39m
+    [90m 59|[39m   }
+    [90m 60|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m27:57[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+[36m [2m❯[22m checkAria ui-contract/preview/vitest-ui.tsx:[2m58:5[22m[39m
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m27:57[22m[39m
+
+
+Trace:
+[2m  step               locator                 start  duration  location[22m
+  react.render       [36mpage                  [39m   +4ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument  [36mgetByTestId('ui-root')[39m   +4ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+  toBeInTheDocument  [36mgetByTestId('ui-root')[39m   +4ms       0ms  [2mui-contract/preview/vitest-ui.tsx:50:16[22m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:29[22m[2m > [22mbordereaux page[2m > [22mempty placements
+[31m[1mError[22m: [2mexpect([22m[31melement[31m[2m).[22mtoMatchScreenshot[2m()[22m
+
+Screenshot does not match the stored reference.
+151 pixels (ratio 0.01) differ.
+
+Reference screenshot:
+  [32m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/ui-contract/previews/bordereaux/placements/empty__hdr-chromium-linux.png[31m
+
+Actual screenshot:
+  [31m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__empty__hdr-actual-chromium-linux.png[31m
+[2m
+Diff image:
+  /tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__empty__hdr-diff-chromium-linux.png[22m
+[39m
+[36m [2m❯[22m checkPlacements ui-contract/preview/vitest-ui.tsx:[2m73:51[22m[39m
+    [90m 71|[39m     const el = page.getByTestId(ROOT).element().querySelector(`[data-u…
+    [90m 72|[39m     if (!el) throw new Error(`Placement '${id}' has no element with da…
+    [90m 73|[39m     await expect.element(page.elementLocator(el)).toMatchScreenshot(sh…
+    [90m   |[39m                                                   [31m^[39m
+    [90m 74|[39m   }
+    [90m 75|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m29:69[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+
+Trace:
+[2m  step                       locator                                               start  duration  location[22m
+  react.render               [36mpage                                                [39m   +6ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument          [36mgetByTestId('ui-root')                              [39m   +6ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+[31m  toMatchScreenshot [ERROR]  [36mgetByText('Bordereaux listExport', { exact: false })[31m   +7ms     170ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/10]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:30[22m[2m > [22mbordereaux page[2m > [22merror aria
+[31m[1mAssertionError[22m: expected '- heading "Bordereaux list" [level=1]…' to be '- heading "Bordereaux" [level=1]\n- b…' // Object.is equality[39m
+
+Failure screenshot:
+  - [2m.vitest/attachments/failure-screenshots/bordereaux.page.test.tsx/bordereaux-page---error-aria.png[22m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- - heading "Bordereaux" [level=1][39m
+[31m+ - heading "Bordereaux[7m list[27m" [level=1][39m
+[2m  - button "Export"[22m
+[2m  - text: Total premium — Cedant ▾ Period ▾ Clear all Couldn't load this. Try again in a moment. Bordereaux could not be loaded Bordereau Select a row to see its details.[22m
+
+[36m [2m❯[22m checkAria ui-contract/preview/vitest-ui.tsx:[2m58:65[22m[39m
+    [90m 56|[39m     [35mconst[39m want [33m=[39m approvedAria[[32m`[39m[36m${[39mspec[33m.[39mscreen[36m}[39m[32m/[39m[36m${[39mstate[36m}[39m[32m`[39m][33m;[39m
+    [90m 57|[39m     if (want == null) throw new Error(`No approved ARIA tree for ${spe…
+    [90m 58|[39m     await expect.poll(ariaOf, { timeout: 5000, interval: 100 }).toBe(w…
+    [90m   |[39m                                                                 [31m^[39m
+    [90m 59|[39m   }
+    [90m 60|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m30:57[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+[36m [2m❯[22m checkAria ui-contract/preview/vitest-ui.tsx:[2m58:5[22m[39m
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m30:57[22m[39m
+
+
+Trace:
+[2m  step               locator                 start  duration  location[22m
+  react.render       [36mpage                  [39m   +5ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument  [36mgetByTestId('ui-root')[39m   +5ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+  toBeInTheDocument  [36mgetByTestId('ui-root')[39m   +5ms       0ms  [2mui-contract/preview/vitest-ui.tsx:50:16[22m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/10]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:32[22m[2m > [22mbordereaux page[2m > [22merror placements
+[31m[1mError[22m: [2mexpect([22m[31melement[31m[2m).[22mtoMatchScreenshot[2m()[22m
+
+Screenshot does not match the stored reference.
+151 pixels (ratio 0.01) differ.
+
+Reference screenshot:
+  [32m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/ui-contract/previews/bordereaux/placements/error__hdr-chromium-linux.png[31m
+
+Actual screenshot:
+  [31m/tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__error__hdr-actual-chromium-linux.png[31m
+[2m
+Diff image:
+  /tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__error__hdr-diff-chromium-linux.png[22m
+[39m
+[36m [2m❯[22m checkPlacements ui-contract/preview/vitest-ui.tsx:[2m73:51[22m[39m
+    [90m 71|[39m     const el = page.getByTestId(ROOT).element().querySelector(`[data-u…
+    [90m 72|[39m     if (!el) throw new Error(`Placement '${id}' has no element with da…
+    [90m 73|[39m     await expect.element(page.elementLocator(el)).toMatchScreenshot(sh…
+    [90m   |[39m                                                   [31m^[39m
+    [90m 74|[39m   }
+    [90m 75|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m32:69[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+
+Trace:
+[2m  step                       locator                                               start  duration  location[22m
+  react.render               [36mpage                                                [39m   +4ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument          [36mgetByTestId('ui-root')                              [39m   +5ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+[31m  toMatchScreenshot [ERROR]  [36mgetByText('Bordereaux listExport', { exact: false })[31m   +6ms     166ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/10]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m10 failed[39m[22m[2m | [22m[1m[32m5 passed[39m[22m[90m (15)[39m
+[2m   Start at [22m 17:12:51
+[2m   Duration [22m 30.16s[2m (tests 96%, worker 3%, import 2%)[22m
+
+JSON report written to /tmp/ui-recordsCD9e5/ws/worktrees/r1/integration/.vitest/json/output.json
+[1m[7m[35m HTML [39m[27m[22m [35mReport is generated[39m
+[2m       You can run [22m[1mnpx vite preview --outDir .vitest[22m[2m to see the test results.[22m

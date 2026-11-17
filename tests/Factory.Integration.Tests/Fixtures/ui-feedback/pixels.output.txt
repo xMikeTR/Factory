@@ -1,0 +1,161 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.1.0 [39m[90m/tmp/ui-recordqkoQqu/ws/worktrees/r1/integration[39m
+
+[90mstderr[2m | ui-contract/tests/bordereaux.page.test.tsx[2m:19[22m[2m[2m > [22m[2mbordereaux page[2m > [22m[2mloading pixels
+[22m[39m[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/bordereaux
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[90mstderr[2m | ui-contract/tests/bordereaux.page.test.tsx[2m:19[22m[2m[2m > [22m[2mbordereaux page[2m > [22m[2mloading pixels
+[22m[39m[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/bordereaux/summary
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[90mstderr[2m | ui-contract/tests/bordereaux.page.test.tsx[2m:19[22m[2m[2m > [22m[2mbordereaux page[2m > [22m[2mloading pixels
+[22m[39m[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/bordereaux/B-2
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+ [31m❯[39m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx [2m([22m[2m15 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[33m 3411[2mms[22m[39m
+   [31m❯[39m bordereaux page [2m(15)[22m
+     [32m✓[39m loading aria[32m 35[2mms[22m[39m
+     [32m✓[39m loading pixels[32m 221[2mms[22m[39m
+     [33m[2m✓[22m[39m loading placements[33m 443[2mms[22m[39m
+     [32m✓[39m ready aria[32m 113[2mms[22m[39m
+     [32m✓[39m ready pixels[32m 239[2mms[22m[39m
+[31m     [31m×[31m ready placements[39m[33m 407[2mms[22m[39m
+     [32m✓[39m filtered aria[32m 110[2mms[22m[39m
+     [32m✓[39m filtered pixels[32m 213[2mms[22m[39m
+[31m     [31m×[31m filtered placements[39m[33m 304[2mms[22m[39m
+     [32m✓[39m empty aria[32m 107[2mms[22m[39m
+     [32m✓[39m empty pixels[32m 198[2mms[22m[39m
+[31m     [31m×[31m empty placements[39m[33m 315[2mms[22m[39m
+     [32m✓[39m error aria[32m 107[2mms[22m[39m
+     [32m✓[39m error pixels[32m 142[2mms[22m[39m
+     [33m[2m✓[22m[39m error placements[33m 431[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 3 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:23[22m[2m > [22mbordereaux page[2m > [22mready placements
+[31m[1mError[22m: [2mexpect([22m[31melement[31m[2m).[22mtoMatchScreenshot[2m()[22m
+
+Screenshot does not match the stored reference.
+802 pixels (ratio 0.04) differ.
+
+Reference screenshot:
+  [32m/tmp/ui-recordqkoQqu/ws/worktrees/r1/integration/ui-contract/previews/bordereaux/placements/ready__premium-chromium-linux.png[31m
+
+Actual screenshot:
+  [31m/tmp/ui-recordqkoQqu/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__ready__premium-actual-chromium-linux.png[31m
+[2m
+Diff image:
+  /tmp/ui-recordqkoQqu/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__ready__premium-diff-chromium-linux.png[22m
+[39m
+[36m [2m❯[22m checkPlacements ui-contract/preview/vitest-ui.tsx:[2m73:51[22m[39m
+    [90m 71|[39m     const el = page.getByTestId(ROOT).element().querySelector(`[data-u…
+    [90m 72|[39m     if (!el) throw new Error(`Placement '${id}' has no element with da…
+    [90m 73|[39m     await expect.element(page.elementLocator(el)).toMatchScreenshot(sh…
+    [90m   |[39m                                                   [31m^[39m
+    [90m 74|[39m   }
+    [90m 75|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m23:63[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+
+Trace:
+[2m  step                       locator                                                 start  duration  location[22m
+  react.render               [36mpage                                                 [39m    +5ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument          [36mgetByTestId('ui-root')                               [39m    +5ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+  toMatchScreenshot          [36mgetByText('BordereauxExport', { exact: false })      [39m    +6ms      95ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m
+  toMatchScreenshot          [36mgetByRole('button', { name: 'Export', exact: false })[39m  +102ms      60ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m
+[31m  toMatchScreenshot [ERROR]  [36mgetByText('Total premium$', { exact: false })        [31m  +162ms     157ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:26[22m[2m > [22mbordereaux page[2m > [22mfiltered placements
+[31m[1mError[22m: [2mexpect([22m[31melement[31m[2m).[22mtoMatchScreenshot[2m()[22m
+
+Screenshot does not match the stored reference.
+802 pixels (ratio 0.04) differ.
+
+Reference screenshot:
+  [32m/tmp/ui-recordqkoQqu/ws/worktrees/r1/integration/ui-contract/previews/bordereaux/placements/filtered__premium-chromium-linux.png[31m
+
+Actual screenshot:
+  [31m/tmp/ui-recordqkoQqu/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__filtered__premium-actual-chromium-linux.png[31m
+[2m
+Diff image:
+  /tmp/ui-recordqkoQqu/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__filtered__premium-diff-chromium-linux.png[22m
+[39m
+[36m [2m❯[22m checkPlacements ui-contract/preview/vitest-ui.tsx:[2m73:51[22m[39m
+    [90m 71|[39m     const el = page.getByTestId(ROOT).element().querySelector(`[data-u…
+    [90m 72|[39m     if (!el) throw new Error(`Placement '${id}' has no element with da…
+    [90m 73|[39m     await expect.element(page.elementLocator(el)).toMatchScreenshot(sh…
+    [90m   |[39m                                                   [31m^[39m
+    [90m 74|[39m   }
+    [90m 75|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m26:69[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+
+Trace:
+[2m  step                       locator                                                 start  duration  location[22m
+  react.render               [36mpage                                                 [39m    +5ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument          [36mgetByTestId('ui-root')                               [39m    +5ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+  toMatchScreenshot          [36mgetByText('BordereauxExport', { exact: false })      [39m    +5ms      81ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m
+  toMatchScreenshot          [36mgetByRole('button', { name: 'Export', exact: false })[39m   +87ms      64ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m
+[31m  toMatchScreenshot [ERROR]  [36mgetByText('Total premium$', { exact: false })        [31m  +153ms     138ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m ui-page (chromium) [49m[39m ui-contract/tests/bordereaux.page.test.tsx[2m:29[22m[2m > [22mbordereaux page[2m > [22mempty placements
+[31m[1mError[22m: [2mexpect([22m[31melement[31m[2m).[22mtoMatchScreenshot[2m()[22m
+
+Screenshot does not match the stored reference.
+202 pixels (ratio 0.01) differ.
+
+Reference screenshot:
+  [32m/tmp/ui-recordqkoQqu/ws/worktrees/r1/integration/ui-contract/previews/bordereaux/placements/empty__premium-chromium-linux.png[31m
+
+Actual screenshot:
+  [31m/tmp/ui-recordqkoQqu/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__empty__premium-actual-chromium-linux.png[31m
+[2m
+Diff image:
+  /tmp/ui-recordqkoQqu/ws/worktrees/r1/integration/.vitest/attachments/ui-contract/tests/bordereaux.page.test.tsx/ui__bordereaux__empty__premium-diff-chromium-linux.png[22m
+[39m
+[36m [2m❯[22m checkPlacements ui-contract/preview/vitest-ui.tsx:[2m73:51[22m[39m
+    [90m 71|[39m     const el = page.getByTestId(ROOT).element().querySelector(`[data-u…
+    [90m 72|[39m     if (!el) throw new Error(`Placement '${id}' has no element with da…
+    [90m 73|[39m     await expect.element(page.elementLocator(el)).toMatchScreenshot(sh…
+    [90m   |[39m                                                   [31m^[39m
+    [90m 74|[39m   }
+    [90m 75|[39m }
+[90m [2m❯[22m ui-contract/tests/bordereaux.page.test.tsx:[2m29:63[22m[39m
+
+[31m[1mCaused by: Error[22m: Matcher did not succeed in time.[39m
+
+Trace:
+[2m  step                       locator                                                 start  duration  location[22m
+  react.render               [36mpage                                                 [39m    +4ms  [2m       -[22m  [2mui-contract/tests/bordereaux.page.test.tsx:15:5[22m
+  toBeInTheDocument          [36mgetByTestId('ui-root')                               [39m    +4ms       0ms  [2mui-contract/tests/bordereaux.page.test.tsx:16:18[22m
+  toMatchScreenshot          [36mgetByText('BordereauxExport', { exact: false })      [39m    +4ms      93ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m
+  toMatchScreenshot          [36mgetByRole('button', { name: 'Export', exact: false })[39m   +98ms      59ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m
+[31m  toMatchScreenshot [ERROR]  [36mgetByText('Total premium$', { exact: false })        [31m  +157ms     147ms  [2mui-contract/preview/vitest-ui.tsx:73:18[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m12 passed[39m[22m[90m (15)[39m
+[2m   Start at [22m 17:13:39
+[2m   Duration [22m 5.64s[2m (tests 75%, worker 16%, import 9%)[22m
+
+JSON report written to /tmp/ui-recordqkoQqu/ws/worktrees/r1/integration/.vitest/json/output.json
+[1m[7m[35m HTML [39m[27m[22m [35mReport is generated[39m
+[2m       You can run [22m[1mnpx vite preview --outDir .vitest[22m[2m to see the test results.[22m
