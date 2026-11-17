@@ -213,3 +213,102 @@ module UiReport =
                           "placement-pixels", id
                       | k -> k, None
                   yield { State = state; Kind = kind; Placement = placement; Detail = (msg.Split('\n').[0]).Trim() } ]
+
+/// The holdout Vitest file the Factory writes into a SCRATCH copy only (`ui-contract/tests/<screen>.holdout.test.tsx`): the kit's
+/// bordereaux.holdout.test.tsx, importing the app's own registry like the page test, with no props (the page defaults them).
+/// The sample is read from `ui-contract/holdout/<screen>.json`, which also exists only in the scratch copy.
+[<RequireQualifiedAccess>]
+module UiHoldoutTest =
+    let private template = """import spec from "../specs/@SCREEN@.json";
+import { components, layouts } from "../registry";
+import { @COMPONENT@ as Page } from "../../@FILE@";
+import { holdoutTests, type Holdout } from "../preview/vitest-ui";
+
+const manifests = Object.values(import.meta.glob("../manifests/*.json", { eager: true, import: "default" })) as any[];
+// A missing file gives no holdout, and holdoutTests then fails every state as could_not_run.
+const holdout = (Object.values(import.meta.glob("../holdout/@SCREEN@.json", { eager: true, import: "default" }))[0] ?? {}) as Holdout;
+
+holdoutTests(spec as any, Page, { components, layouts, manifests, holdout });
+"""
+
+    let text (screen: string) (component': string) (file: string) : string =
+        let noExt = Regex.Replace(file.Replace('\\', '/'), @"\.[A-Za-z0-9]+$", "")
+        template.Replace("@SCREEN@", screen).Replace("@COMPONENT@", component').Replace("@FILE@", noExt)
+
+type private HoldoutTestVerdict = HPass | HFail | HCannot | HMissing
+
+/// What a holdout run said about one screen.
+type HoldoutReading =
+    /// Every state matched.
+    | HoldoutHeld
+    /// These states did not (in spec order). Never more than state names.
+    | HoldoutFailedStates of string list
+    /// The run says nothing about the page. The text is the Factory's own, never the runner's output.
+    | HoldoutCouldNotRun of string
+
+/// Reads a Vitest JSON report of the generated holdout test (describe `<screen> holdout`, one test per state, titled by the state).
+/// Nothing the runner printed is ever returned: a failing report can carry the holdout's data, so only state names and fixed text leave.
+[<RequireQualifiedAccess>]
+module UiHoldoutReport =
+    let private failedMessage (m: string) =
+        let first = (m.Split('\n').[0]).Trim()
+        first.StartsWith "holdout_failed:" || first.StartsWith "Error: holdout_failed:" || first.StartsWith "AssertionError: holdout_failed:"
+
+    let private couldNotMessage (m: string) =
+        let first = (m.Split('\n').[0]).Trim()
+        first.Contains "could_not_run:"
+
+    let read (screen: string) (states: string list) (reportJson: string) : HoldoutReading =
+        let unreadable = HoldoutCouldNotRun "the holdout report could not be read"
+        try
+            let start = reportJson.IndexOf '{'
+            if start < 0 then unreadable
+            else
+                use d = JsonDocument.Parse(reportJson.Substring start)
+                let results =
+                    match d.RootElement.TryGetProperty "testResults" with
+                    | true, files when files.ValueKind = JsonValueKind.Array ->
+                        [ for f in files.EnumerateArray() do
+                              match f.TryGetProperty "assertionResults" with
+                              | true, a when a.ValueKind = JsonValueKind.Array ->
+                                  for (r: JsonElement) in a.EnumerateArray() do
+                                      let s (name: string) = match r.TryGetProperty name with | true, v when v.ValueKind = JsonValueKind.String -> v.GetString() | _ -> ""
+                                      let ours =
+                                          match r.TryGetProperty "ancestorTitles" with
+                                          | true, a when a.ValueKind = JsonValueKind.Array && a.GetArrayLength() > 0 -> a[0].GetString() = screen + " holdout"
+                                          | _ -> true
+                                      let msg =
+                                          match r.TryGetProperty "failureMessages" with
+                                          | true, m when m.ValueKind = JsonValueKind.Array && m.GetArrayLength() > 0 -> m[0].GetString()
+                                          | _ -> ""
+                                      if ours then yield s "title", s "status", msg
+                              | _ -> () ]
+                    | _ -> []
+                let byState = results |> List.map (fun (t, st, m) -> t, (st, m)) |> Map.ofList
+                let verdict state =
+                    match Map.tryFind state byState with
+                    | Some("passed", _) -> HPass
+                    | Some("failed", m) when couldNotMessage m && not (failedMessage m) -> HCannot
+                    | Some("failed", _) -> HFail
+                    | _ -> HMissing
+                let verdicts = states |> List.map (fun s -> s, verdict s)
+                let failed = verdicts |> List.filter (fun (_, v) -> v = HFail) |> List.map fst
+                if not failed.IsEmpty then HoldoutFailedStates failed
+                elif verdicts |> List.exists (fun (_, v) -> v = HCannot) then
+                    HoldoutCouldNotRun "the holdout sample could not be used (it is missing, names data the spec does not declare, or equals the visible sample)"
+                elif states.IsEmpty || verdicts |> List.exists (fun (_, v) -> v = HMissing) then
+                    HoldoutCouldNotRun $"only some of the {states.Length} holdout tests for '{screen}' ran"
+                else HoldoutHeld
+        with :? JsonException -> unreadable
+
+    /// The tail of the screen's verify outcome: generated text only, safe for a repair brief and a ledger.
+    let tail (screen: string) (reading: HoldoutReading) : string =
+        match reading with
+        | HoldoutHeld -> $"holdout:{screen} passed"
+        | HoldoutFailedStates states -> String.Join("\n", states |> List.map (fun s -> $"holdout_failed: {screen}/{s}"))
+        | HoldoutCouldNotRun reason -> "could_not_run: " + reason
+
+/// The retry cap per holdout: the nth failure of one (screen, criterion?) on one work item goes to a person once n > cap.
+[<RequireQualifiedAccess>]
+module HoldoutCap =
+    let exceeded (cap: int) (failures: int) : bool = failures > cap

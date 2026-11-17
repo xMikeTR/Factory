@@ -95,4 +95,38 @@ let tests : (string * (unit -> unit)) list =
           equal None (kind "empty" "pixels").Placement "pixels no placement"
           equal (Some "premium") (kind "empty" "placement-pixels").Placement "placement"
           equal (Some "hdr") (kind "error" "placement-missing").Placement "missing placement"
-          check (fs |> List.exists (fun f -> f.State = "error" && f.Kind = "aria")) "aria" ]
+          check (fs |> List.exists (fun f -> f.State = "error" && f.Kind = "aria")) "aria"
+      "ui holdout test: the kit's file for the screen, no props, the sample read from the scratch holdout folder", fun () ->
+          let t = UiHoldoutTest.text "bordereaux" "BordereauxList" "src/BordereauxList.tsx"
+          check (t.Contains "import { BordereauxList as Page } from \"../../src/BordereauxList\"") "page import"
+          check (t.Contains "import { components, layouts } from \"../registry\"") "registry import"
+          check (t.Contains "../holdout/bordereaux.json") "holdout path"
+          check (t.Contains "holdoutTests(spec as any, Page, { components, layouts, manifests, holdout });") "no props"
+          check (not (t.Contains "@")) "every placeholder filled"
+      "ui holdout report: failed states, could_not_run, other failures and a missing report", fun () ->
+          let st = [ "default"; "empty" ]
+          let rep a b =
+              $"""{{"testResults":[{{"assertionResults":[
+                  {{"title":"default","ancestorTitles":["bordereaux holdout"],"status":"{fst a}","failureMessages":[{snd a}]}},
+                  {{"title":"empty","ancestorTitles":["bordereaux holdout"],"status":"{fst b}","failureMessages":[{snd b}]}}]}}]}}"""
+          let ok = ("passed", "")
+          let hf = ("failed", "\"Error: holdout_failed: bordereaux/empty. Details are withheld.\"")
+          let cn = ("failed", "\"Error: could_not_run: no holdout sample for 'bordereaux'.\"")
+          let thrown = ("failed", "\"TypeError: Cannot read properties of undefined (reading 'Cedant Zed')\"")
+          equal HoldoutHeld (UiHoldoutReport.read "bordereaux" st (rep ok ok)) "held"
+          equal (HoldoutFailedStates [ "empty" ]) (UiHoldoutReport.read "bordereaux" st (rep ok hf)) "holdout_failed"
+          equal (HoldoutFailedStates [ "default" ]) (UiHoldoutReport.read "bordereaux" st (rep thrown ok)) "the page threw on unseen data: a failure of that state"
+          check (match UiHoldoutReport.read "bordereaux" st (rep cn cn) with HoldoutCouldNotRun _ -> true | _ -> false) "could_not_run"
+          check (match UiHoldoutReport.read "bordereaux" st (rep ok ("skipped", "")) with HoldoutCouldNotRun _ -> true | _ -> false) "a skipped test never passes"
+          check (match UiHoldoutReport.read "bordereaux" st "not json" with HoldoutCouldNotRun _ -> true | _ -> false) "no report"
+          check (match UiHoldoutReport.read "bordereaux" st "{ broken" with HoldoutCouldNotRun _ -> true | _ -> false) "unreadable report"
+          check (match UiHoldoutReport.read "bordereaux" st """{"testResults":[]}""" with HoldoutCouldNotRun _ -> true | _ -> false) "empty report"
+      "ui holdout tail: generated text only, never the runner's words", fun () ->
+          equal "holdout_failed: bordereaux/empty\nholdout_failed: bordereaux/error" (UiHoldoutReport.tail "bordereaux" (HoldoutFailedStates [ "empty"; "error" ])) "failed"
+          check ((UiHoldoutReport.tail "b" (HoldoutCouldNotRun "x")).StartsWith "could_not_run:") "could not run"
+          let leaky = """{"testResults":[{"assertionResults":[{"title":"default","status":"failed","failureMessages":["Error: could_not_run: Cedant Zed"]}]}]}"""
+          check (not ((UiHoldoutReport.tail "b" (UiHoldoutReport.read "b" [ "default" ] leaky)).Contains "Zed")) "no runner text"
+      "holdout cap: the third failure with the default cap of 2 escalates", fun () ->
+          equal [ false; false; true ] ([ 1; 2; 3 ] |> List.map (HoldoutCap.exceeded 2)) "cap"
+          check (HoldoutCap.exceeded 0 1) "cap 0"
+]
