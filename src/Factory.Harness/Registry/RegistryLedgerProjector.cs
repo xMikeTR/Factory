@@ -8,10 +8,17 @@ using Microsoft.FSharp.Core;
 namespace Factory.Harness.Registry;
 
 /// The handover a run's registry rows belong to, and the decisions whose checks decide how it closes.
-public sealed record HandoverRef(string Id, IReadOnlyList<BoundDecision> Decisions, string? WorkItem = null)
+/// ElementScreens: element id to the screen whose spec that element owns (its name is the spec's component); an element that owns
+/// no screen, or more than one, is absent. Stage verdicts for acceptance criteria use it to name a screen.
+public sealed record HandoverRef(string Id, IReadOnlyList<BoundDecision> Decisions, string? WorkItem = null, IReadOnlyDictionary<string, string>? ElementScreens = null)
 {
     public static HandoverRef From(Handover h) =>
-        new(h.Id, h.Decisions.ToList(), Microsoft.FSharp.Core.FSharpOption<string>.get_IsSome(h.WorkItem) ? h.WorkItem.Value : null);
+        new(h.Id, h.Decisions.ToList(), Microsoft.FSharp.Core.FSharpOption<string>.get_IsSome(h.WorkItem) ? h.WorkItem.Value : null, ScreensByElement(h));
+
+    private static Dictionary<string, string> ScreensByElement(Handover h) =>
+        h.Elements.SelectMany(e => h.Ui.Where(u => u.Component == e.Name).Select(u => (Element: e.Id.Value, u.Screen)))
+            .GroupBy(x => x.Element).Where(g => g.Select(x => x.Screen).Distinct().Count() == 1)
+            .ToDictionary(g => g.Key, g => g.First().Screen);
 }
 
 /// One designc ledger row. Line is the canonical compact JSON written to {registry}/ledger/{Stream}.

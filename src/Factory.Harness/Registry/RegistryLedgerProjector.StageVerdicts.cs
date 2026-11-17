@@ -19,7 +19,7 @@ public static partial class RegistryLedgerProjector
         var verdicts = new List<Verdict>();
         verdicts.AddRange(UiVerdicts(run));
         verdicts.AddRange(HoldoutVerdicts(run));
-        verdicts.AddRange(AcceptanceVerdicts(run));
+        verdicts.AddRange(AcceptanceVerdicts(run, handover));
         verdicts.AddRange(ReviewVerdicts(run));
         verdicts.AddRange(QaVerdicts(run));
         foreach (var v in verdicts)
@@ -147,14 +147,16 @@ public static partial class RegistryLedgerProjector
 
     /// A frozen spec that failed blames tasks (`ui_acceptance_failed`); the visible acceptance run's own verify row gives the
     /// run-level pass, or a fail when it blamed no task. The holdout's acceptance run is ledgered under its own stage and skipped.
-    private static IEnumerable<Verdict> AcceptanceVerdicts(IReadOnlyList<LedgerEvent> run)
+    private static IEnumerable<Verdict> AcceptanceVerdicts(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
     {
         var failed = new List<(LedgerEvent, string, string?, Failure)>();
         foreach (var e in run.Where(e => e.Kind == LedgerKinds.UiAcceptanceFailed && e.TaskId is not null && e.Payload is not null))
         {
             using var doc = TryParse(e.Payload!);
             if (doc is null || Str(doc.RootElement, "ac") is not { } ac) continue;
-            failed.Add((e, "acceptance", null, new Failure(Criterion: ac)));
+            // the screen is the spec the criterion's element owns; no match, no screen (never a guess)
+            var screen = e.Element is not null && handover.ElementScreens is { } owned && owned.TryGetValue(e.Element, out var s) ? s : null;
+            failed.Add((e, "acceptance", screen, new Failure(Criterion: ac)));
         }
         foreach (var v in Blamed(failed)) yield return v;
 

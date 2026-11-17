@@ -12,7 +12,7 @@ namespace Factory.Integration.Tests.Registry;
 public class System3FixtureTests
 {
     private static readonly string Dir = Path.Combine(AppContext.BaseDirectory, "Fixtures", "system3");
-    private static readonly HandoverRef Handover = new("20261117-s3", [], "W-ui");
+    private static readonly HandoverRef Handover = new("20261117-s3", [], "W-ui", new Dictionary<string, string> { ["App/Summary"] = "summary", ["App/Portal"] = "bordereaux" });
 
     private static async Task<List<LedgerEvent>> ReadRunAsync()
     {

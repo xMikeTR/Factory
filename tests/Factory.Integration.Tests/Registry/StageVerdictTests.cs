@@ -171,6 +171,18 @@ public class StageVerdictAcceptanceReviewQaTests
     }
 
     [Fact]
+    public void An_acceptance_verdict_gets_the_screen_whose_spec_the_criterions_element_owns_and_none_when_nothing_matches()
+    {
+        var handover = new HandoverRef("20261007-c4d072ba", [], "W-ui", new Dictionary<string, string> { ["App/Summary"] = "summary" });
+        var all = RegistryLedgerProjector.Project([AcFail(1, "T-1", "AC-1", "App/Summary"), AcFail(2, "T-2", "AC-2", "App/Other"), AcFail(3, "T-3", "AC-3", null)], handover, new(5, 3))
+            .Where(e => e.Line.Contains("\"kind\":\"stage_verdict\"")).Select(e => JsonDocument.Parse(e.Line).RootElement.Clone()).ToList();
+
+        Assert.Equal("summary", S(all.Single(v => S(v, "task") == "T-1"), "screen"));
+        Assert.False(all.Single(v => S(v, "task") == "T-2").TryGetProperty("screen", out _));
+        Assert.False(all.Single(v => S(v, "task") == "T-3").TryGetProperty("screen", out _));
+    }
+
+    [Fact]
     public void A_passing_acceptance_verify_is_a_run_level_pass_and_the_holdout_runs_own_acceptance_row_is_not_one()
     {
         var v = Assert.Single(Verdicts(AcVerify(1, "passed"), AcVerify(2, "passed", "holdout_acceptance")));
