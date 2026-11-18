@@ -51,6 +51,129 @@ public abstract class ToolPolicyContract
         if (!allowed) Assert.Contains("no-verify", d.Reason);
     }
 
+    private static readonly string[] BuildRoles = [Roles.TestAuthor, Roles.Implementer, Roles.Qa];
+    private static readonly string[] FileReaders = [Roles.Planner, Roles.TaskPlanner, Roles.Reviewer, Roles.TestAuthor, Roles.Implementer, Roles.Qa, Roles.Repro, Roles.Diagnosis];
+
+    /// The in-code policy gives the reason text; the yaml layer names the rule that denied (and its message). Either names the rule.
+    private static void NamesTheRule(PolicyDecision d, string text, string rule) =>
+        Assert.True(d.Reason.Contains(text) || d.Reason.Contains(rule), $"reason names neither '{rule}' nor its text: {d.Reason}");
+
+    private PolicyDecision Run(string role, string tool, string key, string value) =>
+        Policy.Evaluate(role, tool, new Dictionary<string, object?> { [key] = value });
+
+    public static TheoryData<string, string> BuildRolesAndCommands(string[] commands)
+    {
+        var d = new TheoryData<string, string>();
+        foreach (var r in BuildRoles) foreach (var c in commands) d.Add(r, c);
+        return d;
+    }
+
+    public static TheoryData<string, string> SnapshotUpdates() => BuildRolesAndCommands(
+    [
+        "npx vitest run -u", "npx vitest run --project ui-page -u", "npx vitest run --project ui-page --update", "npx vitest run --project ui-preview -u claims.preview",
+        "npm run ui:preview", "npm run ui:preview -- bordereaux.preview", "echo ok\nnpx vitest run --project ui-page -u", "cd x && npx vitest run -u",
+    ]);
+
+    // Preview updates are denied for build roles always: no draft-screen exception.
+    [Theory]
+    [MemberData(nameof(SnapshotUpdates))]
+    public void A_build_role_may_never_update_snapshots(string role, string command)
+    {
+        var d = Run(role, "run_command", "command", command);
+
+        Assert.False(d.Allowed);
+        NamesTheRule(d, "previews are approved in designc; the Factory never updates them", "deny-preview-update");
+    }
+
+    public static TheoryData<string, string> ContractShellWrites() => BuildRolesAndCommands(
+    [
+        "rm ui-contract/previews/bordereaux/ready-chromium-linux.png", "cp /tmp/x.png ui-contract/previews/bordereaux/ready.png",
+        "echo x > ui-contract/previews/bordereaux/ready.aria.yml", "sed -i 's/0.001/0.5/' ui-contract/preview/vitest-ui.tsx",
+        "git checkout main -- ui-contract/previews", "cd ui-contract && rm previews/bordereaux/ready.aria.yml", "sed -i s/a/b/ vitest.config.ts",
+        "Copy-Item x.png ui-contract\\previews\\bordereaux\\ready-chromium-win32.png",
+        "cat ui-contract/holdout/bordereaux.json", "cd ui-contract && cat holdout/bordereaux.json", "cat ui/holdout/bordereaux.json",
+    ]);
+
+    [Theory]
+    [MemberData(nameof(ContractShellWrites))]
+    public void A_build_role_may_not_change_the_ui_contract_or_reach_the_holdout_from_the_shell(string role, string command)
+    {
+        var d = Run(role, "run_command", "command", command);
+
+        Assert.False(d.Allowed);
+        NamesTheRule(d, "UI contract", "deny-ui-contract-shell");
+    }
+
+    public static TheoryData<string, string> ProtectedPaths()
+    {
+        var d = new TheoryData<string, string>();
+        foreach (var r in BuildRoles)
+            foreach (var p in new[]
+            {
+                "ui-contract/previews/bordereaux/ready-chromium-linux.png", "ui-contract/previews/bordereaux/ready.aria.yml",
+                "ui-contract/previews/bordereaux/placements/empty__premium-chromium-linux.png", "ui-contract/specs/bordereaux.json",
+                "ui-contract/specs/claims.json", "ui-contract/manifests/DataTable.json", "ui-contract/preview/vitest-ui.tsx",
+                "ui-contract/tests/bordereaux.page.test.tsx", "vitest.config.ts", ".claude/hooks/ui-contract-guard.mjs",
+                "src/pages/../../ui-contract/previews/bordereaux/ready.aria.yml", "./src/../ui-contract/previews/bordereaux/ready.png",
+                "ui-contract\\previews\\bordereaux\\ready.aria.yml", "/work/app/ui-contract/previews/bordereaux/ready.aria.yml",
+                "ui-contract/holdout/bordereaux.json", "ui/holdout/bordereaux.json",
+            })
+                d.Add(r, p);
+        return d;
+    }
+
+    [Theory]
+    [MemberData(nameof(ProtectedPaths))]
+    public void A_build_role_may_not_write_or_delete_a_ui_contract_file(string role, string path)
+    {
+        foreach (var tool in new[] { "write_file", "delete_file" }.Where(t => Run(role, t, "path", "src/x.cs").Allowed))
+        {
+            var d = Run(role, tool, "path", path);
+            Assert.False(d.Allowed);
+            NamesTheRule(d, "UI contract", "deny-ui-contract-write");
+        }
+    }
+
+    public static TheoryData<string, string> HoldoutReads()
+    {
+        var d = new TheoryData<string, string>();
+        foreach (var r in FileReaders) foreach (var p in new[] { "ui-contract/holdout/bordereaux.json", "ui/holdout/bordereaux.json", "src/../ui-contract/holdout/x.json", "ui-contract\\holdout\\x.json" }) d.Add(r, p);
+        return d;
+    }
+
+    [Theory]
+    [MemberData(nameof(HoldoutReads))]
+    public void No_role_that_reads_files_may_read_or_list_the_holdout(string role, string path)
+    {
+        var read = Run(role, "read_file", "path", path);
+        var list = Run(role, "list_files", "directory", path);
+
+        Assert.False(read.Allowed);
+        NamesTheRule(read, "holdout samples", "deny-holdout-read");
+        Assert.False(list.Allowed);
+        NamesTheRule(list, "holdout samples", "deny-holdout-read");
+    }
+
+    [Theory]
+    [InlineData("run_command", "command", "npx vitest run --project ui-page")]
+    [InlineData("run_command", "command", "npm run ui:holdout")]
+    [InlineData("run_command", "command", "npx vitest related src/pages/Claims.tsx --run")]
+    [InlineData("run_command", "command", "ls ui-contract/previews/bordereaux")]
+    [InlineData("run_command", "command", "cat ui-contract/specs/bordereaux.json")]
+    [InlineData("run_command", "command", "git push -u origin feature/claims")]
+    [InlineData("run_command", "command", "sort -u names.txt")]
+    [InlineData("read_file", "path", "ui-contract/previews/bordereaux/ready.aria.yml")]
+    [InlineData("read_file", "path", "ui-contract/specs/bordereaux.json")]
+    [InlineData("list_files", "directory", "ui-contract/previews/bordereaux")]
+    [InlineData("write_file", "path", "src/pages/Bordereaux.tsx")]
+    [InlineData("write_file", "path", "ui-contract/ui-tests/claims.page.test.tsx")]
+    [InlineData("delete_file", "path", "src/pages/Old.tsx")]
+    public void The_work_that_must_stay_possible_stays_allowed(string tool, string key, string value)
+    {
+        foreach (var role in BuildRoles.Where(r => Run(r, tool, key, "src/x.cs").Allowed))
+            Assert.True(Run(role, tool, key, value).Allowed, $"{role} {tool} {value}");
+    }
+
     [Fact]
     public void An_unknown_role_or_tool_is_denied()
     {

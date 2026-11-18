@@ -6,6 +6,7 @@ using Factory.S2;
 using Factory.S2.Git;
 using Factory.S2.Teams;
 using Xunit;
+using FsCore = Factory.Core.Core;
 using static Factory.Integration.Tests.Support.ScriptedChatClient;
 
 namespace Factory.Integration.Tests.Teams;
@@ -115,6 +116,66 @@ public class UiGuardLoopTests
 
         Assert.Contains(model.Requests.SelectMany(r => r).SelectMany(m => m.Contents).OfType<Microsoft.Extensions.AI.FunctionResultContent>(),
             r => r.Result?.ToString()!.Contains("data-testid \"export-btn\" existed and is gone") == true);
+    }
+
+    private const string SpecPage = "src/Fares.Data/BordereauxList.tsx";
+    private static readonly string[] SpecIds = ["hdr", "export", "premium", "filters", "table", "detail"];
+    private static string PageWith(IEnumerable<string> ids) => "export const P = () => <>" + string.Concat(ids.Select(i => $"<Slot data-ui-id=\"{i}\" />")) + "</>;\n";
+
+    /// A handover that binds the fixture's bordereaux screen to a page this task writes.
+    private static async Task<(TeamHarness H, Handover Handover)> SpecHarnessAsync(ScriptedChatClient model)
+    {
+        var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+        var ui = UiHandoverDir.Create(spec: t => t.Replace("src/BordereauxList.tsx", SpecPage));
+        var parsed = FsCore.ParseHandover(await File.ReadAllTextAsync(await HandoverInput.ResolveAsync(ui.Dir, h.StateDir, default)));
+        var b = h.Handover;
+        var handover = new Handover(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
+            b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
+            b.RequirementRisk, b.RequirementDataClass, parsed.Ui, b.Tests);
+        return (h, handover);
+    }
+
+    private static ScriptedChatClient PageModel(IEnumerable<string> ids) => new([
+        Say("Approach: add BookingStatus.cs"), Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+        Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+        Call("write_file", new { path = SpecPage, content = PageWith(ids) }),
+        Call("declare_done", new { summary = "added" }), Say("done")]);
+
+    [Fact]
+    public async Task A_page_that_drops_a_spec_placement_parks_even_with_no_ui_policy_section()
+    {
+        var (h, spec) = await SpecHarnessAsync(PageModel(SpecIds.Where(i => i != "export")));
+
+        var result = await new TeamRunner(h.Services, spec, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Blocked, result.Status);
+        Assert.Equal("ui", result.Blocked!.Source);
+        Assert.Contains("data-ui-id \"export\" is a placement of the approved spec", result.Blocked.Question);
+    }
+
+    [Fact]
+    public async Task A_page_that_carries_every_spec_placement_passes()
+    {
+        var (h, spec) = await SpecHarnessAsync(PageModel(SpecIds));
+
+        var result = await new TeamRunner(h.Services, spec, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+    }
+
+    [Fact]
+    public async Task A_task_that_does_not_own_the_page_is_not_held_to_its_placements()
+    {
+        var (h, spec) = await SpecHarnessAsync(PageModel([]));
+        var b = spec;
+        var elsewhere = new Handover(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
+            b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
+            b.RequirementRisk, b.RequirementDataClass,
+            FsCore.ToList(b.Ui.Select(s => new UiScreen(s.Screen, s.Component, "src/Other/Page.tsx", s.Spec, s.Template, s.Components, s.Previews, s.Holdout, s.HoldoutCases))), b.Tests);
+
+        var result = await new TeamRunner(h.Services, elsewhere, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
     }
 
     // A command the agent runs can leave files outside its write paths; check_quality says so now, where verify would only revert them later.

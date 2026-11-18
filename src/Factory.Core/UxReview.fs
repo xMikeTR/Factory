@@ -43,7 +43,8 @@ module UxReview =
 - hierarchy: 1 = the primary action and the main content cannot be told apart from the rest; 3 = the main content is findable but competes; 5 = the eye lands on the primary content and action first.
 - clarity: 1 = labels, states or next steps are unclear; 3 = understandable with effort; 5 = every control and message says what it does.
 - consistency: 1 = spacing, type and controls disagree with each other or the stated design; 3 = mostly consistent; 5 = indistinguishable in style from the rest of the design.
-Add one sentence in `note` naming the single biggest issue (or "none"). This is a gradient for tracking; it never blocks a merge."""
+Add one sentence in `note` naming the single biggest issue (or "none"). This is a gradient for tracking; it never blocks a merge.
+When an approved design is shown, judge how far the built page departs from it."""
 
     /// The model's submit_ux_scores arguments: all three axes 1..5, or the reason it is not recorded.
     let parseScore (hierarchy: int) (clarity: int) (consistency: int) (note: string) : Result<UxScore, string> =

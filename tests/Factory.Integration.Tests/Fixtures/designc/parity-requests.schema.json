@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "parity-requests.schema.json",
+  "title": "Parity baseline requests",
+  "description": "The `requests` field of parity/baselines/<id>/legacy.json (scripts/parity-record.js --har), from Parity.requests(har, {baseUrl}). Endpoints and payload shapes only: no value, query string or identifier.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["method", "path", "status", "request", "response"],
+    "additionalProperties": false,
+    "properties": {
+      "method": { "type": "string", "pattern": "^[A-Z]+$" },
+      "path": { "type": "string", "pattern": "^/", "description": "URL path, no query; numeric and uuid segments are :id" },
+      "status": { "type": "integer", "minimum": 0 },
+      "request": { "$ref": "#/$defs/shape" },
+      "response": { "$ref": "#/$defs/shape" }
+    }
+  },
+  "$defs": {
+    "shape": {
+      "description": "null: no body. string: a Parity.shape leaf, 'bool' or 'null'. array: [] or one element, the shape of the first record. object: the body's keys with shapes.",
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" },
+        { "type": "array", "maxItems": 1, "items": { "$ref": "#/$defs/shape" } },
+        { "type": "object", "additionalProperties": { "$ref": "#/$defs/shape" } }
+      ]
+    }
+  }
+}

@@ -159,6 +159,8 @@ module IntegrationRun =
     /// there, the TestAuthor not having written the test project yet would look the same.
     let private environmental (o: VerifyOutcome) =
         Outcome.environmental o || Outcome.matches @"error MSB1003\b" o.OutputTail
+        // A ui: check that could not run (no runner image, no report): nothing was judged, so no code change fixes it.
+        || (o.ExitCode = 3 && o.OutputTail.StartsWith "could_not_run:")
 
     /// Unrunnable only when every failure is the environment's; one failure the code could fix
     /// makes them code failures, so a real failure never hides behind a runner fix.

@@ -21,13 +21,30 @@
     "S1-lint",
     "S1-p",
     "S1-grill",
+    "ui-spec",
+    "ui-preview",
+    "ui-code",
+    "ui-visual",
+    "acceptance",
+    "holdout",
+    "parity",
+    "review",
+    "qa",
     "pipeline"
   ],
   "origins": [
     "spec_gap",
     "design_error",
     "translation_error",
-    "gate_gap"
+    "gate_gap",
+    "catalogue_gap"
+  ],
+  "escape_buckets": [
+    "caught",
+    "not_captured",
+    "state_not_recorded",
+    "not_flagged",
+    "triage"
   ],
   "pipeline_stream": "pipeline.jsonl",
   "pipeline_kinds": [
@@ -48,6 +65,8 @@
     "run_started",
     "run_ended",
     "parity_result",
+    "ui_result",
+    "stage_verdict",
     "trace",
     "outcome"
   ],
@@ -62,10 +81,15 @@
     "trace_shape",
     "ref_shape",
     "fail_needs_note",
+    "preview_rendered_shape",
+    "preview_approved_shape",
+    "spec_bound_shape",
     "hash_not_blank",
     "ended_needs_reason",
     "aborted_needs_reason",
     "caught_by_member",
+    "bucket_member",
+    "verdict_shape",
     "origin_member"
   ],
   "kinds": {
@@ -248,15 +272,19 @@
         "traces",
         "origin",
         "ref",
-        "run"
+        "run",
+        "screen",
+        "bucket"
       ],
       "enums": {},
       "types": {
-        "run": "string"
+        "run": "string",
+        "screen": "string"
       },
       "rules": [
         "caught_by_member",
         "origin_member",
+        "bucket_member",
         "ref_shape"
       ]
     },
@@ -812,6 +840,51 @@
       },
       "rules": []
     },
+    "stage_verdict": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "run",
+        "stage",
+        "outcome",
+        "change_ts"
+      ],
+      "optional": [
+        "task",
+        "element",
+        "screen",
+        "item",
+        "round",
+        "failures"
+      ],
+      "enums": {
+        "stage": [
+          "ui-code",
+          "ui-visual",
+          "acceptance",
+          "holdout",
+          "review",
+          "qa"
+        ],
+        "outcome": [
+          "pass",
+          "fail",
+          "could_not_run"
+        ]
+      },
+      "types": {
+        "run": "string",
+        "task": "string",
+        "element": "string",
+        "screen": "string",
+        "item": "string",
+        "round": "number",
+        "failures": "array",
+        "change_ts": "number|null"
+      },
+      "rules": [
+        "verdict_shape"
+      ]
+    },
     "suite_run": {
       "stream": "factory.jsonl",
       "required": [
@@ -995,6 +1068,103 @@
         "trace_id": "string"
       },
       "rules": []
+    },
+    "ui_pinned": {
+      "stream": "designc.jsonl",
+      "required": [
+        "pack",
+        "registry",
+        "hash"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "pack": "string",
+        "registry": "string",
+        "hash": "string"
+      },
+      "rules": [
+        "hash_not_blank"
+      ]
+    },
+    "ui_preview_approved": {
+      "stream": "designc.jsonl",
+      "required": [
+        "screen",
+        "spec",
+        "files"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "screen": "string",
+        "spec": "string",
+        "files": "object"
+      },
+      "rules": [
+        "preview_approved_shape"
+      ]
+    },
+    "ui_preview_rendered": {
+      "stream": "designc.jsonl",
+      "required": [
+        "screen",
+        "spec_hash",
+        "files",
+        "image"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "screen": "string",
+        "spec_hash": "string",
+        "files": "object",
+        "image": "string"
+      },
+      "rules": [
+        "preview_rendered_shape"
+      ]
+    },
+    "ui_result": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "screen",
+        "commit",
+        "outcome"
+      ],
+      "optional": [
+        "item"
+      ],
+      "enums": {
+        "outcome": [
+          "pass",
+          "fail",
+          "could_not_run"
+        ]
+      },
+      "types": {
+        "screen": "string",
+        "commit": "string|null",
+        "outcome": "string",
+        "item": "string"
+      },
+      "rules": []
+    },
+    "ui_spec_bound": {
+      "stream": "designc.jsonl",
+      "required": [
+        "screen",
+        "hash"
+      ],
+      "optional": [],
+      "enums": {},
+      "types": {
+        "screen": "string",
+        "hash": "string"
+      },
+      "rules": [
+        "spec_bound_shape"
+      ]
     },
     "unapproved_change": {
       "stream": "agents.jsonl",

@@ -18,6 +18,7 @@ public static class UiInventory
 
     private const string Quoted = """(?:"([^"]+)"|'([^']+)'|\{\s*(?:"([^"]+)"|'([^']+)'|`([^`$]+)`)\s*\})""";
     private static readonly Regex TestId = new(@"data-testid\s*=\s*" + Quoted);
+    private static readonly Regex UiId = new(@"data-ui-id\s*=\s*" + Quoted);
     private static readonly Regex RouteElement = new(@"<Route\b(?:[^>{]|\{[^}]*\})*?\bpath\s*=\s*" + Quoted, RegexOptions.Singleline);
     private static readonly Regex RouteObject = new(@"\bpath\s*:\s*(?:""([^""]+)""|'([^']+)'|`([^`$]+)`)");
     private static readonly Regex RouterFile = new(@"createBrowserRouter|createHashRouter|createMemoryRouter|createRoutesFromElements|useRoutes|RouteObject");
@@ -53,6 +54,7 @@ public static class UiInventory
     private static IEnumerable<UiItem> Markup(string text)
     {
         foreach (Match m in TestId.Matches(text)) yield return new UiItem(UiItemKind.TestId, First(m));
+        foreach (Match m in UiId.Matches(text)) yield return new UiItem(UiItemKind.PlacementId, First(m));
         foreach (Match m in RouteElement.Matches(text)) yield return new UiItem(UiItemKind.Route, First(m));
         if (RouterFile.IsMatch(text))
             foreach (Match m in RouteObject.Matches(text)) yield return new UiItem(UiItemKind.Route, First(m));

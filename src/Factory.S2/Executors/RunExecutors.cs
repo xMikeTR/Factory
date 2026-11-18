@@ -173,6 +173,12 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             return;
         }
 
+        if (await UiBaselinesChangedAsync(msg.RunId, integration, cancellationToken) is { } uiChanged)
+        {
+            await context.SendMessageAsync(uiChanged, cancellationToken: cancellationToken);
+            return;
+        }
+
         var outcomes = new List<VerifyOutcome>();
         if (split)
         {
@@ -191,6 +197,9 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         if (!frozen.IsEmpty)
             outcomes.Add(await AcceptanceAsync(msg.RunId, integration, cancellationToken));
 
+        var uiOutcomes = await UiChecksAsync(msg.RunId, integration, timeout, cancellationToken);
+        outcomes.AddRange(uiOutcomes);
+
         if (s.TokenLintCommand is not null && FSharpOption<string>.get_IsSome(svc.LoadHandover(msg.RunId).DesignTokens))
             outcomes.Add(await TokenLintAsync(msg.RunId, integration, cancellationToken));
 
@@ -202,6 +211,23 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
                 apiGit.IntegrationPath(msg.RunId), uiWs.IntegrationPath(msg.RunId), timeout, cancellationToken));
 
         var failed = outcomes.Where(o => o.ExitCode != 0).ToList();
+        // The holdout runs only when everything visible passed, and before QA: nothing deterministic runs after it.
+        HoldoutRun? holdout = null;
+        if (failed.Count == 0)
+        {
+            holdout = await HoldoutAsync(msg.RunId, integration, timeout, cancellationToken);
+            failed.AddRange(holdout.Outcomes);
+        }
+        await WriteUiResultsAsync(msg.RunId, integration, uiOutcomes, holdout, cancellationToken);
+        // A holdout that has failed past the cap is a question for a person, not for another build.
+        if (holdout is { Outcomes.Count: > 0 } && await HoldoutEscalation.CheckAsync(svc, msg.RunId, svc.LoadHandover(msg.RunId), cancellationToken) is { } question)
+        {
+            await context.SendMessageAsync(new RunFinished(msg.RunId, "integration_failed", question), cancellationToken: cancellationToken);
+            return;
+        }
+        // UI mutants are a report, never a gate: they run once everything else has passed, only when mutation is on.
+        if (failed.Count == 0 && svc.Settings.QualityPolicy?.Mutation is { Mode: not QualityMode.Off })
+            await UiMutantsAsync(msg.RunId, timeout, cancellationToken);
         object next = failed.Count > 0
             ? IntegrationVerdict(msg.RunId, failed)
             : (object?)await QaAsync(msg.RunId, integration, cancellationToken) ?? new IntegrationVerified(msg.RunId);
@@ -232,6 +258,82 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             payload: JsonSerializer.Serialize(new { drift = lines }), ct: ct);
         return new RunFinished(runId, "integration_failed",
             "The frozen acceptance specs changed after the handover was frozen:\n" + string.Join("\n", lines.Select(l => "- " + l)));
+    }
+
+    private async Task<List<VerifyOutcome>> UiChecksAsync(string runId, string integration, TimeSpan timeout, CancellationToken ct)
+    {
+        var handover = svc.LoadHandover(runId);
+        if (handover.Ui.IsEmpty) return [];
+        var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
+        return await new UiPageCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, writesResult: false, runDir: svc.Settings.RunDir(runId), registry: svc.Settings.RegistryPath)
+            .RunAsync(runId, handover, svc.LoadValidatedPlan(runId).Plan.Tasks, git, integration, timeout, ct);
+    }
+
+    private async Task UiMutantsAsync(string runId, TimeSpan timeout, CancellationToken ct)
+    {
+        var handover = svc.LoadHandover(runId);
+        if (handover.Ui.IsEmpty) return;
+        var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
+        try { await new UiMutantCheck(svc.Ledger, svc.Sandboxes, UiPageCheck.JsonOnly(svc.Settings.UiCommand), svc.Settings.UiMutantsMax).RunAsync(runId, handover, handover.DesignTokens, git, timeout, ct); }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            await svc.LogAsync(runId, "ui_mutants", LedgerKinds.Verify, outcome: "could_not_run",
+                payload: JsonSerializer.Serialize(new { reason = e.Message }), ct: ct);
+        }
+    }
+
+    private async Task<HoldoutRun> HoldoutAsync(string runId, string integration, TimeSpan timeout, CancellationToken ct)
+    {
+        var handover = svc.LoadHandover(runId);
+        if (handover.Ui.IsEmpty) return new HoldoutRun([], []);
+        var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
+        var tasks = svc.LoadValidatedPlan(runId).Plan.Tasks;
+        var page = await new UiHoldoutCheck(svc.Ledger, svc.Sandboxes, svc.Settings.RegistryPath, svc.Settings.UiHoldoutCommand)
+            .RunAsync(runId, handover, tasks, git, timeout, ct);
+        // The acceptance cases marked holdout: generated by designc, judged in their own scratch copy.
+        var acceptance = await new UiAcceptanceHoldout(svc, svc.Settings.DesigncDir).RunAsync(runId, handover, tasks, git, timeout, ct);
+        page.Outcomes.AddRange(acceptance.Outcomes);
+        foreach (var (screen, outcome) in acceptance.Screens)
+        {
+            var rank = (string o) => o == "fail" ? 3 : o == "could_not_run" ? 2 : o == "pass" ? 1 : 0;
+            if (!page.Screens.TryGetValue(screen, out var had) || rank(outcome) > rank(had)) page.Screens[screen] = outcome;
+        }
+        return page;
+    }
+
+    /// One `ui_result` per screen, after the holdout: fail when the ui: check or the holdout failed, could_not_run when either could not run,
+    /// pass only when ui: and the holdout (or no holdout was frozen) both passed. A holdout that did not run (other checks failed first) adds nothing.
+    private async Task WriteUiResultsAsync(string runId, string integration, List<VerifyOutcome> uiOutcomes, HoldoutRun? holdout, CancellationToken ct)
+    {
+        var handover = svc.LoadHandover(runId);
+        if (handover.Ui.IsEmpty) return;
+        var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
+        var commit = await git.HeadAsync(integration, ct);
+        var page = new UiPageCheck(svc.Ledger, svc.Sandboxes, svc.Settings.UiCommand, writesResult: false);
+        foreach (var screen in handover.Ui)
+        {
+            var uiExit = uiOutcomes.FirstOrDefault(o => o.Name == "ui:" + screen.Screen)?.ExitCode ?? 0;
+            var h = holdout is not null && holdout.Screens.TryGetValue(screen.Screen, out var r) ? r : "pass";
+            var outcome = uiExit == 1 || h == "fail" ? "fail" : uiExit != 0 || h == "could_not_run" ? "could_not_run" : "pass";
+            await page.WriteResultAsync(runId, screen.Screen, commit, outcome, handover, ct);
+        }
+    }
+
+    /// The approved pictures, specs, manifests, page tests, Vitest config and preview helper are the Factory's: any difference from what
+    /// was seeded fails the run before a check runs, and every screen is judged failed. Null means nothing moved (or nothing was seeded).
+    private async Task<RunFinished?> UiBaselinesChangedAsync(string runId, string integration, CancellationToken ct)
+    {
+        var drift = await UiContractSeed.DriftAsync(integration, svc.Settings.RunDir(runId), ct);
+        if (drift.Count == 0) return null;
+        await svc.LogAsync(runId, "integration_verify", LedgerKinds.Verify, outcome: "ui_baselines_modified",
+            payload: JsonSerializer.Serialize(new { drift }), ct: ct);
+        var git = svc.RepoGits.Count > 0 && svc.RepoGits.GetValueOrDefault("Ui") is { } ui ? ui : svc.Git;
+        var commit = await git.HeadAsync(integration, ct);
+        foreach (var screen in svc.LoadHandover(runId).Ui)
+            await svc.LogAsync(runId, "integration_verify", LedgerKinds.UiResult, outcome: "fail",
+                payload: JsonSerializer.Serialize(new { screen = screen.Screen, commit, outcome = "fail" }), ct: ct);
+        return new RunFinished(runId, "integration_failed",
+            "The approved UI files changed after they were seeded:\n" + string.Join("\n", drift.Select(l => "- " + l)));
     }
 
     /// The decisions' checks run against the registry; `p check` needs the registry's P sources compiled once, in the
@@ -422,16 +524,26 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
     /// Lines and files changed against the base, summed over every repo of a split run.
     private async Task<(int Lines, List<string> Files)> DiffStatsAsync(string runId, CancellationToken ct)
     {
-        if (!svc.IsSplit) return await svc.Git.DiffStatsAsync(runId, svc.Settings.BaseBranch, ct);
+        if (!svc.IsSplit) return await WithoutSeededUiFilesAsync(runId, svc.Git, await svc.Git.DiffStatsAsync(runId, svc.Settings.BaseBranch, ct), ct);
         var lines = 0;
         var files = new List<string>();
         foreach (var repo in SplitMerge.Order(svc.RepoGits.Keys))
         {
-            var (l, f) = await svc.RepoGits[repo].DiffStatsAsync(runId, svc.Settings.BaseBranch, ct);
+            var (l, f) = await WithoutSeededUiFilesAsync(runId, svc.RepoGits[repo], await svc.RepoGits[repo].DiffStatsAsync(runId, svc.Settings.BaseBranch, ct), ct, isUiRepo: repo == "Ui");
             lines += l;
             files.AddRange(f);
         }
         return (lines, files);
+    }
+
+    /// The seeded ui-contract files sit under protected paths, but they are the Factory's own: a file whose bytes still equal the
+    /// baseline recorded at seeding (the same one integration verify's drift check compares) is not a change to judge. Anything else stays.
+    private async Task<(int Lines, List<string> Files)> WithoutSeededUiFilesAsync(string runId, GitWorkspace git,
+        (int Lines, List<string> Files) diff, CancellationToken ct, bool isUiRepo = true)
+    {
+        if (!isUiRepo || diff.Files.Count == 0) return diff;
+        var seeded = await UiContractSeed.UnchangedSeededAsync(git.IntegrationPath(runId), svc.Settings.RunDir(runId), ct);
+        return (diff.Lines, diff.Files.Where(f => !seeded.Contains(f)).ToList());
     }
 
     /// Carries out what the merge policy decided: stop at the PR, park, block, wait for approval, merge now or enable auto-merge.

@@ -4,6 +4,7 @@ using Factory.Harness;
 using Factory.Harness.Governance;
 using Factory.Harness.Policy;
 using Factory.Harness.Registry;
+using Factory.Harness.Sandbox;
 using Factory.Integration.Tests.Support;
 using Factory.S2.Quality;
 using Microsoft.FSharp.Collections;
@@ -21,8 +22,9 @@ public class SabotageTests : IDisposable
     private readonly string _root = Directory.CreateTempSubdirectory("sabotage-").FullName;
     private readonly List<string> _dirs = [];
 
+    /// What every real run protects: the same list the handover reader hands the workspace.
     private static readonly IReadOnlyList<PathPattern> Protected =
-        [PathPatternModule.createOrFail(".factory/**"), PathPatternModule.createOrFail("tests/acceptance/**")];
+        S2Config.Default.ProtectedPaths.Append("tests/acceptance/**").Select(PathPatternModule.createOrFail).ToList();
 
     private ScopedWorkspace Agent(IReadOnlyDictionary<string, string>? references = null) =>
         new(_root, [PathPatternModule.createOrFail("**")], Protected.ToList(), [], new TurnSignals(), references: references);
@@ -66,6 +68,42 @@ public class SabotageTests : IDisposable
         Assert.StartsWith("DENIED", ws.DeleteFile(path));
         Assert.False(File.Exists(Path.Combine(_root, "tests/acceptance/W-1.spec.ts")));
         Assert.False(File.Exists(Path.Combine(_root, ".factory/policy.yaml")));
+    }
+
+    [Theory]
+    [InlineData("src/pages/../../ui-contract/previews/bordereaux/ready.aria.yml")]
+    [InlineData("./src/../ui-contract/previews/bordereaux/ready.png")]
+    [InlineData("../ui-contract/previews/x.png")]
+    public void A_dot_dot_path_cannot_reach_the_approved_previews(string path)
+    {
+        var ws = new ScopedWorkspace(_root, [PathPatternModule.createOrFail("src/**")], Protected.ToList(), [], new TurnSignals());
+        Assert.StartsWith("DENIED", ws.WriteFile(path, "x"));
+        Assert.StartsWith("DENIED", ws.DeleteFile(path));
+        Assert.False(Directory.Exists(Path.Combine(_root, "ui-contract/previews")));
+        Assert.False(File.Exists(Path.Combine(_root, "..", "ui-contract/previews/x.png")));
+    }
+
+    [Theory]
+    [InlineData("npm test\nnpx vitest -u")]
+    [InlineData("npm test\r\nnpx vitest run --project ui-page -u")]
+    public async Task A_newline_cannot_smuggle_a_snapshot_update_past_the_allow_list(string command)
+    {
+        var sandbox = new RecordingSandbox();
+        var ws = new ScopedWorkspace(_root, [], [], ["npm test"], new TurnSignals(), sandbox);
+        Assert.StartsWith("DENIED", await ws.RunCommand(command));
+        Assert.Empty(sandbox.Commands);
+    }
+
+    private sealed class RecordingSandbox : ICommandSandbox
+    {
+        public List<string> Commands { get; } = [];
+        public string Kind => "fake";
+        public Task<ProcessResult> RunAsync(string command, string workdir, TimeSpan timeout, IReadOnlyDictionary<string, string> env, CancellationToken ct)
+        {
+            Commands.Add(command);
+            return Task.FromResult(new ProcessResult(0, "", TimeSpan.Zero, false));
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     [Fact]

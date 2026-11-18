@@ -96,5 +96,14 @@ COPY --from=pobserve-parser src/ /opt/pobserve/parser/
 COPY --from=pobserve-parser pobserve-check /usr/local/bin/pobserve-check
 RUN chmod -R a+rX /opt/pobserve && chmod a+rx /usr/local/bin/pobserve-check
 
+# Affected-only P2P (F5): which test projects a task's change reaches (`dotnet-affected --from <integration branch> --format json --dry-run`).
+# Pinned at 7.0.1 (net8+, checked 17 Nov 2026). Last in the file so the layers above stay cached; same --tool-path as the tools above.
+# Needs git, which the SDK image carries. Vitest is not baked in: `vitest related` runs from the repo's own devDependency.
+ARG DOTNET_AFFECTED_VERSION=7.0.1
+RUN dotnet tool install dotnet-affected --tool-path /opt/dotnet-tools --version ${DOTNET_AFFECTED_VERSION} \
+ && chmod -R a+rX /opt/dotnet-tools \
+ && dotnet-affected --help >/dev/null \
+ && git --version
+
 WORKDIR /work
 CMD ["sleep", "infinity"]

@@ -357,8 +357,10 @@ public class TeamRunnerTests
         Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "reported");
     }
 
-    private static Mutant Survivor(string id = "m1") => new(id, NewFile, 1, "Equality", MutantStatus.Survived);
-    private static Mutant Killed(string id = "m2") => new(id, NewFile, 1, "Arithmetic", MutantStatus.Killed);
+    private static Mutant Mut(string id, string file, int line, string mutator, MutantStatus status, params string[] ran) =>
+        new(id, file, line, mutator, status, Factory.Core.Core.ToList(ran), Factory.Core.Core.ToList<string>([]));
+    private static Mutant Survivor(string id = "m1") => Mut(id, NewFile, 1, "Equality", MutantStatus.Survived, "BookingTests.Draft");
+    private static Mutant Killed(string id = "m2") => Mut(id, NewFile, 1, "Arithmetic", MutantStatus.Killed);
     private static QualityPolicy MutationOn(QualityMode mode) =>
         new(QualityMode.Off, Tight, new MutationPolicy(mode, new MutationThresholds(0.8)));
 
@@ -381,7 +383,7 @@ public class TeamRunnerTests
 
         Assert.NotEqual(TeamStatus.Passed, result.Status);
         Assert.Equal([NewFile], h.Mutation.Asked.Single());
-        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "blocked" && e.Payload!.Contains("BookingStatus.cs:1"));
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "blocked" && e.Payload!.Contains("BookingStatus.cs:1") && e.Payload!.Contains("tests that ran it: BookingTests.Draft"));
         Assert.Contains(h.Rows(LedgerKinds.TaskEvent), e => e.Payload!.Contains("returned_to_test_author"));
         Assert.Contains(model.Requests.Last(), m => m.Text.Contains("mutants of the code this task changed survived"));
     }
@@ -435,7 +437,7 @@ public class TeamRunnerTests
     }
 
     private const string Existing = "src/Fares.Data/Booking.cs";
-    private static Mutant OnExisting(string id, MutantStatus status) => new(id, Existing, 2, "Equality", status);
+    private static Mutant OnExisting(string id, MutantStatus status) => Mut(id, Existing, 2, "Equality", status);
 
     /// The implementation edits a file the baseline already has, so the baseline can be measured.
     private static ScriptedChatClient EditsExisting(params Microsoft.Extensions.AI.ChatResponse[] more) => new([
@@ -498,6 +500,62 @@ public class TeamRunnerTests
         Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "reported");
     }
 
+    private static System.Text.Json.JsonElement PayloadOf(TeamHarness h, string outcome) =>
+        System.Text.Json.JsonDocument.Parse(h.Rows(LedgerKinds.Verify).First(e => e.Stage == "mutation" && e.Outcome == outcome).Payload!).RootElement;
+
+    [Theory]
+    [InlineData(QualityMode.Report)]
+    [InlineData(QualityMode.Block)]
+    public async Task A_skipped_mutation_run_logs_a_skipped_row_naming_the_empty_glob_and_never_blocks(QualityMode mode)
+    {
+        var model = TestsThenImpl();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(mode));
+        h.Mutation.ThenSkipped("--mutate glob '**/x/Gone.cs' matches no file, so no mutant run for it");
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Contains("**/x/Gone.cs", PayloadOf(h, "skipped").GetProperty("reason").GetString());
+        Assert.DoesNotContain(h.Rows(LedgerKinds.Verify), e => e.Stage == "mutation" && e.Outcome == "clean");
+    }
+
+    [Fact]
+    public async Task In_report_mode_a_clean_mutation_row_carries_the_score_and_the_files()
+    {
+        var model = TestsThenImpl();
+        using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Report));
+        h.Mutation.Then(Killed("a"), Killed("b"), Killed("c"), Killed("d"), Survivor()); // 80%, passes
+
+        await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+        var p = PayloadOf(h, "clean");
+        Assert.Equal(0.8, p.GetProperty("score").GetDouble(), 3);
+        var file = Assert.Single(p.GetProperty("files").EnumerateArray());
+        Assert.Equal(NewFile, file.GetProperty("file").GetString());
+        Assert.Equal(0.8, file.GetProperty("required").GetDouble(), 3);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, file.GetProperty("baseline").ValueKind);
+        Assert.Equal((4, 1, 0, 0), (file.GetProperty("killed").GetInt32(), file.GetProperty("survived").GetInt32(), file.GetProperty("no_coverage").GetInt32(), file.GetProperty("timeout").GetInt32()));
+        Assert.Equal(1, p.GetProperty("attempt").GetInt32());
+    }
+
+    [Fact]
+    public async Task Reported_and_blocked_mutation_rows_carry_the_score_too()
+    {
+        foreach (var (mode, outcome) in new[] { (QualityMode.Report, "reported"), (QualityMode.Block, "blocked") })
+        {
+            var model = TestsThenImpl(Say("I cannot strengthen these"));
+            using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(mode));
+            h.Mutation.Then(Survivor(), Killed());
+
+            await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
+
+            var p = PayloadOf(h, outcome);
+            Assert.Equal(0.5, p.GetProperty("score").GetDouble(), 3);
+            Assert.Equal(NewFile, p.GetProperty("files")[0].GetProperty("file").GetString());
+            Assert.True(p.TryGetProperty("survivors", out _));
+        }
+    }
+
     [Fact]
     public async Task A_mutation_run_that_times_out_parks_the_task_as_an_environment_problem()
     {
@@ -522,7 +580,7 @@ public class TeamRunnerTests
             Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
             Call("declare_done", new { summary = "impl" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(4, 3), qualityPolicy: MutationOn(QualityMode.Block));
-        h.Mutation.Then(new Mutant("k1", existing, 1, "Block", MutantStatus.Killed)); // red run: the test killed a mutant of Booking.cs
+        h.Mutation.Then(Mut("k1", existing, 1, "Block", MutantStatus.Killed)); // red run: the test killed a mutant of Booking.cs
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
 
@@ -538,7 +596,7 @@ public class TeamRunnerTests
             Call("write_file", new { path = TestFile, content = "test -f src/Fares.Data/Booking.cs\n" }),
             Call("declare_done", new { summary = "pins Booking" }), Say("done"));
         using var h = await TeamHarness.CreateAsync(model, new Limits(2, 3), qualityPolicy: MutationOn(QualityMode.Block));
-        h.Mutation.Then(new Mutant("s1", "src/Fares.Data/Booking.cs", 1, "Block", MutantStatus.Survived));
+        h.Mutation.Then(Mut("s1", "src/Fares.Data/Booking.cs", 1, "Block", MutantStatus.Survived));
 
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(WithTest()), NoAnswers, default);
 
@@ -750,6 +808,79 @@ public class TeamRunnerTests
         Assert.Equal(first[0], second[0]);
         Assert.DoesNotContain("What failed last time", second[0]);
         Assert.Contains("What failed last time", second[^1]);
+    }
+
+    private const string P2pCommand = "sh tests/p2p.sh";
+
+    private static Handover WithP2p(Handover h, string command) => h.WithTests(TestMaps.Map(
+        [TestMaps.Element("Fares Platform/Bookings DB", [], [TestMaps.Named("shell", "tests/p2p.sh", command)])]));
+
+    private static void SeedP2p(string repo) =>
+        File.WriteAllText(Path.Combine(repo, "tests", "p2p.sh"), "! grep -q BREAK src/Fares.Data/BookingStatus.cs 2>/dev/null\n");
+
+    /// A test the handover names as pass-to-pass shows in the brief, and a change that breaks it comes back with a `p2p failed` row
+    /// carrying the task id, even though the task has no JUnit suite (so no regression check).
+    [Fact]
+    public async Task A_named_pass_to_pass_test_is_in_the_brief_and_a_change_that_breaks_it_is_not_green_until_fixed()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: add BookingStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "BREAK\n" }),
+            Call("declare_done", new { summary = "added" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "fixed" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), seedRepo: SeedP2p);
+
+        var result = await new TeamRunner(h.Services, WithP2p(h.Handover, P2pCommand), TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("## Tests for this task") && m.Text.Contains(P2pCommand));
+        var rows = h.Rows(LedgerKinds.Verify).Where(e => e.Stage == "p2p").ToList();
+        Assert.Equal(["failed", "passed"], rows.Select(e => e.Outcome));
+        Assert.All(rows, e => Assert.Equal("T-001", e.TaskId));
+        Assert.All(rows, e => Assert.NotNull(e.TeamId));
+        Assert.Contains("\"baseline_exit\":0", rows[0].Payload);
+        Assert.Contains("tests/p2p.sh", rows[0].Payload);
+        var baselines = h.Rows(LedgerKinds.Verify).Where(e => e.Stage == "p2p_baseline").ToList();
+        Assert.Single(baselines);
+        Assert.Contains("\"exit\":0", baselines[0].Payload);
+        Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("These tests passed before this task and fail now"));
+    }
+
+    /// A command that already fails on the integration branch cannot say anything about this task: it is logged and never blocks.
+    [Fact]
+    public async Task A_pass_to_pass_command_that_is_red_on_the_baseline_is_logged_and_never_blocks()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: add BookingStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "BREAK\n" }),
+            Call("declare_done", new { summary = "added" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), seedRepo: SeedP2p);
+
+        var result = await new TeamRunner(h.Services, WithP2p(h.Handover, "false"), TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Equal(["baseline_red"], h.Rows(LedgerKinds.Verify).Where(e => e.Stage == "p2p").Select(e => e.Outcome));
+        Assert.Contains("\"exit\":1", h.Rows(LedgerKinds.Verify).Single(e => e.Stage == "p2p_baseline").Payload);
+    }
+
+    /// A task whose element has no named pass-to-pass tests logs `none` and runs as before.
+    [Fact]
+    public async Task A_task_with_no_named_tests_logs_none()
+    {
+        var model = new ScriptedChatClient(
+            Say("Approach: add BookingStatus.cs"),
+            Call("declare_done", new { summary = "verify block already fails" }), Say("done"),
+            Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+            Call("declare_done", new { summary = "added" }), Say("done"));
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Equal(["none"], h.Rows(LedgerKinds.Verify).Where(e => e.Stage == "p2p").Select(e => e.Outcome));
     }
 
     private static async Task<ScriptedChatClient> BreakAndRestoreAsync()

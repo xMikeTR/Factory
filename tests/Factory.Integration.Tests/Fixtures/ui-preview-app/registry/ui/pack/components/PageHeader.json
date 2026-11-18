@@ -1,0 +1,29 @@
+{
+  "name": "PageHeader",
+  "import": "@your-org/ui",
+  "category": "page-header",
+  "description": "Title bar at the top of every page, with optional subtitle and breadcrumb.",
+  "useWhen": [
+    "Top of any routed page"
+  ],
+  "props": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "subtitle": {
+      "type": "string"
+    }
+  },
+  "data": {},
+  "states": [
+    "ready"
+  ],
+  "status": "bound",
+  "source": {
+    "path": "packages/ui/src/PageHeader.tsx",
+    "seenIn": [
+      "src/pages/Claims/ClaimsList.tsx"
+    ]
+  }
+}

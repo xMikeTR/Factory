@@ -42,6 +42,9 @@ public sealed record FactorySettings(
     /// Runs the frozen acceptance specs in integration verify (when the handover has any); writes
     /// Playwright's JSON report to $PLAYWRIGHT_JSON_OUTPUT_NAME. The gate has no model in the loop.
     string AcceptanceCommand = "npx playwright test --reporter=json",
+    /// Runs the generated page tests (`ui-contract/tests/*.page.test.tsx`) in integration verify, in the runner image; Vitest's
+    /// JSON reporter must write its report (it prints its path); the default reporter prints each failure with its diff and step timeline, the HTML reporter writes `.vitest/`. FACTORY_UI_CMD.
+    string UiCommand = UiPageCheck.DefaultCommand,
     /// Raw-value ban over generated UI (stylelint writing JSON to $FACTORY_LINT_REPORT). Runs in integration
     /// verify only when the handover froze design tokens; null is off.
     string? TokenLintCommand = null,
@@ -58,7 +61,16 @@ public sealed record FactorySettings(
     /// `--repo Api=../api --repo Ui=../ui`: repo name to full path. Null or empty is the single-repo form (RepoPath only).
     IReadOnlyDictionary<string, string>? Repos = null,
     /// From the primary repo's `contract:` section: the breaking-change and client-compile commands of a split project.
-    ContractConvention? Contract = null)
+    ContractConvention? Contract = null,
+    /// Runs the generated holdout test (`ui-contract/tests/*.holdout.test.tsx`) in a scratch copy of the integration branch; Vitest's JSON
+    /// reporter must write its report. The comparison is ARIA only, so no runner image is needed. FACTORY_UI_HOLDOUT_CMD.
+    string UiHoldoutCommand = "npx vitest run --project ui-holdout --reporter=json",
+    /// How many times one holdout (screen, or screen and criterion) may fail on one work item before a person decides. FACTORY_HOLDOUT_RETRIES.
+    int HoldoutRetries = 2,
+    /// Most UI mutants tried per screen (FACTORY_UI_MUTANTS_MAX); the rest are cut in generate order and the cut is logged.
+    int UiMutantsMax = 40,
+    /// designc's app folder (scripts/designc-core.js), which generates the acceptance holdout specs. FACTORY_DESIGNC_DIR; null is none.
+    string? DesigncDir = null)
 {
     /// The names the plan validator checks task repos against; empty means unchecked (single repo).
     public string[] RepoNames => Repos is null ? [] : [.. Repos.Keys];
@@ -83,6 +95,11 @@ public sealed record FactorySettings(
         Npm: NpmPolicyFile.Load(Path.GetFullPath(repo)),
         UiContract: UiContractFile.Load(Path.GetFullPath(repo)),
         AcceptanceCommand: Env("FACTORY_ACCEPTANCE_CMD", "npx playwright test --reporter=json"),
+        UiCommand: Env("FACTORY_UI_CMD", UiPageCheck.DefaultCommand),
+        UiHoldoutCommand: Env("FACTORY_UI_HOLDOUT_CMD", "npx vitest run --project ui-holdout --reporter=json"),
+        UiMutantsMax: int.TryParse(Environment.GetEnvironmentVariable("FACTORY_UI_MUTANTS_MAX"), out var uiMax) && uiMax > 0 ? uiMax : 40,
+        HoldoutRetries: int.TryParse(Environment.GetEnvironmentVariable("FACTORY_HOLDOUT_RETRIES"), out var retries) && retries >= 0 ? retries : 2,
+        DesigncDir: Environment.GetEnvironmentVariable("FACTORY_DESIGNC_DIR") is { Length: > 0 } designc ? designc : null,
         TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"),
         PlaywrightCli: Environment.GetEnvironmentVariable("FACTORY_PLAYWRIGHT_CLI") != "0",
         ScreenshotCommand: Environment.GetEnvironmentVariable("FACTORY_SCREENSHOT_CMD"));

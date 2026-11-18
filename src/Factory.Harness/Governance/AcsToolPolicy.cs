@@ -54,6 +54,14 @@ public sealed class AcsToolPolicy : IToolPolicy
         var d = args.ToDictionary(kv => kv.Key, kv => kv.Value ?? (object)"");
         var skips = toolName == "run_command" && args.TryGetValue("command", out var c) && c?.ToString()?.Contains("--no-verify", StringComparison.Ordinal) == true;
         d["skips_hooks"] = skips ? "true" : "false";
+        // UI contract facts: the same answers RoleAllowListPolicy and ScopedWorkspace get from UiPolicyFacts.
+        string Text(string key) => args.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
+        string Flag(bool b) => b ? "true" : "false";
+        var command = toolName == "run_command" ? Text("command") : "";
+        d["updates_snapshots"] = Flag(command != "" && UiPolicyFacts.updatesSnapshots(command));
+        d["touches_ui_contract"] = Flag(command != "" && UiPolicyFacts.touchesUiContract(command));
+        d["ui_protected_path"] = Flag(toolName is "write_file" or "delete_file" && Text("path") != "" && UiPolicyFacts.isUiProtected(Text("path")));
+        d["reads_holdout"] = Flag((toolName == "read_file" && UiPolicyFacts.isHoldout(Text("path"))) || (toolName == "list_files" && UiPolicyFacts.isHoldout(Text("directory"))));
         return d;
     }
 

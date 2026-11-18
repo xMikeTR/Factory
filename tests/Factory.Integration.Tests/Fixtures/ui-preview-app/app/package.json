@@ -1,0 +1,20 @@
+{
+  "name": "ui-preview-app",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.3.0",
+    "@vitest/browser-playwright": "5.1.0",
+    "msw": "3.0.5",
+    "vite": "8.3.8",
+    "vitest": "5.1.0",
+    "vitest-browser-react": "2.3.0"
+  },
+  "dependencies": {
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "playwright": "1.65.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

@@ -8,6 +8,7 @@ using static Factory.Integration.Tests.Support.Plans;
 
 namespace Factory.Integration.Tests.Verify;
 
+[Collection(Support.ProcessEnvCollection.Name)]
 public class VerifyRunnerTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("s2-verify-").FullName;

@@ -1,0 +1,7 @@
+.vitest/index.html
+.vitest/json/output.json
+.vitest/ui/assets/index-B_E-RY2t.css
+.vitest/ui/assets/index-Bt4d42q5.js
+.vitest/ui/favicon.ico
+.vitest/ui/favicon.svg
+.vitest/ui/html.meta.json.gz

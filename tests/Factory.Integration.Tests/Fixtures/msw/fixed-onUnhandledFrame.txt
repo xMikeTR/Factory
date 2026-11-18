@@ -1,0 +1,179 @@
+exit 0
+
+ RUN  v5.1.0 <tmp>/ws/worktrees/r1/integration
+
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/bordereaux
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/bordereaux". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/bordereaux/summary
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/bordereaux/summary". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/bordereaux/B-2
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/bordereaux/B-2". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading pixels
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading placements
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > loading placements
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > ready aria
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > ready aria
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > ready pixels
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > ready pixels
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > ready placements
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > ready placements
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > filtered aria
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > filtered aria
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > filtered pixels
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > filtered pixels
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > filtered placements
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > filtered placements
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > empty aria
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > empty aria
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > empty pixels
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > empty pixels
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > empty placements
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > empty placements
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > error aria
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > error aria
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > error pixels
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > error pixels
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > error placements
+[MSW] Error: intercepted a request without a matching request handler:
+
+  • GET /api/unlisted
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+stderr | ui-contract/tests/bordereaux.page.test.tsx > bordereaux page > error placements
+[MSW] Uncaught exception in the request handler for "GET http://localhost:<port>/api/unlisted". This exception has been gracefully handled as a 500 response, however, it's strongly recommended to resolve this error, as it indicates a mistake in your code. If you wish to mock an error response, please see this guide: https://mswjs.io/docs/http/mocking-responses/error-responses
+ ✓  ui-page (chromium)  ui-contract/tests/bordereaux.page.test.tsx (15 tests) 3530ms
+   ✓ bordereaux page (15)
+     ✓ loading placements 414ms
+     ✓ ready placements 468ms
+     ✓ filtered placements 422ms
+     ✓ empty placements 427ms
+     ✓ error placements 419ms
+
+ Test Files  1 passed (1)
+      Tests  15 passed (15)
+   Start at  17:47:24
+   Duration  5.73s (tests 74%, worker 17%, import 9%)
+

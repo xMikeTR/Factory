@@ -15,7 +15,13 @@ public sealed record BugIntakeRequest(
 /// failing spec or no new gate never reaches the ledger as closed.
 public static class BugIntake
 {
-    private static readonly string[] CaughtByValues = ["S1-lint", "S1-p", "S1-grill", "pipeline"];
+    /// designc's `caught_by` vocabulary (ledger_schema.json `caught_by`). A test compares it with the pinned
+    /// schema, so a designc change fails there instead of being silently refused at intake.
+    public static readonly IReadOnlyList<string> CaughtByValues =
+    [
+        "S1-lint", "S1-p", "S1-grill", "ui-spec", "ui-preview", "ui-code", "ui-visual",
+        "acceptance", "holdout", "parity", "review", "qa", "pipeline",
+    ];
 
     /// Null when the bug was recorded; otherwise why it could not be closed.
     public static async Task<string?> RecordAsync(

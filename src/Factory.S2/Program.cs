@@ -24,9 +24,11 @@ using static Factory.S2.ServiceWiring;
 // factory-s2 budget-import --repo . [--prices <file>] [--spend <file>]   vendor-neutral import (CSV or JSON, schemas/budget-import.schema.json): effective-dated prices replace catalog placeholders, spend feeds budget.userMonthlyCost
 // factory-s2 router-stats --repo . [--role implementer] [--json]   what the run ledgers have taught the model router: successes, failures, mean tokens and cost per success (catalog prices) per model, role and size
 // factory-s2 parity --registry ../registry --item W-1 [--repo .] [--designc <dir>|FACTORY_DESIGNC_DIR] [--base-url <new app>] [--adapter web|fixture:<file>]   designc's recorder on the next side at the clean HEAD (appends parity_result), then parity-decisions; exit 0 pass, 1 fail, 3 could not run, 2 error
+// factory-s2 preview --registry <dir> --screen <screen> --repo <app> [--designc <dir>|FACTORY_DESIGNC_DIR]   renders the screen's spec with the app's library in the runner image (scratch worktree at HEAD, FACTORY_UI_PREVIEW_CMD) into <registry>/ui/previews/<screen>/ and appends ui_preview_rendered; exit 0 rendered, 3 could not run, 2 error
 // factory-s2 parity-decisions --registry ../registry   one open needs_decision (A build like legacy / B ask the PO) per scenario whose latest parity_result failed; exit 2 when any was raised
 // factory-s2 gate-shadow --cases cases.json [--repo .]   the QA gate's jira.transition policy against recorded kit decisions: logs what it would allow or deny (nothing enforced) and lists where it disagrees with the kit
 // factory-s2 intake --registry ../registry --id BUG-1 --summary "..." --spec tests/acceptance/<element>/<AC>.spec.ts --origin spec_gap|design_error|translation_error|gate_gap --ref <requirement|decision|task|gate> --gate "<new or strengthened gate>" [--strengthens <gate>] [--caught-by pipeline]   closes a bug as an escape row
+// factory-s2 mutation-full --repo . --run-id <id>   the whole-solution Stryker.NET run on a merged run's commit (report only, FACTORY_MUTATION_FULL_TIMEOUT_MIN, default 120); refused until `close` recorded the merge
 // factory-s2 ci-report --repo . --run-id <id> --check "<CI check>" --log <file | -> [--file a.cs,b.cs | --task T-001] [--commit sha]   a CI failure after the run ended, blamed on the tasks whose write paths own the files; then run --repair <id> (at most FACTORY_MAX_FIX_ROUNDS rounds, default 2)
 // factory-s2 verify --repo . --run-id <id> --check "T-001: <check name>" --by <you> [--outcome done|deferred] [--note "why"]   records a manual check; run again with --run-id <id> to reach the merge (Tiered: --by must be an approver; deferred needs --note)
 // factory-s2 run|rerun ... [--reference key=path]...   binds each read-only reference the handover names (a legacy app) to a folder outside the repo; agents read it with read_reference/list_reference and never write it
@@ -388,6 +390,36 @@ try
             return recorded switch { Factory.Harness.Registry.ParityRecording.Pass => 0, Factory.Harness.Registry.ParityRecording.Fail => 1, _ => 3 };
         }
 
+        case "preview":
+        {
+            // Not an agent run: the preview test is generated from the spec. Only the runner image can render an approvable baseline.
+            var designc = opts.GetValueOrDefault("designc") ?? Environment.GetEnvironmentVariable("FACTORY_DESIGNC_DIR")
+                ?? throw new ArgumentException("--designc <designc app dir> (or FACTORY_DESIGNC_DIR) is required");
+            var image = Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest";
+            ISandboxFactory previewSandboxes = FallbackSandboxFactory.Parse(Environment.GetEnvironmentVariable("FACTORY_SANDBOX")).Contains("docker")
+                ? new DockerSandboxFactory(new DockerSandboxOptions(Image: image))
+                : new LocalSandboxFactory();
+            var result = await new Factory.S2.Verify.UiPreviewRunner(previewSandboxes).RunAsync(new Factory.S2.Verify.UiPreviewRequest(
+                Required(opts, "registry"), Required(opts, "screen"), opts.GetValueOrDefault("repo") ?? ".", Path.GetFullPath(designc), image,
+                Environment.GetEnvironmentVariable("FACTORY_UI_PREVIEW_CMD")), CancellationToken.None);
+            (result.ExitCode == 0 ? Console.Out : Console.Error).WriteLine(result.Message);
+            return result.ExitCode;
+        }
+
+        case "replay":
+        {
+            // Not an agent run, no ledger row: the page against the legacy HAR in a scratch copy of the repo's HEAD (docs/ui-contract-verify.md §7).
+            var image = Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest";
+            ISandboxFactory replaySandboxes = FallbackSandboxFactory.Parse(Environment.GetEnvironmentVariable("FACTORY_SANDBOX")).Contains("docker")
+                ? new DockerSandboxFactory(new DockerSandboxOptions(Image: image))
+                : new LocalSandboxFactory();
+            var result = await new Factory.S2.Verify.UiReplayRunner(replaySandboxes).RunAsync(new Factory.S2.Verify.UiReplayRequest(
+                Required(opts, "registry"), Required(opts, "scenario"), opts.GetValueOrDefault("repo") ?? ".",
+                Environment.GetEnvironmentVariable("FACTORY_UI_CMD") ?? Factory.S2.UiPageCheck.DefaultCommand), CancellationToken.None);
+            (result.ExitCode == 0 ? Console.Out : Console.Error).WriteLine(result.Message);
+            return result.ExitCode;
+        }
+
         case "parity-decisions":
         {
             // One open needs_decision per scenario whose latest parity_result failed: build it like legacy, or ask the PO.
@@ -418,6 +450,25 @@ try
                 DateTimeOffset.UtcNow, CancellationToken.None);
             Console.WriteLine(why is null ? $"escape {opts["id"]} recorded" : $"not closed: {why}");
             return why is null ? 0 : 1;
+        }
+
+        case "mutation-full":
+        {
+            // Report only: after `close`, mutate the whole solution on the merged commit and log the score. Never changes the close.
+            var settings = FactorySettings.FromEnvironment(Required(opts, "repo"), opts.GetValueOrDefault("registry"), opts.GetValueOrDefault("base"));
+            var runId = Required(opts, "run-id");
+            if (File.Exists(settings.ReposPath(runId)))
+                settings = settings with { Repos = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(settings.ReposPath(runId))) };
+            var env = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+                .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "");
+            var services = Services(settings, runId, env, new DryRunPullRequests(Path.Combine(settings.StateDir, "runs", runId)));
+            var repos = services.IsSplit
+                ? SplitMerge.Order(services.RepoGits.Keys).Select(n => (n, services.RepoGits[n])).ToList()
+                : [("", services.Git)];
+            var result = await Factory.S2.Quality.MutationFull.RunAsync(services.Ledger, runId, repos, services.Mutation!, CancellationToken.None);
+            if (result.Refusal is not null) { Console.Error.WriteLine(result.Refusal); return 1; }
+            foreach (var line in result.Lines) Console.WriteLine(line);
+            return 0;
         }
 
         case "ci-report":
@@ -587,7 +638,7 @@ try
         }
 
         default:
-            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|budget-import|router-stats|parity|parity-decisions|intake|ci-report|verify|repro|ux-review|compare-browser  (see README)");
+            Console.WriteLine("usage: factory-s2 validate|dispatch|run|rerun|qa|digest|pull-plan|metrics|jira-mirror|budget|budget-import|router-stats|parity|parity-decisions|preview|intake|ci-report|verify|mutation-full|repro|ux-review|compare-browser  (see README)");
             return 2;
     }
 }

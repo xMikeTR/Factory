@@ -1,0 +1,59 @@
+{
+  "name": "list-detail",
+  "description": "Header, optional summary metrics, filters, a main table, and an optional side panel for the selected row.",
+  "useWhen": [
+    "Browse many records and inspect one"
+  ],
+  "avoidWhen": [
+    "Data entry — use form-wizard"
+  ],
+  "slots": {
+    "header": {
+      "accepts": [
+        "page-header"
+      ],
+      "min": 1,
+      "max": 1,
+      "subslots": {
+        "actions": {
+          "accepts": [
+            "action"
+          ],
+          "max": 3
+        }
+      }
+    },
+    "summary": {
+      "accepts": [
+        "metric"
+      ],
+      "max": 4
+    },
+    "filters": {
+      "accepts": [
+        "filter"
+      ],
+      "max": 1
+    },
+    "main": {
+      "accepts": [
+        "table",
+        "list"
+      ],
+      "min": 1,
+      "max": 1
+    },
+    "aside": {
+      "accepts": [
+        "detail"
+      ],
+      "max": 1
+    }
+  },
+  "status": "bound",
+  "reference": {
+    "screen": "src/pages/Claims/ClaimsList.tsx",
+    "screenshot": "references/list-detail.png",
+    "spec": "specs/claims.json"
+  }
+}

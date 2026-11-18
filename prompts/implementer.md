@@ -12,7 +12,7 @@ How to work:
   is verified, so write what you have and call declare_done before then.
 - Write only inside your write paths. Anything else is refused, and changes made outside them by
   other means are reverted after your turn.
-- Use run_command to build and run the relevant tests as you go.
+- Run the commands under "Tests for this task" in your brief before you declare done; if there is no such section, run the tests nearest your change.
 - You cannot change the tests, the verify checks or anything under protected paths. Make the code satisfy
   them; never weaken, skip or special-case a test to get it passing.
 - Where code emits events from the logging contract, use the exact event names given.

@@ -158,6 +158,14 @@ The target repo needs `.factory/` in its `.gitignore`, and build/test outputs su
 task's writes and revert them. Other settings (`FACTORY_MAX_TURNS`, `FACTORY_COMMANDS`,
 `FACTORY_POBSERVE_CMD`, …) are listed in `FactorySettings.FromEnvironment`.
 
+**Tests named per task.** When the handover carries designc's `tests.json`, each task's brief gets a "Tests for this task" section: the tests that must pass at integration (fail-to-pass), the ones already passing (pass-to-pass) with their commands, and elements with no test. After a task is green, the factory runs its pass-to-pass commands plus the tests its change affects, as one shell line on the worktree (exit codes only, so it works without a JUnit suite), and logs a `verify` row, stage `p2p` (`passed | failed | baseline_red | timed_out | none`, with `TaskId`). Each command is first run once on the integration branch (`p2p_baseline` row, reused on resume); a command that is red there is `baseline_red` and never blocks. `failed` goes back to the agent like a regression. Affected tests: C# via `dotnet-affected` (`--assume-changes` on the projects that own the changed files; installed in the runner image, so rebuild it once with `docker/runner/build.sh`) and TS via `vitest related --run` from the repo's own Vitest. A missing tool or error logs `affected: null` with a `reason` and the run continues on the named set. `FACTORY_P2P_AFFECTED=on|off` (default `on`) turns the affected part off. On `FACTORY_SANDBOX=local` the baseline checkout has no `node_modules`, so Vitest commands read `baseline_red` there. Docker case: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter AffectedDocker`.
+
+The `ui:` check runs `FACTORY_UI_CMD` (default `npx vitest run --project ui-page --reporter=default --reporter=json --reporter=html`: failure text and diff pictures reach the repair brief, the HTML report is kept under `evidence/ui/` only when the check fails) in the runner image after seeding the handover's `ui-contract/` on the integration branch; see `docs/ui-contract-verify.md` §2. Docker cases: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter UiPageCheck`. The page tests also log each request to `.factory/requests/`, and the check fails a page that calls an endpoint the spec does not list (`kind: request`; the app's Vitest config needs `api: { allowWrite: true }`). Docker case: `--filter UiRequestsDocker`.
+
+The holdout runs after the `ui:` check, only when everything visible passed, and before QA: `FACTORY_UI_HOLDOUT_CMD` (default `npx vitest run --project ui-holdout --reporter=json`) runs the registry's hidden sample in a scratch copy of the integration branch. Acceptance cases marked `holdout: true` need `FACTORY_DESIGNC_DIR` (designc's app folder; its `holdout-spec` generates them) and are `could_not_run` without it. `FACTORY_HOLDOUT_RETRIES` (default 2) is the number of failing runs of the same holdout (per work item) the build is asked to repair; the next one raises a `needs_decision` instead. Docker case: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter UiHoldoutDocker`. See `docs/ui-contract-verify.md` §2.
+
+UI mutants run after the holdout passes and before QA, when `quality.mutation` is not `off`: each generated mutant (a token prop turned to another value of its group, or a placement removed) is written into the page in a scratch checkout and judged by the page tests (`FACTORY_UI_CMD`). A `ui_mutants` row per screen lists killed, survived, skipped and could-not-run mutants; it never changes the verdict. `FACTORY_UI_MUTANTS_MAX` (default 40) caps the mutants per screen, cut in generate order. Docker case: `--filter UiMutantCheck`.
+
 ### Sandbox
 
 Commands run in a per-team Docker container (`FACTORY_SANDBOX=docker`, the default) built
@@ -325,12 +333,15 @@ Per-command flags are the header comment of `src/Factory.S2/Program.cs`.
 | `rerun` `--handover h --plan p.json --task T-001 [--k 3] --repo .` | k fresh attempts at one task, nothing merged |
 | `close` `--repo . --run-id id [--registry r] [--by you]` | Record the merge and close the handover |
 | `qa` `--repo . --run-id id` | Follow-up QA, no author |
+| `mutation-full` `--repo . --run-id id` | Stryker over every file at the merged commit (refused before `close`); report only, a `verify`/`close` row `mutation_full`. `FACTORY_MUTATION_FULL_TIMEOUT_MIN` (default 120) |
 | `ci-report` `--repo . --run-id id --check ...` | Record a CI failure against the run |
 | `digest` `--registry r [--last-look ms] [--wip 3] [--notify-state f]` | What needs you, what failed, what is done |
 | `pull-plan`, `metrics` `--registry r` | Read-only reports |
 | `budget` `--repo . [--registry r] [--no-report]` | Item budget; exit 2 when exceeded, then `run` exits 4 |
 | `budget-import`, `router-stats` | Prices and spend in; what the router learned out |
 | `parity` `--registry r --item W-1 [--repo .] [--base-url u]` | Designc recorder at HEAD (work VM); see `docs/parity-runbook.md` |
+| `preview` `--registry r --screen s --repo app [--designc d]` | Renders a screen's spec with the app's library in the runner image (scratch worktree at HEAD; `FACTORY_UI_PREVIEW_CMD`) into `ui/previews/<screen>/` and appends `ui_preview_rendered`; exit 0 / 3 could not run / 2; see `docs/ui-contract-verify.md` §1 |
+| `replay` `--registry r --scenario id [--repo app]` | Renders the scenario's screen in the runner image against `parity/har/<id>-legacy.har` served as MSW handlers (scratch worktree at HEAD, `FACTORY_UI_CMD`, no ledger row); exit 0 served from the HAR / 1 the page asked for a request the HAR lacks / 3 could not run / 2 error; see `docs/ui-contract-verify.md` §7 |
 | `parity-decisions` `--registry r` | A needs_decision per failed parity scenario; exit 2 when raised |
 | `intake` `--registry r --id BUG-1 --spec ... --origin ... --ref ...` | Bug intake |
 | `jira-mirror` `--registry r [--snapshot jira.json] [--apply [--comment]]` | One-way mirror of ledger state to Jira; see below |
@@ -352,7 +363,7 @@ Ledger to Jira, never the other way. Each work item's state is compared with its
 
 ## Status
 
-Tests: Core 331/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 799/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
+Tests: Core 347/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 853/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|

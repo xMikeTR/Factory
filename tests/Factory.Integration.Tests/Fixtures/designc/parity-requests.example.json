@@ -1,0 +1,52 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/bordereaux",
+    "status": 200,
+    "request": null,
+    "response": [
+      {
+        "Cedant": "text:Aa",
+        "Period": "text:A?",
+        "Lines": "num:?0",
+        "Premium": "num:$#,##0",
+        "Status": "text:Aa"
+      }
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/bordereaux/summary",
+    "status": 200,
+    "request": null,
+    "response": {
+      "amount": "num:0",
+      "currency": "text:AA"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/bordereaux/:id",
+    "status": 200,
+    "request": null,
+    "response": {
+      "Cedant": "text:Aa",
+      "Period": "text:A?",
+      "Received": "date:dddd-dd-0d",
+      "Lines": "num:?0",
+      "Exceptions": "text:aa",
+      "Premium": "num:$#,##0"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/bordereaux/:id/notes",
+    "status": 201,
+    "request": {
+      "text": "text:Aa"
+    },
+    "response": {
+      "id": "num:0"
+    }
+  }
+]

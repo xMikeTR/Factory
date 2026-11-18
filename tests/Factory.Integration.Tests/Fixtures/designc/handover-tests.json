@@ -1,0 +1,56 @@
+{
+  "schema": "designc.handover.tests/1",
+  "facts": {
+    "path": "asbuilt/facts.json",
+    "sha256": "af51ec63189e6a8dec1517bea4acb2f96269f3bbd1ec50f53100086273596b7f",
+    "extracted_at": "2026-11-17T09:00:00.000Z"
+  },
+  "elements": [
+    {
+      "element": "Fares/Fares API",
+      "fail_to_pass": [],
+      "pass_to_pass": [
+        {
+          "kind": "dotnet",
+          "path": "tests/Fares.Api.Tests/Fares.Api.Tests.csproj",
+          "command": "dotnet test tests/Fares.Api.Tests/Fares.Api.Tests.csproj",
+          "via": "project-ref"
+        }
+      ]
+    },
+    {
+      "element": "Fares/Fares Portal",
+      "fail_to_pass": [
+        {
+          "kind": "acceptance",
+          "path": "tests/acceptance/fares-fares-portal/AC-1.spec.ts",
+          "command": "npx playwright test tests/acceptance/fares-fares-portal/AC-1.spec.ts"
+        },
+        {
+          "kind": "ui-page",
+          "path": "ui-contract/tests/bordereaux.page.test.tsx",
+          "command": "npx vitest run --project ui-page ui-contract/tests/bordereaux.page.test.tsx"
+        }
+      ],
+      "pass_to_pass": [
+        {
+          "kind": "vitest",
+          "path": "tests/portal/format.test.ts",
+          "command": "npx vitest run tests/portal/format.test.ts",
+          "via": "import"
+        }
+      ]
+    },
+    {
+      "element": "Fares/Surcharge Engine",
+      "fail_to_pass": [],
+      "pass_to_pass": []
+    }
+  ],
+  "unmapped": [
+    {
+      "element": "Fares/Surcharge Engine",
+      "reason": "no existing test references its code"
+    }
+  ]
+}

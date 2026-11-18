@@ -74,6 +74,8 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         var loopSpecs = LoopSpecs(manifest, errors);
         var references = References(manifest, errors);
         var (contracts, uncovered) = Contracts(manifest, files, errors);
+        var ui = UiScreens(manifest, files, errors);
+        var tests = Tests(manifest, files, errors);
 
         if (errors.Count > 0) Reject(handoverDir, errors);
         return new Handover(
@@ -102,10 +104,89 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
                 _ => FSharpOption<RiskLevel>.None
             },
             Str(manifest, "requirement_data_class") is ("public" or "internal" or "regulated") and { } dataClass
-                ? FSharpOption<string>.Some(dataClass) : FSharpOption<string>.None);
+                ? FSharpOption<string>.Some(dataClass) : FSharpOption<string>.None,
+            Core.ToList(ui),
+            tests);
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
+
+    /// `ui`: the derived ui.json (designc.handover.ui/1). Each text copy it names must be a frozen file whose sha256 matches, each
+    /// screen must be listed in `ui_screens`, and a spec must name the file its page lives in (the page test is always generated).
+    /// The preview pictures are binary, so they are not in `files`: HandoverInput checks them against `Previews` when it freezes.
+    private static List<UiScreen> UiScreens(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
+    {
+        var screens = new List<UiScreen>();
+        if (Str(manifest, "ui") is not { } path) return screens;
+        if (!files.TryGetValue(path, out var json)) { errors.Add($"handover.yaml: ui '{path}' is not among the frozen files"); return screens; }
+        var listed = List(manifest, "ui_screens").Select(x => x?.ToString()).OfType<string>().ToHashSet();
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.GetProperty("schema").GetString() != "designc.handover.ui/1") { errors.Add($"{path}: schema is not designc.handover.ui/1"); return screens; }
+            foreach (var sc in root.GetProperty("screens").EnumerateArray())
+            {
+                var name = sc.GetProperty("screen").GetString()!;
+                if (!listed.Contains(name)) errors.Add($"{path}: screen '{name}' is not in handover.yaml ui_screens");
+                UiText? Text(JsonElement f, string what)
+                {
+                    var p = f.GetProperty("path").GetString()!;
+                    var want = f.GetProperty("sha256").GetString()!;
+                    if (!files.TryGetValue(p, out var text)) { errors.Add($"{path}: {what} '{p}' is not among the frozen files"); return null; }
+                    if (Sha256(text) != want) { errors.Add($"{p} does not match the sha256 {path} names for it ({what} of screen '{name}')"); return null; }
+                    return new UiText(p, want, text);
+                }
+                var spec = Text(sc.GetProperty("spec"), "spec");
+                var template = Text(sc.GetProperty("template"), "template");
+                var components = sc.GetProperty("components").EnumerateArray().Select(c => Text(c, $"component {c.GetProperty("name").GetString()}")).ToList();
+                string? component = null, file = null;
+                if (spec is not null)
+                {
+                    using var specDoc = JsonDocument.Parse(spec.Text);
+                    component = specDoc.RootElement.TryGetProperty("component", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
+                    file = specDoc.RootElement.TryGetProperty("file", out var f) && f.ValueKind == JsonValueKind.String && f.GetString() is { Length: > 0 } v ? v : null;
+                    if (file is null) errors.Add($"spec {spec.Path} has no file, so the page test cannot be generated");
+                    if (component is null) errors.Add($"spec {spec.Path} has no component");
+                }
+                var previews = sc.GetProperty("previews").GetProperty("files").EnumerateObject()
+                    .Select(p => (p.Name, p.Value.GetString()!)).OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+                var holdout = sc.GetProperty("holdout") is { ValueKind: JsonValueKind.Object } h ? h.GetProperty("sha256").GetString() : null;
+                var cases = sc.GetProperty("holdout_cases").EnumerateArray()
+                    .Select(c => new UiHoldoutCase(c.GetProperty("criterion").GetString()!, c.GetProperty("case").GetInt32(), c.GetProperty("state").GetString()!, c.GetProperty("sha256").GetString()!)).ToList();
+                if (spec is null || template is null || components.Any(c => c is null) || component is null || file is null) continue;
+                screens.Add(new UiScreen(name, component, file, spec, template, Core.ToList(components.Select(c => c!)), Core.ToList(previews.Select(p => Tuple.Create(p.Name, p.Item2))),
+                    holdout is null ? FSharpOption<string>.None : FSharpOption<string>.Some(holdout), Core.ToList(cases)));
+            }
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); }
+        return screens;
+    }
+
+    /// `tests`: the derived tests.json (designc.handover.tests/1). None when handover.yaml has no `tests` key; any other schema is refused.
+    private static FSharpOption<TestMap> Tests(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
+    {
+        if (Str(manifest, "tests") is not { } path) return FSharpOption<TestMap>.None;
+        if (!files.TryGetValue(path, out var json)) { errors.Add($"handover.yaml: tests '{path}' is not among the frozen files"); return FSharpOption<TestMap>.None; }
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.GetProperty("schema").GetString() != "designc.handover.tests/1") { errors.Add($"{path}: schema is not designc.handover.tests/1"); return FSharpOption<TestMap>.None; }
+            static FSharpOption<string> Opt(JsonElement e, string key) =>
+                e.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? FSharpOption<string>.Some(v.GetString()!) : FSharpOption<string>.None;
+            Microsoft.FSharp.Collections.FSharpList<NamedTest> Named(JsonElement arr) => Core.ToList(arr.EnumerateArray()
+                .Select(t => new NamedTest(t.GetProperty("kind").GetString()!, t.GetProperty("path").GetString()!, Opt(t, "command"), Opt(t, "via"))));
+            var elements = root.GetProperty("elements").EnumerateArray()
+                .Select(e => new ElementTests(e.GetProperty("element").GetString()!, Opt(e, "repo"), Named(e.GetProperty("fail_to_pass")), Named(e.GetProperty("pass_to_pass")))).ToList();
+            var unmapped = root.GetProperty("unmapped").EnumerateArray()
+                .Select(u => Tuple.Create(u.GetProperty("element").GetString()!, u.GetProperty("reason").GetString()!)).ToList();
+            return FSharpOption<TestMap>.Some(new TestMap(Core.ToList(elements), Core.ToList(unmapped)));
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); return FSharpOption<TestMap>.None; }
+    }
+
+    public static string Sha256(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
     /// The criteria `acceptance` lists, each from its frozen `acceptance/<id>.yaml` (its `element` key says what it is about).
     private static List<AcceptanceCriterion> Criteria(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)

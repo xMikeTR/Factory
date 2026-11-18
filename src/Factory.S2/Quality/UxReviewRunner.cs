@@ -39,11 +39,12 @@ public static class UxReviewRunner
             var tools = new ScopedWorkspace(worktree, [], [], [], signals).UxJudgeTools();
             var agent = svc.Agents.Create(new AgentScope(runId, Roles.UxJudge, "ux", shot.ElementSlug), ModelTier.Standard,
                 UxReview.rubric, tools, new TurnBudget());
-            var message = new ChatMessage(ChatRole.User,
-            [
-                new TextContent(Intent(handover, shot)),
-                new DataContent(await File.ReadAllBytesAsync(shot.Path, ct), "image/png"),
-            ]);
+            var built = new DataContent(await File.ReadAllBytesAsync(shot.Path, ct), "image/png");
+            var (approved, note) = await ApprovedAsync(handover, shot, worktree, ct);
+            var intent = Intent(handover, shot) + (note is null ? "" : $"\n{note}\n");
+            var message = new ChatMessage(ChatRole.User, approved is null
+                ? [new TextContent(intent), built]
+                : [new TextContent(intent), new TextContent("Approved design"), approved, new TextContent("Built page"), built]);
             var response = await agent.RunAsync(message, cancellationToken: ct);
             if (signals.UxScore is not { } score)
             {
@@ -60,6 +61,23 @@ public static class UxReviewRunner
                 })), ct);
         }
         return new UxReviewResult(shots, scores, unscored);
+    }
+
+    /// The approved page picture for a shot of a UI screen's component element, `ui-contract/previews/<screen>/<state>-chromium-linux.png` in the worktree,
+    /// when its sha256 is the one the handover froze. A shot of another element gets neither picture nor note; a missing or changed file gets a note
+    /// and no picture (the review goes on with the built page alone). The breakpoint is not matched.
+    private static async Task<(DataContent? Approved, string? Note)> ApprovedAsync(Handover handover, UxShot shot, string worktree, CancellationToken ct)
+    {
+        var screen = handover.Ui.FirstOrDefault(u => UxReview.slug(u.Component) == shot.ElementSlug);
+        if (screen is null) return (null, null);
+        var name = $"{shot.State}-{Factory.Harness.Registry.UiPreview.Browser}-{Factory.Harness.Registry.UiPreview.Platform}.png";
+        var path = Path.Combine(worktree, "ui-contract", "previews", screen.Screen, name);
+        var frozen = screen.Previews.Where(p => p.Item1 == name).Select(p => p.Item2).FirstOrDefault();
+        if (!File.Exists(path)) return (null, $"Note: no approved picture for state `{shot.State}` of screen `{screen.Screen}` was found; judge the built page alone.");
+        var bytes = await File.ReadAllBytesAsync(path, ct);
+        if (frozen is null || !string.Equals(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes)), frozen, StringComparison.OrdinalIgnoreCase))
+            return (null, $"Note: the approved picture for state `{shot.State}` of screen `{screen.Screen}` is not the one the handover froze, so it is not shown; judge the built page alone.");
+        return (new DataContent(bytes, "image/png"), null);
     }
 
     /// The design intent for one shot: the element, the state and breakpoint, and the frozen criteria about that element.

@@ -47,7 +47,7 @@ let tests: (string * (unit -> unit)) list =
           check (closed |> Result.map Defect.isClosed = Ok true) $"%A{closed}"
           check (closed |> Result.map Defect.originOf = Ok(Some origin)) "origin kept"
       "defect: origins round-trip through designc's vocabulary and each needs a reference", fun () ->
-          for (o, r) in [ "spec_gap", "REQ-1"; "design_error", "D-1"; "translation_error", "T-1"; "gate_gap", "axe" ] do
+          for (o, r) in [ "spec_gap", "REQ-1"; "design_error", "D-1"; "translation_error", "T-1"; "gate_gap", "axe"; "catalogue_gap", "button" ] do
               equal (Ok o) (DefectOrigin.parse o r |> Result.map DefectOrigin.toLedger) o
           check (DefectOrigin.parse "spec_gap" " " |> Result.isError) "blank reference"
           check (DefectOrigin.parse "typo" "x" |> Result.isError) "unknown origin" ]

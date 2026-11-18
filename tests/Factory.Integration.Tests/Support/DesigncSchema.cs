@@ -9,6 +9,9 @@ public static class DesigncSchema
     private static readonly JsonElement Schema =
         JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "ledger_schema.json"))).RootElement;
 
+    /// A top-level list of the pinned schema (`caught_by`, `origins`, `escape_buckets`).
+    public static List<string> StringList(string key) => Strings(Schema.GetProperty(key));
+
     public static string StreamOf(string kind) => Schema.GetProperty("kinds").GetProperty(kind).GetProperty("stream").GetString()!;
 
     public static List<string> Validate(string line)
@@ -53,6 +56,10 @@ public static class DesigncSchema
                 errors.Add($"{kind}: models must be non-empty strings, procedures {{id, version, hash}}, tokens whole numbers >= 0");
             else if (rule == "ref_shape" && ev.TryGetProperty("ref", out var reference) && !RefOk(kind, reference))
                 errors.Add($"{kind}.ref: must be {{kind, id}} with a kind this row allows");
+            else if (rule == "caught_by_member" && MemberError(ev, "caught_by", "caught_by") is { } cb) errors.Add($"{kind}.{cb}");
+            else if (rule == "origin_member" && MemberError(ev, "origin", "origins") is { } og) errors.Add($"{kind}.{og}");
+            else if (rule == "bucket_member" && MemberError(ev, "bucket", "escape_buckets") is { } bk) errors.Add($"{kind}.{bk}");
+            else if (rule == "verdict_shape" && VerdictError(ev) is { } vd) errors.Add($"{kind}.{vd}");
         return errors;
     }
 
@@ -114,6 +121,42 @@ public static class DesigncSchema
         if (ev.TryGetProperty("procedures", out var ps) && ps.ValueKind == JsonValueKind.Array
             && !ps.EnumerateArray().All(p => p.ValueKind == JsonValueKind.Object && Text(p, "id") && Text(p, "version") && Text(p, "hash"))) return false;
         return new[] { "tokens_in", "tokens_out" }.All(k => !ev.TryGetProperty(k, out var n) || n.ValueKind == JsonValueKind.Number && n.TryGetInt64(out var w) && w >= 0);
+    }
+
+    /// ledger.py caught_by_member / origin_member / bucket_member: null or one of the schema's list.
+    private static string? MemberError(JsonElement ev, string field, string listKey)
+    {
+        if (!ev.TryGetProperty(field, out var v) || v.ValueKind == JsonValueKind.Null) return null;
+        var allowed = StringList(listKey);
+        return v.ValueKind == JsonValueKind.String && allowed.Contains(v.GetString()!) ? null : $"{field}: must be null or one of {string.Join('|', allowed)}";
+    }
+
+    /// ledger.py verdict_shape: change_ts not after ts; round only on review, a whole number >= 1; failures
+    /// are objects of string values under state, kind, placement and criterion only (never detail text).
+    private static string? VerdictError(JsonElement ev)
+    {
+        static bool Num(JsonElement e, string k, out double d) { d = 0; return e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out d); }
+        if (Num(ev, "change_ts", out var ct) && Num(ev, "ts", out var ts) && ct > ts) return "change_ts: must not be later than ts";
+        if (ev.TryGetProperty("round", out var round))
+        {
+            if (!(ev.TryGetProperty("stage", out var st) && st.ValueKind == JsonValueKind.String && st.GetString() == "review")) return "round: allowed only when stage is 'review'";
+            if (!(Num(ev, "round", out var r) && Math.Floor(r) == r && r >= 1)) return "round: must be a whole number of at least 1";
+        }
+        if (ev.TryGetProperty("failures", out var fs) && fs.ValueKind == JsonValueKind.Array)
+        {
+            var i = 0;
+            foreach (var f in fs.EnumerateArray())
+            {
+                if (f.ValueKind != JsonValueKind.Object) return $"failures[{i}]: must be an object";
+                foreach (var p in f.EnumerateObject())
+                {
+                    if (p.Name is not ("state" or "kind" or "placement" or "criterion")) return $"failures[{i}]: only state, kind, placement and criterion are allowed (got '{p.Name}')";
+                    if (p.Value.ValueKind != JsonValueKind.String) return $"failures[{i}].{p.Name}: must be a string";
+                }
+                i++;
+            }
+        }
+        return null;
     }
 
     private static bool RefOk(string kind, JsonElement r)

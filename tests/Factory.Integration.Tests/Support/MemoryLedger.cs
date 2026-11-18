@@ -9,9 +9,13 @@ public sealed class MemoryLedger : ILedger
 
     public IReadOnlyList<LedgerEvent> Events { get { lock (_events) return _events.ToList(); } }
 
+    /// Runs after each row is stored: a test's seam for acting at a precise moment of a run (for example, touching a file between two stages).
+    public Action<LedgerEvent>? OnAppend { get; set; }
+
     public ValueTask AppendAsync(LedgerEvent e, CancellationToken ct = default)
     {
         lock (_events) _events.Add(e);
+        OnAppend?.Invoke(e);
         return ValueTask.CompletedTask;
     }
 

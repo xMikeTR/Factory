@@ -8,10 +8,17 @@ using Microsoft.FSharp.Core;
 namespace Factory.Harness.Registry;
 
 /// The handover a run's registry rows belong to, and the decisions whose checks decide how it closes.
-public sealed record HandoverRef(string Id, IReadOnlyList<BoundDecision> Decisions, string? WorkItem = null)
+/// ElementScreens: element id to the screen whose spec that element owns (its name is the spec's component); an element that owns
+/// no screen, or more than one, is absent. Stage verdicts for acceptance criteria use it to name a screen.
+public sealed record HandoverRef(string Id, IReadOnlyList<BoundDecision> Decisions, string? WorkItem = null, IReadOnlyDictionary<string, string>? ElementScreens = null)
 {
     public static HandoverRef From(Handover h) =>
-        new(h.Id, h.Decisions.ToList(), Microsoft.FSharp.Core.FSharpOption<string>.get_IsSome(h.WorkItem) ? h.WorkItem.Value : null);
+        new(h.Id, h.Decisions.ToList(), Microsoft.FSharp.Core.FSharpOption<string>.get_IsSome(h.WorkItem) ? h.WorkItem.Value : null, ScreensByElement(h));
+
+    private static Dictionary<string, string> ScreensByElement(Handover h) =>
+        h.Elements.SelectMany(e => h.Ui.Where(u => u.Component == e.Name).Select(u => (Element: e.Id.Value, u.Screen)))
+            .GroupBy(x => x.Element).Where(g => g.Select(x => x.Screen).Distinct().Count() == 1)
+            .ToDictionary(g => g.Key, g => g.First().Screen);
 }
 
 /// One designc ledger row. Line is the canonical compact JSON written to {registry}/ledger/{Stream}.
@@ -20,7 +27,7 @@ public sealed record RegistryEvent(string Stream, string EventId, string Line);
 /// Projects System 2's own ledger onto designc's registry streams. Pure: the same run gives the
 /// same bytes, ts is the source row's ts, and event_id is a hash of the row's content, so a row
 /// written twice is the same row (designc dedupes on event_id and flags V5 on a mismatch).
-public static class RegistryLedgerProjector
+public static partial class RegistryLedgerProjector
 {
     public const string By = "factory-s2";
     private const string Pipeline = "pipeline.jsonl";
@@ -41,6 +48,8 @@ public static class RegistryLedgerProjector
             else if (e.Kind == LedgerKinds.Verify && e.Decision is not null && Check(e) is { } check) rows.Add((e.Ts, check));
         }
         rows.AddRange(AcceptanceFailures(run, handover));
+        rows.AddRange(UiResults(run, handover));
+        rows.AddRange(StageVerdicts(run, handover));
         rows.AddRange(Outcomes(run));
         if (HandoverClosed(run, handover) is { } closed) rows.Add(closed);
         // Stable: ties keep source order.
@@ -313,6 +322,30 @@ public static class RegistryLedgerProjector
                 w.WriteString("commit", commit);
             }));
         }
+    }
+
+    /// `ui_result`: one screen's verdict on one commit. A repeat for the same (screen, commit) is a re-check: the latest wins.
+    /// A row with no screen or commit says nothing designc could key on, so it stays in S2's own ledger.
+    private static IEnumerable<(DateTimeOffset, RegistryEvent)> UiResults(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
+    {
+        var latest = new Dictionary<(string, string), (LedgerEvent E, string Outcome)>();
+        foreach (var e in run.Where(e => e.Kind == LedgerKinds.UiResult && e.Payload is not null))
+        {
+            using var doc = TryParse(e.Payload!);
+            if (doc is null) continue;
+            if (Prop(doc.RootElement, "screen")?.GetString() is not { Length: > 0 } screen || Prop(doc.RootElement, "commit")?.GetString() is not { Length: > 0 } commit) continue;
+            var outcome = Prop(doc.RootElement, "outcome")?.GetString();
+            if (outcome is not ("pass" or "fail" or "could_not_run")) continue;
+            latest[(screen, commit)] = (e, outcome);
+        }
+        foreach (var ((screen, commit), (e, outcome)) in latest)
+            yield return (e.Ts, Row(Pipeline, "ui_result", e, w =>
+            {
+                w.WriteString("screen", screen);
+                w.WriteString("commit", commit);
+                w.WriteString("outcome", outcome);
+                if (handover.WorkItem is { } item) w.WriteString("item", item);
+            }));
     }
 
     /// Run ends that are a verdict on the work, and the evidence kind designc's `outcome.ref` names. Other failed ends

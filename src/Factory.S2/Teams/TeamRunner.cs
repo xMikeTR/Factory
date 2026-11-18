@@ -87,6 +87,7 @@ internal sealed class TaskLoop(
 
     private string? _reverted;
     private readonly string? _repair = Repair.Feedback(svc.Settings, runId, task.Id.Value); // what the failed integration said about this task
+    private readonly IReadOnlyList<byte[]> _repairImages = Repair.Images(svc.Settings, runId, task.Id.Value); // and the pictures that go with it
 
     /// Drive the task from whatever state the ledger says it is in to Passed (return null),
     /// Blocked or Failed (return a TeamResult). Every state change goes through ApplyAsync, which
@@ -205,6 +206,10 @@ internal sealed class TaskLoop(
         await using (await svc.Git.LeaveAsFoundAsync(worktree, ct))
         {
             green = await svc.Verify.RunTaskAsync(runId, _teamId, task, attempt, worktree, ct, conventionCommand: svc.Settings.Verify?.Command);
+            // P2P on the tests this task names (and the ones its change affects): exit codes, so it runs without a JUnit-writing suite too.
+            if (green.Count > 0 && green.All(o => o.ExitCode == 0)
+                && await svc.Verify.P2pAsync(runId, _teamId, task, attempt, TestPlan.ofHandover(handover, task)?.Value, svc.Git, worktree, ct) is { } named)
+                green.Add(named);
             if (green.Count > 0 && green.All(o => o.ExitCode == 0) && baseline is not null
                 && SuiteDiscovery.Plan(svc.Settings.IntegrationTestCommand, worktree) is SuitePlan.Command suite
                 && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, suite.Item, worktree, ct) is { } regressed)
@@ -575,10 +580,20 @@ internal sealed class TaskLoop(
     }
 
     /// What the worktree takes away from the UI that is neither authorised nor already gone on the integration branch. Empty when the guard is off.
-    private async Task<List<UiViolation>> UiViolationsAsync(CancellationToken ct) =>
-        svc.Settings.QualityPolicy?.Ui is { } ui
-            ? (await UiGate.CheckAsync(svc.Git, worktree, runId, ui, svc.Settings.UiContract ?? [], await UiAcceptedAsync(ct), ct)).ToList()
-            : [];
+    private async Task<List<UiViolation>> UiViolationsAsync(CancellationToken ct)
+    {
+        // Bound screens (a handover with a `ui` section) switch the guard on even when the policy has no ui section.
+        var ui = svc.Settings.QualityPolicy?.Ui ?? (handover.Ui.IsEmpty ? null : new UiPolicy([], []));
+        if (ui is null) return [];
+        var contract = (svc.Settings.UiContract ?? []).Concat(OwnedPlacements()).ToList();
+        return (await UiGate.CheckAsync(svc.Git, worktree, runId, ui, contract, await UiAcceptedAsync(ct), ct)).ToList();
+    }
+
+    /// The placement ids of the approved specs this task owns: it writes the spec's page file, or is linked to the page's element.
+    private IEnumerable<UiItem> OwnedPlacements() =>
+        handover.Ui.Where(s => !UiBlame.tasks(handover.Elements, ListModule.OfSeq([task]), s.Component, s.File).Item2.IsEmpty)
+            .SelectMany(s => UiCodeCheck.placementIds(s.Spec.Text)).Distinct()
+            .Select(id => new UiItem(UiItemKind.PlacementId, id));
 
     /// A designer's answer to a parked UI removal: A authorises exactly what is missing now; anything else sends the task back to restore it.
     private async Task UiAnswerAsync(DecisionAnswer answer, CancellationToken ct)
@@ -691,34 +706,54 @@ internal sealed class TaskLoop(
         var run = await runner.RunAsync(worktree, ranges.Select(r => r.File).Distinct().ToList(), ct);
         var elapsed = (long)(DateTime.UtcNow - started).TotalMilliseconds;
         if (run.TimedOut) return new VerifyOutcome("mutation", 124, elapsed, "the mutation tool did not finish");
+        if (run.Skipped is not null && run.Mutants.Count == 0)
+        {
+            // Nothing was mutated, so there is no evidence either way: a row says why, and the task is not held up.
+            await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, "skipped", JsonSerializer.Serialize(new { attempt, reason = run.Skipped }), _teamId, _taskId, ct);
+            return null;
+        }
         _lastMutants = run.Mutants.GroupBy(m => m.Id).ToDictionary(g => g.Key, g => g.First());
         await JudgeClaimsAsync(run.Mutants, ct);
         var declared = run.Mutants.Where(m => _claims.ContainsKey(MutantKey(m))).Select(m => m.Id).ToHashSet();
         var confirmedIds = run.Mutants.Where(m => _confirmed.Contains(MutantKey(m))).Select(m => m.Id).ToHashSet();
         var equivalents = Mutation.confirmedEquivalents(SetModule.OfSeq(declared), SetModule.OfSeq(confirmedIds));
-        var violations = Mutation.check(policy.Thresholds, MapModule.Empty<string, double>(), equivalents, Core.ToList(ranges), Core.ToList(run.Mutants));
+        var changed = Core.ToList(ranges);
+        var mutants = Core.ToList(run.Mutants);
+        var baselines = MapModule.Empty<string, double>();
+        var violations = Mutation.check(policy.Thresholds, baselines, equivalents, changed, mutants);
         if (!violations.IsEmpty)
         {
             // A file that already scored lower before the run is held to that score, not the threshold.
             var scores = await BaselineScoresAsync(runner, violations.Select(v => v.File).ToList(), ct);
             if (scores is null) return new VerifyOutcome("mutation", 124, elapsed, "the mutation tool did not finish on the baseline");
-            violations = Mutation.check(policy.Thresholds, MapModule.OfSeq(scores.Select(kv => Tuple.Create(kv.Key, kv.Value))), equivalents, Core.ToList(ranges), Core.ToList(run.Mutants));
+            baselines = MapModule.OfSeq(scores.Select(kv => Tuple.Create(kv.Key, kv.Value)));
+            violations = Mutation.check(policy.Thresholds, baselines, equivalents, changed, mutants);
         }
+        var summary = Mutation.summary(policy.Thresholds, baselines, equivalents, changed, mutants);
         if (violations.IsEmpty)
         {
-            if (policy.Mode == QualityMode.Report) await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, "clean", JsonSerializer.Serialize(new { attempt }), _teamId, _taskId, ct);
+            if (policy.Mode == QualityMode.Report) await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, "clean", MutationPayload(attempt, summary, null), _teamId, _taskId, ct);
             return null;
         }
         var lines = violations.SelectMany(v => v.Survivors.Select(m =>
-            $"- id={m.Id} {m.File}:{m.Line} {m.Mutator} (file scored {v.Score:P0}, needs {v.Required:P0})"
+            $"- id={m.Id} {m.File}:{m.Line} {m.Mutator}; {Mutation.testsThatRan(m)} (file scored {v.Score:P0}, needs {v.Required:P0})"
             + (_rejected.Contains(MutantKey(m)) ? $" - you declared it equivalent and the reviewer did not accept it: {_claims[MutantKey(m)]}" : ""))).ToList();
         var block = policy.Mode == QualityMode.Block;
-        await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, block ? "blocked" : "reported",
-            JsonSerializer.Serialize(new { attempt, survivors = lines }), _teamId, _taskId, ct);
+        await svc.LogAsync(runId, "mutation", LedgerKinds.Verify, block ? "blocked" : "reported", MutationPayload(attempt, summary, lines), _teamId, _taskId, ct);
         return block ? new VerifyOutcome("mutation", 1, elapsed,
             "Your tests pass, but mutants of the code this task changed survived them, so they do not pin the behaviour. "
             + "Strengthen the tests so each of these changes would make one fail. If a change truly cannot be observed by any test, "
             + "declare it with declare_equivalent (a reviewer must accept it):\n" + string.Join("\n", lines)) : null;
+    }
+
+    /// The evidence of a mutation row: the score over the changed lines and each file's counts (null where there is nothing to judge).
+    private static string MutationPayload(int attempt, MutationSummary summary, IReadOnlyList<string>? survivors)
+    {
+        static double? Opt(Microsoft.FSharp.Core.FSharpOption<double> o) => o is null ? null : o.Value;
+        var files = summary.Files.Select(f => new { file = f.File, score = Opt(f.Score), required = f.Required, baseline = Opt(f.Baseline), killed = f.Killed, survived = f.Survived, no_coverage = f.NoCoverage, timeout = f.Timeout });
+        return survivors is null
+            ? JsonSerializer.Serialize(new { attempt, score = Opt(summary.Score), files })
+            : JsonSerializer.Serialize(new { attempt, score = Opt(summary.Score), files, survivors });
     }
 
     /// A check that timed out (exit 124 after the gate's isolated re-run) says nothing about the code, so
@@ -779,7 +814,7 @@ internal sealed class TaskLoop(
             : $"These changes were outside your writes and were reverted: {_reverted}\n\n{_lastFailures}".TrimEnd();
         if (_repair is not null) failures = $"{_repair}\n\n{failures}".TrimEnd();
         if (_handoff is not null) failures = $"{_handoff}\n\n{failures}".TrimEnd();
-        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context, _bundle);
+        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context, _bundle) with { Images = _repairImages };
     }
 
     private bool InScope(string path, IEnumerable<PathPattern> writable) =>

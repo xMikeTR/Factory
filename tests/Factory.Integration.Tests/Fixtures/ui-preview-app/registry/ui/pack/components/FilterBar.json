@@ -1,0 +1,24 @@
+{
+  "name": "FilterBar",
+  "import": "@your-org/ui",
+  "category": "filter",
+  "description": "Row of filters above a table or list, with a clear-all action.",
+  "useWhen": [
+    "The main content is a table or list the user narrows down"
+  ],
+  "props": {
+    "fields": {
+      "type": "string",
+      "required": true,
+      "description": "Comma-separated filter field ids"
+    }
+  },
+  "data": {},
+  "states": [
+    "ready"
+  ],
+  "status": "bound",
+  "source": {
+    "path": "packages/ui/src/FilterBar.tsx"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "DataTable",
+  "import": "@your-org/ui",
+  "category": "table",
+  "description": "Sortable, paginated table for many records with several comparable columns.",
+  "useWhen": [
+    "More than ~5 records the user scans or compares",
+    "Records have 3+ attributes"
+  ],
+  "avoidWhen": [
+    "A single record — use DetailPanel",
+    "Fewer than 4 items with 1-2 attributes — use a list"
+  ],
+  "props": {
+    "title": {
+      "type": "string"
+    },
+    "density": {
+      "type": "token",
+      "token": "density"
+    },
+    "rowAction": {
+      "type": "action"
+    }
+  },
+  "data": {
+    "rows": {
+      "shape": "table",
+      "required": true
+    }
+  },
+  "states": [
+    "loading",
+    "empty",
+    "error",
+    "ready"
+  ],
+  "status": "bound",
+  "source": {
+    "path": "packages/ui/src/DataTable.tsx",
+    "seenIn": [
+      "src/pages/Claims/ClaimsList.tsx"
+    ]
+  }
+}

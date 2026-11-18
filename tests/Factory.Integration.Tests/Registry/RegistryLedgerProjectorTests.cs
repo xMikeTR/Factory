@@ -62,6 +62,27 @@ public class RegistryLedgerProjectorTests
     }
 
     [Fact]
+    public void A_ui_result_projects_to_a_pipeline_row_keyed_on_the_work_item_and_the_latest_per_screen_and_commit_wins()
+    {
+        var withItem = Handover with { WorkItem = "W-ui" };
+        var sha = new string('a', 40);
+        var run = Run();
+        run.Add(At(50, new(RunId, "S2", "integration_verify", LedgerKinds.UiResult, Outcome: "fail", Payload: $$"""{"screen":"bordereaux","commit":"{{sha}}","outcome":"fail"}""")));
+        run.Add(At(51, new(RunId, "S2", "integration_verify", LedgerKinds.UiResult, Outcome: "pass", Payload: $$"""{"screen":"bordereaux","commit":"{{sha}}","outcome":"pass"}""")));
+        run.Add(At(52, new(RunId, "S2", "integration_verify", LedgerKinds.UiResult, Outcome: "pass", Payload: """{"screen":"x","outcome":"pass"}""")));
+
+        var rows = RegistryLedgerProjector.Project(run, withItem, Limits).Where(r => Row(r)["kind"].GetString() == "ui_result").ToList();
+
+        var row = Assert.Single(rows);
+        Assert.Equal("pipeline.jsonl", row.Stream);
+        Assert.Empty(DesigncSchema.Validate(row.Line));
+        Assert.Equal("pass", Row(row)["outcome"].GetString());
+        Assert.Equal("W-ui", Row(row)["item"].GetString());
+        Assert.Equal("bordereaux", Row(row)["screen"].GetString());
+        Assert.DoesNotContain(RegistryLedgerProjector.Project(run, Handover, Limits).Select(Row), r => r["kind"].GetString() == "ui_result" && r.ContainsKey("item"));
+    }
+
+    [Fact]
     public void A_payload_that_is_not_json_projects_nothing_instead_of_failing_the_run()
     {
         var run = Run();

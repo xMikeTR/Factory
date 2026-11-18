@@ -1,0 +1,3840 @@
+{
+ "about": "Parity contract cases. designc owns renderer/parity.js; any recorder or pipeline that compares UI for designc runs these too. shape: Parity.shape on each value and Parity.sameShape on the pair. diff: Parity.normalise each side (masks from the case, expect from the side), Parity.exceptions(case.exceptions), Parity.diff; the findings, as kind and severity, must equal the list.",
+ "shape": [
+  {
+   "id": "date-format",
+   "a": "15/01/2026",
+   "b": "2026-01-15",
+   "same": false
+  },
+  {
+   "id": "date-value",
+   "a": "15/01/2026",
+   "b": "16/01/2026",
+   "same": true
+  },
+  {
+   "id": "thousands",
+   "a": "1,000.00",
+   "b": "1000.00",
+   "same": false
+  },
+  {
+   "id": "small-number-either-grouping",
+   "a": "500.00",
+   "b": "1,000.00",
+   "same": true
+  },
+  {
+   "id": "comma-not-a-thousands-group",
+   "a": "1,2",
+   "shapeA": "digits:d,d",
+   "b": "1,200",
+   "shapeB": "num:#,##0",
+   "same": false
+  },
+  {
+   "id": "negative-style",
+   "a": "(500.00)",
+   "b": "-500.00",
+   "same": false
+  },
+  {
+   "id": "negative-and-positive",
+   "a": "-500.00",
+   "b": "1,200.00",
+   "same": true
+  },
+  {
+   "id": "currency",
+   "a": "£1,200.00",
+   "b": "1,200.00",
+   "same": false
+  },
+  {
+   "id": "percent",
+   "a": "12.5%",
+   "b": "7.0%",
+   "same": true
+  },
+  {
+   "id": "case-class",
+   "a": "Bound",
+   "b": "BOUND",
+   "same": false
+  },
+  {
+   "id": "words-same-case",
+   "a": "Mock Program Alpha",
+   "b": "Another one",
+   "same": true
+  },
+  {
+   "id": "blank-is-data",
+   "a": "",
+   "b": "15/01/2026",
+   "same": true
+  },
+  {
+   "id": "time",
+   "a": "09:30",
+   "b": "9:30",
+   "same": false
+  }
+ ],
+ "diff": [
+  {
+   "id": "1a",
+   "about": "A date column in another format is one shape failure.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program B",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program B",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "02/03/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "02/03/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "2026-01-15",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "2026-01-15",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program B",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program B",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "2026-03-02",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "2026-03-02",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "shape",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "1b",
+   "about": "Other values in the same format pass: data is not compared.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program B",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program B",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "02/03/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "02/03/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "16/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "16/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program B",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program B",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "30/11/2025",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "30/11/2025",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program C",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program C",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "01/01/2027",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "01/01/2027",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": []
+  },
+  {
+   "id": "1c",
+   "about": "A renamed column header is one text failure.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception date",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception date",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "text",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "1c-covered",
+   "about": "The same rename is covered by an acceptance criterion locator naming the new header.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception date",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception date",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "exceptions": {
+    "acceptance": [
+     {
+      "id": "AC-1",
+      "locators": {
+       "inception": {
+        "role": "columnheader",
+        "name": "Inception date"
+       }
+      }
+     }
+    ]
+   },
+   "findings": [
+    {
+     "kind": "text",
+     "severity": "covered"
+    }
+   ]
+  },
+  {
+   "id": "1d",
+   "about": "Lost thousands separators are a shape failure.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Fee",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Fee",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "1,000.00",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "1,000.00",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "2,500.00",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "2,500.00",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Fee",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Fee",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "1000.00",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "1000.00",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "2500.00",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "2500.00",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "shape",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "2a",
+   "about": "Sorting by a column gives the opposite order on the new app.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program B",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program B",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "02/03/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "02/03/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    },
+    "expect": {
+     "sorted": "Inception"
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "02/03/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "02/03/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program B",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program B",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    },
+    "expect": {
+     "sorted": "Inception"
+    }
+   },
+   "findings": [
+    {
+     "kind": "sort",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "2b",
+   "about": "Different values ordered by the same rule pass.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program B",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program B",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "02/03/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "02/03/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    },
+    "expect": {
+     "sorted": "Inception"
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "01/01/2020",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "01/01/2020",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program B",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program B",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "05/05/2021",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "05/05/2021",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program C",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program C",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "09/09/2029",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "09/09/2029",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    },
+    "expect": {
+     "sorted": "Inception"
+    }
+   },
+   "findings": []
+  },
+  {
+   "id": "2c",
+   "about": "A filter that leaves a row that does not match fails on the new app.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    },
+    "expect": {
+     "filtered": {
+      "column": "Program",
+      "contains": "Mock"
+     }
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "columnheader",
+               "name": "Inception",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Inception",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Mock Program A",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Mock Program A",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "15/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "15/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Other",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Other",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "role": "cell",
+               "name": "16/01/2026",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "16/01/2026",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "role": "button",
+         "name": "Bulk apply",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    },
+    "expect": {
+     "filtered": {
+      "column": "Program",
+      "contains": "Mock"
+     }
+    }
+   },
+   "findings": [
+    {
+     "kind": "filter",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "6a",
+   "about": "Two Edit buttons against one: the second is missing.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Edit",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Edit",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Edit",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "missing",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "6a-removed",
+   "about": "The missing button is covered by a bound business decision that removes it.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Edit",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Export",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Edit",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "exceptions": {
+    "decisions": [
+     {
+      "id": "drop-export",
+      "status": "bound",
+      "kind": "business",
+      "removes": [
+       {
+        "role": "button",
+        "name": "Export"
+       }
+      ]
+     }
+    ]
+   },
+   "findings": [
+    {
+     "kind": "missing",
+     "severity": "covered"
+    }
+   ]
+  },
+  {
+   "id": "6b",
+   "about": "The same buttons in another order are one order failure.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Save",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Cancel",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Cancel",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Save",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "order",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "6c",
+   "about": "A button legacy does not have is an extra failure.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Edit",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "heading",
+         "name": "Adhoc tags",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Edit",
+         "box": null,
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Share",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "extra",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "7",
+   "about": "A button inside a grid cell is interface text.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Actions",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Actions",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "gridcell",
+               "name": "Edit",
+               "box": null,
+               "children": [
+                {
+                 "role": "button",
+                 "name": "Edit",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Actions",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Actions",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "gridcell",
+               "name": "Modify",
+               "box": null,
+               "children": [
+                {
+                 "role": "button",
+                 "name": "Modify",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "text",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "7-link",
+   "about": "A link carrying the cell text is the record's data, not interface text.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Alpha",
+               "box": null,
+               "children": [
+                {
+                 "role": "link",
+                 "name": "Alpha",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Program",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Program",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Beta",
+               "box": null,
+               "children": [
+                {
+                 "role": "link",
+                 "name": "Beta",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": []
+  },
+  {
+   "id": "8",
+   "about": "A status in another case class is a shape failure.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Status",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Status",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Bound",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Bound",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Minted",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Minted",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Status",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Status",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "BOUND",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "BOUND",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "MINTED",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "MINTED",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "shape",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "8-exact",
+   "about": "A vocabulary column masked exact is compared word for word.",
+   "masks": [
+    {
+     "column": "Status",
+     "mode": "exact"
+    }
+   ],
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Status",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Status",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Bound",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Bound",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "table",
+         "name": "Programs",
+         "box": null,
+         "children": [
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "columnheader",
+               "name": "Status",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Status",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "role": "rowgroup",
+           "name": "",
+           "box": null,
+           "children": [
+            {
+             "role": "row",
+             "name": "",
+             "box": null,
+             "children": [
+              {
+               "role": "cell",
+               "name": "Agreed",
+               "box": null,
+               "children": [
+                {
+                 "role": "StaticText",
+                 "name": "Agreed",
+                 "box": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "text",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "state",
+   "about": "A button disabled in legacy and enabled in the new app.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "button",
+         "name": "Export",
+         "box": null,
+         "children": [],
+         "disabled": true
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "button",
+         "name": "Export",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "state",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "spacing",
+   "about": "A button 6 px taller at the same viewport fails; 2 px does not.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "button",
+         "name": "Save",
+         "box": {
+          "x": 0,
+          "y": 0,
+          "w": 80,
+          "h": 32
+         },
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Edit",
+         "box": {
+          "x": 0,
+          "y": 40,
+          "w": 80,
+          "h": 32
+         },
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "button",
+         "name": "Save",
+         "box": {
+          "x": 0,
+          "y": 0,
+          "w": 80,
+          "h": 38
+         },
+         "children": []
+        },
+        {
+         "role": "button",
+         "name": "Edit",
+         "box": {
+          "x": 0,
+          "y": 46,
+          "w": 80,
+          "h": 34
+         },
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "spacing",
+     "severity": "fail"
+    }
+   ]
+  },
+  {
+   "id": "spacing-other-viewport",
+   "about": "Boxes are not compared when the viewports differ.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "button",
+         "name": "Save",
+         "box": {
+          "x": 0,
+          "y": 0,
+          "w": 80,
+          "h": 32
+         },
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "button",
+         "name": "Save",
+         "box": {
+          "x": 0,
+          "y": 0,
+          "w": 80,
+          "h": 50
+         },
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1024,
+     "height": 768
+    }
+   },
+   "findings": []
+  },
+  {
+   "id": "volatile-text",
+   "about": "A count or a time in a message is not a wording change.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "status",
+         "name": "3 programs updated at 09:30",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "status",
+         "name": "12 programs updated at 14:05",
+         "box": null,
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": []
+  },
+  {
+   "id": "field-value",
+   "about": "A field showing a date in another format is a shape failure.",
+   "legacy": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "textbox",
+         "name": "Inception",
+         "box": null,
+         "children": [],
+         "value": "15/01/2026"
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "next": {
+    "tree": {
+     "role": "RootWebArea",
+     "name": "Tags",
+     "box": null,
+     "children": [
+      {
+       "role": "main",
+       "name": "",
+       "box": null,
+       "children": [
+        {
+         "role": "textbox",
+         "name": "Inception",
+         "box": null,
+         "children": [],
+         "value": "2026-01-15"
+        }
+       ]
+      }
+     ]
+    },
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "findings": [
+    {
+     "kind": "shape",
+     "severity": "fail"
+    }
+   ]
+  }
+ ]
+}

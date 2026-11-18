@@ -10,7 +10,7 @@ using Core = Factory.Core.Core;
 
 /// Runs verify entries exactly as the plan declared them. The agent never runs these on its own
 /// behalf and cannot edit them: the plan is frozen, and verify scripts sit under protected paths.
-public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitWorkspace git, TimeSpan? suiteTimeout = null)
+public sealed partial class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitWorkspace git, TimeSpan? suiteTimeout = null)
 {
     /// Automated entries run in order, each against the tree as it found it: whatever a check
     /// writes (generated code, logs) is reverted before the next one starts, so one check cannot
@@ -104,7 +104,7 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
     /// report says failed, each resolved to a frozen path. A non-zero exit with no readable report is
     /// itself a failure (the specs could not run), never a pass.
     public async Task<(VerifyOutcome Outcome, IReadOnlyList<Factory.Harness.Verify.PlaywrightReport.Failure> Failures)> AcceptanceAsync(
-        string runId, string command, string worktree, IReadOnlyCollection<string> frozenPaths, CancellationToken ct, string stage = "integration_verify")
+        string runId, string command, string worktree, IReadOnlyCollection<string> frozenPaths, CancellationToken ct, string stage = "integration_verify", bool logTail = true)
     {
         var report = Path.Combine(worktree, AcceptanceReportPath);
         var dir = Path.GetDirectoryName(report)!;
@@ -130,7 +130,7 @@ public sealed class VerifyRunner(ILedger ledger, ISandboxFactory sandboxes, GitW
             await ledger.AppendAsync(new LedgerEvent(runId, "S2", stage, LedgerKinds.Verify,
                 Outcome: outcome.ExitCode == 0 ? "passed" : "failed",
                 Payload: JsonSerializer.Serialize(new { name = "acceptance", command, ExitCode = outcome.ExitCode, ms = outcome.DurationMs,
-                    failing = failures.Select(f => f.File), tail = r.Tail(2000) })), ct);
+                    failing = failures.Select(f => f.File), tail = logTail ? r.Tail(2000) : null })), ct);
             return (outcome, failures);
         }
         finally
