@@ -103,6 +103,11 @@ RUN dotnet tool install NSwag.ConsoleCore --tool-path /opt/dotnet-tools --versio
  && chmod -R a+rX /opt/dotnet-tools \
  && nswag version
 
+# TypeScript contract types (X3): openapi-typescript writes the schema types for each pinned OpenAPI file, offline, in the codegen phase.
+# The number must equal Codegen.openapiTypescriptVersion (src/Factory.Core/Codegen.fs); a test compares them. The thin client is rendered by the Factory itself (no runtime dependency).
+ARG OPENAPI_TYPESCRIPT_VERSION=7.4.4
+RUN npm install -g openapi-typescript@${OPENAPI_TYPESCRIPT_VERSION} && openapi-typescript --version
+
 # Affected-only P2P (F5): which test projects a task's change reaches (`dotnet-affected --from <integration branch> --format json --dry-run`).
 # Pinned at 7.0.1 (net8+, checked 17 Nov 2026). Last in the file so the layers above stay cached; same --tool-path as the tools above.
 # Needs git, which the SDK image carries. Vitest is not baked in: `vitest related` runs from the repo's own devDependency.

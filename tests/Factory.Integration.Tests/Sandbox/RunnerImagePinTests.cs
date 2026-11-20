@@ -22,4 +22,14 @@ public class RunnerImagePinTests
         Assert.True(arg.Success, "docker/runner/Dockerfile has no ARG NSWAG_VERSION=");
         Assert.Equal(Codegen.nswagVersion, arg.Groups[1].Value);
     }
+
+    [Fact]
+    public void The_Dockerfile_pins_the_openapi_typescript_version_the_codegen_phase_expects()
+    {
+        var text = File.ReadAllText(Path.Combine(RepoRoot(), "docker", "runner", "Dockerfile"));
+        var arg = Regex.Match(text, @"^ARG OPENAPI_TYPESCRIPT_VERSION=(\S+)\s*$", RegexOptions.Multiline);
+        Assert.True(arg.Success, "docker/runner/Dockerfile has no ARG OPENAPI_TYPESCRIPT_VERSION=");
+        Assert.Equal(Codegen.openapiTypescriptVersion, arg.Groups[1].Value);
+        Assert.Contains("openapi-typescript@${OPENAPI_TYPESCRIPT_VERSION}", text);
+    }
 }

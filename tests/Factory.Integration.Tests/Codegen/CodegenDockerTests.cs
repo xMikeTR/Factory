@@ -33,7 +33,8 @@ public sealed class CodegenDockerTests
             Directory.CreateDirectory(Path.Combine(work, "in", "contracts"));
             File.WriteAllText(Path.Combine(work, "in", "contracts", "fares.yaml"), yaml);
             var target = new Codegen.Target(".", "contracts/fares.yaml", "Fares", "Contracts.Fares", Microsoft.FSharp.Collections.ListModule.OfSeq([Codegen.Side.Server, Codegen.Side.Client]),
-                Microsoft.FSharp.Collections.ListModule.OfSeq(["generated/contracts/csharp/Fares/Fares.Dtos.g.cs", "generated/contracts/csharp/Fares/Fares.Server.g.cs", "generated/contracts/csharp/Fares/Fares.Client.g.cs"]));
+                Microsoft.FSharp.Collections.ListModule.OfSeq(["generated/contracts/csharp/Fares/Fares.Dtos.g.cs", "generated/contracts/csharp/Fares/Fares.Server.g.cs", "generated/contracts/csharp/Fares/Fares.Client.g.cs"]),
+                Codegen.Language.CSharp, Microsoft.FSharp.Collections.FSharpList<Codegen.ClientOp>.Empty);
             var run = await new SandboxCodeGenerator(new DockerSandboxFactory(new DockerSandboxOptions(Image: Environment.GetEnvironmentVariable("FACTORY_RUNNER_IMAGE") ?? "factory-s2-runner:latest"))).GenerateAsync([target], work, default);
             Assert.True(run.Outcome == "generated", run.Detail);
             foreach (var f in target.Files) Assert.True(File.Exists(Path.Combine(work, Codegen.outPath(".", f))), f);
