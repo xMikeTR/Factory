@@ -315,7 +315,97 @@ public class TeamRunnerTests
         var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
 
         Assert.Equal(TeamStatus.Passed, result.Status);
-        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "quality" && e.Outcome == "blocked" && e.Payload!.Contains("Bookings DB") && e.Payload.Contains("Surcharge Engine"));
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "allow_list" && e.Outcome == "blocked" && e.Payload!.Contains("Bookings DB") && e.Payload.Contains("Surcharge Engine") && e.Payload.Contains("translation_error"));
+    }
+
+    private const string DataCsproj = "src/Fares.Data/Fares.Data.csproj";
+    private const string RefsSurcharge = "<Project><ItemGroup><ProjectReference Include=\"..\\Surcharge.Engine\\Surcharge.Engine.csproj\" /></ItemGroup></Project>\n";
+    private static readonly QualityThresholds Loose = new(50, 100.0, 500);
+
+    private static ScriptedChatClient AddsReference(bool fixIt = false)
+    {
+        return fixIt
+            ? new ScriptedChatClient(
+                Say("Approach: add BookingStatus.cs"), Call("declare_done", new { summary = "tests" }), Say("done"),
+                Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+                Call("write_file", new { path = DataCsproj, content = RefsSurcharge }), Call("declare_done", new { summary = "referenced surcharge" }), Say("done"),
+                Call("write_file", new { path = DataCsproj, content = "<Project />\n" }), Call("declare_done", new { summary = "dropped the reference" }), Say("done"))
+            : new ScriptedChatClient(
+                Say("Approach: add BookingStatus.cs"), Call("declare_done", new { summary = "tests" }), Say("done"),
+                Call("write_file", new { path = NewFile, content = "public enum BookingStatus { Draft }\n" }),
+                Call("write_file", new { path = DataCsproj, content = RefsSurcharge }), Call("declare_done", new { summary = "referenced surcharge" }), Say("done"));
+    }
+
+    [Fact]
+    public async Task In_report_mode_a_disallowed_reference_passes_and_logs_the_edge_and_an_asbuilt_row()
+    {
+        using var h = await TeamHarness.CreateAsync(AddsReference(), new Limits(8, 3), qualityPolicy: new QualityPolicy(QualityMode.Report, Loose));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        var row = Assert.Single(h.Rows(LedgerKinds.Verify), e => e.Stage == "allow_list" && e.Outcome == "reported");
+        Assert.Contains("Bookings DB", row.Payload);
+        Assert.Contains("Surcharge Engine", row.Payload);
+        Assert.Contains("\"origin\":\"translation_error\"", row.Payload);
+        Assert.Contains("\"kind\":\"project\"", row.Payload);
+        var edge = Assert.Single(h.Rows(LedgerKinds.AsBuiltEdge));
+        Assert.Equal("reported", edge.Outcome);
+        Assert.Equal("""{"from":"Fares Platform/Bookings DB","to":"Fares Platform/Surcharge Engine"}""", edge.Payload);
+    }
+
+    [Fact]
+    public async Task Global_block_with_allowList_report_passes_and_logs_reported()
+    {
+        var policy = new QualityPolicy(QualityMode.Block, Loose, AllowList: new AllowListPolicy(QualityMode.Report, new Dictionary<string, QualityMode>()));
+        using var h = await TeamHarness.CreateAsync(AddsReference(), new Limits(8, 3), qualityPolicy: policy);
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "allow_list" && e.Outcome == "reported");
+        Assert.DoesNotContain(h.Rows(LedgerKinds.Verify), e => e.Outcome == "blocked");
+    }
+
+    [Fact]
+    public async Task Global_report_with_allowList_block_blocks_and_the_next_brief_names_the_missing_relationship()
+    {
+        var policy = new QualityPolicy(QualityMode.Report, Loose, AllowList: new AllowListPolicy(QualityMode.Block, new Dictionary<string, QualityMode>()));
+        var model = AddsReference(fixIt: true);
+        using var h = await TeamHarness.CreateAsync(model, new Limits(8, 3), qualityPolicy: policy);
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "allow_list" && e.Outcome == "blocked");
+        Assert.Contains(model.Requests.SelectMany(r => r), m => m.Text.Contains("The design has no relationship Fares Platform/Bookings DB → Fares Platform/Surcharge Engine"));
+    }
+
+    [Fact]
+    public async Task A_dependencies_file_that_lifts_a_container_rel_allows_what_the_plain_relationships_would_flag()
+    {
+        using var h = await TeamHarness.CreateAsync(AddsReference(), new Limits(8, 3), qualityPolicy: new QualityPolicy(QualityMode.Block, Loose),
+            shapeHandover: b => b.WithDependencies(b.Elements.Select(e => (e.Id.Value, e.Name.Contains("Bookings DB") ? new[] { "Fares Platform/Surcharge Engine" } : [])).ToArray()));
+
+        var result = await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Equal(TeamStatus.Passed, result.Status);
+        Assert.DoesNotContain(h.Rows(LedgerKinds.Verify), e => e.Stage == "allow_list" && e.Outcome is "blocked" or "reported");
+    }
+
+    [Theory]
+    [InlineData("Api", "blocked")]
+    [InlineData("Ui", "reported")]
+    public async Task The_mode_is_decided_by_the_tasks_repo(string repo, string outcome)
+    {
+        var policy = new QualityPolicy(QualityMode.Report, Loose, AllowList: new AllowListPolicy(QualityMode.Report,
+            new Dictionary<string, QualityMode> { ["Api"] = QualityMode.Block, ["Ui"] = QualityMode.Report }));
+        using var h = await TeamHarness.CreateAsync(AddsReference(), new Limits(4, 1), qualityPolicy: policy,
+            shapeHandover: b => { var all = Microsoft.FSharp.Collections.ListModule.OfSeq(b.Elements.Select(e => new ElementSpec(e.Id, e.Name, e.CodeAreas, e.Risk, e.InScope, Microsoft.FSharp.Core.FSharpOption<string>.Some(repo)))); return new Handover(b.Id, b.Digest, all, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs, b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts, b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts, b.Dependencies); });
+
+        await new TeamRunner(h.Services, h.Handover, TeamHarness.RunId).RunAsync(TeamHarness.TeamOf(T001()), NoAnswers, default);
+
+        Assert.Contains(h.Rows(LedgerKinds.Verify), e => e.Stage == "allow_list" && e.Outcome == outcome && e.Payload!.Contains($"\"repo\":\"{repo}\""));
     }
 
     [Fact]

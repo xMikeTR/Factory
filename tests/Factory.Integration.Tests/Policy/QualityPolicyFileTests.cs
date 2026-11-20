@@ -130,4 +130,55 @@ public class QualityPolicyFileTests
 
         Assert.Contains("policy.yaml is invalid", e.Message.Split('\n')[0]);
     }
+
+    [Fact]
+    public void An_absent_allowList_inherits_the_global_mode()
+    {
+        Assert.Null(QualityPolicyFile.Load(RepoWith(null)).AllowList);
+        var p = QualityPolicyFile.Load(RepoWith("quality:\n  mode: block\n"));
+        Assert.Null(p.AllowList);
+    }
+
+    [Fact]
+    public void An_allowList_word_applies_to_every_repo()
+    {
+        var a = QualityPolicyFile.Load(RepoWith("quality:\n  mode: block\n  allowList: report\n")).AllowList!;
+        Assert.Equal(QualityMode.Report, a.ModeFor(null));
+        Assert.Equal(QualityMode.Report, a.ModeFor("Api"));
+    }
+
+    [Fact]
+    public void An_allowList_map_decides_per_repo_and_the_others_inherit_the_global_mode()
+    {
+        var a = QualityPolicyFile.Load(RepoWith("quality:\n  mode: report\n  allowList:\n    Api: block\n    \".\": block\n")).AllowList!;
+        Assert.Equal(QualityMode.Block, a.ModeFor("Api"));
+        Assert.Equal(QualityMode.Block, a.ModeFor(null));
+        Assert.Equal(QualityMode.Report, a.ModeFor("Ui"));
+        var b = QualityPolicyFile.Load(RepoWith("quality:\n  mode: block\n  allowList:\n    Ui: report\n")).AllowList!;
+        Assert.Equal(QualityMode.Block, b.ModeFor("Api"));
+        Assert.Equal(QualityMode.Report, b.ModeFor("Ui"));
+    }
+
+    [Fact]
+    public void A_bad_allowList_word_and_a_blank_repo_name_are_rejected()
+    {
+        var word = Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  allowList:\n    Api: x\n")));
+        Assert.Contains("quality.allowList.Api: 'x' is not report|block", word.Errors);
+        Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  allowList: off\n")));
+        var blank = Assert.Throws<FactoryRejectedException>(() => QualityPolicyFile.Load(RepoWith("quality:\n  allowList:\n    \"\": block\n")));
+        Assert.Contains(blank.Errors, e => e.Contains("blank"));
+    }
+
+    [Fact]
+    public void AllowList_repos_must_be_repos_of_the_run()
+    {
+        var p = QualityPolicyFile.Load(RepoWith("quality:\n  allowList:\n    Api: block\n    Nope: report\n"));
+        var split = QualityPolicyFile.UnknownAllowListRepos(p, ["Api", "Ui"]);
+        Assert.Contains("Nope", Assert.Single(split));
+        Assert.Equal(2, QualityPolicyFile.UnknownAllowListRepos(p, []).Count);
+        var single = QualityPolicyFile.Load(RepoWith("quality:\n  allowList:\n    \".\": block\n"));
+        Assert.Empty(QualityPolicyFile.UnknownAllowListRepos(single, []));
+        Assert.Single(QualityPolicyFile.UnknownAllowListRepos(single, ["Api"]));
+        Assert.Empty(QualityPolicyFile.UnknownAllowListRepos(null, ["Api"]));
+    }
 }

@@ -9,6 +9,15 @@ namespace Factory.S2.Quality;
 using Core = Factory.Core.Core;
 using CoreQuality = Factory.Core.Quality;
 
+/// What an allow-list check found: the pairs the task newly crosses, and the debt it lets through (pairs the baseline already crossed).
+public sealed record AllowJudgement(IReadOnlyList<AllowViolation> New, IReadOnlyList<(ElementId From, ElementId To)> Debt)
+{
+    public static readonly AllowJudgement Empty = new([], []);
+
+    public static AllowJudgement Of(FSharpList<AllowViolation> before, FSharpList<AllowViolation> current) =>
+        new(AllowedEdges.newSince(before, current).ToList(), AllowedEdges.debt(before, current).Select(p => (p.Item1, p.Item2)).ToList());
+}
+
 /// The ratchet for one task: what the task's diff did to the functions it touched, against the
 /// integration branch as the baseline. C# (Roslyn), F# (FSharp.Compiler.Service) and TypeScript (ESLint in the sandbox); other languages join as adapters are added.
 public static class QualityGate
@@ -93,7 +102,7 @@ public static class QualityGate
         Handover handover, FSharpOption<string> repo, EdgeKind kind, IEnumerable<CodeEdge> before, IEnumerable<CodeEdge> current) =>
         (AllowedEdges.violations(handover, repo, kind, Core.ToList(before)), AllowedEdges.violations(handover, repo, kind, Core.ToList(current)));
 
-    private static FSharpOption<string> FsOption(string? s) => s is null ? FSharpOption<string>.None : FSharpOption<string>.Some(s);
+    public static FSharpOption<string> FsOption(string? s) => s is null ? FSharpOption<string>.None : FSharpOption<string>.Some(s);
 
     /// Test files the task touched that assert less than they did on the integration branch (deleted ones count as zero).
     public static async Task<IReadOnlyList<AssertionDrop>> AssertionsAsync(GitWorkspace git, string worktree, string runId, CancellationToken ct)

@@ -43,4 +43,10 @@ public static class TestMaps
             b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts,
             FSharpOption<Microsoft.FSharp.Collections.FSharpList<ElementAllows>>.Some(FsCore.ToList(allows.Select(a =>
                 new ElementAllows(ElementId.NewElementId(a.Element), FsCore.ToList(a.Allows.Select(ElementId.NewElementId)))))));
+
+    /// The handover with exactly these elements, no relationships and no allow list.
+    public static Handover WithElements(this Handover b, params ElementSpec[] elements) =>
+        new(b.Id, b.Digest, FsCore.ToList(elements), b.Decisions, b.ProtectedPaths, b.EventVocabulary, FsCore.ToList(Array.Empty<Relationship>()), b.AcceptanceSpecs,
+            b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
+            b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts, null);
 }

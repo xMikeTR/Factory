@@ -37,6 +37,9 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
         await svc.LogAsync(msg.RunId, "start", LedgerKinds.RunStarted,
             payload: Procedures.RunStartedPayload(Procedures.Fingerprint(AppContext.BaseDirectory, svc.Settings.RepoPath)), ct: cancellationToken);
 
+        if (Factory.Harness.Policy.QualityPolicyFile.UnknownAllowListRepos(svc.Settings.QualityPolicy, svc.Settings.RepoNames) is { Count: > 0 } badRepos)
+            throw new FactoryRejectedException(".factory/policy.yaml quality.allowList is invalid", [.. badRepos]);
+
         // Generated contract code is an input to planning, not a nicety: no plan is drafted without it (when there is something to generate).
         if (await CodegenPhase.GenerateAsync(svc, msg.RunId, handover, cancellationToken) is { } codegenFailed)
         {
