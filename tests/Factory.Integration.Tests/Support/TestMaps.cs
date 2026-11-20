@@ -19,12 +19,12 @@ public static class TestMaps
     public static Handover WithTests(this Handover b, TestMap? map) =>
         new(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
-            b.RequirementRisk, b.RequirementDataClass, b.Ui, map is null ? FSharpOption<TestMap>.None : FSharpOption<TestMap>.Some(map), b.ScenarioTests, b.ScenarioSkipped);
+            b.RequirementRisk, b.RequirementDataClass, b.Ui, map is null ? FSharpOption<TestMap>.None : FSharpOption<TestMap>.Some(map), b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts);
 
     /// The handover with these scenario screens (and no skipped ones).
     public static Handover WithScenarios(this Handover b, IEnumerable<ScenarioScreen> screens) =>
         new(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
             b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, Microsoft.FSharp.Collections.ListModule.OfSeq(screens),
-            Microsoft.FSharp.Collections.ListModule.Empty<Tuple<string, string>>());
+            Microsoft.FSharp.Collections.ListModule.Empty<Tuple<string, string>>(), b.Interfaces, b.ApiContractTexts);
 }

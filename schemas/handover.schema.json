@@ -51,6 +51,8 @@
     "requirementRisk": { "enum": ["low", "medium", "high", "critical"], "description": "optional: the requirement's own risk (designc jira-mapping); the router prefers it over the element max; critical reads as high" },
     "requirementDataClass": { "enum": ["public", "internal", "regulated"], "description": "optional: the requirement's data class; the router prefers it over the policy's" },
     "eventVocabulary": { "type": "array", "items": { "type": "string" } },
+    "interfaces": { "type": "array", "description": "optional: typed relationship ends from designc elements/3 (role, from, to, kind, id, version; method/path/file for an operation)", "items": { "type": "object" } },
+    "apiContractTexts": { "type": "array", "description": "optional: the frozen text of each contracts_api file ({path, sha256, text})", "items": { "type": "object" } },
     "relationships": {
       "type": "array",
       "items": {

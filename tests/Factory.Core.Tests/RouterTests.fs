@@ -63,7 +63,9 @@ let private specHandover: Handover =
       Ui = []
       Tests = None
       ScenarioTests = []
-      ScenarioSkipped = [] }
+      ScenarioSkipped = []
+      Interfaces = []
+      ApiContractTexts = [] }
 
 let private specConfig: TaskSpecConfig =
     { SmallMaxWrites = 4

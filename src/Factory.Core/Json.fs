@@ -202,7 +202,21 @@ module Json =
                               Operation = str q co "operationId", str q co "method", str q co "path"
                               Examples = collect (arr q co "examples") (fun r e -> let eo = obj r e in int r eo "index" 0, str r eo "title") }) })
               ScenarioSkipped =
-                collect (arr "$" o "scenarioSkipped") (fun p n -> let so = obj p n in str p so "scenario", str p so "reason") })
+                collect (arr "$" o "scenarioSkipped") (fun p n -> let so = obj p n in str p so "scenario", str p so "reason")
+              Interfaces =
+                collect (arr "$" o "interfaces") (fun p n ->
+                    let io = obj p n
+                    { Element = str p io "element"
+                      Role = str p io "role"
+                      From = str p io "from"
+                      To = str p io "to"
+                      Kind = str p io "kind"
+                      Id = str p io "id"
+                      Method = optStr io "method"
+                      Path = optStr io "path"
+                      File = optStr io "file"
+                      Version = str p io "version" })
+              ApiContractTexts = collect (arr "$" o "apiContractTexts") (fun p n -> decodeUiText p n) })
 
     // ---------- plan ----------
 
@@ -368,7 +382,22 @@ module Json =
                                   "scenarios", JsonArray(s.Scenarios |> List.map scenario |> Array.ofList) ]
                        "scenarioTests", JsonArray(h.ScenarioTests |> List.map screen |> Array.ofList)
                    if not h.ScenarioSkipped.IsEmpty then
-                       "scenarioSkipped", JsonArray(h.ScenarioSkipped |> List.map (fun (s, r) -> node [ "scenario", JsonValue.Create s; "reason", JsonValue.Create r ]) |> Array.ofList) ]
+                       "scenarioSkipped", JsonArray(h.ScenarioSkipped |> List.map (fun (s, r) -> node [ "scenario", JsonValue.Create s; "reason", JsonValue.Create r ]) |> Array.ofList)
+                   if not h.Interfaces.IsEmpty then
+                       let iface (i: ElementInterface) =
+                           node [ "element", JsonValue.Create i.Element
+                                  "role", JsonValue.Create i.Role
+                                  "from", JsonValue.Create i.From
+                                  "to", JsonValue.Create i.To
+                                  "kind", JsonValue.Create i.Kind
+                                  "id", JsonValue.Create i.Id
+                                  match i.Method with Some m -> "method", JsonValue.Create m | None -> ()
+                                  match i.Path with Some p -> "path", JsonValue.Create p | None -> ()
+                                  match i.File with Some f -> "file", JsonValue.Create f | None -> ()
+                                  "version", JsonValue.Create i.Version ]
+                       "interfaces", JsonArray(h.Interfaces |> List.map iface |> Array.ofList)
+                   if not h.ApiContractTexts.IsEmpty then
+                       "apiContractTexts", JsonArray(h.ApiContractTexts |> List.map (fun t -> node [ "path", JsonValue.Create t.Path; "sha256", JsonValue.Create t.Sha256; "text", JsonValue.Create t.Text ]) |> Array.ofList) ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     // ---------- task events (the ledger payload a runner replays on resume) ----------

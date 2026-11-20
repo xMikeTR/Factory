@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "designc.handover.elements/3",
+  "title": "Handover elements",
+  "description": "elements.json when at least one relationship names a resolved d.operation or d.message. Same as designc.handover.elements/2, plus optional interfaces on an element: the operation or event each typed relationship resolves to, attached to BOTH ends with the same id, version and schema/fields. in_scope (per element) and reserved are present exactly when the freeze is for a work item. A handover with no resolved interface keeps /1 or /2.",
+  "type": "object",
+  "required": [
+    "schema",
+    "elements",
+    "relationships",
+    "events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "designc.handover.elements/3"
+    },
+    "elements": {
+      "description": "Every element of the model, in model order.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Hierarchical: the names from the software system down, joined by '/' (System/Container/Component). A person is its name."
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "person",
+              "softwareSystem",
+              "container",
+              "component"
+            ]
+          },
+          "code": {
+            "description": "d.code: where this element's code lives, as normalised repo path patterns (docs/path-patterns.json). Present only when declared.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "repo": {
+            "description": "d.repo, from the element or its nearest container: the repo its code lives in (a key of designc.json repos). Present only when declared.",
+            "type": "string",
+            "minLength": 1
+          },
+          "risk": {
+            "description": "d.risk: how risky a change here is. Present only when declared, and always present when code is (designc refuses d.code without d.risk, DC000).",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "in_scope": {
+            "type": "boolean",
+            "description": "Present only in a work-item freeze. True for an element the work item changes."
+          },
+          "interfaces": {
+            "description": "The interfaces this element calls, serves, publishes or consumes, sorted by rel.from, rel.to, role. Present only when it has at least one.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "role",
+                    "rel",
+                    "kind",
+                    "id",
+                    "method",
+                    "path",
+                    "file",
+                    "schema",
+                    "version"
+                  ],
+                  "properties": {
+                    "role": {
+                      "enum": [
+                        "calls",
+                        "serves"
+                      ]
+                    },
+                    "rel": {
+                      "type": "object",
+                      "required": [
+                        "from",
+                        "to"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{16}$",
+                      "description": "hash16 of the schema (operation) or fields (event). Both sides compare it."
+                    },
+                    "kind": {
+                      "const": "operation"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "type": "object",
+                      "description": "The OpenAPI operation object with local #/ refs inlined; a ref already on the inlining path stays as {\"$ref\": ...}; external refs stay as written."
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "role",
+                    "rel",
+                    "kind",
+                    "id",
+                    "pack",
+                    "name",
+                    "fields",
+                    "version"
+                  ],
+                  "properties": {
+                    "role": {
+                      "enum": [
+                        "publishes",
+                        "consumes"
+                      ]
+                    },
+                    "rel": {
+                      "type": "object",
+                      "required": [
+                        "from",
+                        "to"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{16}$",
+                      "description": "hash16 of the schema (operation) or fields (event). Both sides compare it."
+                    },
+                    "kind": {
+                      "const": "event"
+                    },
+                    "pack": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "fields": {
+                      "type": "array",
+                      "description": "The event fields as the pack reads them (name plus type, ref or oneOf).",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "relationships": {
+      "description": "Model relationships by element id, one per ordered pair.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "events": {
+      "description": "Event names announced in behaviour/*.p (`announce <Name>`), by file path then first appearance, each once.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reserved": {
+      "description": "Present only in a work-item freeze. Repo path patterns no code change may touch: the generated acceptance specs . A coding agent never writes here; the pipeline records acceptance results per criterion at a commit.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    }
+  }
+}

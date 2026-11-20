@@ -88,6 +88,7 @@ type AgentContract = { Agent: string; Policy: string; Hash: string }
 
 /// A text file the handover carries for a UI screen (`ui.json` names it with its sha256): kept in the record because the run needs
 /// the text after the handover directory is gone.
+/// Any frozen text (UI spec, OpenAPI contract), not only UI.
 type UiText = { Path: string; Sha256: string; Text: string }
 
 /// A holdout acceptance case, named by hash only (handover `ui.json` `holdout_cases`). The case itself never reaches the Factory's run.
@@ -121,6 +122,19 @@ type ScenarioRef = { Id: string; Operation: string * string * string; Examples: 
 
 /// The generated scenario test of one screen: `Test` is designc's text, run as written and never regenerated.
 type ScenarioScreen = { Screen: string; Component: string; Test: UiText; Scenarios: ScenarioRef list }
+
+/// One end of a typed relationship, from designc's elements/3 `interfaces` (operations carry method/path/file, events carry neither).
+type ElementInterface =
+    { Element: string
+      Role: string
+      From: string
+      To: string
+      Kind: string
+      Id: string
+      Method: string option
+      Path: string option
+      File: string option
+      Version: string }
 
 type Handover =
     { Id: string
@@ -165,7 +179,11 @@ type Handover =
       /// The generated scenario tests (handover.yaml `scenario_tests`); empty when the handover has none.
       ScenarioTests: ScenarioScreen list
       /// Scenarios designc did not generate a test for (scenario, reason); empty when none.
-      ScenarioSkipped: (string * string) list }
+      ScenarioSkipped: (string * string) list
+      /// Every interface of every element (elements/3), in file order; empty for /1 and /2 and for older handover JSON.
+      Interfaces: ElementInterface list
+      /// The frozen text of each `contracts_api` file, sorted by path; empty when the handover pins none.
+      ApiContractTexts: UiText list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

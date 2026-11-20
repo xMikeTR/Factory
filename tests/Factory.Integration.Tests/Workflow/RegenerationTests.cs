@@ -63,7 +63,7 @@ public class RegenerationTests
         var refrozen = new Handover(before.Id, "sha256:refrozen", before.Elements,
             Core.ToList(before.Decisions.Select(d => new BoundDecision(d.Id, d.Statement + " Retry once on conflict.", d.Binds, d.Checks))),
             before.ProtectedPaths, before.EventVocabulary, before.Relationships, before.AcceptanceSpecs, before.WorkItem, before.DesignTokens,
-            before.DesignVersion, before.AcceptanceCriteria, before.LoopSpecs, before.References, before.Contracts, before.Uncovered, before.ApiContracts, before.RequirementRisk, before.RequirementDataClass, before.Ui, before.Tests, before.ScenarioTests, before.ScenarioSkipped);
+            before.DesignVersion, before.AcceptanceCriteria, before.LoopSpecs, before.References, before.Contracts, before.Uncovered, before.ApiContracts, before.RequirementRisk, before.RequirementDataClass, before.Ui, before.Tests, before.ScenarioTests, before.ScenarioSkipped, before.Interfaces, before.ApiContractTexts);
         var handoverPath = Path.Combine(h.StateDir, "refrozen.json");
         await File.WriteAllTextAsync(handoverPath, Core.HandoverJson(refrozen));
 

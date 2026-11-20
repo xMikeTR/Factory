@@ -45,10 +45,11 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             files[rel] = text;
         }
 
+        var apiContracts = ApiContracts(manifest, files, errors);
         var elementsPath = Str(manifest, "elements");
         var resolved = elementsPath is null
             ? Fail("handover.yaml names no elements file; re-freeze it with a designc that writes elements.json")
-            : files.TryGetValue(elementsPath, out var json) ? ParseElements(json, errors)
+            : files.TryGetValue(elementsPath, out var json) ? ParseElements(json, apiContracts, errors)
             : Fail($"handover.yaml: elements '{elementsPath}' is not among the frozen files");
 
         var elements = resolved is null ? [] : Elements(resolved.Value, errors);
@@ -96,7 +97,7 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             Core.ToList(references),
             Core.ToList(contracts),
             Core.ToList(uncovered),
-            Core.ToList(ApiContracts(manifest, files, errors)),
+            Core.ToList(apiContracts),
             Str(manifest, "requirement_risk") switch
             {
                 "low" => FSharpOption<RiskLevel>.Some(RiskLevel.Low),
@@ -109,7 +110,9 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             Core.ToList(ui),
             tests,
             Core.ToList(scenarioTests),
-            Core.ToList(scenarioSkipped));
+            Core.ToList(scenarioSkipped),
+            Core.ToList(resolved!.Value.Interfaces),
+            Core.ToList(apiContracts.OrderBy(c => c, StringComparer.Ordinal).Select(c => new UiText(c, Sha256(files[c]), files[c]))));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
@@ -347,21 +350,52 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
     /// Designc's hash16 (rules.py / core.js): two 32-bit FNV-1a passes over the UTF-16 code units.
     public static string Hash16(string s) => Factory.Core.Hash16.compute(s);
 
-    private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk, [property: JsonPropertyName("in_scope")] bool? InScope, string? Repo = null);
+    /// One end of a typed relationship (/3 `interfaces`). `schema`/`fields` are not read: codegen reads the OpenAPI file.
+    private sealed record InterfaceJson(string? Role, RelationshipJson? Rel, string? Kind, string? Id, string? Method, string? Path, string? File, string? Pack, string? Name, string? Version);
+    private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk, [property: JsonPropertyName("in_scope")] bool? InScope, string? Repo = null, List<InterfaceJson>? Interfaces = null);
     private sealed record RelationshipJson(string From, string To);
     private sealed record ElementsJson(string? Schema, List<ElementJson>? Elements, List<RelationshipJson>? Relationships, List<string>? Events, List<string>? Reserved);
-    private readonly record struct ResolvedModel(List<ElementJson> Elements, List<RelationshipJson> Relationships, List<string> Events, List<string> Reserved);
+    private readonly record struct ResolvedModel(List<ElementJson> Elements, List<RelationshipJson> Relationships, List<string> Events, List<string> Reserved, List<ElementInterface> Interfaces);
 
-    /// /1 is the design handover; /2 is an item handover (adds `in_scope` per element and `reserved` paths).
-    private static readonly string[] ElementsSchemas = ["designc.handover.elements/1", "designc.handover.elements/2"];
+    /// /1 is the design handover; /2 is an item handover (adds `in_scope` per element and `reserved` paths); /3 adds typed `interfaces`.
+    private static readonly string[] ElementsSchemas = ["designc.handover.elements/1", "designc.handover.elements/2", "designc.handover.elements/3"];
 
-    private static ResolvedModel? ParseElements(string json, List<string> errors)
+    private static readonly string[] InterfaceRoles = ["calls", "serves", "publishes", "consumes"];
+
+    private static List<ElementInterface> Interfaces(List<ElementJson> elements, List<string> apiContracts, List<string> errors)
+    {
+        var all = new List<ElementInterface>();
+        foreach (var e in elements)
+            foreach (var i in e.Interfaces ?? [])
+            {
+                var where = $"element '{e.Id}' interface '{i.Id}'";
+                if (i.Role is null || !InterfaceRoles.Contains(i.Role)) { errors.Add($"elements.json: {where}: role '{i.Role}' is not calls, serves, publishes or consumes"); continue; }
+                var wantKind = i.Role is "calls" or "serves" ? "operation" : "event";
+                if (i.Kind != wantKind) { errors.Add($"elements.json: {where}: role '{i.Role}' needs kind '{wantKind}', not '{i.Kind}'"); continue; }
+                if (i.Rel is null || string.IsNullOrWhiteSpace(i.Id) || string.IsNullOrWhiteSpace(i.Version)) { errors.Add($"elements.json: {where}: rel, id and version are required"); continue; }
+                if (i.Kind == "operation" && (i.File is null || !apiContracts.Contains(i.File)))
+                { errors.Add($"elements.json: {where}: file '{i.File}' is not one of contracts_api"); continue; }
+                all.Add(new ElementInterface(e.Id, i.Role, i.Rel.From, i.Rel.To, i.Kind, i.Id,
+                    i.Method is null ? FSharpOption<string>.None : FSharpOption<string>.Some(i.Method),
+                    i.Path is null ? FSharpOption<string>.None : FSharpOption<string>.Some(i.Path),
+                    i.File is null ? FSharpOption<string>.None : FSharpOption<string>.Some(i.File),
+                    i.Version));
+            }
+        foreach (var g in all.GroupBy(i => (i.From, i.To, i.Id)).Where(g => g.Select(i => i.Version).Distinct().Count() > 1))
+            errors.Add($"elements.json: {g.Key.Id} on {g.Key.From} → {g.Key.To}: the two ends disagree on version");
+        return all;
+    }
+
+    private static ResolvedModel? ParseElements(string json, List<string> apiContracts, List<string> errors)
     {
         ElementsJson? doc;
         try { doc = JsonSerializer.Deserialize<ElementsJson>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web)); }
         catch (JsonException ex) { errors.Add($"elements.json: {ex.Message}"); return null; }
         if (doc?.Schema is null || !ElementsSchemas.Contains(doc.Schema)) { errors.Add($"elements.json: schema '{doc?.Schema}' is not {string.Join(" or ", ElementsSchemas)}"); return null; }
-        return new ResolvedModel(doc.Elements ?? [], doc.Relationships ?? [], doc.Events ?? [], doc.Reserved ?? []);
+        if (doc.Schema != "designc.handover.elements/3" && (doc.Elements ?? []).Any(e => e.Interfaces is not null))
+        { errors.Add($"elements.json: interfaces are only allowed in designc.handover.elements/3, not {doc.Schema}"); return null; }
+        var elements = doc.Elements ?? [];
+        return new ResolvedModel(elements, doc.Relationships ?? [], doc.Events ?? [], doc.Reserved ?? [], Interfaces(elements, apiContracts, errors));
     }
 
     /// The model's relationships between elements that own code (the others cannot be crossed by a task).
