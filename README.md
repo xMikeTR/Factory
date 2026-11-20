@@ -151,6 +151,10 @@ Prompts and replies stay off spans unless `FACTORY_OTEL_CAPTURE_CONTENT=1`.
 Opt-in check against langfuse-local (v4; read back through `/api/public/v2/observations`):
 `. ~/Desktop/Coding/langfuse-local/env.sh; FACTORY_LIVE_LANGFUSE=1 dotnet test tests/Factory.Integration.Tests --filter LiveLangfuse`.
 
+### Contract codegen
+
+When the handover (`designc.handover.elements/3`) carries operation interfaces, the Factory generates C# from the pinned OpenAPI text before the planner runs, with NSwag `NSWAG_VERSION` pinned in the runner image (`Codegen.nswagVersion`; rebuild the image with `docker/runner/build.sh` after pulling). Per OpenAPI file and repo: `<Stem>.Dtos.g.cs`, `<Stem>.Server.g.cs` (an interface/partial controller for a `serves` end) and `<Stem>.Client.g.cs` (a `calls` end), in namespace `Contracts.<Stem>`. They are seeded into `generated/contracts/csharp/` on the integration branch, which is a protected path (agents cannot write it), and integration verify fails the run `integration_failed` / `generated_code_modified` if any file there is changed, removed or added. The phase writes one `codegen` ledger row (`generated`, `none`, `off`, `reused`, `failed`, `could_not_run`) with a manifest of file hashes; a generation failure ends the run `codegen_failed`. Two runs on the same handover give byte-identical files. `FACTORY_CODEGEN=off` skips the phase. Which repos get C# is `codegen: { csharp: [Api, Worker] }` in the primary repo's `.factory/policy.yaml` (default: every repo that serves an operation; `.` in a single-repo run). Not generated yet: TypeScript, event contracts. Docker case: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter CodegenDocker`.
+
 ### Target repo setup
 
 The target repo needs `.factory/` in its `.gitignore`, and build/test outputs such as
@@ -365,7 +369,7 @@ Ledger to Jira, never the other way. Each work item's state is compared with its
 
 ## Status
 
-Tests: Core 347/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 853/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
+Tests: Core 467/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 1450/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|
@@ -378,10 +382,11 @@ Tests: Core 347/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration
 | Freeze-time UX review and `item_judge` (gradient, never decides Done) | `Core/UxReview.fs`, `UxReviewRunner`, `ItemJudgeReport` | Built; paid, opt-in |
 | Jira mirror (one-way, drift flagged not overwritten; REST and snapshot) | `Core/JiraMirror.fs`, `JiraMirrorReport`, `JiraRestClient` | Built; stub-tested only. `--comment` (with `--apply`) posts gate evidence as a Cloud v3 comment; Jira Cloud only, no Data Center variant |
 | Router task spec: risk and data class from the handover requirement (`requirement_risk`, `requirement_data_class`), else element max and config | `Core/Router.fs`, `Json.parseHandover`, `DesigncHandoverReader` | Built; designc writes the keys, and a handover without them falls back to the old behaviour |
+| C# contract codegen (R5a): NSwag DTOs, server interface and client from the pinned OpenAPI, before the planner | `Core/Codegen.fs`, `S2/Codegen/`, `CodegenPolicyFile` | Built, tested with a fake generator; the real NSwag runs in the opt-in `CodegenDocker` case (needs the runner image rebuilt) |
 | Factory evals | `docs/evals/` | Reference copies only; the suite lives on the work VM |
 
 S2 conforms to Designc's published
-contracts (`ledger_schema.json`, `elements.json` /1 and /2, the work-file format) and never edits them; the copies
+contracts (`ledger_schema.json`, `elements.json` /1, /2 and /3, the work-file format) and never edits them; the copies
 under `tests/Factory.Integration.Tests/Fixtures/designc/` are contract-tested.
 
 ## Layout
