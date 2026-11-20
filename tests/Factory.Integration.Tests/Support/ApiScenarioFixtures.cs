@@ -20,11 +20,11 @@ public static class ApiScenarioFixtures
                 new ApiExample(1, "prefix match",
                     Rows("orders/Order", "{\"id\":1,\"ref\":\"A-100\",\"tag\":null}", "{\"id\":2,\"ref\":\"B-200\",\"tag\":null}"),
                     Rows("orders/Order", "{\"id\":1,\"tag\":\"Priority\"}", "{\"id\":2,\"tag\":null}"),
-                    withRequests ? FSharpOption<ApiRequest>.Some(new ApiRequest(FSharpOption<string>.Some("{\"prefix\":\"A\",\"tag\":\"Priority\"}"), FsCore.ToList(Array.Empty<Tuple<string, string>>()))) : FSharpOption<ApiRequest>.None),
+                    withRequests ? FSharpOption<ApiRequest>.Some(new ApiRequest(FSharpOption<string>.Some("{\"prefix\":\"A\",\"tag\":\"Priority\"}"), FsCore.ToList(Array.Empty<Tuple<string, string>>()), FsCore.ToList(Array.Empty<Tuple<string, string>>()))) : FSharpOption<ApiRequest>.None),
                 new ApiExample(2, "whole reference",
                     Rows("orders/Order", "{\"id\":2,\"ref\":\"B-200\",\"tag\":null}"),
                     Rows("orders/Order", "{\"id\":2,\"tag\":\"Hold\"}"),
-                    withRequests ? FSharpOption<ApiRequest>.Some(new ApiRequest(FSharpOption<string>.Some("{\"ref\":\"B-200\",\"tag\":\"Hold\"}"), FsCore.ToList(Array.Empty<Tuple<string, string>>()))) : FSharpOption<ApiRequest>.None)]));
+                    withRequests ? FSharpOption<ApiRequest>.Some(new ApiRequest(FSharpOption<string>.Some("{\"ref\":\"B-200\",\"tag\":\"Hold\"}"), FsCore.ToList(Array.Empty<Tuple<string, string>>()), FsCore.ToList(Array.Empty<Tuple<string, string>>()))) : FSharpOption<ApiRequest>.None)]));
 
     public static EntityDef Order() =>
         new("orders/Order", "orders", "Order", 1, FsCore.ToList([Tuple.Create("ref", "string"), Tuple.Create("tag", "string")]));

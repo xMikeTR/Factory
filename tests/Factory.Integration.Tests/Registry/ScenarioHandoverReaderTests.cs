@@ -74,7 +74,7 @@ public class ScenarioHandoverReaderTests
     public async Task Another_schema_is_refused()
     {
         var e = await Assert.ThrowsAsync<FactoryRejectedException>(() => Load(Dir(d => d["schema"] = "designc.handover.scenarios/9")));
-        Assert.Contains("designc.handover.scenarios/1 or designc.handover.scenarios/2", e.Message);
+        Assert.Contains("designc.handover.scenarios/1, designc.handover.scenarios/2 or designc.handover.scenarios/3", e.Message);
     }
 
     [Fact]
@@ -107,6 +107,45 @@ public class ScenarioHandoverReaderTests
         Assert.Equal([("ref", "string"), ("tag", "string")], ent.Fields.Select(f => f.ToValueTuple()));
         Assert.Contains(("ORD-1-ts-01", DesigncHandoverReader.ApiNeedsRequest), h.ScenarioSkipped.Select(k => k.ToValueTuple()));
         Assert.Contains(("ORD-1-ts-02", "minted: a person binds it before a test is generated"), h.ScenarioSkipped.Select(k => k.ToValueTuple()));
+    }
+
+    [Fact]
+    public async Task The_scenarios_3_example_reads_each_request_with_path_query_and_body_and_lists_nothing_as_skipped_for_it()
+    {
+        var h = await Load(Dir(fixture: "handover-scenarios-3.example.json"));
+        var a = Assert.Single(h.ApiScenarios);
+        var r1 = a.Examples[0].Request.Value;
+        Assert.Empty(r1.Path);
+        Assert.Equal([("dryRun", "false")], r1.Query.Select(q => q.ToValueTuple()));
+        Assert.Equal("{\"match\":\"A-\",\"tag\":\"Priority\"}", r1.Body.Value);
+        var r2 = a.Examples[1].Request.Value;
+        Assert.Empty(r2.Query);
+        Assert.Equal("{\"match\":\"B-200\",\"tag\":\"Hold\"}", r2.Body.Value);
+        Assert.DoesNotContain(h.ScenarioSkipped, k => k.Item1 == "ORD-1-ts-01");
+        Assert.Contains(h.ScenarioSkipped, k => k.Item1 == "ORD-1-ts-02");
+    }
+
+    [Fact]
+    public async Task A_scenarios_3_example_without_a_request_is_listed_as_skipped_and_path_values_keep_their_json_text()
+    {
+        var h = await Load(Dir(doc =>
+        {
+            var ex = doc["api"]![0]!["examples"]!.AsArray();
+            ex[0]!.AsObject().Remove("request");
+            ex[1]!["request"]!["path"] = new JsonObject { ["orderId"] = 42, ["flag"] = true, ["name"] = "x y" };
+        }, fixture: "handover-scenarios-3.example.json"));
+        var a = Assert.Single(h.ApiScenarios);
+        Assert.True(Microsoft.FSharp.Core.OptionModule.IsNone(a.Examples[0].Request));
+        Assert.Contains(("ORD-1-ts-01", DesigncHandoverReader.ApiNeedsRequest), h.ScenarioSkipped.Select(k => k.ToValueTuple()));
+        Assert.Equal([("orderId", "42"), ("flag", "true"), ("name", "x y")], a.Examples[1].Request.Value.Path.Select(q => q.ToValueTuple()));
+    }
+
+    [Fact]
+    public async Task The_scenarios_3_requests_survive_the_handover_json_round_trip()
+    {
+        var h = await Load(Dir(fixture: "handover-scenarios-3.example.json"));
+        var back = Factory.Core.Core.ParseHandover(Factory.Core.Core.HandoverJson(h));
+        Assert.Equal(h.ApiScenarios, back.ApiScenarios);
     }
 
     [Fact]

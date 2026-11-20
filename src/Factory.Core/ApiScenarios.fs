@@ -147,7 +147,7 @@ module ApiScenarios =
               "    public static IReadOnlyList<JsonObject> Rows(params string[] json) => json.Select(j => JsonNode.Parse(j)!.AsObject()).ToList();"
               ""
               "    public static async Task CallAsync(string id, int index, string title, object client, string clientMethod, string httpMethod, string httpPath,"
-              "        IReadOnlyDictionary<string, string> pathArgs, string? bodyJson)"
+              "        IReadOnlyDictionary<string, string> pathArgs, IReadOnlyDictionary<string, string> queryArgs, string? bodyJson)"
               "    {"
               "        var prefix = $\"{id} example {index} ({title}): \";"
               "        var method = client.GetType().GetMethods().Where(m => m.Name == clientMethod).OrderByDescending(m => m.GetParameters().Length).FirstOrDefault()"
@@ -158,7 +158,7 @@ module ApiScenarios =
               "        {"
               "            var type = Nullable.GetUnderlyingType(p.ParameterType) ?? p.ParameterType;"
               "            if (type == typeof(CancellationToken)) args.Add(CancellationToken.None);"
-              "            else if (pathArgs.FirstOrDefault(a => string.Equals(a.Key, p.Name, StringComparison.OrdinalIgnoreCase)) is { Key: not null } arg)"
+              "            else if (pathArgs.Concat(queryArgs).FirstOrDefault(a => string.Equals(a.Key, p.Name, StringComparison.OrdinalIgnoreCase)) is { Key: not null } arg)"
               "                args.Add(type == typeof(Guid) ? Guid.Parse(arg.Value) : Convert.ChangeType(arg.Value, type, CultureInfo.InvariantCulture));"
               "            else if (!bodyUsed && bodyJson is not null) { bodyUsed = true; args.Add(JsonSerializer.Deserialize(bodyJson, p.ParameterType, new JsonSerializerOptions(JsonSerializerDefaults.Web))); }"
               "            else throw new ScenarioSetupException($\"{prefix}cannot bind parameter {p.Name} of {clientMethod}\");"
@@ -209,9 +209,10 @@ module ApiScenarios =
             [ for e in examples do
                   let req = e.Request.Value
                   let id, title = csString a.Id, csString e.Title
-                  let pathArgs =
-                      if req.Path.IsEmpty then "new Dictionary<string, string>()"
-                      else "new Dictionary<string, string> { " + (req.Path |> List.map (fun (k, v) -> $"[{csString k}] = {csString v}") |> String.concat ", ") + " }"
+                  let args (kv: (string * string) list) =
+                      if kv.IsEmpty then "new Dictionary<string, string>()"
+                      else "new Dictionary<string, string> { " + (kv |> List.map (fun (k, v) -> $"[{csString k}] = {csString v}") |> String.concat ", ") + " }"
+                  let pathArgs, queryArgs = args req.Path, args req.Query
                   yield $"    [Fact(DisplayName = {csString (displayName a.Id e.Index e.Title)})]"
                   yield $"    public async Task Example{e.Index}()"
                   yield "    {"
@@ -221,7 +222,7 @@ module ApiScenarios =
                       yield $"        await a.SeedAsync({csString entity}, {rowsLiteral rows});"
                   let body = match req.Body with Some b -> csString b | None -> "null"
                   let httpMethod = csString (a.Method.ToUpperInvariant())
-                  yield $"        await ScenarioRuntime.CallAsync({id}, {e.Index}, {title}, new {client}(http), {csString method}, {httpMethod}, {csString a.OpPath}, {pathArgs}, {body});"
+                  yield $"        await ScenarioRuntime.CallAsync({id}, {e.Index}, {title}, new {client}(http), {csString method}, {httpMethod}, {csString a.OpPath}, {pathArgs}, {queryArgs}, {body});"
                   for (entity, rows) in e.Then do
                       yield $"        ScenarioRuntime.Assert({id}, {e.Index}, {title}, {csString entity}, {rowsLiteral rows}, await a.QueryAsync({csString entity}));"
                   yield "    }" ]

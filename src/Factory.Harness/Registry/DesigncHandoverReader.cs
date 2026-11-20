@@ -188,7 +188,7 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             var schema = root.GetProperty("schema").GetString();
-            if (schema is not ("designc.handover.scenarios/1" or "designc.handover.scenarios/2")) { errors.Add($"{path}: schema is not designc.handover.scenarios/1 or designc.handover.scenarios/2"); return (screens, skipped, api, entities); }
+            if (schema is not ("designc.handover.scenarios/1" or "designc.handover.scenarios/2" or "designc.handover.scenarios/3")) { errors.Add($"{path}: schema is not designc.handover.scenarios/1, designc.handover.scenarios/2 or designc.handover.scenarios/3"); return (screens, skipped, api, entities); }
             foreach (var sc in root.GetProperty("screens").EnumerateArray())
             {
                 var name = sc.GetProperty("screen").GetString()!;
@@ -208,22 +208,31 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             }
             foreach (var k in root.GetProperty("skipped").EnumerateArray())
                 skipped.Add(Tuple.Create(k.GetProperty("scenario").GetString()!, k.GetProperty("reason").GetString()!));
-            if (schema == "designc.handover.scenarios/2")
+            if (schema is "designc.handover.scenarios/2" or "designc.handover.scenarios/3")
             {
                 static string Canon(JsonElement e) => System.Text.Json.Nodes.JsonNode.Parse(e.GetRawText())!.ToJsonString();
                 static Microsoft.FSharp.Collections.FSharpList<Tuple<string, Microsoft.FSharp.Collections.FSharpList<string>>> Rows(JsonElement o) =>
                     Core.ToList(o.EnumerateObject().Select(p => Tuple.Create(p.Name, Core.ToList(p.Value.EnumerateArray().Select(Canon)))));
+                // A /3 request holds JSON scalars; path and query values become their text (a string as is, a number or bool as its JSON text).
+                static Microsoft.FSharp.Collections.FSharpList<Tuple<string, string>> Scalars(JsonElement o) =>
+                    Core.ToList(o.EnumerateObject().Where(p => p.Value.ValueKind != JsonValueKind.Null)
+                        .Select(p => Tuple.Create(p.Name, p.Value.ValueKind == JsonValueKind.String ? p.Value.GetString()! : p.Value.GetRawText())));
+                static FSharpOption<ApiRequest> Request(JsonElement e) =>
+                    e.TryGetProperty("request", out var r)
+                        ? FSharpOption<ApiRequest>.Some(new ApiRequest(r.TryGetProperty("body", out var b) ? FSharpOption<string>.Some(Canon(b)) : FSharpOption<string>.None,
+                            Scalars(r.GetProperty("path")), Scalars(r.GetProperty("query"))))
+                        : FSharpOption<ApiRequest>.None;
                 if (root.TryGetProperty("api", out var apis))
                     foreach (var a in apis.EnumerateArray())
                     {
                         var op = a.GetProperty("operation");
                         var examples = a.GetProperty("examples").EnumerateArray().Select(e => new ApiExample(e.GetProperty("index").GetInt32(), e.GetProperty("title").GetString()!,
-                            Rows(e.GetProperty("given")), Rows(e.GetProperty("then")), FSharpOption<ApiRequest>.None)).ToList();
+                            Rows(e.GetProperty("given")), Rows(e.GetProperty("then")), Request(e))).ToList();
                         var id = a.GetProperty("id").GetString()!;
                         api.Add(new ApiScenario(id, a.GetProperty("path").GetString()!, a.GetProperty("sha256").GetString()!, op.GetProperty("id").GetString()!,
                             op.GetProperty("method").GetString()!, op.GetProperty("path").GetString()!, Core.ToList(examples)));
-                        // Until designc scenarios/3 carries the request, no example can be turned into a call.
-                        if (examples.Count > 0) skipped.Add(Tuple.Create(id, ApiNeedsRequest));
+                        // An example without a request (every /2 example) cannot be turned into a call.
+                        if (examples.Any(e => FSharpOption<ApiRequest>.get_IsNone(e.Request))) skipped.Add(Tuple.Create(id, ApiNeedsRequest));
                     }
                 if (root.TryGetProperty("entities", out var ents))
                     foreach (var e in ents.EnumerateArray())
@@ -235,7 +244,7 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         return (screens, skipped, api, entities);
     }
 
-    /// The reason an API scenario example is listed as skipped under scenarios/2, which carries rows but no request.
+    /// The reason an API scenario example is listed as skipped: scenarios/2 carries rows but no request, and a /3 example may have none.
     public const string ApiNeedsRequest = "needs designc scenarios/3: the example has no request";
 
     /// `tests`: the derived tests.json (designc.handover.tests/1). None when handover.yaml has no `tests` key; any other schema is refused.

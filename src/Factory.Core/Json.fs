@@ -252,7 +252,8 @@ module Json =
                                  | rq ->
                                      let ro = obj $"{q}.request" rq
                                      Some { Body = optStr ro "body"
-                                            Path = collect (arr q ro "path") (fun r x -> let xo = obj r x in str r xo "name", str r xo "value") }) }) })
+                                            Path = collect (arr q ro "path") (fun r x -> let xo = obj r x in str r xo "name", str r xo "value")
+                                            Query = collect (arr q ro "query") (fun r x -> let xo = obj r x in str r xo "name", str r xo "value") }) }) })
               Entities =
                 collect (arr "$" o "entities") (fun p n ->
                     let eo = obj p n
@@ -462,7 +463,8 @@ module Json =
                                   | Some r ->
                                       "request",
                                       node [ match r.Body with Some b -> "body", JsonValue.Create b | None -> ()
-                                             "path", JsonArray(r.Path |> List.map (fun (k, v) -> node [ "name", JsonValue.Create k; "value", JsonValue.Create v ]) |> Array.ofList) ]
+                                             "path", JsonArray(r.Path |> List.map (fun (k, v) -> node [ "name", JsonValue.Create k; "value", JsonValue.Create v ]) |> Array.ofList)
+                                             "query", JsonArray(r.Query |> List.map (fun (k, v) -> node [ "name", JsonValue.Create k; "value", JsonValue.Create v ]) |> Array.ofList) ]
                                   | None -> () ]
                        let scenario (a: ApiScenario) =
                            node [ "id", JsonValue.Create a.Id

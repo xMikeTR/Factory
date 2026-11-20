@@ -32,12 +32,12 @@ let private scenario : ApiScenario =
             Title = "prefix match"
             Given = [ "orders/Order", [ """{"id":1,"ref":"A-100"}"""; """{"id":2,"ref":"B-200"}""" ] ]
             Then = [ "orders/Order", [ """{"id":1,"tag":"Priority"}"""; """{"id":2,"tag":null}""" ] ]
-            Request = Some { Body = Some """{"prefix":"A","tag":"Priority"}"""; Path = [] } }
+            Request = Some { Body = Some """{"prefix":"A","tag":"Priority"}"""; Path = []; Query = [] } }
           { Index = 2
             Title = "whole \"reference\""
             Given = []
             Then = [ "orders/Order", [ """{"id":2,"tag":"Hold"}""" ] ]
-            Request = Some { Body = None; Path = [ "id", "2" ] } } ] }
+            Request = Some { Body = None; Path = [ "id", "2" ]; Query = [ "dryRun", "false" ] } } ] }
 
 let private handover =
     { baseHandover with
@@ -122,7 +122,7 @@ let tests: (string * (unit -> unit)) list =
                     "        await using var a = ScenarioRuntime.Adapter();"
                     "        var http = await a.StartAsync();"
                     "        await a.SeedAsync(\"orders/Order\", ScenarioRuntime.Rows(\"{\\\"id\\\":1,\\\"ref\\\":\\\"A-100\\\"}\", \"{\\\"id\\\":2,\\\"ref\\\":\\\"B-200\\\"}\"));"
-                    "        await ScenarioRuntime.CallAsync(\"ORD-1-ts-01\", 1, \"prefix match\", new global::Contracts.Orders.OrdersClient(http), \"TagOrdersAsync\", \"POST\", \"/orders/tags\", new Dictionary<string, string>(), \"{\\\"prefix\\\":\\\"A\\\",\\\"tag\\\":\\\"Priority\\\"}\");"
+                    "        await ScenarioRuntime.CallAsync(\"ORD-1-ts-01\", 1, \"prefix match\", new global::Contracts.Orders.OrdersClient(http), \"TagOrdersAsync\", \"POST\", \"/orders/tags\", new Dictionary<string, string>(), new Dictionary<string, string>(), \"{\\\"prefix\\\":\\\"A\\\",\\\"tag\\\":\\\"Priority\\\"}\");"
                     "        ScenarioRuntime.Assert(\"ORD-1-ts-01\", 1, \"prefix match\", \"orders/Order\", ScenarioRuntime.Rows(\"{\\\"id\\\":1,\\\"tag\\\":\\\"Priority\\\"}\", \"{\\\"id\\\":2,\\\"tag\\\":null}\"), await a.QueryAsync(\"orders/Order\"));"
                     "    }"
                     "    [Fact(DisplayName = \"ORD-1-ts-01 example 2: whole \\\"reference\\\"\")]"
@@ -130,7 +130,7 @@ let tests: (string * (unit -> unit)) list =
                     "    {"
                     "        await using var a = ScenarioRuntime.Adapter();"
                     "        var http = await a.StartAsync();"
-                    "        await ScenarioRuntime.CallAsync(\"ORD-1-ts-01\", 2, \"whole \\\"reference\\\"\", new global::Contracts.Orders.OrdersClient(http), \"TagOrdersAsync\", \"POST\", \"/orders/tags\", new Dictionary<string, string> { [\"id\"] = \"2\" }, null);"
+                    "        await ScenarioRuntime.CallAsync(\"ORD-1-ts-01\", 2, \"whole \\\"reference\\\"\", new global::Contracts.Orders.OrdersClient(http), \"TagOrdersAsync\", \"POST\", \"/orders/tags\", new Dictionary<string, string> { [\"id\"] = \"2\" }, new Dictionary<string, string> { [\"dryRun\"] = \"false\" }, null);"
                     "        ScenarioRuntime.Assert(\"ORD-1-ts-01\", 2, \"whole \\\"reference\\\"\", \"orders/Order\", ScenarioRuntime.Rows(\"{\\\"id\\\":2,\\\"tag\\\":\\\"Hold\\\"}\"), await a.QueryAsync(\"orders/Order\"));"
                     "    }"
                     "}"

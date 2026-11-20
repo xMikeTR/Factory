@@ -1,5 +1,5 @@
 {
-  "designc_commit": "87c1952d1c4df1f1a89dbea7471b495df143fd6a",
+  "designc_commit": "4de0f38b469cac6056937050ecc04b8118b11dda",
   "files": [
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/ledger_schema.json",
@@ -76,6 +76,14 @@
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-scenarios-2.example.json",
       "source": "docs/handover-scenarios-2.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-scenarios-3.schema.json",
+      "source": "docs/handover-scenarios-3.schema.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-scenarios-3.example.json",
+      "source": "docs/handover-scenarios-3.example.json"
     }
   ]
 }

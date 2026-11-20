@@ -124,10 +124,10 @@ type ScenarioRef = { Id: string; Operation: string * string * string; Examples: 
 type ScenarioScreen = { Screen: string; Component: string; Test: UiText; Scenarios: ScenarioRef list }
 
 /// The request an API scenario example sends (designc scenarios/3). `Body` is canonical JSON text; `Path` maps each path parameter to its value.
-type ApiRequest = { Body: string option; Path: (string * string) list }
+type ApiRequest = { Body: string option; Path: (string * string) list; Query: (string * string) list }
 
 /// One example of an API scenario (scenarios/2 `api`): `Given` seeds rows and `Then` expects rows, both keyed by qualified entity
-/// (`pack/Aggregate`) with each row as JSON object text, in the handover's order. `Request` is None until designc scenarios/3.
+/// (`pack/Aggregate`) with each row as JSON object text, in the handover's order. `Request` is None under scenarios/2, or when a /3 example has none.
 type ApiExample =
     { Index: int
       Title: string
