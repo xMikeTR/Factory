@@ -78,6 +78,7 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         var ui = UiScreens(manifest, files, errors);
         var tests = Tests(manifest, files, errors);
         var (scenarioTests, scenarioSkipped) = ScenarioTests(manifest, files, errors);
+        var dependencies = Dependencies(manifest, files, elements, errors);
 
         if (errors.Count > 0) Reject(handoverDir, errors);
         return new Handover(
@@ -112,7 +113,8 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             Core.ToList(scenarioTests),
             Core.ToList(scenarioSkipped),
             Core.ToList(resolved!.Value.Interfaces),
-            Core.ToList(apiContracts.OrderBy(c => c, StringComparer.Ordinal).Select(c => new UiText(c, Sha256(files[c]), files[c]))));
+            Core.ToList(apiContracts.OrderBy(c => c, StringComparer.Ordinal).Select(c => new UiText(c, Sha256(files[c]), files[c]))),
+            dependencies);
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
@@ -227,6 +229,49 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             return FSharpOption<TestMap>.Some(new TestMap(Core.ToList(elements), Core.ToList(unmapped)));
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); return FSharpOption<TestMap>.None; }
+    }
+
+    /// `dependencies`: the derived dependencies.json (designc.handover.dependencies/1). None when handover.yaml has no `dependencies` key;
+    /// any other schema is refused. Each entry is checked against the code-backed elements, and every code-backed element must be listed.
+    private static FSharpOption<Microsoft.FSharp.Collections.FSharpList<ElementAllows>> Dependencies(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<ElementSpec> elements, List<string> errors)
+    {
+        var none = FSharpOption<Microsoft.FSharp.Collections.FSharpList<ElementAllows>>.None;
+        if (Str(manifest, "dependencies") is not { } path) return none;
+        if (!files.TryGetValue(path, out var json)) { errors.Add($"handover.yaml: dependencies '{path}' is not among the frozen files"); return none; }
+        var before = errors.Count;
+        var result = new List<ElementAllows>();
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.GetProperty("schema").GetString() != "designc.handover.dependencies/1") { errors.Add($"{path}: schema is not designc.handover.dependencies/1"); return none; }
+            var byId = elements.ToDictionary(e => e.Id.Value, StringComparer.Ordinal);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var entry in root.GetProperty("elements").EnumerateArray())
+            {
+                var id = entry.GetProperty("element").GetString()!;
+                var where = $"dependencies.json: '{id}'";
+                if (!byId.TryGetValue(id, out var spec)) { errors.Add($"{where} is not a code-backed element of elements.json"); continue; }
+                if (!seen.Add(id)) { errors.Add($"{where} is listed twice"); continue; }
+                var code = entry.GetProperty("code").EnumerateArray().Select(c => c.GetString()!).ToList();
+                if (!code.SequenceEqual(spec.CodeAreas.Select(a => a.Value))) errors.Add($"{where} code {string.Join(", ", code)} does not match elements.json ({string.Join(", ", spec.CodeAreas.Select(a => a.Value))})");
+                var repo = entry.TryGetProperty("repo", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null;
+                var wantRepo = spec.Repo is { } sr ? sr.Value : null;
+                if (repo != wantRepo) errors.Add($"{where} repo '{repo}' does not match elements.json ('{wantRepo}')");
+                var allows = new List<ElementId>();
+                foreach (var a in entry.GetProperty("allows").EnumerateArray().Select(a => a.GetString()!))
+                {
+                    if (a == id) errors.Add($"{where} allows itself");
+                    else if (!byId.ContainsKey(a)) errors.Add($"{where} allows '{a}', which is not a code-backed element");
+                    else allows.Add(ElementId.NewElementId(a));
+                }
+                result.Add(new ElementAllows(ElementId.NewElementId(id), Core.ToList(allows)));
+            }
+            foreach (var e in elements.Where(e => !seen.Contains(e.Id.Value)))
+                errors.Add($"dependencies.json: '{e.Id.Value}' is not listed (designc lists every code-backed element)");
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); return none; }
+        return errors.Count > before ? none : FSharpOption<Microsoft.FSharp.Collections.FSharpList<ElementAllows>>.Some(Core.ToList(result));
     }
 
     public static string Sha256(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));

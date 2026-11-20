@@ -216,7 +216,16 @@ module Json =
                       Path = optStr io "path"
                       File = optStr io "file"
                       Version = str p io "version" })
-              ApiContractTexts = collect (arr "$" o "apiContractTexts") (fun p n -> decodeUiText p n) })
+              ApiContractTexts = collect (arr "$" o "apiContractTexts") (fun p n -> decodeUiText p n)
+              Dependencies =
+                (match o.["dependencies"] with
+                 | null -> None
+                 | _ ->
+                     Some(
+                         collect (arr "$" o "dependencies") (fun p n ->
+                             let eo = obj p n
+                             { Element = ElementId(str p eo "element")
+                               Allows = strs p eo "allows" |> List.map ElementId }))) })
 
     // ---------- plan ----------
 
@@ -396,6 +405,16 @@ module Json =
                                   match i.File with Some f -> "file", JsonValue.Create f | None -> ()
                                   "version", JsonValue.Create i.Version ]
                        "interfaces", JsonArray(h.Interfaces |> List.map iface |> Array.ofList)
+                   match h.Dependencies with
+                   | Some deps ->
+                       "dependencies",
+                       JsonArray(
+                           deps
+                           |> List.map (fun d ->
+                               node [ "element", JsonValue.Create d.Element.Value
+                                      "allows", JsonArray(d.Allows |> List.map (fun a -> JsonValue.Create a.Value :> JsonNode) |> Array.ofList) ])
+                           |> Array.ofList)
+                   | None -> ()
                    if not h.ApiContractTexts.IsEmpty then
                        "apiContractTexts", JsonArray(h.ApiContractTexts |> List.map (fun t -> node [ "path", JsonValue.Create t.Path; "sha256", JsonValue.Create t.Sha256; "text", JsonValue.Create t.Text ]) |> Array.ofList) ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))

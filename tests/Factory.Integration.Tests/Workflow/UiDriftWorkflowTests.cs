@@ -31,7 +31,7 @@ public sealed class UiDriftWorkflowTests
         var b = h.Handover;
         var handover = new Handover(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
-            b.RequirementRisk, b.RequirementDataClass, uiHandover.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts);
+            b.RequirementRisk, b.RequirementDataClass, uiHandover.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts, null);
         var json = Path.Combine(h.StateDir, "handovers", "ui-drift.json");
         Directory.CreateDirectory(Path.GetDirectoryName(json)!);
         await File.WriteAllTextAsync(json, Core.HandoverJson(handover));

@@ -30,7 +30,15 @@ let private waveOf (d: DispatchPlan) (id: string) =
     d.Waves |> List.find (fun w -> w.Teams |> List.exists (fun t -> t.Tasks |> List.exists (fun x -> x.Id = TaskId id))) |> fun w -> w.Index
 
 let tests: (string * (unit -> unit)) list =
-    [ "interfaces: interfaces and contract texts round-trip, and a handover without them writes neither key", fun () ->
+    [ "dependencies: an allow list round-trips, and a handover without one writes no key", fun () ->
+          let deps = [ { Element = ElementId "A"; Allows = [ ElementId "B" ] }; { Element = ElementId "B"; Allows = [] } ]
+          let h = { baseHandover with Dependencies = Some deps }
+          match Json.parseHandover (Json.writeHandover h) with
+          | Error es -> failwithf "%A" es
+          | Ok back -> equal (Some deps) back.Dependencies "dependencies"
+          check (not ((Json.writeHandover baseHandover).Contains "dependencies")) "no key when None"
+          equal None baseHandover.Dependencies "an older handover has none"
+      "interfaces: interfaces and contract texts round-trip, and a handover without them writes neither key", fun () ->
           let i = { Element = "A"; Role = "serves"; From = "B"; To = "A"; Kind = "operation"; Id = "op"; Method = Some "GET"; Path = Some "/x"; File = Some "c.yaml"; Version = "v1" }
           let ev = { i with Role = "publishes"; Kind = "event"; Id = "p/E"; Method = None; Path = None; File = None }
           let t = { Path = "c.yaml"; Sha256 = "abc"; Text = "openapi: 3.0.3\n" }

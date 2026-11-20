@@ -136,6 +136,9 @@ type ElementInterface =
       File: string option
       Version: string }
 
+/// One design element and the elements it may depend on (designc dependencies.json, lifted to the code-backed elements).
+type ElementAllows = { Element: ElementId; Allows: ElementId list }
+
 type Handover =
     { Id: string
       Digest: string
@@ -183,7 +186,9 @@ type Handover =
       /// Every interface of every element (elements/3), in file order; empty for /1 and /2 and for older handover JSON.
       Interfaces: ElementInterface list
       /// The frozen text of each `contracts_api` file, sorted by path; empty when the handover pins none.
-      ApiContractTexts: UiText list }
+      ApiContractTexts: UiText list
+      /// The allow list (handover.yaml `dependencies`, designc.handover.dependencies/1); None when the handover has no dependencies.json.
+      Dependencies: ElementAllows list option }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

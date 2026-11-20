@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "designc.handover.dependencies/1",
+  "title": "Handover dependencies",
+  "description": "dependencies.json in a frozen handover (handovers/<id>/), written by Core.handoverPlan for every handover that has an element with a code area (d.code), listed and hashed in handover.yaml (named there as `dependencies:`) and outside the handover id (it is derived from the model, which is inside it). It is the allow list: for each element with a code area, the elements whose code it may depend on, derived from the design's relationships (direction = the relationship's; relationships to or from a person and structural ones add nothing). An endpoint is mapped to its code area: the element itself if coded, else its nearest coded ancestor, else its coded descendants. Ids, code patterns and repo are those of elements.json. An element listed with an empty allows may depend on no other design element. designc owns this contract; consumers conform to it. docs/handover-dependencies.example.json is the shared fixture.",
+  "type": "object",
+  "required": ["schema", "elements"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "designc.handover.dependencies/1" },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["element", "code", "allows"],
+        "additionalProperties": false,
+        "properties": {
+          "element": { "type": "string", "description": "An elements.json id." },
+          "code": { "type": "array", "items": { "type": "string" }, "description": "The element's d.code patterns, as in elements.json." },
+          "repo": { "type": "string", "description": "Only when elements.json gives the element a repo." },
+          "allows": { "type": "array", "uniqueItems": true, "items": { "type": "string" }, "description": "elements.json ids, sorted." }
+        }
+      }
+    }
+  }
+}
