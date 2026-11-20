@@ -7,6 +7,7 @@ namespace Factory.Integration.Tests.Support;
 /// designc's scenarios/2 example (ORD-1-ts-01 on tagOrders) with the requests scenarios/3 will carry, written by hand until C4b.
 public static class ApiScenarioFixtures
 {
+    public const string Serving = "Fares Platform/Bookings DB";
     public const string Source = "contracts/openapi/orders.yaml";
     public const string Yaml = "openapi: 3.0.0\npaths:\n  /orders/tags:\n    post: { operationId: tagOrders, responses: { \"200\": { description: ok } } }\n";
 
@@ -29,5 +30,5 @@ public static class ApiScenarioFixtures
         new("orders/Order", "orders", "Order", 1, FsCore.ToList([Tuple.Create("ref", "string"), Tuple.Create("tag", "string")]));
 
     public static Handover Shape(Handover b, bool withRequests = true) =>
-        b.WithApiScenarios(b.Elements.Head.Id.Value, Source, Yaml, [Scenario(withRequests)], [Order()]);
+        b.WithApiScenarios(Serving, Source, Yaml, [Scenario(withRequests)], [Order()]);
 }

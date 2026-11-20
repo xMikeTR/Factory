@@ -286,5 +286,5 @@ module ApiScenarios =
             Some(
                 "## Generated API tests (read-only; the Factory wrote them)\n\n"
                 + $"The API behaviour tests for {joined} are generated under `{folder}/`. They seed rows through `IScenarioAdapter` (declared in `{runtimeFile}`), call the operation through the generated client, and compare the stored rows. "
-                + "Implement `IScenarioAdapter` once in the repo's test project, outside `generated/`, and make that project compile `generated/contracts/api-tests/**/*.cs`. "
+                + "Implement `IScenarioAdapter` once in the repo's test project, outside `generated/`, and make that project compile `generated/contracts/api-tests/**/*.cs` and reference a JUnit logger (`JunitXml.TestLogger`): integration verify reads its results from `$FACTORY_TEST_RESULTS`. "
                 + "The generated tests are read-only and must pass in integration verify.\n")

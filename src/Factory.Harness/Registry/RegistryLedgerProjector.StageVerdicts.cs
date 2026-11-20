@@ -11,7 +11,7 @@ public static partial class RegistryLedgerProjector
 
     private sealed record Verdict(
         LedgerEvent Source, string Stage, string Outcome, string? Task = null, string? Element = null, string? Screen = null,
-        int? Round = null, IReadOnlyList<Failure>? Failures = null);
+        int? Round = null, IReadOnlyList<Failure>? Failures = null, string? Scenario = null);
 
     private static IEnumerable<(DateTimeOffset, RegistryEvent)> StageVerdicts(IReadOnlyList<LedgerEvent> run, HandoverRef handover)
     {
@@ -35,6 +35,7 @@ public static partial class RegistryLedgerProjector
                 if (v.Screen is not null) w.WriteString("screen", v.Screen);
                 // a scenario verdict names the scenario only when exactly one failed (its criterion is "<scenario id> example <n>")
                 if (v.Stage == "scenario" && v.Failures?.Select(f => ScenarioId(f.Criterion)).Where(x => x is not null).Distinct().ToList() is { Count: 1 } ids) w.WriteString("scenario", ids[0]);
+                else if (v.Scenario is not null) w.WriteString("scenario", v.Scenario);
                 if (handover.WorkItem is not null) w.WriteString("item", handover.WorkItem);
                 if (v.Round is { } round) w.WriteNumber("round", round);
                 if (v.Failures is { Count: > 0 })
@@ -156,6 +157,37 @@ public static partial class RegistryLedgerProjector
             }
         }
         foreach (var v in latest.Values) yield return v;
+
+        // The API scenarios (X4): a failed `<id> example <n>` blames the serving element's tasks (`api_scenario_failed`, no screen);
+        // an `api-scenario:<id>` verify row gives the scenario's pass, its could_not_run, or a failure no task was blamed for.
+        var apiFailed = new List<(LedgerEvent, string, string?, Failure)>();
+        foreach (var e in run.Where(e => e.Kind == LedgerKinds.ApiScenarioFailed && e.TaskId is not null && e.Payload is not null))
+        {
+            using var doc = TryParse(e.Payload!);
+            if (doc is null || Str(doc.RootElement, "scenario") is not { } id) continue;
+            var example = Prop(doc.RootElement, "example") is { ValueKind: JsonValueKind.Number } n ? n.GetInt32().ToString() : "?";
+            apiFailed.Add((e, "scenario", null, new Failure(Kind: Str(doc.RootElement, "kind"), Criterion: $"{id} example {example}")));
+        }
+        foreach (var v in Blamed(apiFailed)) yield return v;
+
+        var blamedApi = apiFailed.Select(f => ScenarioId(f.Item4.Criterion)).ToHashSet();
+        var apiLatest = new Dictionary<string, Verdict>();
+        foreach (var e in run.Where(e => e is { Kind: LedgerKinds.Verify, Payload: not null }))
+        {
+            using var doc = TryParse(e.Payload!);
+            if (doc is null || Str(doc.RootElement, "name") is not { } name || !name.StartsWith("api-scenario:")) continue;
+            var id = name["api-scenario:".Length..];
+            if (blamedApi.Contains(id)) continue;
+            if (e.Outcome == "passed") apiLatest[id] = new Verdict(e, "scenario", "pass", Element: e.Element, Scenario: id);
+            else if (Prop(doc.RootElement, "ExitCode") is { ValueKind: JsonValueKind.Number } code && code.GetInt32() == 3) apiLatest[id] = new Verdict(e, "scenario", "could_not_run", Element: e.Element, Scenario: id);
+            else
+            {
+                var fails = Prop(doc.RootElement, "failures") is { ValueKind: JsonValueKind.Array } a
+                    ? a.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object).Select(x => new Failure(Kind: Str(x, "kind"), Criterion: Str(x, "criterion"))).ToList() : [];
+                apiLatest[id] = new Verdict(e, "scenario", "fail", Element: e.Element, Failures: fails);
+            }
+        }
+        foreach (var v in apiLatest.Values) yield return v;
     }
 
     private static IEnumerable<Verdict> HoldoutVerdicts(IReadOnlyList<LedgerEvent> run)

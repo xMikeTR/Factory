@@ -26,7 +26,14 @@ public sealed class ApiScenarioPhaseTests
 
     private static Task<TeamHarness> HarnessAsync(bool withRequests = true, Func<FactorySettings, FactorySettings>? settings = null, ScriptedChatClient? model = null) =>
         TeamHarness.CreateAsync(model ?? new ScriptedChatClient(), new Limits(8, 3), codegen: new FakeCodeGenerator(),
-            shapeHandover: b => ApiScenarioFixtures.Shape(b, withRequests), shapeSettings: settings);
+            shapeHandover: b => ApiScenarioFixtures.Shape(b, withRequests), shapeSettings: settings,
+            wrapSandboxes: inner => new FakeApiSandbox(inner),
+            seedRepo: repo =>
+            {
+                Directory.CreateDirectory(Path.Combine(repo, "tests", "Orders.Tests"));
+                File.WriteAllText(Path.Combine(repo, "tests", "Orders.Tests", "Orders.Tests.csproj"),
+                    "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><Compile Include=\"../../generated/contracts/api-tests/**/*.cs\" /></ItemGroup></Project>\n");
+            });
 
     [Fact]
     public async Task The_phase_writes_the_runtime_and_a_class_and_lists_them_in_the_manifest_as_the_factorys_own()
@@ -34,7 +41,7 @@ public sealed class ApiScenarioPhaseTests
         using var h = await HarnessAsync();
         Assert.Null(await CodegenPhase.GenerateAsync(h.Services, TeamHarness.RunId, h.Handover, default));
         var work = CodegenPhase.WorkDir(h.Services.Settings.RunDir(TeamHarness.RunId));
-        var repo = h.Handover.Elements.Head.Repo is { } r ? r.Value : ".";
+        var repo = ".";
         Assert.True(File.Exists(Path.Combine(work, "out", repo, Class)));
         Assert.Equal(Factory.Core.ApiScenarios.runtimeText, File.ReadAllText(Path.Combine(work, "out", repo, Runtime)));
         using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(work, CodegenPhase.ManifestFile)));
@@ -55,7 +62,7 @@ public sealed class ApiScenarioPhaseTests
             using var h = await HarnessAsync();
             await CodegenPhase.GenerateAsync(h.Services, TeamHarness.RunId, h.Handover, default);
             var work = CodegenPhase.WorkDir(h.Services.Settings.RunDir(TeamHarness.RunId));
-            var repo = h.Handover.Elements.Head.Repo is { } r ? r.Value : ".";
+            var repo = ".";
             return (File.ReadAllText(Path.Combine(work, CodegenPhase.ManifestFile)), File.ReadAllText(Path.Combine(work, "out", repo, Class)));
         }
         Assert.Equal(await RunAsync(), await RunAsync());
@@ -99,7 +106,7 @@ public sealed class ApiScenarioPhaseTests
     public async Task A_scenario_whose_operation_no_element_serves_fails_codegen_naming_the_scenario()
     {
         using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(8, 3), codegen: new FakeCodeGenerator(),
-            shapeHandover: b => ApiScenarioFixtures.Shape(b).WithApiScenarios(b.Elements.Head.Id.Value, ApiScenarioFixtures.Source, ApiScenarioFixtures.Yaml,
+            shapeHandover: b => ApiScenarioFixtures.Shape(b).WithApiScenarios(ApiScenarioFixtures.Serving, ApiScenarioFixtures.Source, ApiScenarioFixtures.Yaml,
                 [new ApiScenario("ORD-9", "p", "s", "noSuchOp", "GET", "/x", ApiScenarioFixtures.Scenario().Examples)]));
         var finished = await CodegenPhase.GenerateAsync(h.Services, TeamHarness.RunId, h.Handover, default);
         Assert.Equal("codegen_failed", finished?.Status);
@@ -113,15 +120,13 @@ public sealed class ApiScenarioPhaseTests
         await CodegenPhase.GenerateAsync(h.Services, TeamHarness.RunId, h.Handover, default);
         var files = CodegenPhase.GeneratedFiles(h.Services.Settings.RunDir(TeamHarness.RunId));
         var task = Plans.Task("T-004");
-        var serving = new PlannedTask(task.Id, task.Title, task.Instructions, Microsoft.FSharp.Collections.ListModule.OfSeq([h.Handover.Elements.Head.Id]), task.Writes, task.TestWrites, task.DependsOn, task.Covers, task.Verify);
+        var serving = new PlannedTask(task.Id, task.Title, task.Instructions, Microsoft.FSharp.Collections.ListModule.OfSeq([ElementId.NewElementId(ApiScenarioFixtures.Serving)]), task.Writes, task.TestWrites, task.DependsOn, task.Covers, task.Verify);
         var text = Briefs.Task(h.Handover, serving, [], null, null, null, generated: files).Stable;
         Assert.Contains("## Generated API tests (read-only; the Factory wrote them)", text);
         Assert.Contains("ORD-1-ts-01", text);
         Assert.Contains("`generated/contracts/api-tests/`", text);
         Assert.Contains("`IScenarioAdapter`", text);
         Assert.Contains("The generated tests are read-only and must pass in integration verify.", text);
-        var other = Briefs.Task(h.Handover, Plans.Task("T-004"), [], null, null, null, generated: files).Stable;
-        Assert.Equal(other.Contains("Generated API tests"), h.Handover.Elements.Skip(0).Any() && Plans.Task("T-004").Elements.Any(e => e.Value == h.Handover.Elements.Head.Id.Value));
         Assert.DoesNotContain("Generated API tests", Briefs.Task(h.Handover, serving, [], null, null, null, generated: []).Text);
     }
 

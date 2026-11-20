@@ -84,5 +84,29 @@ public class ScenarioVerdictTests
         Assert.Equal("body", S(v.GetProperty("failures")[0], "kind"));
     }
 
+    private static LedgerEvent ApiFail(int s, string task, int example, string kind = "rows") =>
+        At(s, new(RunId, "S2", "integration_verify", LedgerKinds.ApiScenarioFailed, TaskId: task, Element: "Orders API", Outcome: "failed",
+            Payload: JsonSerializer.Serialize(new { scenario = "ORD-1-ts-01", example, title = "prefix match", kind, message = "SECRET orders/Order id=2: tag expected null", commit = "abc" })));
+
+    [Fact]
+    public void A_failed_api_scenario_is_a_scenario_fail_with_no_screen_and_no_message()
+    {
+        var v = Assert.Single(Of(Verdicts(ApiFail(1, "T-1", 1), ApiFail(2, "T-1", 2, "call")), "scenario"));
+        Assert.Equal(("fail", "T-1", "Orders API", "ORD-1-ts-01"), (S(v, "outcome"), S(v, "task"), S(v, "element"), S(v, "scenario")));
+        Assert.False(v.TryGetProperty("screen", out _));
+        Assert.Equal([("ORD-1-ts-01 example 1", "rows"), ("ORD-1-ts-01 example 2", "call")], v.GetProperty("failures").EnumerateArray().Select(f => (S(f, "criterion"), S(f, "kind"))));
+        Assert.DoesNotContain("SECRET", v.GetRawText());
+    }
+
+    [Fact]
+    public void An_api_scenario_verify_row_gives_the_run_level_pass_or_could_not_run()
+    {
+        var pass = Assert.Single(Of(Verdicts(Verify(1, "api-scenario:ORD-1-ts-01", "passed", 0)), "scenario"));
+        Assert.Equal(("pass", "ORD-1-ts-01"), (S(pass, "outcome"), S(pass, "scenario")));
+        Assert.False(pass.TryGetProperty("screen", out _));
+        var none = Assert.Single(Of(Verdicts(Verify(1, "api-scenario:ORD-1-ts-01", "failed", 3)), "scenario"));
+        Assert.Equal("could_not_run", S(none, "outcome"));
+    }
+
     private static List<JsonElement> Of(List<JsonElement> all, string stage) => StageVerdictTests.Of(all, stage);
 }

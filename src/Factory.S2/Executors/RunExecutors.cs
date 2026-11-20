@@ -206,6 +206,10 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
         var uiOutcomes = await UiChecksAsync(msg.RunId, integration, timeout, cancellationToken);
         outcomes.AddRange(uiOutcomes);
 
+        // The generated API tests judge the serving repos after their own suites; nothing to do when none were seeded.
+        if (!svc.LoadHandover(msg.RunId).ApiScenarios.IsEmpty)
+            outcomes.AddRange(await new ApiScenarioCheck(svc).RunAsync(msg.RunId, svc.LoadHandover(msg.RunId), svc.LoadValidatedPlan(msg.RunId).Plan.Tasks, cancellationToken));
+
         if (s.TokenLintCommand is not null && FSharpOption<string>.get_IsSome(svc.LoadHandover(msg.RunId).DesignTokens))
             outcomes.Add(await TokenLintAsync(msg.RunId, integration, cancellationToken));
 
