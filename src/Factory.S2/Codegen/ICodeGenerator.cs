@@ -12,7 +12,8 @@ public interface ICodeGenerator
     Task<CodegenRun> GenerateAsync(IReadOnlyList<Codegen.Target> targets, string workDir, CancellationToken ct);
 }
 
-/// NSwag in the runner image (pinned there; `nswag version` must say so), offline.
+/// NSwag (C#) and openapi-typescript (TS) in the runner image (pinned there; each tool's version must say so), offline.
+/// The Factory renders the TS client itself, so `Codegen.commands` of a TS target is the schema line only.
 public sealed class SandboxCodeGenerator(ISandboxFactory sandboxes) : ICodeGenerator
 {
     private static readonly TimeSpan CommandLimit = TimeSpan.FromMinutes(2);
@@ -21,22 +22,34 @@ public sealed class SandboxCodeGenerator(ISandboxFactory sandboxes) : ICodeGener
     public async Task<CodegenRun> GenerateAsync(IReadOnlyList<Codegen.Target> targets, string workDir, CancellationToken ct)
     {
         var commands = targets.SelectMany(t => Codegen.commands(t)).ToList();
-        string Missing(string why) =>
-            $"{why}: NSwag {Codegen.nswagVersion} is expected in the runner image; rebuild the runner image (docker/runner/build.sh)";
+        var needNswag = targets.Any(t => t.Language.IsCSharp);
+        var needTs = targets.Any(t => t.Language.IsTypeScript);
+        string Missing(string why, string tool, string version) =>
+            $"{why}: {tool} {version} is expected in the runner image; rebuild the runner image (docker/runner/build.sh)";
         foreach (var t in targets)
-            foreach (var f in t.Files) Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(workDir, Codegen.outPath(t.Repo, f)))!);
+            foreach (var f in Codegen.toolFiles(t)) Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(workDir, Codegen.outPath(t.Repo, f)))!);
 
         ICommandSandbox sandbox;
         try { sandbox = await sandboxes.ForTeamAsync("codegen", workDir, ct); }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            return new CodegenRun("could_not_run", Missing("no sandbox (" + e.Message + ")"), commands);
+            var (tool, version) = needNswag ? ("NSwag", Codegen.nswagVersion) : ("openapi-typescript", Codegen.openapiTypescriptVersion);
+            return new CodegenRun("could_not_run", Missing("no sandbox (" + e.Message + ")", tool, version), commands);
         }
         await using (sandbox)
         {
-            var version = await sandbox.RunAsync("nswag version", workDir, TimeSpan.FromMinutes(1), NoEnv, ct);
-            if (!version.Succeeded || !version.Output.Contains(Codegen.nswagVersion, StringComparison.Ordinal))
-                return new CodegenRun("could_not_run", Missing("`nswag version` did not report " + Codegen.nswagVersion + " (" + version.Tail(300).Trim() + ")"), commands);
+            if (needNswag)
+            {
+                var version = await sandbox.RunAsync("nswag version", workDir, TimeSpan.FromMinutes(1), NoEnv, ct);
+                if (!version.Succeeded || !version.Output.Contains(Codegen.nswagVersion, StringComparison.Ordinal))
+                    return new CodegenRun("could_not_run", Missing("`nswag version` did not report " + Codegen.nswagVersion + " (" + version.Tail(300).Trim() + ")", "NSwag", Codegen.nswagVersion), commands);
+            }
+            if (needTs)
+            {
+                var version = await sandbox.RunAsync("openapi-typescript --version", workDir, TimeSpan.FromMinutes(1), NoEnv, ct);
+                if (!version.Succeeded || !version.Output.Contains(Codegen.openapiTypescriptVersion, StringComparison.Ordinal))
+                    return new CodegenRun("could_not_run", Missing("`openapi-typescript --version` did not report " + Codegen.openapiTypescriptVersion + " (" + version.Tail(300).Trim() + ")", "openapi-typescript", Codegen.openapiTypescriptVersion), commands);
+            }
             foreach (var command in commands)
             {
                 var run = await sandbox.RunAsync(command, workDir, CommandLimit, NoEnv, ct);

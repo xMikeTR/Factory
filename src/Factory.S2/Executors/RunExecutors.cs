@@ -342,7 +342,7 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             "The approved UI files changed after they were seeded:\n" + string.Join("\n", drift.Select(l => "- " + l)));
     }
 
-    /// The generated contract code is the Factory's: any file under generated/contracts/csharp/ that differs from what was seeded (or is new) fails the run.
+    /// The generated contract code is the Factory's: any file under generated/contracts/ (csharp and ts) that differs from what was seeded (or is new) fails the run.
     private async Task<RunFinished?> GeneratedCodeChangedAsync(string runId, CancellationToken ct)
     {
         var drift = CodegenPhase.Drift(svc, runId);

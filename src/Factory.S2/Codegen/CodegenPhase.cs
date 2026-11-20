@@ -10,7 +10,7 @@ using Microsoft.FSharp.Core;
 namespace Factory.S2;
 
 /// The deterministic codegen phase (R5a). Before the planner: the pinned OpenAPI texts become C# DTOs, server interfaces and clients
-/// in `{runDir}/codegen/out/<repo>/`. After the integration branch exists they are seeded into `generated/contracts/csharp/`, where
+/// in `{runDir}/codegen/out/<repo>/` (X3: and TypeScript types plus a thin client). After the integration branch exists they are seeded into `generated/contracts/`, where
 /// they are read-only to agents (protected path) and drift-checked in integration verify.
 public static class CodegenPhase
 {
@@ -38,11 +38,21 @@ public static class CodegenPhase
         }
 
         var names = svc.Settings.CodegenCsharp;
-        if (names is not null && CodegenPolicyFile.Unknown(names, svc.Settings.RepoNames) is { Count: > 0 } unknown)
-            throw new FactoryRejectedException(".factory/policy.yaml codegen is invalid", [.. unknown]);
-        var targets = Codegen.targets(handover, names is null ? FSharpOption<FSharpList<string>>.None : FSharpOption<FSharpList<string>>.Some(ListModule.OfSeq(names)));
+        var tsNames = svc.Settings.CodegenTypescript;
+        var bad = new List<string>();
+        if (names is not null) bad.AddRange(CodegenPolicyFile.Unknown(names, svc.Settings.RepoNames));
+        if (tsNames is not null) bad.AddRange(CodegenPolicyFile.Unknown(tsNames, svc.Settings.RepoNames, "codegen.typescript"));
+        if (bad.Count > 0) throw new FactoryRejectedException(".factory/policy.yaml codegen is invalid", [.. bad]);
+        FSharpOption<FSharpList<string>> Opt(IReadOnlyList<string>? l) => l is null ? FSharpOption<FSharpList<string>>.None : FSharpOption<FSharpList<string>>.Some(ListModule.OfSeq(l));
+        var targets = Codegen.targets(handover, Opt(names));
         if (targets.IsError) throw new FactoryRejectedException("contracts cannot be generated", [.. targets.ErrorValue]);
-        var list = targets.ResultValue.ToList();
+        var nodeRepos = new List<string>();
+        foreach (var repo in handover.Elements.Select(e => e.Repo is { } r ? r.Value : ".").Distinct().Order(StringComparer.Ordinal))
+            // The base branch decides, not the working tree: an uncommitted package.json must not change what is generated.
+            if (await GitFor(svc, repo).BaseHasFileAsync(svc.Settings.BaseBranch, "package.json", ct)) nodeRepos.Add(repo);
+        var tsTargets = Codegen.tsTargets(handover, Opt(tsNames), SetModule.OfSeq(nodeRepos));
+        if (tsTargets.IsError) throw new FactoryRejectedException("contracts cannot be generated", [.. tsTargets.ErrorValue]);
+        var list = targets.ResultValue.Concat(tsTargets.ResultValue).ToList();
         if (list.Count == 0)
         {
             await svc.LogAsync(runId, Stage, LedgerKinds.Codegen, outcome: "none", ct: ct);
@@ -65,6 +75,16 @@ public static class CodegenPhase
 
         var run = await svc.CodeGenerator.GenerateAsync(list, work, ct);
         if (run.Outcome == "generated")
+        {
+            // The Factory's own thin client: a pure function of the pinned operations, written next to the tool's schema.
+            foreach (var t in list.Where(t => t.Language.IsTypeScript && !t.Operations.IsEmpty))
+            {
+                var path = Path.Combine(work, Codegen.outPath(t.Repo, t.Files.First(f => f.EndsWith(".client.ts", StringComparison.Ordinal))));
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                await File.WriteAllTextAsync(path, Codegen.tsClient(t, handover.ApiContractTexts.First(x => x.Path == t.Source).Sha256), ct);
+            }
+        }
+        if (run.Outcome == "generated")
             foreach (var f in list.SelectMany(t => t.Files.Select(f => (t, f))).Where(x => !File.Exists(Path.Combine(work, Codegen.outPath(x.t.Repo, x.f)))))
                 run = new CodegenRun("failed", $"the generator reported success but did not write {Codegen.outPath(f.t.Repo, f.f)}", run.Commands);
         if (run.Outcome != "generated")
@@ -80,10 +100,14 @@ public static class CodegenPhase
         return null;
     }
 
-    /// `{tool, version, files: [{repo, path, sha256, source, source_sha256}]}`, sorted: the same inputs give the same bytes.
+    /// Manifest v2: `{tools:[{name,version}], files:[{repo,path,sha256,source,source_sha256}], sources:[{path,sha256,operations,schemas}]}`,
+    /// sorted: the same inputs give the same bytes.
     private static string Manifest(List<Codegen.Target> targets, string work, Handover handover)
     {
-        var sources = handover.ApiContractTexts.ToDictionary(t => t.Path, t => t.Sha256, StringComparer.Ordinal);
+        var texts = handover.ApiContractTexts.ToDictionary(t => t.Path, t => t, StringComparer.Ordinal);
+        var tools = new[] { (name: "nswag", version: Codegen.nswagVersion, on: targets.Any(t => t.Language.IsCSharp)),
+                            (name: "openapi-typescript", version: Codegen.openapiTypescriptVersion, on: targets.Any(t => t.Language.IsTypeScript)) }
+            .Where(t => t.on).Select(t => new { t.name, t.version }).OrderBy(t => t.name, StringComparer.Ordinal).ToList();
         var files = targets
             .SelectMany(t => t.Files.Select(f => new
             {
@@ -91,10 +115,22 @@ public static class CodegenPhase
                 path = f,
                 sha256 = UiPreview.Sha256Hex(File.ReadAllBytes(Path.Combine(work, Codegen.outPath(t.Repo, f)))),
                 source = t.Source,
-                source_sha256 = sources[t.Source],
+                source_sha256 = texts[t.Source].Sha256,
             }))
             .OrderBy(f => f.repo, StringComparer.Ordinal).ThenBy(f => f.path, StringComparer.Ordinal).ToList();
-        return JsonSerializer.Serialize(new { tool = "nswag", version = Codegen.nswagVersion, files });
+        var sources = targets.Select(t => t.Source).Distinct().Order(StringComparer.Ordinal)
+            .Select(p =>
+            {
+                var index = OpenApiIndex.Read(texts[p].Text);
+                return new
+                {
+                    path = p,
+                    sha256 = texts[p].Sha256,
+                    operations = index.Operations.Select(o => new { id = o.Id, method = o.Method, path = o.Path }).ToList(),
+                    schemas = index.Schemas,
+                };
+            }).ToList();
+        return JsonSerializer.Serialize(new { tools, files, sources });
     }
 
     private sealed record ManifestFileRow(string repo, string path);
@@ -103,7 +139,7 @@ public static class CodegenPhase
     private static GitWorkspace GitFor(FactoryServices svc, string repo) =>
         repo != "." && svc.RepoGits.TryGetValue(repo, out var g) ? g : svc.Git;
 
-    /// Once per run, after the integration branches exist: replace `generated/contracts/csharp/` with the generated files and commit
+    /// Once per run, after the integration branches exist: replace `generated/contracts/` with the generated files and commit
     /// them as the Factory's own. A resume finds the baseline and does nothing.
     public static async Task SeedAsync(FactoryServices svc, string runId, CancellationToken ct)
     {
@@ -118,26 +154,26 @@ public static class CodegenPhase
         {
             var git = GitFor(svc, repo);
             var integration = git.IntegrationPath(runId);
-            var target = Path.Combine(integration, Codegen.root);
+            var target = Path.Combine(integration, Codegen.area);
             if (Directory.Exists(target)) Directory.Delete(target, recursive: true); // a removed contract's old files go
-            var source = Path.Combine(WorkDir(runDir), Codegen.outPath(repo, Codegen.root));
+            var source = Path.Combine(WorkDir(runDir), Codegen.outPath(repo, Codegen.area));
             foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
             {
                 var dest = Path.Combine(target, Path.GetRelativePath(source, file));
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                 File.Copy(file, dest, overwrite: true);
             }
-            await git.CommitPathsAsync(integration, [Codegen.root], $"factory: seed generated contracts for {runId}", ct);
+            await git.CommitPathsAsync(integration, [Codegen.area], $"factory: seed generated contracts for {runId}", ct);
             baseline[repo] = Hashes(integration);
         }
         await File.WriteAllTextAsync(baselinePath, JsonSerializer.Serialize(baseline), ct);
     }
 
-    /// Repo-relative path to sha256 of every file under `generated/contracts/csharp/`.
+    /// Repo-relative path to sha256 of every file under `generated/contracts/`.
     public static SortedDictionary<string, string> Hashes(string integration)
     {
         var map = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        var dir = Path.Combine(integration, Codegen.root);
+        var dir = Path.Combine(integration, Codegen.area);
         if (Directory.Exists(dir))
             foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                 map[Path.GetRelativePath(integration, f).Replace('\\', '/')] = UiPreview.Sha256Hex(File.ReadAllBytes(f));

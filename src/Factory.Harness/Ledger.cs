@@ -59,7 +59,7 @@ public static class LedgerKinds
     public const string UxScreenshots = "ux_screenshots"; // payload {command, shots:[{element,state,breakpoint,path}]}: freeze-time screenshots taken for one human review
     public const string UxJudge = "ux_judge";       // element + payload {state, breakpoint, hierarchy, clarity, consistency, note}: a gradient; outcome is always "gradient", never a gate
     public const string Context = "context";        // task + payload {role, source, bundle_id, procedures:[{id,version,hash}]} or {role, source, missed}: the context bundle the task was given, or why none
-    public const string Codegen = "codegen";        // stage codegen, outcome generated|none|off|reused|failed|could_not_run, payload = the manifest {tool, version, files} or {detail, commands}: the C# generated from contracts_api before the planner. Run ledger only: not in RegistryStreams
+    public const string Codegen = "codegen";        // stage codegen, outcome generated|none|off|reused|failed|could_not_run, payload = the manifest v2 {tools:[{name,version}], files, sources:[{path,sha256,operations,schemas}]} or {detail, commands}: the C# (NSwag) and TypeScript (openapi-typescript schema + Factory client) generated from contracts_api before the planner. Run ledger only: not in RegistryStreams
     public const string Run = "run";
     public const string RunStarted = "run_started"; // an attempt at the run began (a resume is a new attempt)
     public const string RunAborted = "run_aborted"; // payload {status, detail}: an attempt ended without reaching Finalize (crash, cancel, workflow error)

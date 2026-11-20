@@ -36,6 +36,21 @@ public static class TestMaps
             Microsoft.FSharp.Collections.ListModule.OfSeq([new ElementInterface(element, "serves", element, "Consumer", "operation", "op", FSharpOption<string>.Some("GET"), FSharpOption<string>.Some("/x"), FSharpOption<string>.Some(path), "1")]),
             Microsoft.FSharp.Collections.ListModule.OfSeq([new UiText(path, Factory.Harness.Registry.DesigncHandoverReader.Sha256(text), text)]), null);
 
+    /// The handover with one operation (`listQuotes`, GET /quotes) served by `server` and called by `client`, both pinned to this OpenAPI text,
+    /// plus any further operations `client` calls.
+    public static Handover WithClientContract(this Handover b, string server, string client, string path, string text, params (string Id, string Method, string Route)[] moreCalls)
+    {
+        ElementInterface Op(string element, string role, string id, string method, string route) =>
+            new(element, role, role == "serves" ? server : client, role == "serves" ? client : server, "operation", id, FSharpOption<string>.Some(method), FSharpOption<string>.Some(route), FSharpOption<string>.Some(path), "1");
+        var ifaces = new List<ElementInterface> { Op(server, "serves", "listQuotes", "GET", "/quotes"), Op(client, "calls", "listQuotes", "GET", "/quotes") };
+        ifaces.AddRange(moreCalls.Select(c => Op(client, "calls", c.Id, c.Method, c.Route)));
+        return new(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
+            b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
+            b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped,
+            Microsoft.FSharp.Collections.ListModule.OfSeq(ifaces),
+            Microsoft.FSharp.Collections.ListModule.OfSeq([new UiText(path, Factory.Harness.Registry.DesigncHandoverReader.Sha256(text), text)]), null);
+    }
+
     /// The handover with this allow list (element -> the elements it may depend on), as a dependencies.json would carry it.
     public static Handover WithDependencies(this Handover b, params (string Element, string[] Allows)[] allows) =>
         new(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,

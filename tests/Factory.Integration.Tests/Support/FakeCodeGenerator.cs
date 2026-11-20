@@ -18,7 +18,7 @@ public sealed class FakeCodeGenerator(string? failWith = null) : ICodeGenerator
         foreach (var t in targets)
         {
             var text = await File.ReadAllTextAsync(Path.Combine(workDir, "in", t.Source), ct);
-            foreach (var f in t.Files)
+            foreach (var f in Codegen.toolFiles(t))
             {
                 var path = Path.Combine(workDir, Codegen.outPath(t.Repo, f));
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);

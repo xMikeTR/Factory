@@ -74,7 +74,11 @@ public sealed record FactorySettings(
     /// FACTORY_CODEGEN=on|off (default on): the codegen phase before the planner. Off logs `off` and skips the phase and its seeding.
     bool CodegenOn = true,
     /// The primary repo's `codegen: { csharp: [...] }` policy; null is the default (see Codegen.targets).
-    IReadOnlyList<string>? CodegenCsharp = null)
+    IReadOnlyList<string>? CodegenCsharp = null,
+    /// `codegen: { typescript: [...] }`; null is the default (repos that call an operation and have a package.json on the base branch).
+    IReadOnlyList<string>? CodegenTypescript = null,
+    /// `codegen: { handWritten: off|report|block }`: how the `generated_boundary` stage treats hand-written clients and DTOs. Default report.
+    QualityMode CodegenHandWritten = QualityMode.Report)
 {
     /// The names the plan validator checks task repos against; empty means unchecked (single repo).
     public string[] RepoNames => Repos is null ? [] : [.. Repos.Keys];
@@ -105,7 +109,9 @@ public sealed record FactorySettings(
         HoldoutRetries: int.TryParse(Environment.GetEnvironmentVariable("FACTORY_HOLDOUT_RETRIES"), out var retries) && retries >= 0 ? retries : 2,
         DesigncDir: Environment.GetEnvironmentVariable("FACTORY_DESIGNC_DIR") is { Length: > 0 } designc ? designc : null,
         CodegenOn: !string.Equals(Environment.GetEnvironmentVariable("FACTORY_CODEGEN"), "off", StringComparison.OrdinalIgnoreCase),
-        CodegenCsharp: CodegenPolicyFile.Load(Path.GetFullPath(repo)),
+        CodegenCsharp: CodegenPolicyFile.Load(Path.GetFullPath(repo)).Csharp,
+        CodegenTypescript: CodegenPolicyFile.Load(Path.GetFullPath(repo)).Typescript,
+        CodegenHandWritten: CodegenPolicyFile.Load(Path.GetFullPath(repo)).HandWritten,
         TokenLintCommand: Environment.GetEnvironmentVariable("FACTORY_TOKEN_LINT_CMD"),
         PlaywrightCli: Environment.GetEnvironmentVariable("FACTORY_PLAYWRIGHT_CLI") != "0",
         ScreenshotCommand: Environment.GetEnvironmentVariable("FACTORY_SCREENSHOT_CMD"));

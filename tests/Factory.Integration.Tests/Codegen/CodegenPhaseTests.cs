@@ -36,8 +36,9 @@ public sealed class CodegenPhaseTests
         var row = Assert.Single(h.Rows(LedgerKinds.Codegen));
         Assert.Equal("generated", row.Outcome);
         using var doc = JsonDocument.Parse(row.Payload!);
-        Assert.Equal("nswag", doc.RootElement.GetProperty("tool").GetString());
-        Assert.Equal(Codegen_Version, doc.RootElement.GetProperty("version").GetString());
+        var tool = Assert.Single(doc.RootElement.GetProperty("tools").EnumerateArray());
+        Assert.Equal("nswag", tool.GetProperty("name").GetString());
+        Assert.Equal(Codegen_Version, tool.GetProperty("version").GetString());
         Assert.Equal([$"{Stem}.Dtos.g.cs", $"{Stem}.Server.g.cs"], doc.RootElement.GetProperty("files").EnumerateArray().Select(f => f.GetProperty("path").GetString()).ToArray());
     }
 
@@ -130,11 +131,11 @@ public sealed class CodegenPhaseTests
         var dir = Directory.CreateTempSubdirectory("cgpol-").FullName;
         try
         {
-            Assert.Null(CodegenPolicyFile.Load(dir));
+            Assert.Null(CodegenPolicyFile.Load(dir).Csharp);
             Directory.CreateDirectory(Path.Combine(dir, ".factory"));
             var file = Path.Combine(dir, MergePolicyFile.RelativePath);
             File.WriteAllText(file, "codegen:\n  csharp: [Api, Worker]\n");
-            Assert.Equal(["Api", "Worker"], CodegenPolicyFile.Load(dir)!.ToArray());
+            Assert.Equal(["Api", "Worker"], CodegenPolicyFile.Load(dir).Csharp!.ToArray());
             File.WriteAllText(file, "codegen:\n  csharp: [Api, Api]\n");
             Assert.Throws<FactoryRejectedException>(() => CodegenPolicyFile.Load(dir));
             Assert.Single(CodegenPolicyFile.Unknown(["Api", "Zed"], new HashSet<string> { "Api" }));
@@ -153,6 +154,176 @@ public sealed class CodegenPhaseTests
         Assert.Equal("codegen_failed", result?.Status);
         Assert.Empty(h.Rows(LedgerKinds.Plan));
         Assert.Equal("failed", Assert.Single(h.Rows(LedgerKinds.Codegen)).Outcome);
+    }
+
+    private const string TsStem = "generated/contracts/ts/FareQuotes/FareQuotes";
+    private const string Yaml = """
+        openapi: 3.0.0
+        paths:
+          /quotes:
+            get: { operationId: listQuotes, responses: { "200": { description: ok } } }
+          /quotes/{id}:
+            get: { operationId: getQuote, responses: { "200": { description: ok } } }
+        components:
+          schemas:
+            Quote: { type: object }
+            Aaa: { type: object }
+        """;
+
+    private static Handover TwoElements(Handover b, string text, params (string Id, string Method, string Route)[] more) =>
+        b.WithClientContract(b.Elements[0].Id.Value, b.Elements[1].Id.Value, Path1, text, more);
+
+    private static Task<TeamHarness> TsHarnessAsync(string text = Yaml, bool packageJsonOnBase = false, Func<FactorySettings, FactorySettings>? settings = null, params (string Id, string Method, string Route)[] more) =>
+        TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(8, 3), codegen: new FakeCodeGenerator(),
+            seedRepo: packageJsonOnBase ? r => File.WriteAllText(System.IO.Path.Combine(r, "package.json"), "{}\n") : null,
+            shapeHandover: b => TwoElements(b, text, more), shapeSettings: settings ?? (s => s with { CodegenTypescript = ["."] }));
+
+    private static async Task<(string Manifest, Dictionary<string, string> Files)> GenerateAsync(TeamHarness h)
+    {
+        Assert.Null(await CodegenPhase.GenerateAsync(h.Services, TeamHarness.RunId, h.Handover, default));
+        var work = CodegenPhase.WorkDir(h.Services.Settings.RunDir(TeamHarness.RunId));
+        var files = Directory.EnumerateFiles(System.IO.Path.Combine(work, "out"), "*", SearchOption.AllDirectories)
+            .ToDictionary(f => System.IO.Path.GetRelativePath(work, f), File.ReadAllText);
+        return (await File.ReadAllTextAsync(System.IO.Path.Combine(work, CodegenPhase.ManifestFile)), files);
+    }
+
+    [Fact]
+    public async Task Both_languages_are_generated_one_manifest_v2_lists_both_tools_and_the_sources()
+    {
+        using var h = await TsHarnessAsync();
+        var (manifest, files) = await GenerateAsync(h);
+        Assert.Equal(5, files.Count); // C#: Dtos + Server + Client, TS: schema + client
+        Assert.Contains(files.Keys, k => k.EndsWith($"{TsStem}.schema.ts"));
+        Assert.Contains("createFareQuotesClient", files.Single(f => f.Key.EndsWith(".client.ts")).Value);
+        using var doc = JsonDocument.Parse(manifest);
+        Assert.Equal(["nswag", "openapi-typescript"], doc.RootElement.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToArray());
+        Assert.Equal(Codegen.openapiTypescriptVersion, doc.RootElement.GetProperty("tools")[1].GetProperty("version").GetString());
+        var src = Assert.Single(doc.RootElement.GetProperty("sources").EnumerateArray());
+        Assert.Equal(Path1, src.GetProperty("path").GetString());
+        Assert.Equal(["/quotes", "/quotes/{id}"], src.GetProperty("operations").EnumerateArray().Select(o => o.GetProperty("path").GetString()).ToArray());
+        Assert.Equal(["listQuotes", "getQuote"], src.GetProperty("operations").EnumerateArray().Select(o => o.GetProperty("id").GetString()).ToArray());
+        Assert.Equal(["Aaa", "Quote"], src.GetProperty("schemas").EnumerateArray().Select(o => o.GetString()).ToArray());
+        Assert.Equal(5, doc.RootElement.GetProperty("files").GetArrayLength());
+        Assert.Equal("generated", Assert.Single(h.Rows(LedgerKinds.Codegen)).Outcome);
+    }
+
+    [Fact]
+    public async Task Two_fresh_runs_give_byte_identical_files_and_manifest_and_a_changed_text_regenerates_both_sides()
+    {
+        using var h1 = await TsHarnessAsync();
+        using var h2 = await TsHarnessAsync();
+        using var h3 = await TsHarnessAsync(Yaml + "# changed\n");
+        var a = await GenerateAsync(h1);
+        var b = await GenerateAsync(h2);
+        var c = await GenerateAsync(h3);
+        Assert.Equal(a.Manifest, b.Manifest);
+        Assert.Equal(a.Files.OrderBy(x => x.Key), b.Files.OrderBy(x => x.Key));
+        foreach (var k in a.Files.Keys) Assert.NotEqual(a.Files[k], c.Files[k]); // every C# file, the schema and the client header
+    }
+
+    [Fact]
+    public async Task A_second_called_operation_adds_a_client_function()
+    {
+        using var h = await TsHarnessAsync(more: ("getQuote", "GET", "/quotes/{id}"));
+        var (_, files) = await GenerateAsync(h);
+        var client = files.Single(f => f.Key.EndsWith(".client.ts")).Value;
+        Assert.Contains("getQuote: (args", client);
+        Assert.Contains("listQuotes: (args", client);
+    }
+
+    [Fact]
+    public async Task Typescript_only_lists_only_openapi_typescript()
+    {
+        using var h = await TsHarnessAsync(settings: s => s with { CodegenTypescript = ["."], CodegenCsharp = [] });
+        var (manifest, files) = await GenerateAsync(h);
+        using var doc = JsonDocument.Parse(manifest);
+        Assert.Equal(["openapi-typescript"], doc.RootElement.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToArray());
+        Assert.Equal(2, files.Count);
+    }
+
+    [Fact]
+    public async Task The_default_is_decided_by_package_json_on_the_base_branch_not_the_working_tree()
+    {
+        using var committed = await TsHarnessAsync(packageJsonOnBase: true, settings: s => s);
+        Assert.Equal(5, (await GenerateAsync(committed)).Files.Count);
+
+        using var untracked = await TsHarnessAsync(settings: s => s);
+        File.WriteAllText(System.IO.Path.Combine(untracked.Services.Settings.RepoPath, "package.json"), "{}\n");
+        Assert.Equal(3, (await GenerateAsync(untracked)).Files.Count); // C# only: Dtos + Server + Client
+    }
+
+    [Fact]
+    public async Task Seeding_commits_csharp_and_ts_in_one_commit_and_an_edit_or_added_file_under_ts_is_drift()
+    {
+        using var h = await TsHarnessAsync();
+        await CodegenPhase.GenerateAsync(h.Services, TeamHarness.RunId, h.Handover, default);
+        var integration = h.Services.Git.IntegrationPath(TeamHarness.RunId);
+        await CodegenPhase.SeedAsync(h.Services, TeamHarness.RunId, default);
+        Assert.True(File.Exists(System.IO.Path.Combine(integration, $"{TsStem}.schema.ts")));
+        Assert.True(File.Exists(System.IO.Path.Combine(integration, $"{TsStem}.client.ts")));
+        Assert.True(File.Exists(System.IO.Path.Combine(integration, $"{Stem}.Dtos.g.cs")));
+        var files = (await h.GitIn(integration, "show", "--name-only", "--format=%s", "HEAD")).Output;
+        Assert.Contains("factory: seed generated contracts", files);
+        Assert.Contains($"{TsStem}.schema.ts", files);
+        Assert.Contains($"{Stem}.Dtos.g.cs", files);
+        Assert.Empty(CodegenPhase.Drift(h.Services, TeamHarness.RunId));
+
+        File.AppendAllText(System.IO.Path.Combine(integration, $"{TsStem}.client.ts"), "// edit\n");
+        File.WriteAllText(System.IO.Path.Combine(integration, "generated", "contracts", "ts", "extra.ts"), "x");
+        var drift = Assert.Single(CodegenPhase.Drift(h.Services, TeamHarness.RunId)).Drift;
+        Assert.Equal(["added: generated/contracts/ts/extra.ts", $"modified: {TsStem}.client.ts"], drift.ToArray());
+    }
+
+    [Fact]
+    public async Task A_typescript_policy_naming_an_unknown_repo_is_refused_by_its_key()
+    {
+        using var h = await TsHarnessAsync(settings: s => s with { CodegenTypescript = ["Ui"] });
+        var e = await Assert.ThrowsAsync<FactoryRejectedException>(() => CodegenPhase.GenerateAsync(h.Services, TeamHarness.RunId, h.Handover, default));
+        Assert.Contains("codegen.typescript", string.Join("\n", e.Errors));
+    }
+
+    [Fact]
+    public void The_policy_file_reads_typescript_and_handWritten()
+    {
+        var dir = Directory.CreateTempSubdirectory("cgpol-").FullName;
+        try
+        {
+            Directory.CreateDirectory(System.IO.Path.Combine(dir, ".factory"));
+            var file = System.IO.Path.Combine(dir, MergePolicyFile.RelativePath);
+            Assert.Equal(QualityMode.Report, CodegenPolicyFile.Load(dir).HandWritten);
+            File.WriteAllText(file, "codegen:\n  csharp: [Api]\n  typescript: [Ui, Web]\n  handWritten: block\n");
+            var p = CodegenPolicyFile.Load(dir);
+            Assert.Equal(["Ui", "Web"], p.Typescript!.ToArray());
+            Assert.Equal(["Api"], p.Csharp!.ToArray());
+            Assert.Equal(QualityMode.Block, p.HandWritten);
+            File.WriteAllText(file, "codegen:\n  handWritten: off\n");
+            Assert.Equal(QualityMode.Off, CodegenPolicyFile.Load(dir).HandWritten);
+            foreach (var bad in new[] { "typescript: [Ui, Ui]", "typescript: [\"\"]", "handWritten: sometimes" })
+            {
+                File.WriteAllText(file, "codegen:\n  " + bad + "\n");
+                var e = Assert.Throws<FactoryRejectedException>(() => CodegenPolicyFile.Load(dir));
+                Assert.Contains(bad.StartsWith("handW") ? "codegen.handWritten" : "codegen.typescript", string.Join("\n", e.Errors));
+            }
+            Assert.Contains("codegen.typescript", Assert.Single(CodegenPolicyFile.Unknown(["Zed"], new HashSet<string> { "Api" }, "codegen.typescript")));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void OpenApiIndex_reads_yaml_and_json_and_tolerates_non_documents()
+    {
+        var y = OpenApiIndex.Read(Yaml);
+        Assert.Equal([("listQuotes", "GET", "/quotes"), ("getQuote", "GET", "/quotes/{id}")], y.Operations.Select(o => (o.Id!, o.Method, o.Path)).ToArray());
+        Assert.Equal(["Aaa", "Quote"], y.Schemas);
+        var j = OpenApiIndex.Read("{\"paths\":{\"/b\":{\"post\":{}, \"get\":{\"operationId\":\"g\"}},\"/a\":{\"delete\":{}}},\"components\":{\"schemas\":{\"Z\":{},\"A\":{}}}}");
+        Assert.Equal([("/a", "DELETE", (string?)null), ("/b", "GET", "g"), ("/b", "POST", null)], j.Operations.Select(o => (o.Path, o.Method, o.Id)).ToArray());
+        Assert.Equal(["A", "Z"], j.Schemas);
+        foreach (var junk in new[] { "x", "openapi: 3.0.0\n", "[1, 2]", ": : :\n\t- {", "" })
+        {
+            var i = OpenApiIndex.Read(junk);
+            Assert.Empty(i.Operations);
+            Assert.Empty(i.Schemas);
+        }
     }
 
     private sealed class Approver : IHumanChannel
