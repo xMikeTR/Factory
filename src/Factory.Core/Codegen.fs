@@ -257,7 +257,7 @@ module Codegen =
               if List.contains Server t.Sides then
                   yield line "openapi2cscontroller" $"/ClassName:{t.Stem} /ControllerStyle:Partial /ControllerTarget:AspNetCore /GenerateDtoTypes:false" (fileOf t.Stem "Server")
               if List.contains Client t.Sides then
-                  yield line "openapi2csclient" $"/ClassName:{t.Stem}Client /GenerateClientInterfaces:true /GenerateDtoTypes:false /InjectHttpClient:true /UseBaseUrl:false" (fileOf t.Stem "Client") ]
+                  yield line "openapi2csclient" $"/ClassName:{t.Stem}Client /GenerateClientInterfaces:true /GenerateDtoTypes:false /InjectHttpClient:true /UseBaseUrl:false /GenerateExceptionClasses:false" (fileOf t.Stem "Client") ]
 
     /// baseline and current map repo-relative path to sha256. Every path under `area` counts, added ones too:
     /// a new file next to generated code is a way to change what the build sees.

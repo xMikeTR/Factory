@@ -18,11 +18,11 @@ public static class ApiScenarioFixtures
         new("ORD-1-ts-01", "test-scenarios/ORD-1-ts-01.yaml", "0801fb767b1f662d9a80e2b2ab9e77cb1fe37333f1abcc1b360ea0f3a92e2f29", "tagOrders", "POST", "/orders/tags",
             FsCore.ToList([
                 new ApiExample(1, "prefix match",
-                    Rows("orders/Order", "{\"id\":1,\"ref\":\"A-100\"}", "{\"id\":2,\"ref\":\"B-200\"}"),
+                    Rows("orders/Order", "{\"id\":1,\"ref\":\"A-100\",\"tag\":null}", "{\"id\":2,\"ref\":\"B-200\",\"tag\":null}"),
                     Rows("orders/Order", "{\"id\":1,\"tag\":\"Priority\"}", "{\"id\":2,\"tag\":null}"),
                     withRequests ? FSharpOption<ApiRequest>.Some(new ApiRequest(FSharpOption<string>.Some("{\"prefix\":\"A\",\"tag\":\"Priority\"}"), FsCore.ToList(Array.Empty<Tuple<string, string>>()))) : FSharpOption<ApiRequest>.None),
                 new ApiExample(2, "whole reference",
-                    FsCore.ToList(Array.Empty<Tuple<string, Microsoft.FSharp.Collections.FSharpList<string>>>()),
+                    Rows("orders/Order", "{\"id\":2,\"ref\":\"B-200\",\"tag\":null}"),
                     Rows("orders/Order", "{\"id\":2,\"tag\":\"Hold\"}"),
                     withRequests ? FSharpOption<ApiRequest>.Some(new ApiRequest(FSharpOption<string>.Some("{\"ref\":\"B-200\",\"tag\":\"Hold\"}"), FsCore.ToList(Array.Empty<Tuple<string, string>>()))) : FSharpOption<ApiRequest>.None)]));
 

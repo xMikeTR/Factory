@@ -156,7 +156,7 @@ let tests: (string * (unit -> unit)) list =
           equal
               [ "nswag openapi2csclient /input:in/c/shop.yaml /output:out/Api/generated/contracts/csharp/Shop/Shop.Dtos.g.cs /GenerateClientClasses:false /GenerateDtoTypes:true /JsonLibrary:SystemTextJson /Namespace:Contracts.Shop"
                 "nswag openapi2cscontroller /input:in/c/shop.yaml /output:out/Api/generated/contracts/csharp/Shop/Shop.Server.g.cs /ClassName:Shop /ControllerStyle:Partial /ControllerTarget:AspNetCore /GenerateDtoTypes:false /JsonLibrary:SystemTextJson /Namespace:Contracts.Shop"
-                "nswag openapi2csclient /input:in/c/shop.yaml /output:out/Api/generated/contracts/csharp/Shop/Shop.Client.g.cs /ClassName:ShopClient /GenerateClientInterfaces:true /GenerateDtoTypes:false /InjectHttpClient:true /UseBaseUrl:false /JsonLibrary:SystemTextJson /Namespace:Contracts.Shop" ]
+                "nswag openapi2csclient /input:in/c/shop.yaml /output:out/Api/generated/contracts/csharp/Shop/Shop.Client.g.cs /ClassName:ShopClient /GenerateClientInterfaces:true /GenerateDtoTypes:false /InjectHttpClient:true /UseBaseUrl:false /GenerateExceptionClasses:false /JsonLibrary:SystemTextJson /Namespace:Contracts.Shop" ]
               cs "commands"
           equal cs (Codegen.commands t) "stable"
       "codegen: drift reports missing, modified and added anywhere under the root, sorted", fun () ->

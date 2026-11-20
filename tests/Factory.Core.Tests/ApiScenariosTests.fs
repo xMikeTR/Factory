@@ -155,7 +155,7 @@ let tests: (string * (unit -> unit)) list =
           let t = ok (Codegen.targets handover None) |> List.exactlyOne
           equal [ Codegen.Server; Codegen.Client ] t.Sides "scenario: both"
           let cmds = Codegen.commands t
-          check (cmds |> List.exists (fun c -> c.Contains "/ClassName:OrdersClient /GenerateClientInterfaces:true /GenerateDtoTypes:false /InjectHttpClient:true /UseBaseUrl:false")) "client flags as before"
+          check (cmds |> List.exists (fun c -> c.Contains "/ClassName:OrdersClient /GenerateClientInterfaces:true /GenerateDtoTypes:false /InjectHttpClient:true /UseBaseUrl:false")) "client flags (the Dtos file owns ApiException)"
           check (cmds |> List.forall (fun c -> not (c.Contains "OperationGenerationMode"))) "no OperationGenerationMode"
           let bare = { scenario with Examples = scenario.Examples |> List.map (fun e -> { e with Request = None }) }
           equal [ Codegen.Server ] (ok (Codegen.targets { handover with ApiScenarios = [ bare ] } None) |> List.exactlyOne).Sides "no request: unchanged" ]
