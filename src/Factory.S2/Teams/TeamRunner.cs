@@ -220,6 +220,8 @@ internal sealed class TaskLoop(
             green.Add(quality); // block mode: a ratchet violation is not green
         if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await AllowListOutcomeAsync(attempt, reads, ct) is { } allowList)
             green.Add(allowList); // block mode: an edge the design does not allow is not green
+        if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await BoundaryOutcomeAsync(attempt, ct) is { } boundary)
+            green.Add(boundary); // block mode: hand-written code for a generated operation or DTO is not green
         if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await MutationOutcomeAsync(attempt, ct) is { } mutation)
         {
             if (mutation.ExitCode == 124) green.Add(mutation); // the tool never finished: parks below
@@ -676,6 +678,43 @@ internal sealed class TaskLoop(
             + string.Join("\n", found.New.Select(AllowedEdges.line)));
     }
 
+    /// Hand-written clients and DTOs for what the Factory generated from the pinned contracts, in what the task wrote (not its tests: they may
+    /// call endpoints raw). Mode is `codegen.handWritten`. Report logs and lets the task through; block fails verify and names the generated code to use.
+    private async Task<VerifyOutcome?> BoundaryOutcomeAsync(int attempt, CancellationToken ct)
+    {
+        var mode = svc.Settings.CodegenHandWritten;
+        if (mode == QualityMode.Off) return null;
+        var started = DateTime.UtcNow;
+        if (await BoundaryFindingsAsync(ct) is not { } found) return null;
+        var block = mode == QualityMode.Block;
+        if (found.Count == 0)
+        {
+            await svc.LogAsync(runId, "generated_boundary", LedgerKinds.Verify, "clean", JsonSerializer.Serialize(new { attempt }), _teamId, _taskId, ct);
+            return null;
+        }
+        await svc.LogAsync(runId, "generated_boundary", LedgerKinds.Verify, block ? "blocked" : "reported",
+            JsonSerializer.Serialize(new
+            {
+                attempt, repo = Repo ?? ".", mode = block ? "block" : "report",
+                findings = found.Select(f => new { file = f.File, line = f.Line, kind = f.Kind, subject = f.Subject })
+            }), _teamId, _taskId, ct);
+        if (!block) return null;
+        return new VerifyOutcome("generated_boundary", 1, (long)(DateTime.UtcNow - started).TotalMilliseconds,
+            "The change hand-writes boundary code the Factory already generated from the pinned contract. Use the generated code instead:\n"
+            + string.Join("\n", found.Select(f => "- " + GeneratedBoundary.line(f))));
+    }
+
+    /// The findings in this task's added lines, or null when the manifest lists no generated files for the task's repo.
+    private async Task<List<GeneratedBoundary.Finding>?> BoundaryFindingsAsync(CancellationToken ct)
+    {
+        var (ops, dtos) = CodegenPhase.BoundaryInputs(svc.Settings.RunDir(runId), Repo ?? ".");
+        if (ops.Count == 0 && dtos.Count == 0) return null;
+        var added = Diff.addedLines(await svc.Git.TaskDiffAsync(worktree, runId, ct))
+            .Where(f => task.Writes.Any(w => Core.Matches(w, f.Item1)))
+            .Select(f => Tuple.Create(f.Item1, f.Item2)).ToList();
+        return [.. GeneratedBoundary.findings(ListModule.OfSeq(ops), ListModule.OfSeq(dtos.Select(d => Tuple.Create(d.Source, d.Name))), ListModule.OfSeq(added))];
+    }
+
     /// New violations and debt over all three edge kinds, for this task's repo.
     private async Task<AllowJudgement> AllowedAsync(EdgeReads reads, string? repo, CancellationToken ct)
     {
@@ -930,6 +969,8 @@ internal sealed class TaskLoop(
             parts.Add(new("quality", async c => await QualityLinesAsync(policy, reads, c)));
             parts.Add(new("allow_list", async c => (await AllowedAsync(reads, Repo, c)).New.Select(AllowedEdges.line).ToList()));
         }
+        if (svc.Settings.CodegenHandWritten != QualityMode.Off)
+            parts.Add(new("generated_boundary", async c => (await BoundaryFindingsAsync(c) ?? []).Select(f => GeneratedBoundary.line(f)).ToList()));
         // awaited, not ContinueWith(OnlyOnRanToCompletion): that turned a fault in a part into a bare TaskCanceledException.
         var found = await FastCheck.RunAsync(parts, FastCheck.DefaultBudget, ct);
         return found == "no findings" ? "" : found;

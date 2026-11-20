@@ -80,28 +80,25 @@ module Diff =
                     i <- i + 2
             System.Text.Encoding.UTF8.GetString(bytes.ToArray())
 
-    let parse (unified: string) : ParsedDiff =
+    /// Walks the new-side lines of a unified diff: `onAdded file line text` for each added line, `onContext file line` for each context line.
+    let private walk (unified: string) (onAdded: string -> int -> string -> unit) (onContext: string -> int -> unit) : unit =
         let mutable file: string option = None
         let mutable newLine = 0
         let mutable oldLeft = 0
         let mutable newLeft = 0
-        let mutable added = Map.empty<string, Set<int>>
-        let mutable visible = Map.empty<string, Set<int>>
-        let add (m: Map<string, Set<int>>) f n =
-            m |> Map.add f (m |> Map.tryFind f |> Option.defaultValue Set.empty |> Set.add n)
 
         for line in unified.Replace("\r\n", "\n").Split('\n') do
             if oldLeft > 0 || newLeft > 0 then
                 // inside a hunk the counts say how many lines remain, so '+++' text is content, not a header
                 match (if line.Length > 0 then line.[0] else ' ') with
                 | '+' ->
-                    file |> Option.iter (fun f -> added <- add added f newLine; visible <- add visible f newLine)
+                    file |> Option.iter (fun f -> onAdded f newLine (line.Substring 1))
                     newLine <- newLine + 1
                     newLeft <- newLeft - 1
                 | '-' -> oldLeft <- oldLeft - 1
                 | '\\' -> ()
                 | _ ->
-                    file |> Option.iter (fun f -> visible <- add visible f newLine)
+                    file |> Option.iter (fun f -> onContext f newLine)
                     newLine <- newLine + 1
                     oldLeft <- oldLeft - 1
                     newLeft <- newLeft - 1
@@ -116,7 +113,19 @@ module Diff =
                     newLine <- int m.Groups.[2].Value
                     newLeft <- count m.Groups.[3]
 
+    let parse (unified: string) : ParsedDiff =
+        let mutable added = Map.empty<string, Set<int>>
+        let mutable visible = Map.empty<string, Set<int>>
+        let add (m: Map<string, Set<int>>) f n =
+            m |> Map.add f (m |> Map.tryFind f |> Option.defaultValue Set.empty |> Set.add n)
+        walk unified (fun f n _ -> added <- add added f n; visible <- add visible f n) (fun f n -> visible <- add visible f n)
         { Added = added; Visible = visible }
+
+    /// The added lines with their text, per file (sorted by file, lines in order): what a check that reads the code, not just where it changed, needs.
+    let addedLines (unified: string) : (string * (int * string) list) list =
+        let mutable found = Map.empty<string, (int * string) list>
+        walk unified (fun f n t -> found <- found |> Map.add f ((found |> Map.tryFind f |> Option.defaultValue []) @ [ n, t ])) (fun _ _ -> ())
+        found |> Map.toList
 
 [<RequireQualifiedAccess>]
 module Review =

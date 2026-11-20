@@ -55,6 +55,7 @@
     <Compile Include="HarReplay.fs" />
     <Compile Include="UiPolicyFacts.fs" />
     <Compile Include="Codegen.fs" />
+    <Compile Include="GeneratedBoundary.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="Interop.fs" />
   </ItemGroup>

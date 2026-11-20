@@ -134,7 +134,31 @@ public static class CodegenPhase
     }
 
     private sealed record ManifestFileRow(string repo, string path, string? source = null);
-    private sealed record ManifestDoc(List<ManifestFileRow> files);
+    private sealed record ManifestOp(string? id, string method, string path);
+    private sealed record ManifestSource(string path, List<ManifestOp>? operations = null, List<string>? schemas = null);
+    private sealed record ManifestDoc(List<ManifestFileRow> files, List<ManifestSource>? sources = null);
+
+    /// What the hand-written boundary check compares added code with, for one repo: the operations of the contracts the repo has generated code for,
+    /// and the schema names of those whose generated code here has no server side (a server's own domain types are legitimate). Empty when the
+    /// manifest lists no files for the repo.
+    public static (IReadOnlyList<GeneratedBoundary.Op> Ops, IReadOnlyList<(string Source, string Name)> Dtos) BoundaryInputs(string runDir, string repo)
+    {
+        var path = Path.Combine(WorkDir(runDir), ManifestFile);
+        if (!File.Exists(path)) return ([], []);
+        var doc = JsonSerializer.Deserialize<ManifestDoc>(File.ReadAllText(path));
+        var mine = doc?.files.Where(f => f.repo == repo && f.source is not null).ToList() ?? [];
+        var ops = new List<GeneratedBoundary.Op>();
+        var dtos = new List<(string, string)>();
+        foreach (var src in doc?.sources ?? [])
+        {
+            var files = mine.Where(f => f.source == src.path).ToList();
+            if (files.Count == 0) continue;
+            ops.AddRange((src.operations ?? []).Select(o => new GeneratedBoundary.Op(src.path, o.id is null ? FSharpOption<string>.None : FSharpOption<string>.Some(o.id), o.method, o.path)));
+            if (!files.Any(f => f.path.EndsWith(".Server.g.cs", StringComparison.Ordinal)))
+                dtos.AddRange((src.schemas ?? []).Select(n => (src.path, n)));
+        }
+        return (ops, dtos);
+    }
 
     /// What the manifest lists as generated: (repo, path, source). Empty when nothing was generated.
     public static IReadOnlyList<(string Repo, string Path, string Source)> GeneratedFiles(string runDir)
