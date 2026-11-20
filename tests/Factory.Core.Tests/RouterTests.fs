@@ -61,7 +61,9 @@ let private specHandover: Handover =
       RequirementRisk = None
       RequirementDataClass = None
       Ui = []
-      Tests = None }
+      Tests = None
+      ScenarioTests = []
+      ScenarioSkipped = [] }
 
 let private specConfig: TaskSpecConfig =
     { SmallMaxWrites = 4

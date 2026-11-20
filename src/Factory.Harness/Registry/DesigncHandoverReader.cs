@@ -76,6 +76,7 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         var (contracts, uncovered) = Contracts(manifest, files, errors);
         var ui = UiScreens(manifest, files, errors);
         var tests = Tests(manifest, files, errors);
+        var (scenarioTests, scenarioSkipped) = ScenarioTests(manifest, files, errors);
 
         if (errors.Count > 0) Reject(handoverDir, errors);
         return new Handover(
@@ -106,7 +107,9 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             Str(manifest, "requirement_data_class") is ("public" or "internal" or "regulated") and { } dataClass
                 ? FSharpOption<string>.Some(dataClass) : FSharpOption<string>.None,
             Core.ToList(ui),
-            tests);
+            tests,
+            Core.ToList(scenarioTests),
+            Core.ToList(scenarioSkipped));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
@@ -161,6 +164,43 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); }
         return screens;
+    }
+
+    /// `scenario_tests`: the derived scenarios.json (designc.handover.scenarios/1). Empty when handover.yaml has no such key. Each screen's
+    /// generated test must be a frozen file whose sha256 matches; the Factory runs the text as written and never regenerates it.
+    private static (List<ScenarioScreen>, List<Tuple<string, string>>) ScenarioTests(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
+    {
+        var screens = new List<ScenarioScreen>();
+        var skipped = new List<Tuple<string, string>>();
+        if (Str(manifest, "scenario_tests") is not { } path) return (screens, skipped);
+        if (!files.TryGetValue(path, out var json)) { errors.Add($"handover.yaml: scenario_tests '{path}' is not among the frozen files"); return (screens, skipped); }
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.GetProperty("schema").GetString() != "designc.handover.scenarios/1") { errors.Add($"{path}: schema is not designc.handover.scenarios/1"); return (screens, skipped); }
+            foreach (var sc in root.GetProperty("screens").EnumerateArray())
+            {
+                var name = sc.GetProperty("screen").GetString()!;
+                var test = sc.GetProperty("test");
+                var p = test.GetProperty("path").GetString()!;
+                var want = test.GetProperty("sha256").GetString()!;
+                if (!files.TryGetValue(p, out var text)) { errors.Add($"{path}: scenario test '{p}' is not among the frozen files"); continue; }
+                if (Sha256(text) != want) { errors.Add($"{p} does not match the sha256 {path} names for it (scenario test of screen '{name}')"); continue; }
+                var scenarios = sc.GetProperty("scenarios").EnumerateArray().Select(c =>
+                {
+                    var op = c.GetProperty("operation");
+                    return new ScenarioRef(c.GetProperty("id").GetString()!,
+                        Tuple.Create(op.GetProperty("id").GetString()!, op.GetProperty("method").GetString()!, op.GetProperty("path").GetString()!),
+                        Core.ToList(c.GetProperty("examples").EnumerateArray().Select(e => Tuple.Create(e.GetProperty("index").GetInt32(), e.GetProperty("title").GetString()!))));
+                }).ToList();
+                screens.Add(new ScenarioScreen(name, sc.GetProperty("component").GetString()!, new UiText(p, want, text), Core.ToList(scenarios)));
+            }
+            foreach (var k in root.GetProperty("skipped").EnumerateArray())
+                skipped.Add(Tuple.Create(k.GetProperty("scenario").GetString()!, k.GetProperty("reason").GetString()!));
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); }
+        return (screens, skipped);
     }
 
     /// `tests`: the derived tests.json (designc.handover.tests/1). None when handover.yaml has no `tests` key; any other schema is refused.

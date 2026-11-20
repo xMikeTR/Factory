@@ -20,7 +20,7 @@ public static class BugIntake
     public static readonly IReadOnlyList<string> CaughtByValues =
     [
         "S1-lint", "S1-p", "S1-grill", "ui-spec", "ui-preview", "ui-code", "ui-visual",
-        "acceptance", "holdout", "parity", "review", "qa", "pipeline",
+        "acceptance", "holdout", "scenario", "parity", "review", "qa", "pipeline",
     ];
 
     /// Null when the bug was recorded; otherwise why it could not be closed.
@@ -42,6 +42,10 @@ public static class BugIntake
             return "A bug is not closed without a new or strengthened gate (--gate).";
         if (r.CaughtBy is not null && !CaughtByValues.Contains(r.CaughtBy))
             return $"Unknown caught-by '{r.CaughtBy}': expected {string.Join(", ", CaughtByValues)}.";
+
+        // An escape the scenario stage missed is a gap in the scenario's examples, and that is the spec's: the origin is not a choice.
+        if (r.CaughtBy == "scenario" && r.Origin != "spec_gap")
+            return "A scenario escape is a spec_gap (the scenario's examples did not cover it); give --origin spec_gap and the scenario id as --ref.";
 
         var check = FailingCheckModule.create(r.Spec);
         if (check.IsError) return check.ErrorValue;

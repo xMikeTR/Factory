@@ -1,5 +1,5 @@
 {
-  "designc_commit": "d7f58990ef6f73f2f5ae0bf103d49218862bca31",
+  "designc_commit": "3843b7032ab0410e5dee45be1fba87bff6adf60e",
   "files": [
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/ledger_schema.json",
@@ -48,6 +48,10 @@
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/parity-requests.example.json",
       "source": "docs/parity-requests.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-scenarios.json",
+      "source": "docs/handover-scenarios.example.json"
     }
   ]
 }

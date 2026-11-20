@@ -115,6 +115,13 @@ type ElementTests = { Element: string; Repo: string option; FailToPass: NamedTes
 /// handover.yaml `tests`: per element, plus the elements with code and no covering test (element, reason).
 type TestMap = { Elements: ElementTests list; Unmapped: (string * string) list }
 
+/// A scenario test of one screen (`scenarios.json`, designc.handover.scenarios/1). `Examples` is (index, title); `Operation` is
+/// (operationId, method, path) of the request the test waits for.
+type ScenarioRef = { Id: string; Operation: string * string * string; Examples: (int * string) list }
+
+/// The generated scenario test of one screen: `Test` is designc's text, run as written and never regenerated.
+type ScenarioScreen = { Screen: string; Component: string; Test: UiText; Scenarios: ScenarioRef list }
+
 type Handover =
     { Id: string
       Digest: string
@@ -154,7 +161,11 @@ type Handover =
       /// The bound UI screens (handover.yaml `ui`); empty when the handover has none, and for a handover JSON frozen before they were carried.
       Ui: UiScreen list
       /// The test map (handover.yaml `tests`); None when the handover has none, and for a handover JSON frozen before it was carried.
-      Tests: TestMap option }
+      Tests: TestMap option
+      /// The generated scenario tests (handover.yaml `scenario_tests`); empty when the handover has none.
+      ScenarioTests: ScenarioScreen list
+      /// Scenarios designc did not generate a test for (scenario, reason); empty when none.
+      ScenarioSkipped: (string * string) list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

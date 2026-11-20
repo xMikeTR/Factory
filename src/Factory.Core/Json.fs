@@ -188,7 +188,21 @@ module Json =
                  | Some ("public" | "internal" | "regulated" as d) -> Some d
                  | _ -> None)
               Ui = collect (arr "$" o "ui") decodeUiScreen
-              Tests = (match o.["tests"] with null -> None | v -> Some(decodeTestMap "$.tests" v)) })
+              Tests = (match o.["tests"] with null -> None | v -> Some(decodeTestMap "$.tests" v))
+              ScenarioTests =
+                collect (arr "$" o "scenarioTests") (fun p n ->
+                    let so = obj p n
+                    { Screen = str p so "screen"
+                      Component = str p so "component"
+                      Test = decodeUiText $"{p}.test" (match so.["test"] with null -> fail $"{p}.test: required" | v -> v)
+                      Scenarios =
+                        collect (arr p so "scenarios") (fun q v ->
+                            let co = obj q v
+                            { Id = str q co "id"
+                              Operation = str q co "operationId", str q co "method", str q co "path"
+                              Examples = collect (arr q co "examples") (fun r e -> let eo = obj r e in int r eo "index" 0, str r eo "title") }) })
+              ScenarioSkipped =
+                collect (arr "$" o "scenarioSkipped") (fun p n -> let so = obj p n in str p so "scenario", str p so "reason") })
 
     // ---------- plan ----------
 
@@ -337,7 +351,24 @@ module Json =
                        "tests",
                        node [ "elements", JsonArray(t.Elements |> List.map element |> Array.ofList)
                               "unmapped", JsonArray(t.Unmapped |> List.map (fun (e, r) -> node [ "element", JsonValue.Create e; "reason", JsonValue.Create r ]) |> Array.ofList) ]
-                   | None -> () ]
+                   | None -> ()
+                   if not h.ScenarioTests.IsEmpty then
+                       let text (t: UiText) = node [ "path", JsonValue.Create t.Path; "sha256", JsonValue.Create t.Sha256; "text", JsonValue.Create t.Text ]
+                       let scenario (c: ScenarioRef) =
+                           let (opId, meth, path) = c.Operation
+                           node [ "id", JsonValue.Create c.Id
+                                  "operationId", JsonValue.Create opId
+                                  "method", JsonValue.Create meth
+                                  "path", JsonValue.Create path
+                                  "examples", JsonArray(c.Examples |> List.map (fun (i, t) -> node [ "index", JsonValue.Create i; "title", JsonValue.Create t ]) |> Array.ofList) ]
+                       let screen (s: ScenarioScreen) =
+                           node [ "screen", JsonValue.Create s.Screen
+                                  "component", JsonValue.Create s.Component
+                                  "test", text s.Test
+                                  "scenarios", JsonArray(s.Scenarios |> List.map scenario |> Array.ofList) ]
+                       "scenarioTests", JsonArray(h.ScenarioTests |> List.map screen |> Array.ofList)
+                   if not h.ScenarioSkipped.IsEmpty then
+                       "scenarioSkipped", JsonArray(h.ScenarioSkipped |> List.map (fun (s, r) -> node [ "scenario", JsonValue.Create s; "reason", JsonValue.Create r ]) |> Array.ofList) ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     // ---------- task events (the ledger payload a runner replays on resume) ----------

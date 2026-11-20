@@ -30,7 +30,7 @@ public sealed record UiWorkflowSetup(TeamHarness Harness, FakeUiSandboxes Sandbo
             b.Elements.First().Risk, true, Microsoft.FSharp.Core.FSharpOption<string>.None);
         var handover = new Handover(b.Id, b.Digest, Core.ToList(b.Elements.Append(element)), Core.ToList<BoundDecision>([]), b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
             b.WorkItem, b.DesignTokens, b.DesignVersion, acceptanceCriterion ? Core.ToList(new[] { new AcceptanceCriterion("AC-UI-1", PageElement, "") }) : b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
-            b.RequirementRisk, b.RequirementDataClass, uiHandover.Ui, b.Tests);
+            b.RequirementRisk, b.RequirementDataClass, uiHandover.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped);
         var json = Path.Combine(h.StateDir, "handovers", "ui-holdout.json");
         Directory.CreateDirectory(Path.GetDirectoryName(json)!);
         await File.WriteAllTextAsync(json, Core.HandoverJson(handover));
