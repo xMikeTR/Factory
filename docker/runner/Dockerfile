@@ -96,6 +96,13 @@ COPY --from=pobserve-parser src/ /opt/pobserve/parser/
 COPY --from=pobserve-parser pobserve-check /usr/local/bin/pobserve-check
 RUN chmod -R a+rX /opt/pobserve && chmod a+rx /usr/local/bin/pobserve-check
 
+# C# contract codegen (X2): NSwag turns the pinned OpenAPI files into DTOs, server interfaces and clients, offline, in the codegen phase.
+# The number must equal Codegen.nswagVersion (src/Factory.Core/Codegen.fs); a test compares them. Before the dotnet-affected layer so that one stays last.
+ARG NSWAG_VERSION=14.2.0
+RUN dotnet tool install NSwag.ConsoleCore --tool-path /opt/dotnet-tools --version ${NSWAG_VERSION} \
+ && chmod -R a+rX /opt/dotnet-tools \
+ && nswag version
+
 # Affected-only P2P (F5): which test projects a task's change reaches (`dotnet-affected --from <integration branch> --format json --dry-run`).
 # Pinned at 7.0.1 (net8+, checked 17 Nov 2026). Last in the file so the layers above stay cached; same --tool-path as the tools above.
 # Needs git, which the SDK image carries. Vitest is not baked in: `vitest related` runs from the repo's own devDependency.

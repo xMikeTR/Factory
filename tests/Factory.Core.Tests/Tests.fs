@@ -884,6 +884,7 @@ let tests: (string * (unit -> unit)) list =
     @ Factory.Core.Tests.RouterTests.tests
     @ Factory.Core.Tests.LearningTests.tests
     @ Factory.Core.Tests.SplitRepoTests.tests
+    @ Factory.Core.Tests.CodegenTests.tests
     @ Factory.Core.Tests.TraceTests.tests
     @ Factory.Core.Tests.ProofTests.tests
     @ Factory.Core.Tests.AssertionGuardTests.tests
