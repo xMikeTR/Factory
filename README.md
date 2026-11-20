@@ -369,7 +369,7 @@ Ledger to Jira, never the other way. Each work item's state is compared with its
 
 ## Status
 
-Tests: Core 467/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 1450/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
+Tests: Core 472/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 1480/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|
@@ -424,8 +424,20 @@ sql/ledger.sql           Postgres ledger + System 3 starter views
 examples/fares-v3/     Booking lost-update handover and a valid plan
 ```
 
+**`quality.allowList`** (in the quality policy file) sets the mode of the design allow-list check
+(an added project reference, cross-assembly type use or TS import between two design elements the
+model does not allow). It is `report` or `block`, applying to every repo, or a map of repo name to
+mode (`{Api: block, Ui: report}`); repos not named, and an unset key, inherit `quality.mode`.
+Hand-written `forbid`/`forbidNamespaces` rules are unaffected. A repo name no element uses
+rejects the run at start. A violation logs an `allow_list` verify row (`reported` or `blocked`)
+and the message names the missing relationship `From → To`.
+
 ## Interfaces with designc
 
+- **`dependencies.json`** (`designc.handover.dependencies/1`, pinned at designc `9867f4f` in
+  `contracts.lock.json`): optional; `{elements:[{element, code, repo?, allows}]}` is the allow list
+  the check above judges against, validated against `elements.json` on load. Without it the allow
+  list comes from the model's relationships.
 - **`handover.json`** (`schemas/handover.schema.json`):
   - each element needs `codeAreas` and `risk`, which means `d.code` and `d.risk` on the elements
     in the model;
