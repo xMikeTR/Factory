@@ -101,6 +101,33 @@ let tests : (string * (unit -> unit)) list =
           equal (Some "premium") (kind "empty" "placement-pixels").Placement "placement"
           equal (Some "hdr") (kind "error" "placement-missing").Placement "missing placement"
           check (fs |> List.exists (fun f -> f.State = "error" && f.Kind = "aria")) "aria"
+      "ui report: scenario tests are read from the '<screen> scenarios' describe and never count as page tests", fun () ->
+          let t (title: string) (st: string) (msg: string) =
+              $"""{{"title":"{title}","ancestorTitles":["orders scenarios"],"status":"{st}","failureMessages":[{msg}]}}"""
+          let body = "\"AssertionError: ORD-1-ts-01 example 1: POST /orders/tags body: expected { match: 'A-', tagg: 'Priority' } to deeply equal { match: 'A-', tag: 'Priority' }\""
+          let none = "\"AssertionError: ORD-1-ts-01 example 2: POST /orders/tags body: expected undefined to deeply equal { match: 'B-200', tag: 'Hold' }\""
+          let timeout = "\"Error: locator.click: Timeout 30000ms exceeded waiting for getByRole('button', { name: 'Tag orders' })\""
+          let rows =
+              [ t "ORD-1-ts-01 example 1" "failed" body
+                t "ORD-1-ts-01 example 2" "failed" none
+                t "ORD-2-ts-01 example 1" "failed" timeout
+                t "ORD-2-ts-01 example 2" "passed" ""
+                """{"title":"ready aria","ancestorTitles":["orders page"],"status":"passed","failureMessages":[]}""" ]
+          let r = "{\"testResults\":[{\"assertionResults\":[" + System.String.Join(",", rows) + "]}]}"
+          equal
+              [ { ScenarioFailure.Criterion = "ORD-1-ts-01 example 1"; Kind = "body" }
+                { ScenarioFailure.Criterion = "ORD-1-ts-01 example 2"; Kind = "not_sent" }
+                { ScenarioFailure.Criterion = "ORD-2-ts-01 example 1"; Kind = "could_not_run" } ]
+              (UiReport.scenarioFailures "orders" r) "kinds"
+          equal 4 (UiReport.scenarioExecuted "orders" r) "four ran"
+          equal [] (UiReport.failures "orders" r) "page failures ignore them"
+          equal 1 (UiReport.executed "orders" r) "page count ignores them"
+          equal [] (UiReport.scenarioFailures "other" r) "another screen's"
+      "ui report: scenario tests pass, and a report with none says nothing ran", fun () ->
+          let ok = """{"testResults":[{"assertionResults":[{"title":"ORD-1-ts-01 example 1","ancestorTitles":["orders scenarios"],"status":"passed","failureMessages":[]}]}]}"""
+          equal [] (UiReport.scenarioFailures "orders" ok) "none failed"
+          equal 1 (UiReport.scenarioExecuted "orders" ok) "one ran"
+          equal 0 (UiReport.scenarioExecuted "orders" """{"testResults":[]}""") "none ran"
       "ui holdout test: the kit's file for the screen, no props, the sample read from the scratch holdout folder", fun () ->
           let t = UiHoldoutTest.text "bordereaux" "BordereauxList" "src/BordereauxList.tsx"
           check (t.Contains "import { BordereauxList as Page } from \"../../src/BordereauxList\"") "page import"

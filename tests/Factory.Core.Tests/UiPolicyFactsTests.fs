@@ -30,6 +30,7 @@ let private deny =
       "loosens the ratio in the helper", Path "ui-contract/preview/vitest-ui.tsx"
       "edits a manifest", Path "ui-contract/manifests/DataTable.json"
       "edits a generated page test", Path "ui-contract/tests/bordereaux.page.test.tsx"
+      "edits a generated scenario test", Path "ui-contract/tests/orders.scenarios.page.test.tsx"
       "edits the Vitest config", Path "vitest.config.ts"
       "edits this hook", Path ".claude/hooks/ui-contract-guard.mjs"
       "writes a holdout sample", Path "ui-contract/holdout/bordereaux.json"

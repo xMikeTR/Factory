@@ -18,6 +18,7 @@ public static partial class RegistryLedgerProjector
         var requests = VerifyRequests(run);
         var verdicts = new List<Verdict>();
         verdicts.AddRange(UiVerdicts(run));
+        verdicts.AddRange(ScenarioVerdicts(run));
         verdicts.AddRange(HoldoutVerdicts(run));
         verdicts.AddRange(AcceptanceVerdicts(run, handover));
         verdicts.AddRange(ReviewVerdicts(run));
@@ -32,6 +33,8 @@ public static partial class RegistryLedgerProjector
                 if (v.Task is not null) w.WriteString("task", v.Task);
                 if (v.Element is not null) w.WriteString("element", v.Element);
                 if (v.Screen is not null) w.WriteString("screen", v.Screen);
+                // a scenario verdict names the scenario only when exactly one failed (its criterion is "<scenario id> example <n>")
+                if (v.Stage == "scenario" && v.Failures?.Select(f => ScenarioId(f.Criterion)).Where(x => x is not null).Distinct().ToList() is { Count: 1 } ids) w.WriteString("scenario", ids[0]);
                 if (handover.WorkItem is not null) w.WriteString("item", handover.WorkItem);
                 if (v.Round is { } round) w.WriteNumber("round", round);
                 if (v.Failures is { Count: > 0 })
@@ -90,6 +93,7 @@ public static partial class RegistryLedgerProjector
         {
             using var doc = TryParse(e.Payload!);
             if (doc is null || Str(doc.RootElement, "screen") is not { } screen || Str(doc.RootElement, "kind") is not { } kind) continue;
+            if (kind == "scenario") continue; // its own stage, below
             var stage = kind is "code" or "request" ? "ui-code" : "ui-visual"; // a wrong or missing endpoint is a code fault, not a look
             failed.Add((e, stage, screen, new Failure(Str(doc.RootElement, "state"), kind, Str(doc.RootElement, "placement"))));
         }
@@ -104,7 +108,10 @@ public static partial class RegistryLedgerProjector
             if (doc is null || Str(doc.RootElement, "name") is not { } name || !name.StartsWith("ui:")) continue;
             var screen = name[3..];
             if (blamedScreens.Contains(screen)) continue;
-            if (e.Outcome == "passed") latest[screen] = (e, "pass");
+            // a screen whose only failures are scenario ones passed its page tests: that stage speaks for itself
+            var scenarioOnly = Prop(doc.RootElement, "kinds") is { ValueKind: JsonValueKind.Array } ks && ks.GetArrayLength() > 0
+                && ks.EnumerateArray().All(k => k.ValueKind == JsonValueKind.String && k.GetString() == "scenario");
+            if (e.Outcome == "passed" || (e.Outcome == "failed" && scenarioOnly)) latest[screen] = (e, "pass");
             else if (Prop(doc.RootElement, "ExitCode") is { ValueKind: JsonValueKind.Number } code && code.GetInt32() == 3) latest[screen] = (e, "could_not_run");
         }
         foreach (var (screen, (e, outcome)) in latest)
@@ -112,6 +119,43 @@ public static partial class RegistryLedgerProjector
             yield return new Verdict(e, "ui-code", outcome, Screen: screen);
             yield return new Verdict(e, "ui-visual", outcome, Screen: screen);
         }
+    }
+
+    private static string? ScenarioId(string? criterion) =>
+        criterion is not null && criterion.LastIndexOf(" example ", StringComparison.Ordinal) is var i and > 0 ? criterion[..i] : null;
+
+    /// The scenario stage (F1): a failed `<id> example <n>` blames the tasks the page check blamed (`ui_check_failed`, kind `scenario`);
+    /// the `scenario:<screen>` verify row gives the screen's pass, its could_not_run, or a failure no task was blamed for.
+    private static IEnumerable<Verdict> ScenarioVerdicts(IReadOnlyList<LedgerEvent> run)
+    {
+        var failed = new List<(LedgerEvent, string, string?, Failure)>();
+        foreach (var e in run.Where(e => e.Kind == LedgerKinds.UiCheckFailed && e.TaskId is not null && e.Payload is not null))
+        {
+            using var doc = TryParse(e.Payload!);
+            if (doc is null || Str(doc.RootElement, "kind") != "scenario" || Str(doc.RootElement, "screen") is not { } screen) continue;
+            failed.Add((e, "scenario", screen, new Failure(Kind: Str(doc.RootElement, "scenarioKind"), Criterion: Str(doc.RootElement, "criterion"))));
+        }
+        foreach (var v in Blamed(failed)) yield return v;
+
+        var blamedScreens = failed.Select(f => f.Item3).ToHashSet();
+        var latest = new Dictionary<string, Verdict>();
+        foreach (var e in run.Where(e => e is { Kind: LedgerKinds.Verify, Payload: not null }))
+        {
+            using var doc = TryParse(e.Payload!);
+            if (doc is null || Str(doc.RootElement, "name") is not { } name || !name.StartsWith("scenario:")) continue;
+            var screen = name["scenario:".Length..];
+            if (blamedScreens.Contains(screen)) continue;
+            if (e.Outcome == "passed") latest[screen] = new Verdict(e, "scenario", "pass", Screen: screen);
+            else if (Prop(doc.RootElement, "ExitCode") is { ValueKind: JsonValueKind.Number } code && code.GetInt32() == 3) latest[screen] = new Verdict(e, "scenario", "could_not_run", Screen: screen);
+            else
+            {
+                // failed, but no task changes the page: the verdict still counts, for the run
+                var fails = Prop(doc.RootElement, "failures") is { ValueKind: JsonValueKind.Array } a
+                    ? a.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object).Select(x => new Failure(Kind: Str(x, "kind"), Criterion: Str(x, "criterion"))).ToList() : [];
+                latest[screen] = new Verdict(e, "scenario", "fail", Screen: screen, Failures: fails);
+            }
+        }
+        foreach (var v in latest.Values) yield return v;
     }
 
     private static IEnumerable<Verdict> HoldoutVerdicts(IReadOnlyList<LedgerEvent> run)
