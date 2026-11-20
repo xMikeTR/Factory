@@ -29,6 +29,9 @@ public static class CodegenPhase
         if (!svc.Settings.CodegenOn)
         {
             await svc.LogAsync(runId, Stage, LedgerKinds.Codegen, outcome: "off", ct: ct);
+            if (handover.ApiScenarios.Any(Codegen.hasGeneratedExamples))
+                await svc.LogAsync(runId, Stage, LedgerKinds.ApiScenariosSkipped, outcome: "skipped",
+                    payload: JsonSerializer.Serialize(new { reason = "codegen off", scenarios = handover.ApiScenarios.Where(Codegen.hasGeneratedExamples).Select(a => a.Id).ToList() }), ct: ct);
             return null;
         }
         if (File.Exists(manifestPath)) // resume: what was generated stays
@@ -84,6 +87,26 @@ public static class CodegenPhase
                 await File.WriteAllTextAsync(path, Codegen.tsClient(t, handover.ApiContractTexts.First(x => x.Path == t.Source).Sha256), ct);
             }
         }
+        var apiFiles = new List<(string Repo, string Path, string Text)>();
+        if (run.Outcome == "generated")
+        {
+            // X4: the API behaviour tests are the Factory's own text, a pure function of the handover; no tool runs for them.
+            var api = ApiScenarios.files(handover);
+            if (api.IsError)
+            {
+                var detail = string.Join("; ", api.ErrorValue);
+                await svc.LogAsync(runId, Stage, LedgerKinds.Codegen, outcome: "failed", payload: JsonSerializer.Serialize(new { detail, commands = run.Commands }), ct: ct);
+                return new RunFinished(runId, "codegen_failed", detail);
+            }
+            var generatedRepos = list.Select(t => t.Repo).ToHashSet(StringComparer.Ordinal);
+            foreach (var (repo, rel, text) in api.ResultValue.Select(f => (f.Item1, f.Item2, f.Item3)).Where(f => generatedRepos.Contains(f.Item1)))
+            {
+                var path = Path.Combine(work, Codegen.outPath(repo, rel));
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                await File.WriteAllTextAsync(path, text, ct);
+                apiFiles.Add((repo, rel, text));
+            }
+        }
         if (run.Outcome == "generated")
             foreach (var f in list.SelectMany(t => t.Files.Select(f => (t, f))).Where(x => !File.Exists(Path.Combine(work, Codegen.outPath(x.t.Repo, x.f)))))
                 run = new CodegenRun("failed", $"the generator reported success but did not write {Codegen.outPath(f.t.Repo, f.f)}", run.Commands);
@@ -94,7 +117,7 @@ public static class CodegenPhase
             return new RunFinished(runId, "codegen_failed", run.Detail);
         }
 
-        var manifest = Manifest(list, work, handover);
+        var manifest = Manifest(list, work, handover, apiFiles);
         await File.WriteAllTextAsync(manifestPath, manifest, ct);
         await svc.LogAsync(runId, Stage, LedgerKinds.Codegen, outcome: "generated", payload: manifest, ct: ct);
         return null;
@@ -102,7 +125,7 @@ public static class CodegenPhase
 
     /// Manifest v2: `{tools:[{name,version}], files:[{repo,path,sha256,source,source_sha256}], sources:[{path,sha256,operations,schemas}]}`,
     /// sorted: the same inputs give the same bytes.
-    private static string Manifest(List<Codegen.Target> targets, string work, Handover handover)
+    private static string Manifest(List<Codegen.Target> targets, string work, Handover handover, List<(string Repo, string Path, string Text)> apiFiles)
     {
         var texts = handover.ApiContractTexts.ToDictionary(t => t.Path, t => t, StringComparer.Ordinal);
         var tools = new[] { (name: "nswag", version: Codegen.nswagVersion, on: targets.Any(t => t.Language.IsCSharp)),
@@ -117,7 +140,16 @@ public static class CodegenPhase
                 source = t.Source,
                 source_sha256 = texts[t.Source].Sha256,
             }))
-            .OrderBy(f => f.repo, StringComparer.Ordinal).ThenBy(f => f.path, StringComparer.Ordinal).ToList();
+            .Select(f => (repo: f.repo, path: f.path, row: (object)f))
+            .Concat(apiFiles.Select(f =>
+            {
+                var scenario = handover.ApiScenarios.FirstOrDefault(a => f.Path.EndsWith("/" + ApiScenarios.idPascal(a.Id) + ".ApiScenario.g.cs", StringComparison.Ordinal));
+                var row = new Dictionary<string, object?> { ["repo"] = f.Repo, ["path"] = f.Path, ["sha256"] = UiPreview.Sha256Hex(System.Text.Encoding.UTF8.GetBytes(f.Text)) };
+                if (scenario is not null) { row["source"] = scenario.Path; row["source_sha256"] = scenario.Sha256; }
+                row["tool"] = "factory";
+                return (repo: f.Repo, path: f.Path, row: (object)row);
+            }))
+            .OrderBy(f => f.repo, StringComparer.Ordinal).ThenBy(f => f.path, StringComparer.Ordinal).Select(f => f.row).ToList();
         var sources = targets.Select(t => t.Source).Distinct().Order(StringComparer.Ordinal)
             .Select(p =>
             {

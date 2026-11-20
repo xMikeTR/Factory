@@ -2,6 +2,8 @@ using Microsoft.Extensions.AI;
 using System.Text;
 using Factory.Core;
 using Factory.Harness.Registry;
+using Microsoft.FSharp.Collections;
+using Microsoft.FSharp.Core;
 
 namespace Factory.S2.Teams;
 
@@ -55,6 +57,12 @@ public static class Briefs
 
         if (generated is { Count: > 0 } && CodegenPhase.BriefSection(handover, generated, task.Elements.Select(e => e.Value)) is { } generatedSection)
             sb.AppendLine().Append(generatedSection);
+        if (generated is { Count: > 0 })
+        {
+            var api = ApiScenarios.briefSection(handover, ListModule.OfSeq(generated.Select(f => Tuple.Create(f.Repo, f.Path, f.Source))),
+                FSharpOption<FSharpList<string>>.Some(ListModule.OfSeq(task.Elements.Select(e => e.Value))));
+            if (FSharpOption<string>.get_IsSome(api)) sb.AppendLine().Append(api.Value);
+        }
 
         if (!handover.EventVocabulary.IsEmpty)
         {

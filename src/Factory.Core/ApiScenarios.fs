@@ -264,3 +264,27 @@ module ApiScenarios =
                 match System.String.CompareOrdinal(r1, r2) with
                 | 0 -> System.String.CompareOrdinal(p1, p2)
                 | c -> c))
+
+    /// The brief section naming the generated API tests that judge these elements (None: all), or None when there are none.
+    /// `files` are the manifest's (repo, path, source). A stable text: it names the folder, the adapter interface and the rule.
+    let briefSection (h: Handover) (files: (string * string * string) list) (elements: string list option) : string option =
+        let specs = h.Elements |> List.map (fun e -> e.Id.Value, e) |> Map.ofList
+        let ids =
+            [ for a in h.ApiScenarios do
+                  match Codegen.apiServing h a with
+                  | Ok i when (match elements with None -> true | Some l -> List.contains i.Element l) ->
+                      let repo = match Map.tryFind i.Element specs with Some e -> defaultArg e.Repo "." | None -> "."
+                      let name = "/" + idPascal a.Id + ".ApiScenario.g.cs"
+                      if files |> List.exists (fun (r, p, _) -> r = repo && p.StartsWith(folder + "/", System.StringComparison.Ordinal) && p.EndsWith(name, System.StringComparison.Ordinal)) then
+                          yield a.Id
+                  | _ -> () ]
+            |> List.distinct
+            |> List.sortWith (fun a b -> System.String.CompareOrdinal(a, b))
+        if ids.IsEmpty then None
+        else
+            let joined = String.concat ", " ids
+            Some(
+                "## Generated API tests (read-only; the Factory wrote them)\n\n"
+                + $"The API behaviour tests for {joined} are generated under `{folder}/`. They seed rows through `IScenarioAdapter` (declared in `{runtimeFile}`), call the operation through the generated client, and compare the stored rows. "
+                + "Implement `IScenarioAdapter` once in the repo's test project, outside `generated/`, and make that project compile `generated/contracts/api-tests/**/*.cs`. "
+                + "The generated tests are read-only and must pass in integration verify.\n")

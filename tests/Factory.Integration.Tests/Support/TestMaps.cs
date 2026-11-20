@@ -64,4 +64,16 @@ public static class TestMaps
         new(b.Id, b.Digest, FsCore.ToList(elements), b.Decisions, b.ProtectedPaths, b.EventVocabulary, FsCore.ToList(Array.Empty<Relationship>()), b.AcceptanceSpecs,
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
             b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts, null, b.ApiScenarios, b.Entities);
+
+    /// The handover with the `tagOrders` operation (POST /orders/tags) served by `element` over this OpenAPI text, and these API scenarios and entities.
+    public static Handover WithApiScenarios(this Handover b, string element, string path, string text, IEnumerable<ApiScenario> scenarios, IEnumerable<EntityDef>? entities = null)
+    {
+        var with = b.WithContract(element, path, text);
+        var iface = new ElementInterface(element, "serves", element, "Consumer", "operation", "tagOrders", FSharpOption<string>.Some("POST"), FSharpOption<string>.Some("/orders/tags"), FSharpOption<string>.Some(path), "1");
+        return new(with.Id, with.Digest, with.Elements, with.Decisions, with.ProtectedPaths, with.EventVocabulary, with.Relationships, with.AcceptanceSpecs,
+            with.WorkItem, with.DesignTokens, with.DesignVersion, with.AcceptanceCriteria, with.LoopSpecs, with.References, with.Contracts, with.Uncovered, with.ApiContracts,
+            with.RequirementRisk, with.RequirementDataClass, with.Ui, with.Tests, with.ScenarioTests, with.ScenarioSkipped,
+            Microsoft.FSharp.Collections.ListModule.OfSeq([iface]), with.ApiContractTexts, with.Dependencies,
+            Microsoft.FSharp.Collections.ListModule.OfSeq(scenarios), Microsoft.FSharp.Collections.ListModule.OfSeq(entities ?? []));
+    }
 }
