@@ -94,7 +94,7 @@ public class S2WorkflowTests
             h.Handover.EventVocabulary, h.Handover.Relationships,
             Microsoft.FSharp.Collections.ListModule.OfSeq([new AcceptanceSpec("tests/acceptance/bookings-db/AC-1.spec.ts", "deadbeefdeadbeef")]),
             h.Handover.WorkItem, h.Handover.DesignTokens,
-            h.Handover.DesignVersion, h.Handover.AcceptanceCriteria, h.Handover.LoopSpecs, h.Handover.References, h.Handover.Contracts, h.Handover.Uncovered, h.Handover.ApiContracts, h.Handover.RequirementRisk, h.Handover.RequirementDataClass, h.Handover.Ui, h.Handover.Tests, h.Handover.ScenarioTests, h.Handover.ScenarioSkipped, h.Handover.Interfaces, h.Handover.ApiContractTexts, null);
+            h.Handover.DesignVersion, h.Handover.AcceptanceCriteria, h.Handover.LoopSpecs, h.Handover.References, h.Handover.Contracts, h.Handover.Uncovered, h.Handover.ApiContracts, h.Handover.RequirementRisk, h.Handover.RequirementDataClass, h.Handover.Ui, h.Handover.Tests, h.Handover.ScenarioTests, h.Handover.ScenarioSkipped, h.Handover.Interfaces, h.Handover.ApiContractTexts, null, h.Handover.ApiScenarios, h.Handover.Entities);
         var path = Path.Combine(h.StateDir, "frozen-handover.json");
         Directory.CreateDirectory(h.StateDir);
         await File.WriteAllTextAsync(path, Core.HandoverJson(frozen));

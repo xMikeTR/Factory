@@ -1,0 +1,114 @@
+{
+  "schema": "designc.handover.scenarios/2",
+  "screens": [
+    {
+      "screen": "orders",
+      "component": "OrdersList",
+      "test": {
+        "path": "ui-contract/tests/orders.scenarios.page.test.tsx",
+        "sha256": "0028f259584c4f3849675ccf918b2a4ab741a7755e3cc0a596010ccc6eb3cbbd"
+      },
+      "scenarios": [
+        {
+          "id": "ORD-1-ts-01",
+          "path": "test-scenarios/ORD-1-ts-01.yaml",
+          "sha256": "0801fb767b1f662d9a80e2b2ab9e77cb1fe37333f1abcc1b360ea0f3a92e2f29",
+          "operation": {
+            "id": "tagOrders",
+            "method": "POST",
+            "path": "/orders/tags"
+          },
+          "examples": [
+            {
+              "index": 1,
+              "title": "prefix match"
+            },
+            {
+              "index": 2,
+              "title": "whole reference"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "skipped": [
+    {
+      "scenario": "ORD-1-ts-02",
+      "reason": "minted: a person binds it before a test is generated"
+    }
+  ],
+  "api": [
+    {
+      "id": "ORD-1-ts-01",
+      "path": "test-scenarios/ORD-1-ts-01.yaml",
+      "sha256": "0801fb767b1f662d9a80e2b2ab9e77cb1fe37333f1abcc1b360ea0f3a92e2f29",
+      "operation": {
+        "id": "tagOrders",
+        "method": "POST",
+        "path": "/orders/tags"
+      },
+      "examples": [
+        {
+          "index": 1,
+          "title": "prefix match",
+          "given": {
+            "orders/Order": [
+              {
+                "id": 1,
+                "ref": "A-100"
+              },
+              {
+                "id": 2,
+                "ref": "B-200"
+              }
+            ]
+          },
+          "then": {
+            "orders/Order": [
+              {
+                "id": 1,
+                "tag": "Priority"
+              },
+              {
+                "id": 2,
+                "tag": null
+              }
+            ]
+          }
+        },
+        {
+          "index": 2,
+          "title": "whole reference",
+          "given": {},
+          "then": {
+            "orders/Order": [
+              {
+                "id": 2,
+                "tag": "Hold"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "id": "orders/Order",
+      "pack": "orders",
+      "name": "Order",
+      "version": 1,
+      "fields": [
+        {
+          "name": "ref",
+          "type": "string"
+        },
+        {
+          "name": "tag",
+          "type": "string"
+        }
+      ]
+    }
+  ]
+}

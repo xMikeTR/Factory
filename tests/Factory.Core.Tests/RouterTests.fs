@@ -66,7 +66,9 @@ let private specHandover: Handover =
       ScenarioSkipped = []
       Interfaces = []
       ApiContractTexts = []
-      Dependencies = None }
+      Dependencies = None
+      ApiScenarios = []
+      Entities = [] }
 
 let private specConfig: TaskSpecConfig =
     { SmallMaxWrites = 4

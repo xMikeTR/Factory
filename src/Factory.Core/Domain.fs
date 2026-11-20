@@ -123,6 +123,31 @@ type ScenarioRef = { Id: string; Operation: string * string * string; Examples: 
 /// The generated scenario test of one screen: `Test` is designc's text, run as written and never regenerated.
 type ScenarioScreen = { Screen: string; Component: string; Test: UiText; Scenarios: ScenarioRef list }
 
+/// The request an API scenario example sends (designc scenarios/3). `Body` is canonical JSON text; `Path` maps each path parameter to its value.
+type ApiRequest = { Body: string option; Path: (string * string) list }
+
+/// One example of an API scenario (scenarios/2 `api`): `Given` seeds rows and `Then` expects rows, both keyed by qualified entity
+/// (`pack/Aggregate`) with each row as JSON object text, in the handover's order. `Request` is None until designc scenarios/3.
+type ApiExample =
+    { Index: int
+      Title: string
+      Given: (string * string list) list
+      Then: (string * string list) list
+      Request: ApiRequest option }
+
+/// An API scenario: one operation exercised by its examples. `Path`/`Sha256` name the scenario YAML designc froze.
+type ApiScenario =
+    { Id: string
+      Path: string
+      Sha256: string
+      OperationId: string
+      Method: string
+      OpPath: string
+      Examples: ApiExample list }
+
+/// A design entity (scenarios/2 `entities`): `Id` is `pack/Name`; `Fields` is (name, type).
+type EntityDef = { Id: string; Pack: string; Name: string; Version: int; Fields: (string * string) list }
+
 /// One end of a typed relationship, from designc's elements/3 `interfaces` (operations carry method/path/file, events carry neither).
 type ElementInterface =
     { Element: string
@@ -188,7 +213,11 @@ type Handover =
       /// The frozen text of each `contracts_api` file, sorted by path; empty when the handover pins none.
       ApiContractTexts: UiText list
       /// The allow list (handover.yaml `dependencies`, designc.handover.dependencies/1); None when the handover has no dependencies.json.
-      Dependencies: ElementAllows list option }
+      Dependencies: ElementAllows list option
+      /// API scenarios with their given/then rows (scenarios/2); empty when the handover has none.
+      ApiScenarios: ApiScenario list
+      /// Entities the API scenarios' rows are keyed by (scenarios/2); empty when none.
+      Entities: EntityDef list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

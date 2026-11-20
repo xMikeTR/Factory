@@ -77,7 +77,7 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         var (contracts, uncovered) = Contracts(manifest, files, errors);
         var ui = UiScreens(manifest, files, errors);
         var tests = Tests(manifest, files, errors);
-        var (scenarioTests, scenarioSkipped) = ScenarioTests(manifest, files, errors);
+        var (scenarioTests, scenarioSkipped, apiScenarios, entities) = ScenarioTests(manifest, files, errors);
         var dependencies = Dependencies(manifest, files, elements, errors);
 
         if (errors.Count > 0) Reject(handoverDir, errors);
@@ -114,7 +114,9 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             Core.ToList(scenarioSkipped),
             Core.ToList(resolved!.Value.Interfaces),
             Core.ToList(apiContracts.OrderBy(c => c, StringComparer.Ordinal).Select(c => new UiText(c, Sha256(files[c]), files[c]))),
-            dependencies);
+            dependencies,
+            Core.ToList(apiScenarios),
+            Core.ToList(entities));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
@@ -173,17 +175,20 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
 
     /// `scenario_tests`: the derived scenarios.json (designc.handover.scenarios/1). Empty when handover.yaml has no such key. Each screen's
     /// generated test must be a frozen file whose sha256 matches; the Factory runs the text as written and never regenerates it.
-    private static (List<ScenarioScreen>, List<Tuple<string, string>>) ScenarioTests(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
+    private static (List<ScenarioScreen>, List<Tuple<string, string>>, List<ApiScenario>, List<EntityDef>) ScenarioTests(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
     {
         var screens = new List<ScenarioScreen>();
         var skipped = new List<Tuple<string, string>>();
-        if (Str(manifest, "scenario_tests") is not { } path) return (screens, skipped);
-        if (!files.TryGetValue(path, out var json)) { errors.Add($"handover.yaml: scenario_tests '{path}' is not among the frozen files"); return (screens, skipped); }
+        var api = new List<ApiScenario>();
+        var entities = new List<EntityDef>();
+        if (Str(manifest, "scenario_tests") is not { } path) return (screens, skipped, api, entities);
+        if (!files.TryGetValue(path, out var json)) { errors.Add($"handover.yaml: scenario_tests '{path}' is not among the frozen files"); return (screens, skipped, api, entities); }
         try
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            if (root.GetProperty("schema").GetString() != "designc.handover.scenarios/1") { errors.Add($"{path}: schema is not designc.handover.scenarios/1"); return (screens, skipped); }
+            var schema = root.GetProperty("schema").GetString();
+            if (schema is not ("designc.handover.scenarios/1" or "designc.handover.scenarios/2")) { errors.Add($"{path}: schema is not designc.handover.scenarios/1 or designc.handover.scenarios/2"); return (screens, skipped, api, entities); }
             foreach (var sc in root.GetProperty("screens").EnumerateArray())
             {
                 var name = sc.GetProperty("screen").GetString()!;
@@ -203,10 +208,35 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             }
             foreach (var k in root.GetProperty("skipped").EnumerateArray())
                 skipped.Add(Tuple.Create(k.GetProperty("scenario").GetString()!, k.GetProperty("reason").GetString()!));
+            if (schema == "designc.handover.scenarios/2")
+            {
+                static string Canon(JsonElement e) => System.Text.Json.Nodes.JsonNode.Parse(e.GetRawText())!.ToJsonString();
+                static Microsoft.FSharp.Collections.FSharpList<Tuple<string, Microsoft.FSharp.Collections.FSharpList<string>>> Rows(JsonElement o) =>
+                    Core.ToList(o.EnumerateObject().Select(p => Tuple.Create(p.Name, Core.ToList(p.Value.EnumerateArray().Select(Canon)))));
+                if (root.TryGetProperty("api", out var apis))
+                    foreach (var a in apis.EnumerateArray())
+                    {
+                        var op = a.GetProperty("operation");
+                        var examples = a.GetProperty("examples").EnumerateArray().Select(e => new ApiExample(e.GetProperty("index").GetInt32(), e.GetProperty("title").GetString()!,
+                            Rows(e.GetProperty("given")), Rows(e.GetProperty("then")), FSharpOption<ApiRequest>.None)).ToList();
+                        var id = a.GetProperty("id").GetString()!;
+                        api.Add(new ApiScenario(id, a.GetProperty("path").GetString()!, a.GetProperty("sha256").GetString()!, op.GetProperty("id").GetString()!,
+                            op.GetProperty("method").GetString()!, op.GetProperty("path").GetString()!, Core.ToList(examples)));
+                        // Until designc scenarios/3 carries the request, no example can be turned into a call.
+                        if (examples.Count > 0) skipped.Add(Tuple.Create(id, ApiNeedsRequest));
+                    }
+                if (root.TryGetProperty("entities", out var ents))
+                    foreach (var e in ents.EnumerateArray())
+                        entities.Add(new EntityDef(e.GetProperty("id").GetString()!, e.GetProperty("pack").GetString()!, e.GetProperty("name").GetString()!, e.GetProperty("version").GetInt32(),
+                            Core.ToList(e.GetProperty("fields").EnumerateArray().Select(f => Tuple.Create(f.GetProperty("name").GetString()!, f.GetProperty("type").GetString()!)))));
+            }
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); }
-        return (screens, skipped);
+        return (screens, skipped, api, entities);
     }
+
+    /// The reason an API scenario example is listed as skipped under scenarios/2, which carries rows but no request.
+    public const string ApiNeedsRequest = "needs designc scenarios/3: the example has no request";
 
     /// `tests`: the derived tests.json (designc.handover.tests/1). None when handover.yaml has no `tests` key; any other schema is refused.
     private static FSharpOption<TestMap> Tests(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)

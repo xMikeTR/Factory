@@ -19,14 +19,14 @@ public static class TestMaps
     public static Handover WithTests(this Handover b, TestMap? map) =>
         new(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
-            b.RequirementRisk, b.RequirementDataClass, b.Ui, map is null ? FSharpOption<TestMap>.None : FSharpOption<TestMap>.Some(map), b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts, null);
+            b.RequirementRisk, b.RequirementDataClass, b.Ui, map is null ? FSharpOption<TestMap>.None : FSharpOption<TestMap>.Some(map), b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts, null, b.ApiScenarios, b.Entities);
 
     /// The handover with these scenario screens (and no skipped ones).
     public static Handover WithScenarios(this Handover b, IEnumerable<ScenarioScreen> screens) =>
         new(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
             b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, Microsoft.FSharp.Collections.ListModule.OfSeq(screens),
-            Microsoft.FSharp.Collections.ListModule.Empty<Tuple<string, string>>(), b.Interfaces, b.ApiContractTexts, null);
+            Microsoft.FSharp.Collections.ListModule.Empty<Tuple<string, string>>(), b.Interfaces, b.ApiContractTexts, null, b.ApiScenarios, b.Entities);
 
     /// The handover with one served operation interface on `element` over this OpenAPI text, as a frozen handover would carry them.
     public static Handover WithContract(this Handover b, string element, string path, string text) =>
@@ -34,7 +34,7 @@ public static class TestMaps
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
             b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped,
             Microsoft.FSharp.Collections.ListModule.OfSeq([new ElementInterface(element, "serves", element, "Consumer", "operation", "op", FSharpOption<string>.Some("GET"), FSharpOption<string>.Some("/x"), FSharpOption<string>.Some(path), "1")]),
-            Microsoft.FSharp.Collections.ListModule.OfSeq([new UiText(path, Factory.Harness.Registry.DesigncHandoverReader.Sha256(text), text)]), null);
+            Microsoft.FSharp.Collections.ListModule.OfSeq([new UiText(path, Factory.Harness.Registry.DesigncHandoverReader.Sha256(text), text)]), null, b.ApiScenarios, b.Entities);
 
     /// The handover with one operation (`listQuotes`, GET /quotes) served by `server` and called by `client`, both pinned to this OpenAPI text,
     /// plus any further operations `client` calls.
@@ -48,7 +48,7 @@ public static class TestMaps
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
             b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped,
             Microsoft.FSharp.Collections.ListModule.OfSeq(ifaces),
-            Microsoft.FSharp.Collections.ListModule.OfSeq([new UiText(path, Factory.Harness.Registry.DesigncHandoverReader.Sha256(text), text)]), null);
+            Microsoft.FSharp.Collections.ListModule.OfSeq([new UiText(path, Factory.Harness.Registry.DesigncHandoverReader.Sha256(text), text)]), null, b.ApiScenarios, b.Entities);
     }
 
     /// The handover with this allow list (element -> the elements it may depend on), as a dependencies.json would carry it.
@@ -57,11 +57,11 @@ public static class TestMaps
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
             b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts,
             FSharpOption<Microsoft.FSharp.Collections.FSharpList<ElementAllows>>.Some(FsCore.ToList(allows.Select(a =>
-                new ElementAllows(ElementId.NewElementId(a.Element), FsCore.ToList(a.Allows.Select(ElementId.NewElementId)))))));
+                new ElementAllows(ElementId.NewElementId(a.Element), FsCore.ToList(a.Allows.Select(ElementId.NewElementId)))))), b.ApiScenarios, b.Entities);
 
     /// The handover with exactly these elements, no relationships and no allow list.
     public static Handover WithElements(this Handover b, params ElementSpec[] elements) =>
         new(b.Id, b.Digest, FsCore.ToList(elements), b.Decisions, b.ProtectedPaths, b.EventVocabulary, FsCore.ToList(Array.Empty<Relationship>()), b.AcceptanceSpecs,
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
-            b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts, null);
+            b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped, b.Interfaces, b.ApiContractTexts, null, b.ApiScenarios, b.Entities);
 }

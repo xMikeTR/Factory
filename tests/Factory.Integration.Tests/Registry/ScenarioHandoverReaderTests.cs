@@ -17,9 +17,9 @@ public class ScenarioHandoverReaderTests
     public static string GoldenText() => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "scenarios", "orders.scenarios.page.test.tsx"));
 
     /// A handover directory carrying only scenarios.json and its test file (edit the doc or the text with the arguments).
-    public static string Dir(Action<JsonNode>? editDoc = null, string? testText = null, bool withKey = true)
+    public static string Dir(Action<JsonNode>? editDoc = null, string? testText = null, bool withKey = true, string fixture = "handover-scenarios.json")
     {
-        var doc = JsonNode.Parse(File.ReadAllText(Fx("handover-scenarios.json")))!;
+        var doc = JsonNode.Parse(File.ReadAllText(Fx(fixture)))!;
         editDoc?.Invoke(doc);
         var dir = Directory.CreateTempSubdirectory("scenario-handover").FullName;
         var files = new Dictionary<string, string>();
@@ -73,8 +73,8 @@ public class ScenarioHandoverReaderTests
     [Fact]
     public async Task Another_schema_is_refused()
     {
-        var e = await Assert.ThrowsAsync<FactoryRejectedException>(() => Load(Dir(d => d["schema"] = "designc.handover.scenarios/2")));
-        Assert.Contains("designc.handover.scenarios/1", e.Message);
+        var e = await Assert.ThrowsAsync<FactoryRejectedException>(() => Load(Dir(d => d["schema"] = "designc.handover.scenarios/9")));
+        Assert.Contains("designc.handover.scenarios/1 or designc.handover.scenarios/2", e.Message);
     }
 
     [Fact]
@@ -84,5 +84,45 @@ public class ScenarioHandoverReaderTests
         var back = Factory.Core.Core.ParseHandover(Factory.Core.Core.HandoverJson(h));
         Assert.Equal(h.ScenarioTests, back.ScenarioTests);
         Assert.Equal(h.ScenarioSkipped, back.ScenarioSkipped);
+    }
+
+    [Fact]
+    public async Task The_scenarios_2_example_reads_its_api_rows_verbatim_and_lists_them_as_skipped_until_scenarios_3()
+    {
+        var h = await Load(Dir(fixture: "handover-scenarios-2.example.json"));
+        Assert.Single(h.ScenarioTests);
+        var a = Assert.Single(h.ApiScenarios);
+        Assert.Equal(("ORD-1-ts-01", "tagOrders", "POST", "/orders/tags"), (a.Id, a.OperationId, a.Method, a.OpPath));
+        Assert.Equal("test-scenarios/ORD-1-ts-01.yaml", a.Path);
+        Assert.Equal([1, 2], a.Examples.Select(e => e.Index));
+        var first = a.Examples[0];
+        Assert.Equal("prefix match", first.Title);
+        Assert.Equal("orders/Order", first.Given.Single().Item1);
+        Assert.Equal(["{\"id\":1,\"ref\":\"A-100\"}", "{\"id\":2,\"ref\":\"B-200\"}"], first.Given.Single().Item2);
+        Assert.Equal(["{\"id\":1,\"tag\":\"Priority\"}", "{\"id\":2,\"tag\":null}"], first.Then.Single().Item2);
+        Assert.Empty(a.Examples[1].Given);
+        Assert.All(a.Examples, e => Assert.True(Microsoft.FSharp.Core.OptionModule.IsNone(e.Request)));
+        var ent = Assert.Single(h.Entities);
+        Assert.Equal(("orders/Order", "orders", "Order", 1), (ent.Id, ent.Pack, ent.Name, ent.Version));
+        Assert.Equal([("ref", "string"), ("tag", "string")], ent.Fields.Select(f => f.ToValueTuple()));
+        Assert.Contains(("ORD-1-ts-01", DesigncHandoverReader.ApiNeedsRequest), h.ScenarioSkipped.Select(k => k.ToValueTuple()));
+        Assert.Contains(("ORD-1-ts-02", "minted: a person binds it before a test is generated"), h.ScenarioSkipped.Select(k => k.ToValueTuple()));
+    }
+
+    [Fact]
+    public async Task The_scenarios_1_fixture_has_no_api_scenarios_or_entities()
+    {
+        var h = await Load(Dir());
+        Assert.Empty(h.ApiScenarios);
+        Assert.Empty(h.Entities);
+    }
+
+    [Fact]
+    public async Task The_api_scenarios_survive_the_handover_json_round_trip()
+    {
+        var h = await Load(Dir(fixture: "handover-scenarios-2.example.json"));
+        var back = Factory.Core.Core.ParseHandover(Factory.Core.Core.HandoverJson(h));
+        Assert.Equal(h.ApiScenarios, back.ApiScenarios);
+        Assert.Equal(h.Entities, back.Entities);
     }
 }

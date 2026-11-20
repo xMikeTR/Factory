@@ -225,7 +225,42 @@ module Json =
                          collect (arr "$" o "dependencies") (fun p n ->
                              let eo = obj p n
                              { Element = ElementId(str p eo "element")
-                               Allows = strs p eo "allows" |> List.map ElementId }))) })
+                               Allows = strs p eo "allows" |> List.map ElementId })))
+
+              ApiScenarios =
+                collect (arr "$" o "apiScenarios") (fun p n ->
+                    let ao = obj p n
+                    let rowSet q (v: JsonNode) =
+                        let go = obj q v
+                        str q go "entity", collect (arr q go "rows") (fun _ x -> x.ToJsonString())
+                    { Id = str p ao "id"
+                      Path = str p ao "path"
+                      Sha256 = str p ao "sha256"
+                      OperationId = str p ao "operationId"
+                      Method = str p ao "method"
+                      OpPath = str p ao "opPath"
+                      Examples =
+                        collect (arr p ao "examples") (fun q e ->
+                            let eo = obj q e
+                            { Index = int q eo "index" 0
+                              Title = str q eo "title"
+                              Given = collect (arr q eo "given") rowSet
+                              Then = collect (arr q eo "then") rowSet
+                              Request =
+                                (match eo.["request"] with
+                                 | null -> None
+                                 | rq ->
+                                     let ro = obj $"{q}.request" rq
+                                     Some { Body = optStr ro "body"
+                                            Path = collect (arr q ro "path") (fun r x -> let xo = obj r x in str r xo "name", str r xo "value") }) }) })
+              Entities =
+                collect (arr "$" o "entities") (fun p n ->
+                    let eo = obj p n
+                    { Id = str p eo "id"
+                      Pack = str p eo "pack"
+                      Name = str p eo "name"
+                      Version = int p eo "version" 1
+                      Fields = collect (arr p eo "fields") (fun q f -> let fo = obj q f in str q fo "name", str q fo "type") }) })
 
     // ---------- plan ----------
 
@@ -415,6 +450,37 @@ module Json =
                                       "allows", JsonArray(d.Allows |> List.map (fun a -> JsonValue.Create a.Value :> JsonNode) |> Array.ofList) ])
                            |> Array.ofList)
                    | None -> ()
+                   if not h.ApiScenarios.IsEmpty then
+                       let rowSet (entity: string, rows: string list) =
+                           node [ "entity", JsonValue.Create entity; "rows", JsonArray(rows |> List.map (fun r -> JsonNode.Parse r) |> Array.ofList) ]
+                       let example (e: ApiExample) : JsonNode =
+                           node [ "index", JsonValue.Create e.Index
+                                  "title", JsonValue.Create e.Title
+                                  "given", JsonArray(e.Given |> List.map rowSet |> Array.ofList)
+                                  "then", JsonArray(e.Then |> List.map rowSet |> Array.ofList)
+                                  match e.Request with
+                                  | Some r ->
+                                      "request",
+                                      node [ match r.Body with Some b -> "body", JsonValue.Create b | None -> ()
+                                             "path", JsonArray(r.Path |> List.map (fun (k, v) -> node [ "name", JsonValue.Create k; "value", JsonValue.Create v ]) |> Array.ofList) ]
+                                  | None -> () ]
+                       let scenario (a: ApiScenario) =
+                           node [ "id", JsonValue.Create a.Id
+                                  "path", JsonValue.Create a.Path
+                                  "sha256", JsonValue.Create a.Sha256
+                                  "operationId", JsonValue.Create a.OperationId
+                                  "method", JsonValue.Create a.Method
+                                  "opPath", JsonValue.Create a.OpPath
+                                  "examples", JsonArray(a.Examples |> List.map example |> Array.ofList) ]
+                       "apiScenarios", JsonArray(h.ApiScenarios |> List.map scenario |> Array.ofList)
+                   if not h.Entities.IsEmpty then
+                       let entity (e: EntityDef) =
+                           node [ "id", JsonValue.Create e.Id
+                                  "pack", JsonValue.Create e.Pack
+                                  "name", JsonValue.Create e.Name
+                                  "version", JsonValue.Create e.Version
+                                  "fields", JsonArray(e.Fields |> List.map (fun (n, t) -> node [ "name", JsonValue.Create n; "type", JsonValue.Create t ]) |> Array.ofList) ]
+                       "entities", JsonArray(h.Entities |> List.map entity |> Array.ofList)
                    if not h.ApiContractTexts.IsEmpty then
                        "apiContractTexts", JsonArray(h.ApiContractTexts |> List.map (fun t -> node [ "path", JsonValue.Create t.Path; "sha256", JsonValue.Create t.Sha256; "text", JsonValue.Create t.Text ]) |> Array.ofList) ]
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))
