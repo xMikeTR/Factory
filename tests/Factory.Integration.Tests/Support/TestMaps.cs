@@ -27,4 +27,12 @@ public static class TestMaps
             b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
             b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, Microsoft.FSharp.Collections.ListModule.OfSeq(screens),
             Microsoft.FSharp.Collections.ListModule.Empty<Tuple<string, string>>(), b.Interfaces, b.ApiContractTexts);
+
+    /// The handover with one served operation interface on `element` over this OpenAPI text, as a frozen handover would carry them.
+    public static Handover WithContract(this Handover b, string element, string path, string text) =>
+        new(b.Id, b.Digest, b.Elements, b.Decisions, b.ProtectedPaths, b.EventVocabulary, b.Relationships, b.AcceptanceSpecs,
+            b.WorkItem, b.DesignTokens, b.DesignVersion, b.AcceptanceCriteria, b.LoopSpecs, b.References, b.Contracts, b.Uncovered, b.ApiContracts,
+            b.RequirementRisk, b.RequirementDataClass, b.Ui, b.Tests, b.ScenarioTests, b.ScenarioSkipped,
+            Microsoft.FSharp.Collections.ListModule.OfSeq([new ElementInterface(element, "serves", element, "Consumer", "operation", "op", FSharpOption<string>.Some("GET"), FSharpOption<string>.Some("/x"), FSharpOption<string>.Some(path), "1")]),
+            Microsoft.FSharp.Collections.ListModule.OfSeq([new UiText(path, Factory.Harness.Registry.DesigncHandoverReader.Sha256(text), text)]));
 }

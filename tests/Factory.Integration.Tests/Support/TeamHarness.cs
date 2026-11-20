@@ -41,7 +41,7 @@ public sealed class TeamHarness : IDisposable
     /// Finds nothing unless a test queues mutants; consulted only when the quality policy turns mutation on.
     public ScriptedMutationRunner Mutation { get; } = new();
 
-    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string? suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa, IReadOnlyList<string>? commands = null, IContextSource? context = null, RoutingSetup? routing = null, Func<ISandboxFactory, ISandboxFactory>? wrapSandboxes = null, string? designcDir = null)
+    private TeamHarness(string root, Handover handover, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string? suiteCommand, MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa, IReadOnlyList<string>? commands = null, IContextSource? context = null, RoutingSetup? routing = null, Func<ISandboxFactory, ISandboxFactory>? wrapSandboxes = null, string? designcDir = null, ICodeGenerator? codegen = null, Func<FactorySettings, FactorySettings>? shapeSettings = null)
     {
         _root = root;
         Repo = Path.Combine(root, "repo");
@@ -49,6 +49,7 @@ public sealed class TeamHarness : IDisposable
         var state = Path.Combine(root, "state");
         var settings = new FactorySettings(Repo, Path.Combine(root, "registry"), "main", state, 3, limits,
             commands ?? ["dotnet build", "dotnet test", "ls"], suiteCommand, null, mergePolicy, qualityPolicy, DesigncDir: designcDir);
+        if (shapeSettings is not null) settings = shapeSettings(settings);
         ISandboxFactory sandboxes = new GatedSandboxFactory(new LocalSandboxFactory(), new HeavyGate(2));
         if (wrapSandboxes is not null) sandboxes = wrapSandboxes(sandboxes);
         var git = new GitWorkspace(Repo, state);
@@ -60,19 +61,20 @@ public sealed class TeamHarness : IDisposable
             sandboxes,
             pullRequests ?? new DryRunPullRequests(Path.Combine(state, "runs", RunId)),
             Reviewer,
-            Mutation, qa, context, routing: routing);
+            Mutation, qa, context, routing: routing, codegen: codegen);
     }
 
     /// `suiteCommand` is the integration test command (null: discovered from the repo); "true" writes no results, so there is no
     /// regression baseline and the P2P check is skipped.
     public static async Task<TeamHarness> CreateAsync(Microsoft.Extensions.AI.IChatClient model, Limits limits, string? suiteCommand = "true",
         MergePolicy? mergePolicy = null, IPullRequests? pullRequests = null, QualityPolicy? qualityPolicy = null, IQaRunner? qa = null, IReadOnlyList<string>? commands = null, IContextSource? context = null, RoutingSetup? routing = null,
-        Action<string>? seedRepo = null, Func<ISandboxFactory, ISandboxFactory>? wrapSandboxes = null, string? designcDir = null)
+        Action<string>? seedRepo = null, Func<ISandboxFactory, ISandboxFactory>? wrapSandboxes = null, string? designcDir = null,
+        ICodeGenerator? codegen = null, Func<Handover, Handover>? shapeHandover = null, Func<FactorySettings, FactorySettings>? shapeSettings = null)
     {
         var root = Directory.CreateTempSubdirectory("team-").FullName;
         var repo = Path.Combine(root, "repo");
         await InitRepoAsync(repo, seedRepo);
-        return await WireAsync(root, _ => model, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy, qa, commands, context, routing, wrapSandboxes, designcDir);
+        return await WireAsync(root, _ => model, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy, qa, commands, context, routing, wrapSandboxes, designcDir, codegen, shapeHandover, shapeSettings);
     }
 
     /// A real model per tier (opt-in live tests), dry-run merge.
@@ -96,11 +98,12 @@ public sealed class TeamHarness : IDisposable
     }
 
     private static async Task<TeamHarness> WireAsync(string root, Func<ModelTier, Microsoft.Extensions.AI.IChatClient> models, Limits limits, string? suiteCommand,
-        MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa, IReadOnlyList<string>? commands = null, IContextSource? context = null, RoutingSetup? routing = null, Func<ISandboxFactory, ISandboxFactory>? wrapSandboxes = null, string? designcDir = null)
+        MergePolicy? mergePolicy, IPullRequests? pullRequests, QualityPolicy? qualityPolicy, IQaRunner? qa, IReadOnlyList<string>? commands = null, IContextSource? context = null, RoutingSetup? routing = null, Func<ISandboxFactory, ISandboxFactory>? wrapSandboxes = null, string? designcDir = null, ICodeGenerator? codegen = null, Func<Handover, Handover>? shapeHandover = null, Func<FactorySettings, FactorySettings>? shapeSettings = null)
     {
         var handover = await new DesigncHandoverReader().LoadAsync(
             Path.Combine(AppContext.BaseDirectory, "Fixtures", "handover"), S2Config.Default, CancellationToken.None);
-        var h = new TeamHarness(root, handover, models, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy, qa, commands, context, routing, wrapSandboxes, designcDir);
+        if (shapeHandover is not null) handover = shapeHandover(handover);
+        var h = new TeamHarness(root, handover, models, limits, suiteCommand, mergePolicy, pullRequests, qualityPolicy, qa, commands, context, routing, wrapSandboxes, designcDir, codegen, shapeSettings);
         await h.Services.Git.EnsureIntegrationAsync(RunId, "main", CancellationToken.None);
         return h;
     }
