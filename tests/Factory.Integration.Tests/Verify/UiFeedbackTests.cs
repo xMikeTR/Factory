@@ -46,7 +46,10 @@ public sealed class UiFeedbackTests : IDisposable
                     Directory.CreateDirectory(Path.Combine(v, "ui"));
                     File.WriteAllText(Path.Combine(v, "ui", "html.meta.json.gz"), "x");
                 }
-                return Task.FromResult(new ProcessResult(1, File.ReadAllText(Path.Combine(Fx, name + ".output.txt")), TimeSpan.Zero, false));
+                // the recorded run named the report under its own temp dir: point it at this one
+                var output = System.Text.RegularExpressions.Regex.Replace(File.ReadAllText(Path.Combine(Fx, name + ".output.txt")),
+                    "JSON report written to .+", "JSON report written to " + Path.Combine(v, "json", "output.json"));
+                return Task.FromResult(new ProcessResult(1, output, TimeSpan.Zero, false));
             }
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
