@@ -54,6 +54,29 @@ module Codegen =
     /// The relative path (to the work dir) a generated file is written to: `out/<Repo>/<file>`.
     let outPath (repo: string) (file: string) = $"out/{repo}/{file}"
 
+    /// The one interface that serves an API scenario's operation: Role `serves`, the same operationId, method (any case) and path.
+    /// Anything but exactly one (the same element and file listed twice counts once) is an error that names the scenario.
+    let apiServing (h: Handover) (s: ApiScenario) : Result<ElementInterface, string> =
+        let hits =
+            h.Interfaces
+            |> List.filter (fun i ->
+                i.Kind = "operation" && i.Role = "serves" && i.Id = s.OperationId
+                && (i.Method |> Option.map (fun m -> m.ToUpperInvariant())) = Some(s.Method.ToUpperInvariant())
+                && i.Path = Some s.OpPath)
+            |> List.distinctBy (fun i -> i.Element, i.File)
+        match hits with
+        | [ i ] when i.File.IsSome -> Ok i
+        | [ _ ] -> Error $"API scenario {s.Id}: the serving interface of {s.OperationId} names no OpenAPI file"
+        | _ -> Error $"API scenario {s.Id}: {hits.Length} serving interfaces match {s.OperationId} {s.Method.ToUpperInvariant()} {s.OpPath}; need exactly one"
+
+    /// An example can be generated as a test only when it carries its request (designc scenarios/3).
+    let hasGeneratedExamples (s: ApiScenario) = s.Examples |> List.exists (fun e -> e.Request.IsSome)
+
+    /// NSwag's default client method for an operationId (MultipleClientsFromOperationId): the part after the last `_`, PascalCase, + `Async`.
+    let clientMethod (operationId: string) : string =
+        let last = operationId.Substring(operationId.LastIndexOf '_' + 1)
+        (if last.Length = 0 then last else string (System.Char.ToUpperInvariant last.[0]) + last.Substring 1) + "Async"
+
     /// The generated C# targets of a handover. Only operation interfaces of code-backed elements count (events have no
     /// NSwag output). `csharpRepos` is the policy's list; None means every repo that serves an operation in a split run, and "." in a single-repo run.
     let targets (h: Handover) (csharpRepos: string list option) : Result<Target list, string list> =
@@ -65,7 +88,16 @@ module Codegen =
                       match Map.tryFind i.Element specs, i.File with
                       | Some e, Some file ->
                           yield (defaultArg e.Repo "."), file, (if i.Role = "serves" then Server else Client)
-                      | _ -> () ]
+                      | _ -> ()
+              // A served source with a generated API scenario gets the client too: the generated tests call the operation through it.
+              for a in h.ApiScenarios do
+                  if hasGeneratedExamples a then
+                      match apiServing h a with
+                      | Ok i ->
+                          match Map.tryFind i.Element specs with
+                          | Some e -> yield (defaultArg e.Repo "."), i.File.Value, Client
+                          | None -> ()
+                      | Error _ -> () ]
         let wanted =
             match csharpRepos with
             | Some repos -> Set.ofList repos

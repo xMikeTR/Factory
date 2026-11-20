@@ -34,6 +34,7 @@
     <Compile Include="SplitRepoTests.fs" />
     <Compile Include="AllowedEdgesTests.fs" />
     <Compile Include="CodegenTests.fs" />
+    <Compile Include="ApiScenariosTests.fs" />
     <Compile Include="GeneratedBoundaryTests.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
