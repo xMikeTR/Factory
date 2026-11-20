@@ -133,8 +133,27 @@ public static class CodegenPhase
         return JsonSerializer.Serialize(new { tools, files, sources });
     }
 
-    private sealed record ManifestFileRow(string repo, string path);
+    private sealed record ManifestFileRow(string repo, string path, string? source = null);
     private sealed record ManifestDoc(List<ManifestFileRow> files);
+
+    /// What the manifest lists as generated: (repo, path, source). Empty when nothing was generated.
+    public static IReadOnlyList<(string Repo, string Path, string Source)> GeneratedFiles(string runDir)
+    {
+        var path = Path.Combine(WorkDir(runDir), ManifestFile);
+        if (!File.Exists(path)) return [];
+        var doc = JsonSerializer.Deserialize<ManifestDoc>(File.ReadAllText(path));
+        return doc?.files.Select(f => (f.repo, f.path, f.source ?? "")).ToList() ?? [];
+    }
+
+    /// The brief section naming the generated code for these elements (null: all), or null when there is none.
+    public static string? BriefSection(Handover handover, IReadOnlyList<(string Repo, string Path, string Source)> files, IEnumerable<string>? elements = null)
+    {
+        if (files.Count == 0) return null;
+        var lines = Codegen.briefLines(handover, ListModule.OfSeq(files.Select(f => Tuple.Create(f.Repo, f.Path, f.Source))),
+            elements is null ? FSharpOption<FSharpList<string>>.None : FSharpOption<FSharpList<string>>.Some(ListModule.OfSeq(elements)));
+        var section = Codegen.briefSection(lines);
+        return FSharpOption<string>.get_IsSome(section) ? section.Value : null;
+    }
 
     private static GitWorkspace GitFor(FactoryServices svc, string repo) =>
         repo != "." && svc.RepoGits.TryGetValue(repo, out var g) ? g : svc.Git;

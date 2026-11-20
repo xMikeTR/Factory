@@ -19,7 +19,8 @@ public static class Briefs
     public static TaskBrief Task(
         Handover handover, PlannedTask task, IEnumerable<PathPattern> writable,
         string? approachNote, string? lastFailures, string? resolvedDecision,
-        IReadOnlyList<PackFile>? context = null, ContextBundle? bundle = null)
+        IReadOnlyList<PackFile>? context = null, ContextBundle? bundle = null,
+        IReadOnlyList<(string Repo, string Path, string Source)>? generated = null)
     {
         var elements = handover.Elements.Where(e => task.Elements.Contains(e.Id)).ToList();
         var decisions = handover.Decisions
@@ -51,6 +52,9 @@ public static class Briefs
             foreach (var d in decisions)
                 sb.AppendLine($"- {d.Id.Value}{(task.Covers.Contains(d.Id) ? " (this task proves it)" : "")}: {d.Statement}");
         }
+
+        if (generated is { Count: > 0 } && CodegenPhase.BriefSection(handover, generated, task.Elements.Select(e => e.Value)) is { } generatedSection)
+            sb.AppendLine().Append(generatedSection);
 
         if (!handover.EventVocabulary.IsEmpty)
         {

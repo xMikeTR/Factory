@@ -92,6 +92,9 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
             {handoverJson}
             ```
             """;
+        // Only when something was generated: otherwise the brief is byte-identical to what it always was.
+        if (CodegenPhase.BriefSection(handover, CodegenPhase.GeneratedFiles(svc.Settings.RunDir(runId))) is { } generated)
+            brief += "\n\n" + generated.TrimEnd();
         if (errors is not null)
             brief += $"""
 

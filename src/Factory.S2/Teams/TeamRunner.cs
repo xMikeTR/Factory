@@ -411,6 +411,7 @@ internal sealed class TaskLoop(
     private string? _contextRole;
     private System.Diagnostics.Activity? _span;
     private ContextBundle? _bundle; // the phase's bundle when injection is on; null otherwise
+    private IReadOnlyList<(string Repo, string Path, string Source)>? _generated; // the codegen manifest's files, read once per task
 
     private async Task<TaskState> PlanTurnAsync(TaskState state, ModelTier tier, CancellationToken ct)
     {
@@ -860,7 +861,7 @@ internal sealed class TaskLoop(
             : $"These changes were outside your writes and were reverted: {_reverted}\n\n{_lastFailures}".TrimEnd();
         if (_repair is not null) failures = $"{_repair}\n\n{failures}".TrimEnd();
         if (_handoff is not null) failures = $"{_handoff}\n\n{failures}".TrimEnd();
-        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context, _bundle) with { Images = _repairImages };
+        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context, _bundle, _generated ??= CodegenPhase.GeneratedFiles(svc.Settings.RunDir(runId))) with { Images = _repairImages };
     }
 
     private bool InScope(string path, IEnumerable<PathPattern> writable) =>

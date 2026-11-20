@@ -164,4 +164,31 @@ let tests: (string * (unit -> unit)) list =
           let baseline = Map.ofList [ $"{r}/A/A.Dtos.g.cs", "1"; $"{r}/A/A.Server.g.cs", "2"; $"{r}/B/B.Dtos.g.cs", "3"; "src/other.cs", "9" ]
           let current = Map.ofList [ $"{r}/A/A.Dtos.g.cs", "1"; $"{r}/A/A.Server.g.cs", "X"; $"{r}/C/extra.cs", "4"; "src/new.cs", "5" ]
           equal [ $"added: {r}/C/extra.cs"; $"missing: {r}/B/B.Dtos.g.cs"; $"modified: {r}/A/A.Server.g.cs" ] (Codegen.drift baseline current) "drift"
-          equal [] (Codegen.drift baseline baseline) "none" ]
+          equal [] (Codegen.drift baseline baseline) "none"
+      "codegen brief: serves with C#, calls with a TS client, calls with a C# client, in id, role, element order", fun () ->
+          let h =
+              withIfaces [ elem "Shop/Api" (Some "Api"); elem "Ui" (Some "Ui"); elem "Worker" (Some "Worker") ]
+                  [ op "Shop/Api" "serves" "listOrders" (Some "get") (Some "/orders") "contracts/openapi/shop.yaml"
+                    op "Ui" "calls" "listOrders" (Some "get") (Some "/orders") "contracts/openapi/shop.yaml"
+                    op "Worker" "calls" "listOrders" (Some "get") (Some "/orders") "contracts/openapi/shop.yaml"
+                    op "Shop/Api" "serves" "audit" None None "contracts/openapi/shop.yaml" ]
+          let files =
+              [ "Api", "generated/contracts/csharp/Shop/Shop.Server.g.cs", "contracts/openapi/shop.yaml"
+                "Api", "generated/contracts/csharp/Shop/Shop.Dtos.g.cs", "contracts/openapi/shop.yaml"
+                "Ui", "generated/contracts/ts/Shop/Shop.client.ts", "contracts/openapi/shop.yaml"
+                "Worker", "generated/contracts/csharp/Shop/Shop.Client.g.cs", "contracts/openapi/shop.yaml" ]
+          equal
+              [ "- `audit` (contracts/openapi/shop.yaml), served by Shop/Api: implement `IShopController` from `generated/contracts/csharp/Shop/Shop.Server.g.cs`; DTOs are in `Shop.Dtos.g.cs` (namespace `Contracts.Shop`)"
+                "- `listOrders` (GET /orders, contracts/openapi/shop.yaml), called by Ui: call `createShopClient(baseUrl).listOrders(...)` from `generated/contracts/ts/Shop/Shop.client.ts`"
+                "- `listOrders` (GET /orders, contracts/openapi/shop.yaml), called by Worker: call `IShopClient` (`ShopClient`) from `generated/contracts/csharp/Shop/Shop.Client.g.cs`"
+                "- `listOrders` (GET /orders, contracts/openapi/shop.yaml), served by Shop/Api: implement `IShopController` from `generated/contracts/csharp/Shop/Shop.Server.g.cs`; DTOs are in `Shop.Dtos.g.cs` (namespace `Contracts.Shop`)" ]
+              (Codegen.briefLines h files None) "lines"
+          equal [ "- `listOrders` (GET /orders, contracts/openapi/shop.yaml), called by Ui: call `createShopClient(baseUrl).listOrders(...)` from `generated/contracts/ts/Shop/Shop.client.ts`" ]
+              (Codegen.briefLines h files (Some [ "Ui" ])) "an element excluded by the task gets no line"
+          equal [] (Codegen.briefLines h [] None) "no generated files, no lines"
+          equal None (Codegen.briefSection []) "no section"
+      "codegen brief: a serving repo with only a TS schema is pointed at the schema types", fun () ->
+          let h = withIfaces [ elem "Api" (Some "Api") ] [ op "Api" "serves" "listOrders" (Some "get") (Some "/orders") "c/shop.yaml" ]
+          equal [ "- `listOrders` (GET /orders, c/shop.yaml), served by Api: use the types in `generated/contracts/ts/Shop/Shop.schema.ts` (`operations[\"listOrders\"]`)" ]
+              (Codegen.briefLines h [ "Api", "generated/contracts/ts/Shop/Shop.schema.ts", "c/shop.yaml" ] None) "schema"
+          check ((Codegen.briefSection [ "- x" ]).Value.StartsWith "## Generated contract code (read-only; the Factory wrote it before you plan)\n\nTasks implement") "section" ]

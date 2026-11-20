@@ -240,3 +240,56 @@ module Codegen =
           for KeyValue(p, _) in current do
               if under p && not (baseline.ContainsKey p) then yield $"added: {p}" ]
         |> List.sort
+
+    /// One line per operation interface that the generated code covers: what to implement or call, never NSwag's method names
+    /// (they come from NSwag's own generator). `files` are the manifest's (repo, path, source); `elements` limits to those element ids (None: all).
+    let briefLines (h: Handover) (files: (string * string * string) list) (elements: string list option) : string list =
+        let specs = h.Elements |> List.map (fun e -> e.Id.Value, e) |> Map.ofList
+        let inScope (e: string) = match elements with None -> true | Some l -> List.contains e l
+        [ for i in h.Interfaces do
+              if i.Kind = "operation" && (i.Role = "serves" || i.Role = "calls") && inScope i.Element then
+                  match Map.tryFind i.Element specs, i.File with
+                  | Some e, Some source ->
+                      let repo = defaultArg e.Repo "."
+                      let st = stem source
+                      let has (suffix: string) = files |> List.tryFind (fun (r, p, s) -> r = repo && s = source && p.EndsWith(suffix, System.StringComparison.Ordinal))
+                      let where =
+                          match i.Method, i.Path with
+                          | Some m, Some p -> $"{m.ToUpperInvariant()} {p}, {source}"
+                          | _ -> source
+                      let ns = "Contracts." + st
+                      let what =
+                          if i.Role = "serves" then
+                              match has ".Server.g.cs", has ".schema.ts" with
+                              | Some (_, p, _), _ ->
+                                  Some $"served by {i.Element}: implement `I{st}Controller` from `{p}`; DTOs are in `{st}.Dtos.g.cs` (namespace `{ns}`)"
+                              | None, Some (_, p, _) ->
+                                  Some $"served by {i.Element}: use the types in `{p}` (`operations[\"{i.Id}\"]`)"
+                              | _ -> None
+                          else
+                              match has ".client.ts", has ".Client.g.cs" with
+                              | Some (_, p, _), _ ->
+                                  Some $"called by {i.Element}: call `create{st}Client(baseUrl).{i.Id}(...)` from `{p}`"
+                              | None, Some (_, p, _) ->
+                                  Some $"called by {i.Element}: call `I{st}Client` (`{st}Client`) from `{p}`"
+                              | _ -> None
+                      match what with
+                      | Some w -> yield i.Id, i.Role, i.Element, $"- `{i.Id}` ({where}), {w}"
+                      | None -> ()
+                  | _ -> () ]
+        |> List.sortWith (fun (a, ar, ae, _) (b, br, be, _) ->
+            match System.String.CompareOrdinal(a, b) with
+            | 0 -> (match System.String.CompareOrdinal(ar, br) with 0 -> System.String.CompareOrdinal(ae, be) | c -> c)
+            | c -> c)
+        |> List.map (fun (_, _, _, line) -> line)
+        |> List.distinct
+
+    /// The brief section naming the generated code, or None when there is nothing to name.
+    let briefSection (lines: string list) : string option =
+        if lines.IsEmpty then None
+        else
+            Some(
+                "## Generated contract code (read-only; the Factory wrote it before you plan)\n\n"
+                + "Tasks implement the generated server interfaces and call the generated clients; never plan a write under `generated/contracts/**`, and never plan a hand-written client, DTO or server interface for these operations.\n\n"
+                + String.concat "\n" lines
+                + "\n")
