@@ -32,6 +32,7 @@
     <Compile Include="RouterTests.fs" />
     <Compile Include="LearningTests.fs" />
     <Compile Include="SplitRepoTests.fs" />
+    <Compile Include="AllowedEdgesTests.fs" />
     <Compile Include="CodegenTests.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>

@@ -55,26 +55,26 @@ public static class QualityGate
             .Where(kv => kv.Key.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(worktree, kv.Key)))
             .SelectMany(kv => Ranges(kv.Key, kv.Value)).ToList();
 
-    /// The fitness ratchet for one task: project references the diff added or changed that the model does
-    /// not allow, minus the element pairs the baseline already crossed (those are debt, not this task's).
-    public static async Task<IReadOnlyList<FitnessViolation>> FitnessAsync(
-        GitWorkspace git, string worktree, string runId, Handover handover, CancellationToken ct)
+    /// The allow-list ratchet for project references: references the diff added or changed that the design does not allow
+    /// between two of its elements, minus the element pairs the baseline already crossed (those are debt, not this task's).
+    public static async Task<IReadOnlyList<AllowViolation>> AllowedAsync(
+        GitWorkspace git, string worktree, string runId, Handover handover, string? repo, CancellationToken ct)
     {
-        var (before, current) = await FitnessJudgedAsync(git, worktree, runId, handover, ct);
-        return Fitness.newSince(before, current).ToList();
+        var (before, current) = await AllowedJudgedAsync(git, worktree, runId, handover, repo, ct);
+        return AllowedEdges.newSince(before, current).ToList();
     }
 
     /// The debt the ratchet lets through: element pairs the touched projects already crossed on the baseline and still cross.
-    public static async Task<IReadOnlyList<(ElementId From, ElementId To)>> FitnessDebtAsync(
-        GitWorkspace git, string worktree, string runId, Handover handover, CancellationToken ct)
+    public static async Task<IReadOnlyList<(ElementId From, ElementId To)>> AllowedDebtAsync(
+        GitWorkspace git, string worktree, string runId, Handover handover, string? repo, CancellationToken ct)
     {
-        var (before, current) = await FitnessJudgedAsync(git, worktree, runId, handover, ct);
-        return Fitness.debt(before, current).Select(p => (p.Item1, p.Item2)).ToList();
+        var (before, current) = await AllowedJudgedAsync(git, worktree, runId, handover, repo, ct);
+        return AllowedEdges.debt(before, current).Select(p => (p.Item1, p.Item2)).ToList();
     }
 
-    /// The model's verdict on the task-touched projects' references, as on the baseline and as in the worktree.
-    private static async Task<(FSharpList<FitnessViolation> Before, FSharpList<FitnessViolation> Current)> FitnessJudgedAsync(
-        GitWorkspace git, string worktree, string runId, Handover handover, CancellationToken ct)
+    /// The design's verdict on the task-touched projects' references, as on the baseline and as in the worktree.
+    private static async Task<(FSharpList<AllowViolation> Before, FSharpList<AllowViolation> Current)> AllowedJudgedAsync(
+        GitWorkspace git, string worktree, string runId, Handover handover, string? repo, CancellationToken ct)
     {
         var projects = (await git.TaskPathsAsync(worktree, runId, ct))
             .Where(p => p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(worktree, p))).ToList();
@@ -85,9 +85,15 @@ public static class QualityGate
             current.AddRange(CsprojEdges.Read(p, await File.ReadAllTextAsync(Path.Combine(worktree, p), ct)));
             if (await git.BaseFileAsync(worktree, runId, p, ct) is { } old) before.AddRange(CsprojEdges.Read(p, old));
         }
-        var judge = (IEnumerable<CodeEdge> edges) => Fitness.violations(handover.Elements, handover.Relationships, Core.ToList(edges));
-        return (judge(before), judge(current));
+        return Judge(handover, FsOption(repo), EdgeKind.ProjectReference, before, current);
     }
+
+    /// Judge baseline and current edges against the design's allow list (shared by the project, assembly and import checks).
+    public static (FSharpList<AllowViolation> Before, FSharpList<AllowViolation> Current) Judge(
+        Handover handover, FSharpOption<string> repo, EdgeKind kind, IEnumerable<CodeEdge> before, IEnumerable<CodeEdge> current) =>
+        (AllowedEdges.violations(handover, repo, kind, Core.ToList(before)), AllowedEdges.violations(handover, repo, kind, Core.ToList(current)));
+
+    private static FSharpOption<string> FsOption(string? s) => s is null ? FSharpOption<string>.None : FSharpOption<string>.Some(s);
 
     /// Test files the task touched that assert less than they did on the integration branch (deleted ones count as zero).
     public static async Task<IReadOnlyList<AssertionDrop>> AssertionsAsync(GitWorkspace git, string worktree, string runId, CancellationToken ct)

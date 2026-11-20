@@ -626,13 +626,15 @@ internal sealed class TaskLoop(
             "The change leaves code harder to maintain than the policy allows. Simplify it (extract, flatten, remove branches):\n" + string.Join("\n", lines)) : null;
     }
 
+    private string? Repo => AllowedEdges.taskRepo(handover.Elements, task) is { } r ? r.Value : null;
+
     private readonly HashSet<(ElementId, ElementId)> _debtLogged = [];
 
     /// Element pairs the code already crossed with no relationship in the model: not the task's doing, so not blocking,
     /// but ledgered (once per pair) for Designc as `asbuilt_edge` so the model or the code can catch up.
     private async Task LogDebtAsync(CancellationToken ct)
     {
-        foreach (var (from, to) in await QualityGate.FitnessDebtAsync(svc.Git, worktree, runId, handover, ct))
+        foreach (var (from, to) in await QualityGate.AllowedDebtAsync(svc.Git, worktree, runId, handover, Repo, ct))
             if (_debtLogged.Add((from, to)))
                 await svc.LogAsync(runId, "quality", LedgerKinds.AsBuiltEdge, "debt",
                     JsonSerializer.Serialize(new { from = from.Value, to = to.Value }), _teamId, _taskId, ct);
@@ -886,7 +888,7 @@ internal sealed class TaskLoop(
     private async Task<List<string>> QualityLinesAsync(QualityPolicy policy, CancellationToken ct) =>
     [
         .. (await QualityGate.EvaluateAsync(svc.Git, worktree, runId, policy.Thresholds, ct, svc.Sandboxes, policy.Coverage)).Select(QualityLine),
-        .. (await QualityGate.FitnessAsync(svc.Git, worktree, runId, handover, ct)).Select(FitnessLine),
+        .. (await QualityGate.AllowedAsync(svc.Git, worktree, runId, handover, Repo, ct)).Select(AllowedEdges.line),
         .. (await QualityGate.ForbiddenAsync(svc.Git, worktree, runId, policy.Forbid, ct)).Select(RuleLine),
         .. (await TsGate.CheckAsync(svc.Sandboxes, svc.Git, worktree, runId, policy.Forbid, ct)).Select(RuleLine),
         .. (await NamespaceGate.CheckAsync(svc.Sandboxes, svc.Git, worktree, runId, policy.ForbidNamespaces, ct)).Select(RuleLine),
@@ -895,9 +897,6 @@ internal sealed class TaskLoop(
 
     private static string AssertionLine(AssertionDrop d) =>
         $"- {d.File}: {d.After} assertions, {d.Before} on the integration branch; tests must not get weaker (restore them, or add ones that check the new behaviour)";
-
-    private static string FitnessLine(FitnessViolation v) =>
-        $"- {v.Edge.Source} references {v.Edge.Target}: {v.FromElement.Value} may not depend on {v.ToElement.Value} (no such relationship in the model)";
 
     private static string RuleLine(RuleViolation v) => $"- {v.Edge.Source} references {v.Edge.Target}: forbidden by the repo's rules ({v.Rule.Why})";
 

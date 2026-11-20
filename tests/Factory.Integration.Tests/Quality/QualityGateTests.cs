@@ -97,7 +97,7 @@ public class FitnessGateTests
         var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
         await File.WriteAllTextAsync(Path.Combine(wt, "src/Fares.Data/Fares.Data.csproj"), RefsSurcharge);
 
-        var violations = await QualityGate.FitnessAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, CancellationToken.None);
+        var violations = await QualityGate.AllowedAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, null, CancellationToken.None);
 
         var v = Assert.Single(violations);
         Assert.Equal("Fares Platform/Bookings DB", v.FromElement.Value);
@@ -114,8 +114,8 @@ public class FitnessGateTests
         await h.GitIn(h.Services.Git.IntegrationPath(TeamHarness.RunId), "merge", "--ff-only", Factory.S2.Git.GitWorkspace.TeamBranch(TeamHarness.RunId, "team-x"));
         await File.WriteAllTextAsync(Path.Combine(wt, "src/Fares.Data/Fares.Data.csproj"), RefsSurcharge + "\n<!-- touched -->\n");
 
-        Assert.Empty(await QualityGate.FitnessAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, CancellationToken.None));
-        var debt = await QualityGate.FitnessDebtAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, CancellationToken.None);
+        Assert.Empty(await QualityGate.AllowedAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, null, CancellationToken.None));
+        var debt = await QualityGate.AllowedDebtAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, null, CancellationToken.None);
 
         Assert.Equal([(ElementId.NewElementId("Fares Platform/Bookings DB"), ElementId.NewElementId("Fares Platform/Surcharge Engine"))], debt);
     }
