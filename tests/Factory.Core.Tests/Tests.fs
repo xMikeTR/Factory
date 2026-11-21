@@ -439,26 +439,6 @@ let tests: (string * (unit -> unit)) list =
           equal [] (Quality.check t [] [ f 100 99 ] [ { File = "b.cs"; First = 100; Last = 100 } ]) "other file touched"
 
       // ---------- fitness ----------
-      "fitness: a code edge between two elements must be a modelled relationship, in that direction", fun () ->
-          let el id area = { Id = ElementId id; Name = id; CodeAreas = [ PathPattern.createOrFail area ]; Risk = Low; InScope = true; Repo = None }
-          let elements = [ el "api" "src/Api/**"; el "surcharge" "src/Surcharge/**"; el "db" "src/Db/**" ]
-          let rels = [ { From = ElementId "api"; To = ElementId "surcharge" } ]
-          let edge a b = { Source = a; Target = b }
-          let vs es = Fitness.violations elements rels es |> List.map (fun v -> v.FromElement.Value, v.ToElement.Value)
-          equal [] (vs [ edge "src/Api/Api.csproj" "src/Surcharge/Surcharge.csproj" ]) "modelled"
-          equal [ "surcharge", "api" ] (vs [ edge "src/Surcharge/Surcharge.csproj" "src/Api/Api.csproj" ]) "the model says api -> surcharge, not back"
-          equal [ "api", "db" ] (vs [ edge "src/Api/Api.csproj" "src/Db/Db.csproj" ]) "no relationship"
-          equal [] (vs [ edge "src/Api/Api.csproj" "src/Api/Api.Tests.csproj" ]) "inside one element"
-          equal [] (vs [ edge "src/Api/Api.csproj" "src/Shared/Shared.csproj" ]) "unowned code is not judged"
-      "fitness: only element pairs the baseline did not already cross are new", fun () ->
-          let v a b = { Edge = { Source = "x"; Target = "y" }; FromElement = ElementId a; ToElement = ElementId b }
-          let isNew = Fitness.newSince [ v "api" "db" ] [ v "api" "db"; v "surcharge" "db" ] |> List.map (fun x -> x.FromElement.Value)
-          equal [ "surcharge" ] isNew "api->db is debt, surcharge->db is new"
-      "fitness: debt is each element pair the baseline crossed that the code still crosses, once", fun () ->
-          let v a b src = { Edge = { Source = src; Target = "y" }; FromElement = ElementId a; ToElement = ElementId b }
-          let pairs = Fitness.debt [ v "api" "db" "a"; v "web" "db" "w" ] [ v "api" "db" "a"; v "api" "db" "b"; v "surcharge" "db" "r" ]
-          equal [ ElementId "api", ElementId "db" ] pairs "web->db was removed, surcharge->db is new, api->db once"
-
       "fitness: a hand-written rule forbids edges by path and only new crossings are the task's", fun () ->
           let rule = { From = PathPattern.createOrFail "src/Domain/**"; To = PathPattern.createOrFail "src/Infra/**"; Why = "domain must not know infrastructure" }
           let edge a b = { Source = a; Target = b }
@@ -884,6 +864,10 @@ let tests: (string * (unit -> unit)) list =
     @ Factory.Core.Tests.RouterTests.tests
     @ Factory.Core.Tests.LearningTests.tests
     @ Factory.Core.Tests.SplitRepoTests.tests
+    @ Factory.Core.Tests.AllowedEdgesTests.tests
+    @ Factory.Core.Tests.CodegenTests.tests
+    @ Factory.Core.Tests.ApiScenariosTests.tests
+    @ Factory.Core.Tests.GeneratedBoundaryTests.tests
     @ Factory.Core.Tests.TraceTests.tests
     @ Factory.Core.Tests.ProofTests.tests
     @ Factory.Core.Tests.AssertionGuardTests.tests

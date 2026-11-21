@@ -67,6 +67,17 @@ public class BugIntakeTests
     }
 
     [Fact]
+    public async Task An_escape_tied_to_a_scenario_is_a_spec_gap_and_nothing_else()
+    {
+        var reg = TempRegistry();
+        var scenario = Good with { CaughtBy = "scenario", Reference = "ORD-1-ts-01" };
+        Assert.Null(await BugIntake.RecordAsync(reg, scenario, DateTimeOffset.UnixEpoch, CancellationToken.None));
+        using var doc = System.Text.Json.JsonDocument.Parse(Assert.Single(await File.ReadAllLinesAsync(Path.Combine(reg, "ledger", "designc.jsonl"))));
+        Assert.Equal(("spec_gap", "scenario"), (doc.RootElement.GetProperty("origin").GetString(), doc.RootElement.GetProperty("caught_by").GetString()));
+        Assert.Contains("spec_gap", await TryAsync(scenario with { Origin = "translation_error", Reference = "T-1" }));
+    }
+
+    [Fact]
     public async Task A_catalogue_gap_origin_closes_and_is_a_known_designc_origin()
     {
         Assert.Contains("catalogue_gap", DesigncSchema.StringList("origins"));

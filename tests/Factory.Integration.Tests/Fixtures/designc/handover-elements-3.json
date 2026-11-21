@@ -1,0 +1,165 @@
+{
+  "schema": "designc.handover.elements/3",
+  "elements": [
+    {
+      "id": "Shop",
+      "name": "Shop",
+      "kind": "softwareSystem",
+      "in_scope": false
+    },
+    {
+      "id": "Shop/Web",
+      "name": "Web",
+      "kind": "container",
+      "code": [
+        "web/**"
+      ],
+      "risk": "low",
+      "repo": "Ui",
+      "in_scope": true,
+      "interfaces": [
+        {
+          "role": "calls",
+          "rel": {
+            "from": "Shop/Web",
+            "to": "Shop/Api"
+          },
+          "kind": "operation",
+          "id": "listOrders",
+          "method": "GET",
+          "path": "/orders",
+          "file": "contracts/openapi/shop.yaml",
+          "schema": {
+            "operationId": "listOrders",
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "ref": {
+                          "type": "string"
+                        },
+                        "parent": {
+                          "$ref": "#/components/schemas/Order"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "version": "e4d923886810a964"
+        }
+      ]
+    },
+    {
+      "id": "Shop/Api",
+      "name": "Api",
+      "kind": "container",
+      "code": [
+        "api/**"
+      ],
+      "risk": "low",
+      "repo": "Api",
+      "in_scope": false,
+      "interfaces": [
+        {
+          "role": "publishes",
+          "rel": {
+            "from": "Shop/Api",
+            "to": "Shop/Mail"
+          },
+          "kind": "event",
+          "id": "orders/OrderPlaced",
+          "pack": "orders",
+          "name": "OrderPlaced",
+          "fields": [
+            {
+              "name": "orderId",
+              "type": "string"
+            }
+          ],
+          "version": "094b1ef810d06fd4"
+        },
+        {
+          "role": "serves",
+          "rel": {
+            "from": "Shop/Web",
+            "to": "Shop/Api"
+          },
+          "kind": "operation",
+          "id": "listOrders",
+          "method": "GET",
+          "path": "/orders",
+          "file": "contracts/openapi/shop.yaml",
+          "schema": {
+            "operationId": "listOrders",
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "ref": {
+                          "type": "string"
+                        },
+                        "parent": {
+                          "$ref": "#/components/schemas/Order"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "version": "e4d923886810a964"
+        }
+      ]
+    },
+    {
+      "id": "Shop/Mail",
+      "name": "Mail",
+      "kind": "container",
+      "in_scope": false,
+      "interfaces": [
+        {
+          "role": "consumes",
+          "rel": {
+            "from": "Shop/Api",
+            "to": "Shop/Mail"
+          },
+          "kind": "event",
+          "id": "orders/OrderPlaced",
+          "pack": "orders",
+          "name": "OrderPlaced",
+          "fields": [
+            {
+              "name": "orderId",
+              "type": "string"
+            }
+          ],
+          "version": "094b1ef810d06fd4"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Shop/Web",
+      "to": "Shop/Api"
+    },
+    {
+      "from": "Shop/Api",
+      "to": "Shop/Mail"
+    }
+  ],
+  "events": [],
+  "reserved": [
+    "tests/acceptance/**"
+  ]
+}

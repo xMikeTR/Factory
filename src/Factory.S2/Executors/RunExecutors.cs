@@ -179,6 +179,12 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
             return;
         }
 
+        if (await GeneratedCodeChangedAsync(msg.RunId, cancellationToken) is { } generatedChanged)
+        {
+            await context.SendMessageAsync(generatedChanged, cancellationToken: cancellationToken);
+            return;
+        }
+
         var outcomes = new List<VerifyOutcome>();
         if (split)
         {
@@ -199,6 +205,10 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
 
         var uiOutcomes = await UiChecksAsync(msg.RunId, integration, timeout, cancellationToken);
         outcomes.AddRange(uiOutcomes);
+
+        // The generated API tests judge the serving repos after their own suites; nothing to do when none were seeded.
+        if (!svc.LoadHandover(msg.RunId).ApiScenarios.IsEmpty)
+            outcomes.AddRange(await new ApiScenarioCheck(svc).RunAsync(msg.RunId, svc.LoadHandover(msg.RunId), svc.LoadValidatedPlan(msg.RunId).Plan.Tasks, cancellationToken));
 
         if (s.TokenLintCommand is not null && FSharpOption<string>.get_IsSome(svc.LoadHandover(msg.RunId).DesignTokens))
             outcomes.Add(await TokenLintAsync(msg.RunId, integration, cancellationToken));
@@ -334,6 +344,18 @@ internal sealed class IntegrationVerifyExecutor(FactoryServices svc) : Executor(
                 payload: JsonSerializer.Serialize(new { screen = screen.Screen, commit, outcome = "fail" }), ct: ct);
         return new RunFinished(runId, "integration_failed",
             "The approved UI files changed after they were seeded:\n" + string.Join("\n", drift.Select(l => "- " + l)));
+    }
+
+    /// The generated contract code is the Factory's: any file under generated/contracts/ (csharp and ts) that differs from what was seeded (or is new) fails the run.
+    private async Task<RunFinished?> GeneratedCodeChangedAsync(string runId, CancellationToken ct)
+    {
+        var drift = CodegenPhase.Drift(svc, runId);
+        if (drift.Count == 0) return null;
+        foreach (var (repo, lines) in drift)
+            await svc.LogAsync(runId, "integration_verify", LedgerKinds.Verify, outcome: "generated_code_modified",
+                payload: JsonSerializer.Serialize(new { repo, drift = lines }), ct: ct);
+        return new RunFinished(runId, "integration_failed",
+            "Generated code changed after it was seeded:\n" + string.Join("\n", drift.SelectMany(d => d.Drift.Select(l => "- " + (svc.IsSplit ? d.Repo + ": " : "") + l))));
     }
 
     /// The decisions' checks run against the registry; `p check` needs the registry's P sources compiled once, in the
@@ -524,25 +546,28 @@ internal sealed class MergeExecutor(FactoryServices svc) : Executor("Merge")
     /// Lines and files changed against the base, summed over every repo of a split run.
     private async Task<(int Lines, List<string> Files)> DiffStatsAsync(string runId, CancellationToken ct)
     {
-        if (!svc.IsSplit) return await WithoutSeededUiFilesAsync(runId, svc.Git, await svc.Git.DiffStatsAsync(runId, svc.Settings.BaseBranch, ct), ct);
+        if (!svc.IsSplit) return await WithoutSeededFilesAsync(runId, svc.Git, await svc.Git.DiffStatsAsync(runId, svc.Settings.BaseBranch, ct), ct, repo: ".");
         var lines = 0;
         var files = new List<string>();
         foreach (var repo in SplitMerge.Order(svc.RepoGits.Keys))
         {
-            var (l, f) = await WithoutSeededUiFilesAsync(runId, svc.RepoGits[repo], await svc.RepoGits[repo].DiffStatsAsync(runId, svc.Settings.BaseBranch, ct), ct, isUiRepo: repo == "Ui");
+            var (l, f) = await WithoutSeededFilesAsync(runId, svc.RepoGits[repo], await svc.RepoGits[repo].DiffStatsAsync(runId, svc.Settings.BaseBranch, ct), ct, isUiRepo: repo == "Ui", repo: repo);
             lines += l;
             files.AddRange(f);
         }
         return (lines, files);
     }
 
-    /// The seeded ui-contract files sit under protected paths, but they are the Factory's own: a file whose bytes still equal the
-    /// baseline recorded at seeding (the same one integration verify's drift check compares) is not a change to judge. Anything else stays.
-    private async Task<(int Lines, List<string> Files)> WithoutSeededUiFilesAsync(string runId, GitWorkspace git,
-        (int Lines, List<string> Files) diff, CancellationToken ct, bool isUiRepo = true)
+    /// The seeded ui-contract and generated-contract files sit under protected paths, but they are the Factory's own: a file whose bytes
+    /// still equal the baseline recorded at seeding (the same one integration verify's drift check compares) is not a change to judge.
+    /// Anything else stays.
+    private async Task<(int Lines, List<string> Files)> WithoutSeededFilesAsync(string runId, GitWorkspace git,
+        (int Lines, List<string> Files) diff, CancellationToken ct, string repo, bool isUiRepo = true)
     {
-        if (!isUiRepo || diff.Files.Count == 0) return diff;
-        var seeded = await UiContractSeed.UnchangedSeededAsync(git.IntegrationPath(runId), svc.Settings.RunDir(runId), ct);
+        if (diff.Files.Count == 0) return diff;
+        var integration = git.IntegrationPath(runId);
+        var seeded = isUiRepo ? await UiContractSeed.UnchangedSeededAsync(integration, svc.Settings.RunDir(runId), ct) : [];
+        seeded.UnionWith(CodegenPhase.UnchangedSeeded(integration, svc.Settings.RunDir(runId), repo));
         return (diff.Lines, diff.Files.Where(f => !seeded.Contains(f)).ToList());
     }
 

@@ -234,4 +234,54 @@ public class DesigncHandoverReaderTests
         var e = await Assert.ThrowsAsync<FactoryRejectedException>(() => Load(dir));
         Assert.Contains(e.Errors, m => m.Contains("D-0001") && m.Contains("check"));
     }
+
+    // ---- elements/3 ----
+
+    private static async Task<FactoryRejectedException> Refused(Func<string, string> mutate, string contractsApi = "[\"contracts/openapi/shop.yaml\"]") =>
+        await Assert.ThrowsAsync<FactoryRejectedException>(() => DesigncHandoverElementsContractTests.LoadElements3(mutate, contractsApi));
+
+    [Fact]
+    public async Task Elements_3_without_in_scope_or_reserved_reads_as_a_design_handover()
+    {
+        var h = await DesigncHandoverElementsContractTests.LoadElements3(t =>
+        {
+            var node = System.Text.Json.Nodes.JsonNode.Parse(t)!.AsObject();
+            node.Remove("reserved");
+            foreach (var e in node["elements"]!.AsArray()) e!.AsObject().Remove("in_scope");
+            return node.ToJsonString();
+        });
+        Assert.All(h.Elements, e => Assert.True(e.InScope));
+    }
+
+    [Fact]
+    public async Task Elements_3_refuses_an_unknown_role() =>
+        Assert.Contains((await Refused(t => t.Replace("\"role\": \"serves\"", "\"role\": \"owns\""))).Errors, m => m.Contains("role 'owns'"));
+
+    [Fact]
+    public async Task Elements_3_refuses_calls_on_an_event() =>
+        Assert.Contains((await Refused(t => t.Replace("\"role\": \"publishes\"", "\"role\": \"calls\""))).Errors, m => m.Contains("needs kind 'operation'"));
+
+    [Fact]
+    public async Task Elements_3_refuses_an_operation_file_that_is_not_in_contracts_api() =>
+        Assert.Contains((await Refused(t => t, "[]")).Errors, m => m.Contains("is not one of contracts_api"));
+
+    [Fact]
+    public async Task Elements_3_refuses_two_ends_that_disagree_on_version()
+    {
+        var e = await Refused(t =>
+        {
+            var at = t.LastIndexOf("e4d923886810a964", StringComparison.Ordinal);
+            return t[..at] + "0000000000000000" + t[(at + 16)..];
+        });
+        Assert.Contains(e.Errors, m => m.Contains("listOrders on Shop/Web → Shop/Api: the two ends disagree on version"));
+    }
+
+    [Fact]
+    public async Task Interfaces_in_an_elements_2_document_are_refused() =>
+        Assert.Contains((await Refused(t => t.Replace("elements/3", "elements/2"))).Errors, m => m.Contains("only allowed in designc.handover.elements/3"));
+
+    [Fact]
+    public async Task Elements_4_is_refused_naming_the_accepted_schemas() =>
+        Assert.Contains((await Refused(t => t.Replace("elements/3", "elements/4"))).Errors,
+            m => m.Contains("elements/1") && m.Contains("elements/2") && m.Contains("elements/3"));
 }

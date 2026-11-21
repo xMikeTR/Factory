@@ -1,0 +1,41 @@
+{
+  "schema": "designc.handover.dependencies/1",
+  "elements": [
+    {
+      "element": "S/Api/Ctl",
+      "code": [
+        "api/ctl/**"
+      ],
+      "allows": [
+        "S/Api/Repo"
+      ]
+    },
+    {
+      "element": "S/Api/Repo",
+      "code": [
+        "api/repo/**"
+      ],
+      "allows": [
+        "S/Db"
+      ]
+    },
+    {
+      "element": "S/Db",
+      "code": [
+        "db/**"
+      ],
+      "allows": []
+    },
+    {
+      "element": "S/Web",
+      "code": [
+        "web/**"
+      ],
+      "repo": "Ui",
+      "allows": [
+        "S/Api/Ctl",
+        "S/Api/Repo"
+      ]
+    }
+  ]
+}

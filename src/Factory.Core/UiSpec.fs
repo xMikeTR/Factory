@@ -177,6 +177,10 @@ describe("@SCREEN@ page", () => {
 
 type UiFailure = { State: string; Kind: string; Placement: string option; Detail: string }
 
+/// A scenario test that failed. `Criterion` is the test title, `<scenario id> example <n>`. `Kind` is `body` (a request arrived with a
+/// different body), `not_sent` (none arrived) or `could_not_run` (anything else: a locator that never resolved, a render error).
+type ScenarioFailure = { Criterion: string; Kind: string }
+
 /// Who a failing screen is blamed on: the tasks that link the element named like the page component, or write the page's file.
 /// No task at all is a gap in the plan, reported by the caller, never a reason to blame everyone.
 [<RequireQualifiedAccess>]
@@ -225,6 +229,46 @@ module UiReport =
     /// How many of this screen's tests ran to a verdict (passed or failed): fewer than 3 per state means some never ran.
     let executed (screen: string) (reportJson: string) : int =
         results screen reportJson |> List.filter (fun (_, _, st, _) -> st = "passed" || st = "failed") |> List.length
+
+    /// (title, status, message) of this screen's scenario tests: the ones under describe `<screen> scenarios`.
+    let private scenarioResults (screen: string) (reportJson: string) =
+        let start = reportJson.IndexOf '{'
+        use d = JsonDocument.Parse(if start > 0 then reportJson.Substring start else reportJson)
+        match d.RootElement.TryGetProperty "testResults" with
+        | true, files when files.ValueKind = JsonValueKind.Array ->
+            [ for f in files.EnumerateArray() do
+                  match f.TryGetProperty "assertionResults" with
+                  | true, a ->
+                      for r in a.EnumerateArray() |> Seq.map (fun x -> x.Clone()) do
+                          let ours =
+                              match r.TryGetProperty "ancestorTitles" with
+                              | true, t when t.ValueKind = JsonValueKind.Array && t.GetArrayLength() > 0 -> t[0].GetString() = screen + " scenarios"
+                              | _ -> false
+                          if ours then
+                              let str (name: string) = match r.TryGetProperty name with | true, v when v.ValueKind = JsonValueKind.String -> v.GetString() | _ -> ""
+                              let msg =
+                                  match r.TryGetProperty "failureMessages" with
+                                  | true, m when m.ValueKind = JsonValueKind.Array -> String.Join("\n", [ for x in m.EnumerateArray() -> x.GetString() ])
+                                  | _ -> ""
+                              yield str "title", str "status", msg
+                  | _ -> () ]
+        | _ -> []
+
+    /// How many of this screen's scenario tests ran to a verdict (passed or failed).
+    let scenarioExecuted (screen: string) (reportJson: string) : int =
+        scenarioResults screen reportJson |> List.filter (fun (_, st, _) -> st = "passed" || st = "failed") |> List.length
+
+    /// The failed scenario tests of a screen. A body mismatch is an `expect.poll` toEqual failure; when the poll's value stayed
+    /// `undefined` the page never sent the request. Any other failure (a locator that timed out, a throw) is `could_not_run`.
+    let scenarioFailures (screen: string) (reportJson: string) : ScenarioFailure list =
+        [ for (title, status, msg) in scenarioResults screen reportJson do
+              if status = "failed" then
+                  let toEqual = msg.Contains "to deeply equal" || msg.Contains "toEqual"
+                  let kind =
+                      if not toEqual then "could_not_run"
+                      elif Regex.IsMatch(msg, @"expected undefined to |^\s*\+\s+undefined\s*$", RegexOptions.Multiline) then "not_sent"
+                      else "body"
+                  yield { Criterion = title; Kind = kind } ]
 
     let failures (screen: string) (reportJson: string) : UiFailure list =
         [ for (state, kind, status, msg) in results screen reportJson do

@@ -1,5 +1,5 @@
 {
-  "designc_commit": "d7f58990ef6f73f2f5ae0bf103d49218862bca31",
+  "designc_commit": "4de0f38b469cac6056937050ecc04b8118b11dda",
   "files": [
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/ledger_schema.json",
@@ -20,6 +20,14 @@
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-elements-2.json",
       "source": "docs/handover-elements-2.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-elements-3.json",
+      "source": "docs/handover-elements-3.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-elements-3.schema.json",
+      "source": "docs/handover-elements-3.schema.json"
     },
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-ui.json",
@@ -48,6 +56,34 @@
     {
       "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/parity-requests.example.json",
       "source": "docs/parity-requests.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-scenarios.json",
+      "source": "docs/handover-scenarios.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-dependencies.json",
+      "source": "docs/handover-dependencies.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-dependencies.schema.json",
+      "source": "docs/handover-dependencies.schema.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-scenarios-2.schema.json",
+      "source": "docs/handover-scenarios-2.schema.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-scenarios-2.example.json",
+      "source": "docs/handover-scenarios-2.example.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-scenarios-3.schema.json",
+      "source": "docs/handover-scenarios-3.schema.json"
+    },
+    {
+      "fixture": "tests/Factory.Integration.Tests/Fixtures/designc/handover-scenarios-3.example.json",
+      "source": "docs/handover-scenarios-3.example.json"
     }
   ]
 }

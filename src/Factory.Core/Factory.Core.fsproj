@@ -22,6 +22,7 @@
     <Compile Include="Suite.fs" />
     <Compile Include="Quality.fs" />
     <Compile Include="Fitness.fs" />
+    <Compile Include="AllowedEdges.fs" />
     <Compile Include="UiGuard.fs" />
     <Compile Include="AssertionGuard.fs" />
     <Compile Include="Mutation.fs" />
@@ -53,6 +54,9 @@
     <Compile Include="RequestParity.fs" />
     <Compile Include="HarReplay.fs" />
     <Compile Include="UiPolicyFacts.fs" />
+    <Compile Include="Codegen.fs" />
+    <Compile Include="ApiScenarios.fs" />
+    <Compile Include="GeneratedBoundary.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="Interop.fs" />
   </ItemGroup>

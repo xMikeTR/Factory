@@ -170,6 +170,10 @@ public sealed class GitWorkspace(string repoPath, string stateDir, string? repoN
         return r.Succeeded ? r.Output : null;
     }
 
+    /// Whether the base branch of the repo itself (not a worktree, not the working tree) has this file committed.
+    public async Task<bool> BaseHasFileAsync(string baseBranch, string path, CancellationToken ct) =>
+        (await GitAsync(repoPath, ct, check: false, "cat-file", "-e", $"{baseBranch}:{path}")).ExitCode == 0;
+
     /// The commit a worktree is at.
     public async Task<string> HeadAsync(string worktree, CancellationToken ct) =>
         (await GitAsync(worktree, ct, "rev-parse", "HEAD")).Output.Trim();

@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "designc.handover.scenarios/2",
+  "title": "Handover scenario tests with example rows",
+  "description": "scenarios.json /2 in a frozen handover (handovers/<id>/): /1 (docs/handover-scenarios.schema.json: `screens`, `skipped`, unchanged) plus `api` and `entities`. Written instead of /1 only when a bound structured test scenario of a requirement in the handover has examples carrying `given` or `then` rows (C4); otherwise the file is /1, byte for byte. `api` has one entry per such scenario (it does not depend on the handover's UI part), ordered by scenario id. Rows are literal JSON values, in file order, verbatim. Keys of `given` and `then` are the qualified entity ids `pack/Aggregate` (sorted); a row's fields are `id` (the aggregate's identity) plus the aggregate's declared fields. `given` is {} when an example has no seed rows. `entities` lists only the aggregates the rows use, with their fields, so a consumer needs no pack. MATCHING SEMANTICS (the contract the Factory's generated API tests follow; X4 pins this schema): seed the `given` rows, call the operation with the example's request body (the scenario's effect.body with the example's placeholder values), then query. A `then` row WITH `id`: the stored row of that entity with that id exists, and each listed field deep-equals the expected value. A `then` row WITHOUT `id`: at least one stored row of that entity deep-equals the expected value on every listed field. Fields and rows that are not listed are not checked; absence is not asserted. The repo implements a seed/query adapter (entity id -> storage) once; generated tests call it. The scenario files themselves are named by path and sha256, not copied. designc owns this contract; consumers conform to it. docs/handover-scenarios-2.example.json is the shared fixture.",
+  "type": "object",
+  "required": [
+    "schema",
+    "screens",
+    "skipped",
+    "api",
+    "entities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "designc.handover.scenarios/2"
+    },
+    "screens": {
+      "description": "One entry per render screen with at least one compiled scenario, ordered by screen. A scenario of an overlay (hosted) spec is on the host's entry.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "screen",
+          "component",
+          "test",
+          "scenarios"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "screen": {
+            "type": "string"
+          },
+          "component": {
+            "description": "The page component the test imports and renders (the spec's `component`).",
+            "type": "string"
+          },
+          "test": {
+            "$ref": "#/$defs/file"
+          },
+          "scenarios": {
+            "description": "Ordered by scenario id.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "path",
+                "sha256",
+                "operation",
+                "examples"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "description": "Registry path of the scenario file.",
+                  "type": "string"
+                },
+                "sha256": {
+                  "$ref": "#/$defs/sha256"
+                },
+                "operation": {
+                  "description": "The request the test waits for, resolved from contracts/openapi at freeze; path is the OpenAPI path as written. The test mocks it with `{p}` as `:p`, after the path part of the file's servers[0].url if it has one.",
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "method",
+                    "path"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "index",
+                      "title"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "index": {
+                        "description": "1-based; the n in the test title.",
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "skipped": {
+      "description": "Structured scenarios of a requirement in the handover that were not compiled, with the reason. Never dropped silently. Ordered by scenario id.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "scenario",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "scenario": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "api": {
+      "description": "Ordered by scenario id.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "sha256",
+          "operation",
+          "examples"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "operation": {
+            "description": "The request the test waits for, resolved from contracts/openapi at freeze; path is the OpenAPI path as written. The test mocks it with `{p}` as `:p`, after the path part of the file's servers[0].url if it has one.",
+            "type": "object",
+            "required": [
+              "id",
+              "method",
+              "path"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          },
+          "examples": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "index",
+                "title",
+                "given",
+                "then"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "description": "1-based position in the scenario's examples.",
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "title": {
+                  "type": "string"
+                },
+                "given": {
+                  "description": "Seed rows: qualified entity id -> rows. {} when absent.",
+                  "$ref": "#/$defs/rows"
+                },
+                "then": {
+                  "description": "Expected rows after the call: qualified entity id -> rows (see MATCHING SEMANTICS).",
+                  "$ref": "#/$defs/rows"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "entities": {
+      "description": "The aggregates the rows use, ordered by id.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "pack",
+          "name",
+          "version",
+          "fields"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "pack/Name",
+            "type": "string"
+          },
+          "pack": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ]
+          },
+          "fields": {
+            "description": "The aggregate's declared fields (the identity `id` is implicit), as read from the pack: name plus type, ref or oneOf.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "oneOf": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "file": {
+      "type": "object",
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "rows": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "minProperties": 1
+        }
+      }
+    }
+  }
+}

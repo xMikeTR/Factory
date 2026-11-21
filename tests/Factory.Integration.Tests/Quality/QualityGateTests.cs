@@ -97,7 +97,7 @@ public class FitnessGateTests
         var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
         await File.WriteAllTextAsync(Path.Combine(wt, "src/Fares.Data/Fares.Data.csproj"), RefsSurcharge);
 
-        var violations = await QualityGate.FitnessAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, CancellationToken.None);
+        var violations = await QualityGate.AllowedAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, null, CancellationToken.None);
 
         var v = Assert.Single(violations);
         Assert.Equal("Fares Platform/Bookings DB", v.FromElement.Value);
@@ -114,8 +114,8 @@ public class FitnessGateTests
         await h.GitIn(h.Services.Git.IntegrationPath(TeamHarness.RunId), "merge", "--ff-only", Factory.S2.Git.GitWorkspace.TeamBranch(TeamHarness.RunId, "team-x"));
         await File.WriteAllTextAsync(Path.Combine(wt, "src/Fares.Data/Fares.Data.csproj"), RefsSurcharge + "\n<!-- touched -->\n");
 
-        Assert.Empty(await QualityGate.FitnessAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, CancellationToken.None));
-        var debt = await QualityGate.FitnessDebtAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, CancellationToken.None);
+        Assert.Empty(await QualityGate.AllowedAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, null, CancellationToken.None));
+        var debt = await QualityGate.AllowedDebtAsync(h.Services.Git, wt, TeamHarness.RunId, h.Handover, null, CancellationToken.None);
 
         Assert.Equal([(ElementId.NewElementId("Fares Platform/Bookings DB"), ElementId.NewElementId("Fares Platform/Surcharge Engine"))], debt);
     }
@@ -150,5 +150,38 @@ public class FitnessGateTests
         await File.WriteAllTextAsync(Path.Combine(wt, path), "Assert.True(a);\n");
 
         Assert.Equal([new AssertionDrop(path, 2, 1)], await QualityGate.AssertionsAsync(h.Services.Git, wt, TeamHarness.RunId, CancellationToken.None));
+    }
+}
+
+/// One verify attempt reads each expensive edge source at most once, however many checks ask.
+public class EdgeReadsTests
+{
+    private sealed class Counting : Factory.Harness.Sandbox.ISandboxFactory
+    {
+        public readonly List<string> Teams = [];
+        public Task<Factory.Harness.Sandbox.ICommandSandbox> ForTeamAsync(string teamId, string worktree, CancellationToken ct)
+        { lock (Teams) Teams.Add(teamId); return Task.FromResult<Factory.Harness.Sandbox.ICommandSandbox>(new Box()); }
+        private sealed class Box : Factory.Harness.Sandbox.ICommandSandbox
+        {
+            public string Kind => "fake";
+            public Task<Factory.Harness.ProcessResult> RunAsync(string command, string workdir, TimeSpan timeout, IReadOnlyDictionary<string, string> env, CancellationToken ct) =>
+                Task.FromResult(new Factory.Harness.ProcessResult(0, "", TimeSpan.Zero, false));
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task The_builds_and_the_depcruise_reads_happen_once_when_forbid_and_allow_both_run()
+    {
+        using var h = await TeamHarness.CreateAsync(new ScriptedChatClient(), new Limits(3, 2));
+        var wt = await h.Services.Git.EnsureTeamAsync(TeamHarness.RunId, "team-x", CancellationToken.None);
+        var sandboxes = new Counting();
+        await using (var reads = new EdgeReads(sandboxes, h.Services.Git, wt, TeamHarness.RunId, CancellationToken.None))
+        {
+            await Task.WhenAll(reads.BuiltCurrent(), reads.BuiltBaseline(), reads.TsCurrent(), reads.TsBaseline(), reads.BuiltCurrent(), reads.BuiltBaseline(), reads.TsCurrent(), reads.TsBaseline());
+            await reads.BuiltCurrent();
+        }
+
+        Assert.Equal(["arch-baseline", "arch-current", "ts-baseline", "ts-current"], sandboxes.Teams.Order().ToArray());
     }
 }

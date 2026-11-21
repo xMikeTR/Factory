@@ -39,6 +39,8 @@ public static class Repair
                 LedgerKinds.HoldoutFailed =>
                     $"A hidden check of screen {S("screen")}{(S("criterion") is { Length: > 0 } cr ? $" (acceptance {cr})" : "")} failed in state \"{S("state")}\"{(e.Element is null ? "" : $" on element {e.Element}")}. "
                     + "The page does not render the data it will get; do not special-case sample values.",
+                LedgerKinds.ApiScenarioFailed =>
+                    $"API scenario {S("scenario")} example {(doc.RootElement.TryGetProperty("example", out var ex) ? ex.ToString() : "")} ({S("title")}) failed: {S("message")}",
                 LedgerKinds.CiFailed =>
                     $"CI check \"{S("check")}\" failed{(S("commit") is { Length: > 0 } c ? $" at {c}" : "")}. End of its log:\n{S("log")}",
                 LedgerKinds.TokenLintViolation =>

@@ -1,0 +1,132 @@
+{
+  "schema": "designc.handover.scenarios/3",
+  "screens": [
+    {
+      "screen": "orders",
+      "component": "OrdersList",
+      "test": {
+        "path": "ui-contract/tests/orders.scenarios.page.test.tsx",
+        "sha256": "0028f259584c4f3849675ccf918b2a4ab741a7755e3cc0a596010ccc6eb3cbbd"
+      },
+      "scenarios": [
+        {
+          "id": "ORD-1-ts-01",
+          "path": "test-scenarios/ORD-1-ts-01.yaml",
+          "sha256": "945045de19b2465a324ea53ac80a4ba9ee4462db2788ece57d2c42ec97b4a6de",
+          "operation": {
+            "id": "tagOrders",
+            "method": "POST",
+            "path": "/orders/tags"
+          },
+          "examples": [
+            {
+              "index": 1,
+              "title": "prefix match"
+            },
+            {
+              "index": 2,
+              "title": "whole reference"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "skipped": [
+    {
+      "scenario": "ORD-1-ts-02",
+      "reason": "minted: a person binds it before a test is generated"
+    }
+  ],
+  "api": [
+    {
+      "id": "ORD-1-ts-01",
+      "path": "test-scenarios/ORD-1-ts-01.yaml",
+      "sha256": "945045de19b2465a324ea53ac80a4ba9ee4462db2788ece57d2c42ec97b4a6de",
+      "operation": {
+        "id": "tagOrders",
+        "method": "POST",
+        "path": "/orders/tags"
+      },
+      "examples": [
+        {
+          "index": 1,
+          "title": "prefix match",
+          "given": {
+            "orders/Order": [
+              {
+                "id": 1,
+                "ref": "A-100"
+              },
+              {
+                "id": 2,
+                "ref": "B-200"
+              }
+            ]
+          },
+          "then": {
+            "orders/Order": [
+              {
+                "id": 1,
+                "tag": "Priority"
+              },
+              {
+                "id": 2,
+                "tag": null
+              }
+            ]
+          },
+          "request": {
+            "path": {},
+            "query": {
+              "dryRun": false
+            },
+            "body": {
+              "match": "A-",
+              "tag": "Priority"
+            }
+          }
+        },
+        {
+          "index": 2,
+          "title": "whole reference",
+          "given": {},
+          "then": {
+            "orders/Order": [
+              {
+                "id": 2,
+                "tag": "Hold"
+              }
+            ]
+          },
+          "request": {
+            "path": {},
+            "query": {},
+            "body": {
+              "match": "B-200",
+              "tag": "Hold"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "id": "orders/Order",
+      "pack": "orders",
+      "name": "Order",
+      "version": 1,
+      "fields": [
+        {
+          "name": "ref",
+          "type": "string"
+        },
+        {
+          "name": "tag",
+          "type": "string"
+        }
+      ]
+    }
+  ]
+}
