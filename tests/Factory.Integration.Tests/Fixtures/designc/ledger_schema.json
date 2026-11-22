@@ -27,6 +27,7 @@
     "ui-visual",
     "acceptance",
     "holdout",
+    "scenario",
     "parity",
     "review",
     "qa",
@@ -854,7 +855,8 @@
         "screen",
         "item",
         "round",
-        "failures"
+        "failures",
+        "scenario"
       ],
       "enums": {
         "stage": [
@@ -862,6 +864,7 @@
           "ui-visual",
           "acceptance",
           "holdout",
+          "scenario",
           "review",
           "qa"
         ],
@@ -877,6 +880,7 @@
         "element": "string",
         "screen": "string",
         "item": "string",
+        "scenario": "string",
         "round": "number",
         "failures": "array",
         "change_ts": "number|null"

@@ -1,0 +1,41 @@
+{
+  "schema": "designc.handover.scenarios/1",
+  "screens": [
+    {
+      "screen": "orders",
+      "component": "OrdersList",
+      "test": {
+        "path": "ui-contract/tests/orders.scenarios.page.test.tsx",
+        "sha256": "0028f259584c4f3849675ccf918b2a4ab741a7755e3cc0a596010ccc6eb3cbbd"
+      },
+      "scenarios": [
+        {
+          "id": "ORD-1-ts-01",
+          "path": "test-scenarios/ORD-1-ts-01.yaml",
+          "sha256": "184d472b644ae877102aee2d47999902b19982cf4760b7ddc2357fa7e37f9177",
+          "operation": {
+            "id": "tagOrders",
+            "method": "POST",
+            "path": "/orders/tags"
+          },
+          "examples": [
+            {
+              "index": 1,
+              "title": "prefix match"
+            },
+            {
+              "index": 2,
+              "title": "whole reference"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "skipped": [
+    {
+      "scenario": "ORD-1-ts-02",
+      "reason": "minted: a person binds it before a test is generated"
+    }
+  ]
+}

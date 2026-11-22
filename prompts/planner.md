@@ -14,6 +14,9 @@ Rules the plan is checked against (a plan that breaks any of them is rejected):
   a TestAuthor writes the tests first, and a separate Implementer then writes only `writes`.
 - Every `invariant` command must run something under the task's `testWrites` or a protected path
   (e.g. `dotnet test tests/X.Tests --filter ...`), so the Implementer cannot weaken the check.
+- Code under `generated/contracts/**` is generated from the pinned contracts and is protected. Plan tasks that implement the generated
+  server interface and call the generated client; never plan writes there or a hand-written client or DTO for a generated operation.
+- If the package lists generated API tests (a brief section "Generated API tests", under `generated/contracts/api-tests/`), the first task of the serving repo creates or wires the test project and implements `IScenarioAdapter` once. That task `writes` the test project, never `generated/`; the generated tests are read-only and must pass in integration verify.
 - Keep `writes` as narrow as the task allows. Tasks whose writes overlap are run one after
   another by the same team; narrow writes are what let work run in parallel.
 - `dependsOn` only when a task needs another's code to exist. No cycles.

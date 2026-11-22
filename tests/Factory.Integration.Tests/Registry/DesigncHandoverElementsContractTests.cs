@@ -20,6 +20,56 @@ public class DesigncHandoverElementsContractTests
         return await new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None);
     }
 
+    private const string ShopYaml = "openapi: 3.0.3\ninfo: { title: Shop, version: \"1\" }\npaths:\n  /orders:\n    get:\n      operationId: listOrders\n      responses:\n        \"200\": { description: ok }\n";
+
+    /// The /3 example with `contracts/openapi/shop.yaml` frozen and listed in contracts_api; `mutate` edits the elements text first.
+    internal static async Task<Handover> LoadElements3(Func<string, string>? mutate = null, string contractsApi = "[\"contracts/openapi/shop.yaml\"]")
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "s2-elements3-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(dir, "contracts", "openapi"));
+        var text = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc", "handover-elements-3.json"));
+        text = mutate?.Invoke(text) ?? text;
+        await File.WriteAllTextAsync(Path.Combine(dir, "elements.json"), text);
+        await File.WriteAllTextAsync(Path.Combine(dir, "contracts", "openapi", "shop.yaml"), ShopYaml);
+        await File.WriteAllTextAsync(Path.Combine(dir, "handover.yaml"),
+            $"id: 20261120-elements3\nelements: \"elements.json\"\ncontracts_api: {contractsApi}\nfiles:\n  - {{ path: \"elements.json\", hash: {DesigncHandoverReader.Hash16(text)} }}\n" +
+            $"  - {{ path: \"contracts/openapi/shop.yaml\", hash: {DesigncHandoverReader.Hash16(ShopYaml)} }}\n");
+        return await new DesigncHandoverReader().LoadAsync(dir, S2Config.Default, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Elements_3_fixture_and_schema_are_pinned_at_version_3()
+    {
+        var dir = Path.Combine(AppContext.BaseDirectory, "Fixtures", "designc");
+        using var fixture = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(dir, "handover-elements-3.json")));
+        using var schema = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(dir, "handover-elements-3.schema.json")));
+        Assert.Equal("designc.handover.elements/3", fixture.RootElement.GetProperty("schema").GetString());
+        Assert.Equal("designc.handover.elements/3", schema.RootElement.GetProperty("$id").GetString());
+        Assert.Equal("designc.handover.elements/3", schema.RootElement.GetProperty("properties").GetProperty("schema").GetProperty("const").GetString());
+    }
+
+    [Fact]
+    public async Task Elements_3_interfaces_are_read_in_file_order_with_contract_texts_and_reserved_paths()
+    {
+        var h = await LoadElements3();
+        Assert.Equal(
+            [("Shop/Web", "calls", "operation", "listOrders"), ("Shop/Api", "publishes", "event", "orders/OrderPlaced"),
+             ("Shop/Api", "serves", "operation", "listOrders"), ("Shop/Mail", "consumes", "event", "orders/OrderPlaced")],
+            h.Interfaces.Select(i => (i.Element, i.Role, i.Kind, i.Id)));
+        var calls = h.Interfaces.Single(i => i.Role == "calls");
+        var serves = h.Interfaces.Single(i => i.Role == "serves");
+        Assert.Equal(calls.Version, serves.Version);
+        Assert.Equal("contracts/openapi/shop.yaml", serves.File.Value);
+        Assert.Equal(("GET", "/orders"), (serves.Method.Value, serves.Path.Value));
+        Assert.Equal([("Shop/Web", true), ("Shop/Api", false)], h.Elements.Select(e => (e.Id.Value, e.InScope)));
+        Assert.Contains("tests/acceptance/**", h.ProtectedPaths.Select(p => p.Value));
+        var text = Assert.Single(h.ApiContractTexts);
+        Assert.Equal(("contracts/openapi/shop.yaml", ShopYaml, DesigncHandoverReader.Sha256(ShopYaml)), (text.Path, text.Text, text.Sha256));
+        var back = FactoryCore.ParseHandover(FactoryCore.HandoverJson(h));
+        Assert.Equal(h.Interfaces, back.Interfaces);
+        Assert.Equal(h.ApiContractTexts, back.ApiContractTexts);
+    }
+
     [Fact]
     public async Task Code_backed_elements_become_the_handovers_elements()
     {

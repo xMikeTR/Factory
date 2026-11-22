@@ -142,6 +142,10 @@ Not useful here: in-source testing, benchmarking, type testing. Sharding (`--sha
 - Fixture: `tests/Factory.Integration.Tests/Fixtures/system3/run.jsonl` (hand-written run) and `projected.jsonl` (its projection, validated against the pinned schema; regenerate with `FACTORY_UPDATE_GOLDEN=1`). designc's D7 part 2 uses it.
 - `BugIntake` accepts the 13 `caught_by` values and the `catalogue_gap` origin; a test compares its list with the pinned schema.
 
+## 9. Scenario tests (F1)
+
+desigc's `scenarios.json` (pinned: `handover-scenarios.example.json`) lists generated tests `ui-contract/tests/<screen>.scenarios.page.test.tsx`. `DesigncHandoverReader` verifies each sha256 and refuses the handover on a mismatch; `UiContractSeed` writes them verbatim into the seed commit, so they are in the drift baseline and read-only to agents. The `ui:` run executes them with the page tests; `UiReport.scenarioFailures` reads describe `"<screen> scenarios"`, titles `"<id> example <n>"`, and maps each failure to `body` (wrong value), `not_sent` (nothing sent) or `other`. Page-test counting ignores them. The verdict is a `stage_verdict` row, stage `scenario`, with `failures[].criterion` = `<id> example <n>` and `scenario` set when exactly one scenario failed; escapes tied to a scenario are `spec_gap`. Proof: `ScenarioDockerTests` (page sending the right body passes, wrong field name fails naming scenario and example), `UiContractSeedTests` (edit is drift).
+
 ## Slices
 
 1. **Preview run.** `factory-s2 preview`, `ui_preview_rendered`, the generated preview test, sandbox command and exit codes.

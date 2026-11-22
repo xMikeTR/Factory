@@ -65,12 +65,12 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
 
         foreach (var screen in handover.Ui)
         {
-            var failures = new List<(string? State, string? Placement, string Kind, string? Detail)>();
+            var failures = new List<(string? State, string? Placement, string Kind, string? Detail, string? Criterion, string? ScenarioKind)>();
             var pagePath = Path.Combine(integration, screen.File);
-            if (!File.Exists(pagePath)) failures.Add((null, null, "code", $"the page file {screen.File} does not exist"));
+            if (!File.Exists(pagePath)) failures.Add((null, null, "code", $"the page file {screen.File} does not exist", null, null));
             else
                 foreach (var p in UiCodeCheck.check(screen.Spec.Text, ListModule.OfSeq(screen.Components.Select(c => c.Text)), await File.ReadAllTextAsync(pagePath, ct)))
-                    failures.Add((null, null, "code", $"{p.Rule}: {p.Detail}"));
+                    failures.Add((null, null, "code", $"{p.Rule}: {p.Detail}", null, null));
 
             var ranOk = couldNot is null;
             string? notRun = couldNot;
@@ -80,7 +80,7 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
                 {
                     var states = UiSpecStates.ofSpec(screen.Spec.Text).Length;
                     foreach (var f in UiReport.failures(screen.Screen, report))
-                        failures.Add((f.State, FSharpOption<string>.get_IsSome(f.Placement) ? f.Placement.Value : null, f.Kind, f.Detail));
+                        failures.Add((f.State, FSharpOption<string>.get_IsSome(f.Placement) ? f.Placement.Value : null, f.Kind, f.Detail, null, null));
                     if (failures.All(f => f.Kind == "code") && UiReport.executed(screen.Screen, report) < 3 * states)
                     { ranOk = false; notRun = $"only some of the {3 * states} page tests for '{screen.Screen}' ran:\n" + tail; }
                 }
@@ -92,16 +92,35 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
                 {
                     var found = UiRequestCheck.Check(integration, screen.Screen, screen.Spec.Text, registry);
                     if (found is null) { ranOk = false; notRun = $"the page tests wrote no request log for '{screen.Screen}' (the vitest config needs api.allowWrite)"; }
-                    else foreach (var f in found.Failures) failures.Add((null, null, "request", f));
+                    else foreach (var f in found.Failures) failures.Add((null, null, "request", f, null, null));
                 }
                 catch (Exception e) when (e is JsonException or IOException) { ranOk = false; notRun = "the request log could not be read: " + e.Message; }
+
+            // designc's scenario tests of this screen ran in the same vitest run (`*.scenarios.page.test.tsx`); their verdict is its own stage.
+            var scenarioFailures = new List<ScenarioFailure>();
+            string? scenarioOutcome = null;
+            if (handover.ScenarioTests.FirstOrDefault(t => t.Screen == screen.Screen) is { } scenarios)
+            {
+                var expected = scenarios.Scenarios.Sum(c => c.Examples.Length);
+                scenarioOutcome = "could_not_run";
+                if (report is not null)
+                    try
+                    {
+                        scenarioFailures.AddRange(UiReport.scenarioFailures(screen.Screen, report));
+                        scenarioOutcome = scenarioFailures.Count > 0 ? "fail" : UiReport.scenarioExecuted(screen.Screen, report) < expected ? "could_not_run" : "pass";
+                    }
+                    catch (JsonException) { }
+                foreach (var f in scenarioFailures)
+                    failures.Add((null, null, "scenario", $"{f.Criterion} ({f.Kind})", f.Criterion, f.Kind));
+                if (scenarioOutcome == "could_not_run" && ranOk) { ranOk = false; notRun = $"the scenario tests for '{screen.Screen}' did not all run:\n" + tail; }
+            }
 
             var outcome = failures.Count > 0 ? "fail" : ranOk ? "pass" : "could_not_run";
             var (element, blamed) = UiBlame.tasks(handover.Elements, tasks, screen.Component, screen.File);
             var elementId = FSharpOption<string>.get_IsSome(element) ? element.Value : null;
             var blamedIds = blamed.Select(t => t.Value).ToList();
             var lines = failures.Select(f => $"{screen.Screen}{(f.State is null ? "" : " / " + f.State)}: {f.Kind}{(f.Placement is null ? "" : " " + f.Placement)}"
-                + (f.Kind is "code" or "request" ? " - " + f.Detail : "")).ToList();
+                + (f.Kind is "code" or "request" or "scenario" ? " - " + f.Detail : "")).ToList();
             var summary = outcome switch
             {
                 "pass" => $"ui:{screen.Screen} passed",
@@ -127,10 +146,17 @@ public sealed class UiPageCheck(ILedger ledger, ISandboxFactory sandboxes, strin
                     await ledger.AppendAsync(new LedgerEvent(runId, "S2", "integration_verify", LedgerKinds.UiCheckFailed, TaskId: task, Element: elementId, Outcome: "failed",
                         Payload: JsonSerializer.Serialize(new
                         {
-                            screen = screen.Screen, state = f.State, placement = f.Placement, kind = f.Kind, detail = f.Kind is "code" or "request" ? f.Detail : null, commit,
+                            screen = screen.Screen, state = f.State, placement = f.Placement, kind = f.Kind, detail = f.Kind is "code" or "request" or "scenario" ? f.Detail : null, criterion = f.Criterion, scenarioKind = f.ScenarioKind, commit,
                             feedback = fb?.Text, images = fb is null ? null : fb.Images.ToArray(),
                         })), ct);
                 }
+            if (scenarioOutcome is not null)
+                await LogAsync(runId, LedgerKinds.Verify, outcome: scenarioOutcome == "pass" ? "passed" : "failed",
+                    payload: JsonSerializer.Serialize(new
+                    {
+                        name = "scenario:" + screen.Screen, ExitCode = scenarioOutcome == "pass" ? 0 : scenarioOutcome == "fail" ? 1 : 3,
+                        failures = scenarioFailures.Select(f => new { criterion = f.Criterion, kind = f.Kind }),
+                    }), ct: ct);
             if (outcome == "fail") await KeepHtmlReportAsync(runId, screen.Screen, integration, ct);
             await LogAsync(runId, LedgerKinds.Verify, outcome: outcome == "pass" ? "passed" : "failed",
                 payload: JsonSerializer.Serialize(new { name = "ui:" + screen.Screen, ExitCode = outcome == "pass" ? 0 : outcome == "fail" ? 1 : 3, kinds = failures.Select(f => f.Kind).Distinct() }), ct: ct);

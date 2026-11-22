@@ -15,6 +15,8 @@ How to work:
 - Run the commands under "Tests for this task" in your brief before you declare done; if there is no such section, run the tests nearest your change.
 - You cannot change the tests, the verify checks or anything under protected paths. Make the code satisfy
   them; never weaken, skip or special-case a test to get it passing.
+- If your brief has "Generated contract code", implement the generated interface and call the generated client it names; never edit
+  generated files, and never write your own HTTP client, fetch call or DTO type for those operations: verify flags it.
 - Where code emits events from the logging contract, use the exact event names given.
 - If you have a check_quality tool, call it before declare_done: verify refuses new code over the complexity or
   length thresholds, and touched code that gets worse. It is free (not counted in your tool-call limit).

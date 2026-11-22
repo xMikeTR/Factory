@@ -19,17 +19,35 @@ public static class TsGate
     }
 
     public static async Task<IReadOnlyList<RuleViolation>> CheckAsync(
-        ISandboxFactory sandboxes, GitWorkspace git, string worktree, string runId, IReadOnlyList<ForbiddenDependency> rules, CancellationToken ct)
+        EdgeReads reads, GitWorkspace git, string worktree, string runId, IReadOnlyList<ForbiddenDependency> rules, CancellationToken ct)
     {
         if (rules.Count == 0) return [];
-        if (!(await git.TaskPathsAsync(worktree, runId, ct)).Any(p => Extensions.Any(e => p.EndsWith(e, StringComparison.OrdinalIgnoreCase)))) return [];
-        var current = await EdgesAsync(sandboxes, "ts-current", worktree, ct);
+        if (!await TouchedTsAsync(git, worktree, runId, ct)) return [];
+        var current = await reads.TsCurrent();
         if (current.Count == 0) return [];
-        await using var baseline = await git.BaselineCheckoutAsync(runId, ct);
-        return Judge(rules, await EdgesAsync(sandboxes, "ts-baseline", baseline.Path, ct), current);
+        return Judge(rules, await reads.TsBaseline(), current);
     }
 
-    private static async Task<IReadOnlyList<CodeEdge>> EdgesAsync(ISandboxFactory sandboxes, string team, string path, CancellationToken ct)
+    /// The design's allow list over TS/JS imports (repo-relative files, so a code area matches directly), ratcheted by element pair.
+    public static async Task<AllowJudgement> AllowedAsync(
+        EdgeReads reads, GitWorkspace git, string worktree, string runId, Handover handover, string? repo, CancellationToken ct)
+    {
+        if (!await TouchedTsAsync(git, worktree, runId, ct)) return AllowJudgement.Empty;
+        var current = await reads.TsCurrent();
+        if (current.Count == 0) return AllowJudgement.Empty;
+        return JudgeAllowed(handover, repo, await reads.TsBaseline(), current);
+    }
+
+    public static AllowJudgement JudgeAllowed(Handover handover, string? repo, IEnumerable<CodeEdge> baseline, IEnumerable<CodeEdge> current)
+    {
+        var (before, now) = QualityGate.Judge(handover, QualityGate.FsOption(repo), EdgeKind.Import, baseline, current);
+        return AllowJudgement.Of(before, now);
+    }
+
+    private static async Task<bool> TouchedTsAsync(GitWorkspace git, string worktree, string runId, CancellationToken ct) =>
+        (await git.TaskPathsAsync(worktree, runId, ct)).Any(p => Extensions.Any(e => p.EndsWith(e, StringComparison.OrdinalIgnoreCase)));
+
+    public static async Task<IReadOnlyList<CodeEdge>> EdgesAsync(ISandboxFactory sandboxes, string team, string path, CancellationToken ct)
     {
         await using var sandbox = await sandboxes.ForTeamAsync(team, path, ct);
         return await TsImportEdges.ReadAsync(sandbox, path, ct);

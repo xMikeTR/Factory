@@ -34,6 +34,9 @@ public static class UiContractSeed
             await Put($"ui-contract/tests/{screen.Screen}.page.test.tsx",
                 UiPageTest.text(screen.Screen, screen.Component, screen.File, ListModule.OfSeq(UiSpecStates.ofSpec(screen.Spec.Text))));
 
+            // designc's scenario test for this screen, as written: the Factory never regenerates it, and it sits in the drift baseline with the page test.
+            foreach (var sc in handover.ScenarioTests.Where(t => t.Screen == screen.Screen)) await Put(sc.Test.Path, sc.Test.Text);
+
             // The approved folder replaces whatever the repo held, so a stale picture cannot survive.
             var source = Path.Combine(runDir, "ui", "previews", screen.Screen);
             var target = Path.Combine(contract, "previews", screen.Screen);

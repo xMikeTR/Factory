@@ -1,0 +1,347 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "designc.handover.scenarios/3",
+  "title": "Handover scenario tests with example rows and requests",
+  "description": "scenarios.json /3 in a frozen handover (handovers/<id>/): /2 (docs/handover-scenarios-2.schema.json, unchanged) plus an optional `request` on each `api` example (C4b). Written instead of /2 only when a bound structured test scenario with example rows has examples carrying `request`; otherwise the file is /2 or /1, byte for byte. `request` is {path, query, body?}: `path` maps each path parameter of `operation.path` to its value, `query` maps query parameter names to values (both JSON scalars: string, number or boolean, as written; the consumer converts), and `body` is the JSON request body (the scenario's effect.body with the example's placeholder values, or the example's own request.body when there is no effect.body); `body` is absent when the call has none. designc refuses at mint and at freeze a request that lacks a required parameter, names an unknown one, or gives a body the operation does not take or lacks. MATCHING SEMANTICS (the contract the Factory's generated API tests follow; X4 slice 7 pins this schema): seed the `given` rows, call `operation` with `request.path` substituted into the path, `request.query` as the query string and `request.body` as the JSON body (no body when absent), then query. An api example WITHOUT `request` is not callable: consumers skip it. A `then` row WITH `id`: the stored row of that entity with that id exists, and each listed field deep-equals the expected value. A `then` row WITHOUT `id`: at least one stored row of that entity deep-equals the expected value on every listed field. Fields and rows that are not listed are not checked; absence is not asserted. Rows are literal JSON values, in file order, verbatim; keys of `given` and `then` are qualified entity ids `pack/Aggregate`; `entities` lists only the aggregates the rows use. The scenario files themselves are named by path and sha256, not copied. designc owns this contract; consumers conform to it. docs/handover-scenarios-3.example.json is the shared fixture.",
+  "type": "object",
+  "required": [
+    "schema",
+    "screens",
+    "skipped",
+    "api",
+    "entities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "designc.handover.scenarios/3"
+    },
+    "screens": {
+      "description": "One entry per render screen with at least one compiled scenario, ordered by screen. A scenario of an overlay (hosted) spec is on the host's entry.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "screen",
+          "component",
+          "test",
+          "scenarios"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "screen": {
+            "type": "string"
+          },
+          "component": {
+            "description": "The page component the test imports and renders (the spec's `component`).",
+            "type": "string"
+          },
+          "test": {
+            "$ref": "#/$defs/file"
+          },
+          "scenarios": {
+            "description": "Ordered by scenario id.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "path",
+                "sha256",
+                "operation",
+                "examples"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "description": "Registry path of the scenario file.",
+                  "type": "string"
+                },
+                "sha256": {
+                  "$ref": "#/$defs/sha256"
+                },
+                "operation": {
+                  "description": "The request the test waits for, resolved from contracts/openapi at freeze; path is the OpenAPI path as written. The test mocks it with `{p}` as `:p`, after the path part of the file's servers[0].url if it has one.",
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "method",
+                    "path"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "index",
+                      "title"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "index": {
+                        "description": "1-based; the n in the test title.",
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "skipped": {
+      "description": "Structured scenarios of a requirement in the handover that were not compiled, with the reason. Never dropped silently. Ordered by scenario id.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "scenario",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "scenario": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "api": {
+      "description": "Ordered by scenario id.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "sha256",
+          "operation",
+          "examples"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "operation": {
+            "description": "The request the test waits for, resolved from contracts/openapi at freeze; path is the OpenAPI path as written. The test mocks it with `{p}` as `:p`, after the path part of the file's servers[0].url if it has one.",
+            "type": "object",
+            "required": [
+              "id",
+              "method",
+              "path"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          },
+          "examples": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "index",
+                "title",
+                "given",
+                "then"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "description": "1-based position in the scenario's examples.",
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "title": {
+                  "type": "string"
+                },
+                "given": {
+                  "description": "Seed rows: qualified entity id -> rows. {} when absent.",
+                  "$ref": "#/$defs/rows"
+                },
+                "then": {
+                  "description": "Expected rows after the call: qualified entity id -> rows (see MATCHING SEMANTICS).",
+                  "$ref": "#/$defs/rows"
+                },
+                "request": {
+                  "description": "The call inputs (C4b). Optional: an example without it is not callable.",
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "query"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "description": "Path parameter name -> value.",
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean"
+                        ]
+                      }
+                    },
+                    "query": {
+                      "description": "Query parameter name -> value.",
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean"
+                        ]
+                      }
+                    },
+                    "body": {
+                      "description": "The JSON request body; absent when the call has none."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "entities": {
+      "description": "The aggregates the rows use, ordered by id.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "pack",
+          "name",
+          "version",
+          "fields"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "pack/Name",
+            "type": "string"
+          },
+          "pack": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ]
+          },
+          "fields": {
+            "description": "The aggregate's declared fields (the identity `id` is implicit), as read from the pack: name plus type, ref or oneOf.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "oneOf": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "file": {
+      "type": "object",
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "rows": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "minProperties": 1
+        }
+      }
+    }
+  }
+}

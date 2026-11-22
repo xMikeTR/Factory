@@ -45,10 +45,11 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             files[rel] = text;
         }
 
+        var apiContracts = ApiContracts(manifest, files, errors);
         var elementsPath = Str(manifest, "elements");
         var resolved = elementsPath is null
             ? Fail("handover.yaml names no elements file; re-freeze it with a designc that writes elements.json")
-            : files.TryGetValue(elementsPath, out var json) ? ParseElements(json, errors)
+            : files.TryGetValue(elementsPath, out var json) ? ParseElements(json, apiContracts, errors)
             : Fail($"handover.yaml: elements '{elementsPath}' is not among the frozen files");
 
         var elements = resolved is null ? [] : Elements(resolved.Value, errors);
@@ -76,6 +77,8 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         var (contracts, uncovered) = Contracts(manifest, files, errors);
         var ui = UiScreens(manifest, files, errors);
         var tests = Tests(manifest, files, errors);
+        var (scenarioTests, scenarioSkipped, apiScenarios, entities) = ScenarioTests(manifest, files, errors);
+        var dependencies = Dependencies(manifest, files, elements, errors);
 
         if (errors.Count > 0) Reject(handoverDir, errors);
         return new Handover(
@@ -95,7 +98,7 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             Core.ToList(references),
             Core.ToList(contracts),
             Core.ToList(uncovered),
-            Core.ToList(ApiContracts(manifest, files, errors)),
+            Core.ToList(apiContracts),
             Str(manifest, "requirement_risk") switch
             {
                 "low" => FSharpOption<RiskLevel>.Some(RiskLevel.Low),
@@ -106,7 +109,14 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             Str(manifest, "requirement_data_class") is ("public" or "internal" or "regulated") and { } dataClass
                 ? FSharpOption<string>.Some(dataClass) : FSharpOption<string>.None,
             Core.ToList(ui),
-            tests);
+            tests,
+            Core.ToList(scenarioTests),
+            Core.ToList(scenarioSkipped),
+            Core.ToList(resolved!.Value.Interfaces),
+            Core.ToList(apiContracts.OrderBy(c => c, StringComparer.Ordinal).Select(c => new UiText(c, Sha256(files[c]), files[c]))),
+            dependencies,
+            Core.ToList(apiScenarios),
+            Core.ToList(entities));
 
         ResolvedModel? Fail(string error) { errors.Add(error); return null; }
     }
@@ -163,6 +173,80 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
         return screens;
     }
 
+    /// `scenario_tests`: the derived scenarios.json (designc.handover.scenarios/1). Empty when handover.yaml has no such key. Each screen's
+    /// generated test must be a frozen file whose sha256 matches; the Factory runs the text as written and never regenerates it.
+    private static (List<ScenarioScreen>, List<Tuple<string, string>>, List<ApiScenario>, List<EntityDef>) ScenarioTests(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
+    {
+        var screens = new List<ScenarioScreen>();
+        var skipped = new List<Tuple<string, string>>();
+        var api = new List<ApiScenario>();
+        var entities = new List<EntityDef>();
+        if (Str(manifest, "scenario_tests") is not { } path) return (screens, skipped, api, entities);
+        if (!files.TryGetValue(path, out var json)) { errors.Add($"handover.yaml: scenario_tests '{path}' is not among the frozen files"); return (screens, skipped, api, entities); }
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var schema = root.GetProperty("schema").GetString();
+            if (schema is not ("designc.handover.scenarios/1" or "designc.handover.scenarios/2" or "designc.handover.scenarios/3")) { errors.Add($"{path}: schema is not designc.handover.scenarios/1, designc.handover.scenarios/2 or designc.handover.scenarios/3"); return (screens, skipped, api, entities); }
+            foreach (var sc in root.GetProperty("screens").EnumerateArray())
+            {
+                var name = sc.GetProperty("screen").GetString()!;
+                var test = sc.GetProperty("test");
+                var p = test.GetProperty("path").GetString()!;
+                var want = test.GetProperty("sha256").GetString()!;
+                if (!files.TryGetValue(p, out var text)) { errors.Add($"{path}: scenario test '{p}' is not among the frozen files"); continue; }
+                if (Sha256(text) != want) { errors.Add($"{p} does not match the sha256 {path} names for it (scenario test of screen '{name}')"); continue; }
+                var scenarios = sc.GetProperty("scenarios").EnumerateArray().Select(c =>
+                {
+                    var op = c.GetProperty("operation");
+                    return new ScenarioRef(c.GetProperty("id").GetString()!,
+                        Tuple.Create(op.GetProperty("id").GetString()!, op.GetProperty("method").GetString()!, op.GetProperty("path").GetString()!),
+                        Core.ToList(c.GetProperty("examples").EnumerateArray().Select(e => Tuple.Create(e.GetProperty("index").GetInt32(), e.GetProperty("title").GetString()!))));
+                }).ToList();
+                screens.Add(new ScenarioScreen(name, sc.GetProperty("component").GetString()!, new UiText(p, want, text), Core.ToList(scenarios)));
+            }
+            foreach (var k in root.GetProperty("skipped").EnumerateArray())
+                skipped.Add(Tuple.Create(k.GetProperty("scenario").GetString()!, k.GetProperty("reason").GetString()!));
+            if (schema is "designc.handover.scenarios/2" or "designc.handover.scenarios/3")
+            {
+                static string Canon(JsonElement e) => System.Text.Json.Nodes.JsonNode.Parse(e.GetRawText())!.ToJsonString();
+                static Microsoft.FSharp.Collections.FSharpList<Tuple<string, Microsoft.FSharp.Collections.FSharpList<string>>> Rows(JsonElement o) =>
+                    Core.ToList(o.EnumerateObject().Select(p => Tuple.Create(p.Name, Core.ToList(p.Value.EnumerateArray().Select(Canon)))));
+                // A /3 request holds JSON scalars; path and query values become their text (a string as is, a number or bool as its JSON text).
+                static Microsoft.FSharp.Collections.FSharpList<Tuple<string, string>> Scalars(JsonElement o) =>
+                    Core.ToList(o.EnumerateObject().Where(p => p.Value.ValueKind != JsonValueKind.Null)
+                        .Select(p => Tuple.Create(p.Name, p.Value.ValueKind == JsonValueKind.String ? p.Value.GetString()! : p.Value.GetRawText())));
+                static FSharpOption<ApiRequest> Request(JsonElement e) =>
+                    e.TryGetProperty("request", out var r)
+                        ? FSharpOption<ApiRequest>.Some(new ApiRequest(r.TryGetProperty("body", out var b) ? FSharpOption<string>.Some(Canon(b)) : FSharpOption<string>.None,
+                            Scalars(r.GetProperty("path")), Scalars(r.GetProperty("query"))))
+                        : FSharpOption<ApiRequest>.None;
+                if (root.TryGetProperty("api", out var apis))
+                    foreach (var a in apis.EnumerateArray())
+                    {
+                        var op = a.GetProperty("operation");
+                        var examples = a.GetProperty("examples").EnumerateArray().Select(e => new ApiExample(e.GetProperty("index").GetInt32(), e.GetProperty("title").GetString()!,
+                            Rows(e.GetProperty("given")), Rows(e.GetProperty("then")), Request(e))).ToList();
+                        var id = a.GetProperty("id").GetString()!;
+                        api.Add(new ApiScenario(id, a.GetProperty("path").GetString()!, a.GetProperty("sha256").GetString()!, op.GetProperty("id").GetString()!,
+                            op.GetProperty("method").GetString()!, op.GetProperty("path").GetString()!, Core.ToList(examples)));
+                        // An example without a request (every /2 example) cannot be turned into a call.
+                        if (examples.Any(e => FSharpOption<ApiRequest>.get_IsNone(e.Request))) skipped.Add(Tuple.Create(id, ApiNeedsRequest));
+                    }
+                if (root.TryGetProperty("entities", out var ents))
+                    foreach (var e in ents.EnumerateArray())
+                        entities.Add(new EntityDef(e.GetProperty("id").GetString()!, e.GetProperty("pack").GetString()!, e.GetProperty("name").GetString()!, e.GetProperty("version").GetInt32(),
+                            Core.ToList(e.GetProperty("fields").EnumerateArray().Select(f => Tuple.Create(f.GetProperty("name").GetString()!, f.GetProperty("type").GetString()!)))));
+            }
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); }
+        return (screens, skipped, api, entities);
+    }
+
+    /// The reason an API scenario example is listed as skipped: scenarios/2 carries rows but no request, and a /3 example may have none.
+    public const string ApiNeedsRequest = "needs designc scenarios/3: the example has no request";
+
     /// `tests`: the derived tests.json (designc.handover.tests/1). None when handover.yaml has no `tests` key; any other schema is refused.
     private static FSharpOption<TestMap> Tests(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<string> errors)
     {
@@ -184,6 +268,49 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
             return FSharpOption<TestMap>.Some(new TestMap(Core.ToList(elements), Core.ToList(unmapped)));
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); return FSharpOption<TestMap>.None; }
+    }
+
+    /// `dependencies`: the derived dependencies.json (designc.handover.dependencies/1). None when handover.yaml has no `dependencies` key;
+    /// any other schema is refused. Each entry is checked against the code-backed elements, and every code-backed element must be listed.
+    private static FSharpOption<Microsoft.FSharp.Collections.FSharpList<ElementAllows>> Dependencies(Dictionary<string, object?> manifest, Dictionary<string, string> files, List<ElementSpec> elements, List<string> errors)
+    {
+        var none = FSharpOption<Microsoft.FSharp.Collections.FSharpList<ElementAllows>>.None;
+        if (Str(manifest, "dependencies") is not { } path) return none;
+        if (!files.TryGetValue(path, out var json)) { errors.Add($"handover.yaml: dependencies '{path}' is not among the frozen files"); return none; }
+        var before = errors.Count;
+        var result = new List<ElementAllows>();
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.GetProperty("schema").GetString() != "designc.handover.dependencies/1") { errors.Add($"{path}: schema is not designc.handover.dependencies/1"); return none; }
+            var byId = elements.ToDictionary(e => e.Id.Value, StringComparer.Ordinal);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var entry in root.GetProperty("elements").EnumerateArray())
+            {
+                var id = entry.GetProperty("element").GetString()!;
+                var where = $"dependencies.json: '{id}'";
+                if (!byId.TryGetValue(id, out var spec)) { errors.Add($"{where} is not a code-backed element of elements.json"); continue; }
+                if (!seen.Add(id)) { errors.Add($"{where} is listed twice"); continue; }
+                var code = entry.GetProperty("code").EnumerateArray().Select(c => c.GetString()!).ToList();
+                if (!code.SequenceEqual(spec.CodeAreas.Select(a => a.Value))) errors.Add($"{where} code {string.Join(", ", code)} does not match elements.json ({string.Join(", ", spec.CodeAreas.Select(a => a.Value))})");
+                var repo = entry.TryGetProperty("repo", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null;
+                var wantRepo = spec.Repo is { } sr ? sr.Value : null;
+                if (repo != wantRepo) errors.Add($"{where} repo '{repo}' does not match elements.json ('{wantRepo}')");
+                var allows = new List<ElementId>();
+                foreach (var a in entry.GetProperty("allows").EnumerateArray().Select(a => a.GetString()!))
+                {
+                    if (a == id) errors.Add($"{where} allows itself");
+                    else if (!byId.ContainsKey(a)) errors.Add($"{where} allows '{a}', which is not a code-backed element");
+                    else allows.Add(ElementId.NewElementId(a));
+                }
+                result.Add(new ElementAllows(ElementId.NewElementId(id), Core.ToList(allows)));
+            }
+            foreach (var e in elements.Where(e => !seen.Contains(e.Id.Value)))
+                errors.Add($"dependencies.json: '{e.Id.Value}' is not listed (designc lists every code-backed element)");
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { errors.Add($"{path}: {e.Message}"); return none; }
+        return errors.Count > before ? none : FSharpOption<Microsoft.FSharp.Collections.FSharpList<ElementAllows>>.Some(Core.ToList(result));
     }
 
     public static string Sha256(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
@@ -307,21 +434,52 @@ public sealed partial class DesigncHandoverReader : IHandoverSource
     /// Designc's hash16 (rules.py / core.js): two 32-bit FNV-1a passes over the UTF-16 code units.
     public static string Hash16(string s) => Factory.Core.Hash16.compute(s);
 
-    private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk, [property: JsonPropertyName("in_scope")] bool? InScope, string? Repo = null);
+    /// One end of a typed relationship (/3 `interfaces`). `schema`/`fields` are not read: codegen reads the OpenAPI file.
+    private sealed record InterfaceJson(string? Role, RelationshipJson? Rel, string? Kind, string? Id, string? Method, string? Path, string? File, string? Pack, string? Name, string? Version);
+    private sealed record ElementJson(string Id, string Name, string Kind, List<string>? Code, string? Risk, [property: JsonPropertyName("in_scope")] bool? InScope, string? Repo = null, List<InterfaceJson>? Interfaces = null);
     private sealed record RelationshipJson(string From, string To);
     private sealed record ElementsJson(string? Schema, List<ElementJson>? Elements, List<RelationshipJson>? Relationships, List<string>? Events, List<string>? Reserved);
-    private readonly record struct ResolvedModel(List<ElementJson> Elements, List<RelationshipJson> Relationships, List<string> Events, List<string> Reserved);
+    private readonly record struct ResolvedModel(List<ElementJson> Elements, List<RelationshipJson> Relationships, List<string> Events, List<string> Reserved, List<ElementInterface> Interfaces);
 
-    /// /1 is the design handover; /2 is an item handover (adds `in_scope` per element and `reserved` paths).
-    private static readonly string[] ElementsSchemas = ["designc.handover.elements/1", "designc.handover.elements/2"];
+    /// /1 is the design handover; /2 is an item handover (adds `in_scope` per element and `reserved` paths); /3 adds typed `interfaces`.
+    private static readonly string[] ElementsSchemas = ["designc.handover.elements/1", "designc.handover.elements/2", "designc.handover.elements/3"];
 
-    private static ResolvedModel? ParseElements(string json, List<string> errors)
+    private static readonly string[] InterfaceRoles = ["calls", "serves", "publishes", "consumes"];
+
+    private static List<ElementInterface> Interfaces(List<ElementJson> elements, List<string> apiContracts, List<string> errors)
+    {
+        var all = new List<ElementInterface>();
+        foreach (var e in elements)
+            foreach (var i in e.Interfaces ?? [])
+            {
+                var where = $"element '{e.Id}' interface '{i.Id}'";
+                if (i.Role is null || !InterfaceRoles.Contains(i.Role)) { errors.Add($"elements.json: {where}: role '{i.Role}' is not calls, serves, publishes or consumes"); continue; }
+                var wantKind = i.Role is "calls" or "serves" ? "operation" : "event";
+                if (i.Kind != wantKind) { errors.Add($"elements.json: {where}: role '{i.Role}' needs kind '{wantKind}', not '{i.Kind}'"); continue; }
+                if (i.Rel is null || string.IsNullOrWhiteSpace(i.Id) || string.IsNullOrWhiteSpace(i.Version)) { errors.Add($"elements.json: {where}: rel, id and version are required"); continue; }
+                if (i.Kind == "operation" && (i.File is null || !apiContracts.Contains(i.File)))
+                { errors.Add($"elements.json: {where}: file '{i.File}' is not one of contracts_api"); continue; }
+                all.Add(new ElementInterface(e.Id, i.Role, i.Rel.From, i.Rel.To, i.Kind, i.Id,
+                    i.Method is null ? FSharpOption<string>.None : FSharpOption<string>.Some(i.Method),
+                    i.Path is null ? FSharpOption<string>.None : FSharpOption<string>.Some(i.Path),
+                    i.File is null ? FSharpOption<string>.None : FSharpOption<string>.Some(i.File),
+                    i.Version));
+            }
+        foreach (var g in all.GroupBy(i => (i.From, i.To, i.Id)).Where(g => g.Select(i => i.Version).Distinct().Count() > 1))
+            errors.Add($"elements.json: {g.Key.Id} on {g.Key.From} → {g.Key.To}: the two ends disagree on version");
+        return all;
+    }
+
+    private static ResolvedModel? ParseElements(string json, List<string> apiContracts, List<string> errors)
     {
         ElementsJson? doc;
         try { doc = JsonSerializer.Deserialize<ElementsJson>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web)); }
         catch (JsonException ex) { errors.Add($"elements.json: {ex.Message}"); return null; }
         if (doc?.Schema is null || !ElementsSchemas.Contains(doc.Schema)) { errors.Add($"elements.json: schema '{doc?.Schema}' is not {string.Join(" or ", ElementsSchemas)}"); return null; }
-        return new ResolvedModel(doc.Elements ?? [], doc.Relationships ?? [], doc.Events ?? [], doc.Reserved ?? []);
+        if (doc.Schema != "designc.handover.elements/3" && (doc.Elements ?? []).Any(e => e.Interfaces is not null))
+        { errors.Add($"elements.json: interfaces are only allowed in designc.handover.elements/3, not {doc.Schema}"); return null; }
+        var elements = doc.Elements ?? [];
+        return new ResolvedModel(elements, doc.Relationships ?? [], doc.Events ?? [], doc.Reserved ?? [], Interfaces(elements, apiContracts, errors));
     }
 
     /// The model's relationships between elements that own code (the others cannot be crossed by a task).

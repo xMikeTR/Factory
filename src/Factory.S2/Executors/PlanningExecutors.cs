@@ -37,6 +37,16 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
         await svc.LogAsync(msg.RunId, "start", LedgerKinds.RunStarted,
             payload: Procedures.RunStartedPayload(Procedures.Fingerprint(AppContext.BaseDirectory, svc.Settings.RepoPath)), ct: cancellationToken);
 
+        if (Factory.Harness.Policy.QualityPolicyFile.UnknownAllowListRepos(svc.Settings.QualityPolicy, svc.Settings.RepoNames) is { Count: > 0 } badRepos)
+            throw new FactoryRejectedException(".factory/policy.yaml quality.allowList is invalid", [.. badRepos]);
+
+        // Generated contract code is an input to planning, not a nicety: no plan is drafted without it (when there is something to generate).
+        if (await CodegenPhase.GenerateAsync(svc, msg.RunId, handover, cancellationToken) is { } codegenFailed)
+        {
+            await context.SendMessageAsync(codegenFailed, cancellationToken: cancellationToken);
+            return;
+        }
+
         // Regeneration: start from the previous run's plan, stamped with this freeze. The validator
         // still decides; if the plan no longer fits the handover, the planner redrafts as usual.
         if (msg.Since is { } since && !File.Exists(svc.Settings.PlanPath(msg.RunId)))
@@ -82,6 +92,9 @@ internal sealed class PlannerExecutor(FactoryServices svc) : Executor("Planner")
             {handoverJson}
             ```
             """;
+        // Only when something was generated: otherwise the brief is byte-identical to what it always was.
+        if (CodegenPhase.BriefSection(handover, CodegenPhase.GeneratedFiles(svc.Settings.RunDir(runId))) is { } generated)
+            brief += "\n\n" + generated.TrimEnd();
         if (errors is not null)
             brief += $"""
 
@@ -163,6 +176,8 @@ internal sealed class DispatchExecutor(FactoryServices svc) : Executor("Dispatch
         // A split project cuts an integration branch in every repo; a single-repo run, the one.
         foreach (var git in svc.RepoGits.Count > 0 ? svc.RepoGits.Values : [svc.Git])
             await git.EnsureIntegrationAsync(msg.RunId, svc.Settings.BaseBranch, cancellationToken);
+        // The generated contract code (read-only to agents, drift-checked), seeded before any task starts.
+        await CodegenPhase.SeedAsync(svc, msg.RunId, cancellationToken);
         // The ui: check's spec, manifests, approved pictures and page test, once, by the Factory, in the repo that holds the UI.
         var uiHandover = svc.LoadHandover(msg.RunId);
         if (!uiHandover.Ui.IsEmpty)

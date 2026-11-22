@@ -7,7 +7,7 @@ namespace Factory.Harness.Registry;
 public sealed record S2Config(IReadOnlyList<string> ProtectedPaths)
 {
     public static S2Config Default { get; } = new(["registry/**", ".github/**", ".factory/**", "verify/**", "scripts/verify/**",
-        "ui-contract/previews/**", "ui-contract/specs/**", "ui-contract/manifests/**", "ui-contract/preview/**", "ui-contract/tests/**", "ui-contract/holdout/**",
+        "ui-contract/previews/**", "ui-contract/specs/**", "ui-contract/manifests/**", "ui-contract/preview/**", "ui-contract/tests/**", "ui-contract/holdout/**", "generated/contracts/**",
         "vitest.config.*", ".claude/hooks/**"]);
 }
 

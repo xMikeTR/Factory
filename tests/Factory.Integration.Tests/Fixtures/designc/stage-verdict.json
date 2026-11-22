@@ -1,2 +1,3 @@
 {"kind":"stage_verdict","by":"factory","run":"run-1","stage":"ui-visual","outcome":"fail","change_ts":1763300000000,"task":"T-3","element":"Portal","screen":"bordereaux","item":"W-ui","failures":[{"state":"empty","kind":"pixels","placement":"header"}]}
 {"kind":"stage_verdict","by":"factory","run":"run-1","stage":"review","outcome":"pass","change_ts":1763300000000,"task":"T-3","round":2}
+{"kind":"stage_verdict","by":"factory","run":"run-1","stage":"scenario","outcome":"fail","change_ts":1763300000000,"task":"T-3","screen":"orders","item":"W-ui","scenario":"ORD-1-ts-01","failures":[{"criterion":"ORD-1-ts-01 example 1","kind":"body"}]}

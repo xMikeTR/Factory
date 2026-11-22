@@ -28,6 +28,7 @@ public class DesigncSchemaTests
     [InlineData("""{"kind":"stage_verdict","by":"f","run":"r","stage":"holdout","outcome":"fail","change_ts":1,"failures":[{"state":3}]}""", false)]
     [InlineData("""{"kind":"stage_verdict","by":"f","run":"r","stage":"holdout","outcome":"fail","change_ts":1,"failures":["x"]}""", false)]
     [InlineData("""{"kind":"stage_verdict","by":"f","run":"r","stage":"holdout","outcome":"fail","change_ts":1,"failures":[{"state":"x","kind":"aria","placement":"p","criterion":"c"}]}""", true)]
+    [InlineData("""{"kind":"stage_verdict","by":"f","run":"r","stage":"scenario","outcome":"fail","change_ts":1,"task":"T-3","element":"Orders","scenario":"ORD-1-ts-01","failures":[{"criterion":"ORD-1-ts-01 example 1","kind":"rows"}]}""", true)] // an API scenario: no screen
     [InlineData("""{"kind":"stage_verdict","by":"f","run":"r","stage":"parity","outcome":"fail","change_ts":1}""", false)]                             // stage enum
     public void Verdict_shape_is_enforced(string line, bool valid) => Assert.Equal(valid, DesigncSchema.Validate(line).Count == 0);
 

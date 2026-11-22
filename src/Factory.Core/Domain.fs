@@ -88,6 +88,7 @@ type AgentContract = { Agent: string; Policy: string; Hash: string }
 
 /// A text file the handover carries for a UI screen (`ui.json` names it with its sha256): kept in the record because the run needs
 /// the text after the handover directory is gone.
+/// Any frozen text (UI spec, OpenAPI contract), not only UI.
 type UiText = { Path: string; Sha256: string; Text: string }
 
 /// A holdout acceptance case, named by hash only (handover `ui.json` `holdout_cases`). The case itself never reaches the Factory's run.
@@ -114,6 +115,54 @@ type ElementTests = { Element: string; Repo: string option; FailToPass: NamedTes
 
 /// handover.yaml `tests`: per element, plus the elements with code and no covering test (element, reason).
 type TestMap = { Elements: ElementTests list; Unmapped: (string * string) list }
+
+/// A scenario test of one screen (`scenarios.json`, designc.handover.scenarios/1). `Examples` is (index, title); `Operation` is
+/// (operationId, method, path) of the request the test waits for.
+type ScenarioRef = { Id: string; Operation: string * string * string; Examples: (int * string) list }
+
+/// The generated scenario test of one screen: `Test` is designc's text, run as written and never regenerated.
+type ScenarioScreen = { Screen: string; Component: string; Test: UiText; Scenarios: ScenarioRef list }
+
+/// The request an API scenario example sends (designc scenarios/3). `Body` is canonical JSON text; `Path` maps each path parameter to its value.
+type ApiRequest = { Body: string option; Path: (string * string) list; Query: (string * string) list }
+
+/// One example of an API scenario (scenarios/2 `api`): `Given` seeds rows and `Then` expects rows, both keyed by qualified entity
+/// (`pack/Aggregate`) with each row as JSON object text, in the handover's order. `Request` is None under scenarios/2, or when a /3 example has none.
+type ApiExample =
+    { Index: int
+      Title: string
+      Given: (string * string list) list
+      Then: (string * string list) list
+      Request: ApiRequest option }
+
+/// An API scenario: one operation exercised by its examples. `Path`/`Sha256` name the scenario YAML designc froze.
+type ApiScenario =
+    { Id: string
+      Path: string
+      Sha256: string
+      OperationId: string
+      Method: string
+      OpPath: string
+      Examples: ApiExample list }
+
+/// A design entity (scenarios/2 `entities`): `Id` is `pack/Name`; `Fields` is (name, type).
+type EntityDef = { Id: string; Pack: string; Name: string; Version: int; Fields: (string * string) list }
+
+/// One end of a typed relationship, from designc's elements/3 `interfaces` (operations carry method/path/file, events carry neither).
+type ElementInterface =
+    { Element: string
+      Role: string
+      From: string
+      To: string
+      Kind: string
+      Id: string
+      Method: string option
+      Path: string option
+      File: string option
+      Version: string }
+
+/// One design element and the elements it may depend on (designc dependencies.json, lifted to the code-backed elements).
+type ElementAllows = { Element: ElementId; Allows: ElementId list }
 
 type Handover =
     { Id: string
@@ -154,7 +203,21 @@ type Handover =
       /// The bound UI screens (handover.yaml `ui`); empty when the handover has none, and for a handover JSON frozen before they were carried.
       Ui: UiScreen list
       /// The test map (handover.yaml `tests`); None when the handover has none, and for a handover JSON frozen before it was carried.
-      Tests: TestMap option }
+      Tests: TestMap option
+      /// The generated scenario tests (handover.yaml `scenario_tests`); empty when the handover has none.
+      ScenarioTests: ScenarioScreen list
+      /// Scenarios designc did not generate a test for (scenario, reason); empty when none.
+      ScenarioSkipped: (string * string) list
+      /// Every interface of every element (elements/3), in file order; empty for /1 and /2 and for older handover JSON.
+      Interfaces: ElementInterface list
+      /// The frozen text of each `contracts_api` file, sorted by path; empty when the handover pins none.
+      ApiContractTexts: UiText list
+      /// The allow list (handover.yaml `dependencies`, designc.handover.dependencies/1); None when the handover has no dependencies.json.
+      Dependencies: ElementAllows list option
+      /// API scenarios with their given/then rows (scenarios/2); empty when the handover has none.
+      ApiScenarios: ApiScenario list
+      /// Entities the API scenarios' rows are keyed by (scenarios/2); empty when none.
+      Entities: EntityDef list }
 
 // ---------- plan (planner agent output, validated before anything runs) ----------
 

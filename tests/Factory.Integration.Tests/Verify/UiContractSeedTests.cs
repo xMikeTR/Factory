@@ -44,6 +44,32 @@ public sealed class UiContractSeedTests : IDisposable
         Assert.Empty(await UiContractSeed.DriftAsync(s.Integration, s.RunDir, default));
     }
 
+    private static Handover WithScenarioTest(Handover h) => h.WithScenarios([new ScenarioScreen("bordereaux", "BordereauxList",
+        new UiText("ui-contract/tests/bordereaux.scenarios.page.test.tsx", "x", Registry.ScenarioHandoverReaderTests.GoldenText()),
+        Core.ToList<ScenarioRef>([]))]);
+
+    [Fact]
+    public async Task A_scenario_test_is_seeded_verbatim_beside_the_page_test_and_an_edit_to_it_is_drift()
+    {
+        var fx = await UiPreviewFixture.CreateAsync();
+        var h = UiHandoverDir.Create();
+        var json = await HandoverInput.ResolveAsync(h.Dir, _state, default);
+        var handover = WithScenarioTest(Core.ParseHandover(await File.ReadAllTextAsync(json)));
+        var runDir = Path.Combine(_state, "runs", "r2");
+        HandoverInput.CopyUiPreviewsToRun(handover, json, runDir);
+        var git = new GitWorkspace(fx.Repo, Path.Combine(_state, "ws2"));
+        var integration = await git.EnsureIntegrationAsync("r2", "main", default);
+        await UiContractSeed.SeedAsync(git, "r2", integration, handover, runDir, default);
+
+        var path = Path.Combine(integration, "ui-contract", "tests", "bordereaux.scenarios.page.test.tsx");
+        Assert.Equal(Registry.ScenarioHandoverReaderTests.GoldenText(), File.ReadAllText(path)); // as designc wrote it, byte for byte
+        Assert.Empty(await git.ChangedPathsAsync(integration, default)); // committed with the rest
+        Assert.Empty(await UiContractSeed.DriftAsync(integration, runDir, default));
+
+        File.AppendAllText(path, "// an agent loosened the expected body\n");
+        Assert.Contains(await UiContractSeed.DriftAsync(integration, runDir, default), l => l.StartsWith("modified") && l.Contains("bordereaux.scenarios.page.test.tsx"));
+    }
+
     [Fact]
     public async Task Seeding_twice_changes_nothing()
     {

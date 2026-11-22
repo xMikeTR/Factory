@@ -215,8 +215,13 @@ internal sealed class TaskLoop(
                 && await svc.Verify.RegressionAsync(runId, _teamId, task, baseline, suite.Item, worktree, ct) is { } regressed)
                 green.Add(regressed); // P2P: a test that passed before fails now, so this is not green
         }
-        if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await QualityOutcomeAsync(attempt, ct) is { } quality)
+        await using var reads = NewReads(ct);
+        if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await QualityOutcomeAsync(attempt, reads, ct) is { } quality)
             green.Add(quality); // block mode: a ratchet violation is not green
+        if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await AllowListOutcomeAsync(attempt, reads, ct) is { } allowList)
+            green.Add(allowList); // block mode: an edge the design does not allow is not green
+        if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await BoundaryOutcomeAsync(attempt, ct) is { } boundary)
+            green.Add(boundary); // block mode: hand-written code for a generated operation or DTO is not green
         if (green.Count > 0 && green.All(o => o.ExitCode == 0) && await MutationOutcomeAsync(attempt, ct) is { } mutation)
         {
             if (mutation.ExitCode == 124) green.Add(mutation); // the tool never finished: parks below
@@ -408,6 +413,7 @@ internal sealed class TaskLoop(
     private string? _contextRole;
     private System.Diagnostics.Activity? _span;
     private ContextBundle? _bundle; // the phase's bundle when injection is on; null otherwise
+    private IReadOnlyList<(string Repo, string Path, string Source)>? _generated; // the codegen manifest's files, read once per task
 
     private async Task<TaskState> PlanTurnAsync(TaskState state, ModelTier tier, CancellationToken ct)
     {
@@ -608,12 +614,11 @@ internal sealed class TaskLoop(
 
     /// The quality ratchet over the task's diff. Block mode returns a failing outcome that joins the
     /// green ones (so it is refused and reaches the next brief); report mode only writes the ledger row.
-    private async Task<VerifyOutcome?> QualityOutcomeAsync(int attempt, CancellationToken ct)
+    private async Task<VerifyOutcome?> QualityOutcomeAsync(int attempt, EdgeReads reads, CancellationToken ct)
     {
         if (svc.Settings.QualityPolicy is not { Mode: not QualityMode.Off } policy) return null;
         var started = DateTime.UtcNow;
-        await LogDebtAsync(ct);
-        var lines = await QualityLinesAsync(policy, ct);
+        var lines = await QualityLinesAsync(policy, reads, ct);
         if (lines.Count == 0)
         {
             if (policy.Mode == QualityMode.Report) await svc.LogAsync(runId, "quality", LedgerKinds.Verify, "clean", JsonSerializer.Serialize(new { attempt }), _teamId, _taskId, ct);
@@ -626,16 +631,97 @@ internal sealed class TaskLoop(
             "The change leaves code harder to maintain than the policy allows. Simplify it (extract, flatten, remove branches):\n" + string.Join("\n", lines)) : null;
     }
 
+    private string? Repo => AllowedEdges.taskRepo(handover.Elements, task) is { } r ? r.Value : null;
+
     private readonly HashSet<(ElementId, ElementId)> _debtLogged = [];
 
-    /// Element pairs the code already crossed with no relationship in the model: not the task's doing, so not blocking,
-    /// but ledgered (once per pair) for Designc as `asbuilt_edge` so the model or the code can catch up.
-    private async Task LogDebtAsync(CancellationToken ct)
+    private EdgeReads NewReads(CancellationToken ct) => new(svc.Sandboxes, svc.Git, worktree, runId, ct);
+
+    /// The design's allow list over the task's diff (project references, cross-assembly type use, TS imports). The mode is the task's
+    /// repo's `quality.allowList`, else the global `quality.mode`. Report logs and lets the task through; block fails verify. Either way
+    /// the line names the missing relationship. Pairs the baseline already crossed are debt: ledgered once as `asbuilt_edge`.
+    private async Task<VerifyOutcome?> AllowListOutcomeAsync(int attempt, EdgeReads reads, CancellationToken ct)
     {
-        foreach (var (from, to) in await QualityGate.FitnessDebtAsync(svc.Git, worktree, runId, handover, ct))
+        if (svc.Settings.QualityPolicy is not { Mode: not QualityMode.Off } policy) return null;
+        var started = DateTime.UtcNow;
+        var repo = Repo;
+        var found = await AllowedAsync(reads, repo, ct);
+        foreach (var (from, to) in found.Debt)
             if (_debtLogged.Add((from, to)))
                 await svc.LogAsync(runId, "quality", LedgerKinds.AsBuiltEdge, "debt",
                     JsonSerializer.Serialize(new { from = from.Value, to = to.Value }), _teamId, _taskId, ct);
+        var mode = policy.AllowList?.ModeFor(repo) ?? policy.Mode;
+        if (mode == QualityMode.Off) return null;
+        var block = mode == QualityMode.Block;
+        if (found.New.Count == 0)
+        {
+            if (mode == QualityMode.Report) await svc.LogAsync(runId, "allow_list", LedgerKinds.Verify, "clean", JsonSerializer.Serialize(new { attempt }), _teamId, _taskId, ct);
+            return null;
+        }
+        var kind = (EdgeKind k) => k.IsProjectReference ? "project" : k.IsAssemblyUse ? "assembly" : "import";
+        await svc.LogAsync(runId, "allow_list", LedgerKinds.Verify, block ? "blocked" : "reported",
+            JsonSerializer.Serialize(new
+            {
+                attempt, repo = repo ?? ".", mode = block ? "block" : "report",
+                violations = found.New.Select(v => new { kind = kind(v.Kind), source = v.Edge.Source, target = v.Edge.Target, from = v.FromElement.Value, to = v.ToElement.Value, origin = "translation_error" })
+            }), _teamId, _taskId, ct);
+        if (!block)
+        {
+            foreach (var (from, to) in found.New.Select(v => (v.FromElement, v.ToElement)).Distinct())
+                if (_debtLogged.Add((from, to)))
+                    await svc.LogAsync(runId, "quality", LedgerKinds.AsBuiltEdge, "reported",
+                        JsonSerializer.Serialize(new { from = from.Value, to = to.Value }), _teamId, _taskId, ct);
+            return null;
+        }
+        return new VerifyOutcome("allow_list", 1, (long)(DateTime.UtcNow - started).TotalMilliseconds,
+            "The change adds dependencies the design does not allow (translation_error: the code must follow the design). Remove each one, or depend only on elements the design allows:\n"
+            + string.Join("\n", found.New.Select(AllowedEdges.line)));
+    }
+
+    /// Hand-written clients and DTOs for what the Factory generated from the pinned contracts, in what the task wrote (not its tests: they may
+    /// call endpoints raw). Mode is `codegen.handWritten`. Report logs and lets the task through; block fails verify and names the generated code to use.
+    private async Task<VerifyOutcome?> BoundaryOutcomeAsync(int attempt, CancellationToken ct)
+    {
+        var mode = svc.Settings.CodegenHandWritten;
+        if (mode == QualityMode.Off) return null;
+        var started = DateTime.UtcNow;
+        if (await BoundaryFindingsAsync(ct) is not { } found) return null;
+        var block = mode == QualityMode.Block;
+        if (found.Count == 0)
+        {
+            await svc.LogAsync(runId, "generated_boundary", LedgerKinds.Verify, "clean", JsonSerializer.Serialize(new { attempt }), _teamId, _taskId, ct);
+            return null;
+        }
+        await svc.LogAsync(runId, "generated_boundary", LedgerKinds.Verify, block ? "blocked" : "reported",
+            JsonSerializer.Serialize(new
+            {
+                attempt, repo = Repo ?? ".", mode = block ? "block" : "report",
+                findings = found.Select(f => new { file = f.File, line = f.Line, kind = f.Kind, subject = f.Subject })
+            }), _teamId, _taskId, ct);
+        if (!block) return null;
+        return new VerifyOutcome("generated_boundary", 1, (long)(DateTime.UtcNow - started).TotalMilliseconds,
+            "The change hand-writes boundary code the Factory already generated from the pinned contract. Use the generated code instead:\n"
+            + string.Join("\n", found.Select(f => "- " + GeneratedBoundary.line(f))));
+    }
+
+    /// The findings in this task's added lines, or null when the manifest lists no generated files for the task's repo.
+    private async Task<List<GeneratedBoundary.Finding>?> BoundaryFindingsAsync(CancellationToken ct)
+    {
+        var (ops, dtos) = CodegenPhase.BoundaryInputs(svc.Settings.RunDir(runId), Repo ?? ".");
+        if (ops.Count == 0 && dtos.Count == 0) return null;
+        var added = Diff.addedLines(await svc.Git.TaskDiffAsync(worktree, runId, ct))
+            .Where(f => task.Writes.Any(w => Core.Matches(w, f.Item1)))
+            .Select(f => Tuple.Create(f.Item1, f.Item2)).ToList();
+        return [.. GeneratedBoundary.findings(ListModule.OfSeq(ops), ListModule.OfSeq(dtos.Select(d => Tuple.Create(d.Source, d.Name))), ListModule.OfSeq(added))];
+    }
+
+    /// New violations and debt over all three edge kinds, for this task's repo.
+    private async Task<AllowJudgement> AllowedAsync(EdgeReads reads, string? repo, CancellationToken ct)
+    {
+        var projects = (await QualityGate.AllowedAsync(svc.Git, worktree, runId, handover, repo, ct), await QualityGate.AllowedDebtAsync(svc.Git, worktree, runId, handover, repo, ct));
+        var assembly = await NamespaceGate.AllowedAsync(reads, svc.Git, worktree, runId, handover, repo, ct);
+        var imports = await TsGate.AllowedAsync(reads, svc.Git, worktree, runId, handover, repo, ct);
+        return new AllowJudgement([.. projects.Item1, .. assembly.New, .. imports.New], [.. projects.Item2, .. assembly.Debt, .. imports.Debt]);
     }
 
     /// Tests that already pass on the existing code are still evidence if they kill a mutant of the code the task
@@ -814,7 +900,7 @@ internal sealed class TaskLoop(
             : $"These changes were outside your writes and were reverted: {_reverted}\n\n{_lastFailures}".TrimEnd();
         if (_repair is not null) failures = $"{_repair}\n\n{failures}".TrimEnd();
         if (_handoff is not null) failures = $"{_handoff}\n\n{failures}".TrimEnd();
-        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context, _bundle) with { Images = _repairImages };
+        return Briefs.Task(handover, task, writable, _approachNote, failures, _resolvedDecision, context, _bundle, _generated ??= CodegenPhase.GeneratedFiles(svc.Settings.RunDir(runId))) with { Images = _repairImages };
     }
 
     private bool InScope(string path, IEnumerable<PathPattern> writable) =>
@@ -877,27 +963,30 @@ internal sealed class TaskLoop(
             new("scope", async c => (await svc.Git.ChangedPathsAsync(worktree, c)).Where(p => !InScope(p, writable)).Select(p => $"- {p} is outside your write paths; verify reverts it").ToList()),
             new("ui", async c => (await UiViolationsAsync(c)).Select(UiGate.Line).ToList()),
         };
-        if (policy.Mode != QualityMode.Off) parts.Add(new("quality", async c => await QualityLinesAsync(policy, c)));
+        await using var reads = NewReads(ct);
+        if (policy.Mode != QualityMode.Off)
+        {
+            parts.Add(new("quality", async c => await QualityLinesAsync(policy, reads, c)));
+            parts.Add(new("allow_list", async c => (await AllowedAsync(reads, Repo, c)).New.Select(AllowedEdges.line).ToList()));
+        }
+        if (svc.Settings.CodegenHandWritten != QualityMode.Off)
+            parts.Add(new("generated_boundary", async c => (await BoundaryFindingsAsync(c) ?? []).Select(f => GeneratedBoundary.line(f)).ToList()));
         // awaited, not ContinueWith(OnlyOnRanToCompletion): that turned a fault in a part into a bare TaskCanceledException.
         var found = await FastCheck.RunAsync(parts, FastCheck.DefaultBudget, ct);
         return found == "no findings" ? "" : found;
     }
 
-    private async Task<List<string>> QualityLinesAsync(QualityPolicy policy, CancellationToken ct) =>
+    private async Task<List<string>> QualityLinesAsync(QualityPolicy policy, EdgeReads reads, CancellationToken ct) =>
     [
         .. (await QualityGate.EvaluateAsync(svc.Git, worktree, runId, policy.Thresholds, ct, svc.Sandboxes, policy.Coverage)).Select(QualityLine),
-        .. (await QualityGate.FitnessAsync(svc.Git, worktree, runId, handover, ct)).Select(FitnessLine),
         .. (await QualityGate.ForbiddenAsync(svc.Git, worktree, runId, policy.Forbid, ct)).Select(RuleLine),
-        .. (await TsGate.CheckAsync(svc.Sandboxes, svc.Git, worktree, runId, policy.Forbid, ct)).Select(RuleLine),
-        .. (await NamespaceGate.CheckAsync(svc.Sandboxes, svc.Git, worktree, runId, policy.ForbidNamespaces, ct)).Select(RuleLine),
+        .. (await TsGate.CheckAsync(reads, svc.Git, worktree, runId, policy.Forbid, ct)).Select(RuleLine),
+        .. (await NamespaceGate.CheckAsync(reads, policy.ForbidNamespaces)).Select(RuleLine),
         .. (await QualityGate.AssertionsAsync(svc.Git, worktree, runId, ct)).Select(AssertionLine),
     ];
 
     private static string AssertionLine(AssertionDrop d) =>
         $"- {d.File}: {d.After} assertions, {d.Before} on the integration branch; tests must not get weaker (restore them, or add ones that check the new behaviour)";
-
-    private static string FitnessLine(FitnessViolation v) =>
-        $"- {v.Edge.Source} references {v.Edge.Target}: {v.FromElement.Value} may not depend on {v.ToElement.Value} (no such relationship in the model)";
 
     private static string RuleLine(RuleViolation v) => $"- {v.Edge.Source} references {v.Edge.Target}: forbidden by the repo's rules ({v.Rule.Why})";
 

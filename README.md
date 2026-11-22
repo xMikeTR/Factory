@@ -151,6 +151,12 @@ Prompts and replies stay off spans unless `FACTORY_OTEL_CAPTURE_CONTENT=1`.
 Opt-in check against langfuse-local (v4; read back through `/api/public/v2/observations`):
 `. ~/Desktop/Coding/langfuse-local/env.sh; FACTORY_LIVE_LANGFUSE=1 dotnet test tests/Factory.Integration.Tests --filter LiveLangfuse`.
 
+### Contract codegen
+
+When the handover (`designc.handover.elements/3`) carries operation interfaces, the Factory generates C# from the pinned OpenAPI text before the planner runs, with NSwag `NSWAG_VERSION` pinned in the runner image (`Codegen.nswagVersion`; rebuild the image with `docker/runner/build.sh` after pulling). Per OpenAPI file and repo: `<Stem>.Dtos.g.cs`, `<Stem>.Server.g.cs` (an interface/partial controller for a `serves` end) and `<Stem>.Client.g.cs` (a `calls` end), in namespace `Contracts.<Stem>`. They are seeded into `generated/contracts/csharp/` on the integration branch, which is a protected path (agents cannot write it), and integration verify fails the run `integration_failed` / `generated_code_modified` if any file there is changed, removed or added. The phase writes one `codegen` ledger row (`generated`, `none`, `off`, `reused`, `failed`, `could_not_run`) with a manifest of file hashes; a generation failure ends the run `codegen_failed`. Two runs on the same handover give byte-identical files. `FACTORY_CODEGEN=off` skips the phase. Which repos get C# is `codegen: { csharp: [Api, Worker] }` in the primary repo's `.factory/policy.yaml` (default: every repo that serves an operation; `.` in a single-repo run). TypeScript (X3): `openapi-typescript` (`OPENAPI_TYPESCRIPT_VERSION`, `Codegen.openapiTypescriptVersion`, pinned in the runner image) writes `<Stem>.schema.ts` under `generated/contracts/ts/<Stem>/`, and the Factory itself renders a thin `<Stem>.client.ts` (`create<Stem>Client(baseUrl).<operationId>(...)`, typed from the schema) deterministically from the calls it knows; it does not use `openapi-fetch`, whose output would depend on a second tool's version and on how the client is configured. Which repos get TS is `codegen: { typescript: [Ui] }` (default: in a split run, repos that call an operation and have a `package.json` on the base branch; in a single-repo run `.` when it has one). The same folder rules apply to both languages: seeded, protected, drift judged over all of `generated/contracts/`. The `codegen` manifest is v2 (`tools`, `files` with their source, `sources` with their operations and schemas). The planner's and each task's brief name the generated code to implement or call (a "Generated contract code" section), and the planner and implementer prompts forbid hand-writing it. `codegen: { handWritten: off|report|block }` (default `report`) sets the `generated_boundary` verify stage: an added line in a task's writable code that calls a pinned operation's path over HTTP by hand, or declares a DTO named like a schema the repo's generated code already covers (calling side only), is a finding that names the generated symbol to use. Report logs it (`reported`) and lets the task through; block fails verify (`blocked`) with the list; a clean attempt logs `clean`. Not generated yet: event contracts. Docker cases: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter CodegenDocker` (and `CodegenTsDocker`).
+
+**API behaviour tests.** With `designc.handover.scenarios/2` or `/3` the handover's scenarios carry `api` and `entities`; /3 adds a `request` (`path`, `query`, `body`) to each api example. For each scenario whose examples have a request, the Factory writes `generated/contracts/api-tests/<Stem>/<Id>.ApiScenario.g.cs` plus `ScenarioRuntime.g.cs` (read-only, drift-checked, manifest tool `factory`). The serving repo's agent implements `IScenarioAdapter` once (`StartAsync` returns an HttpClient to the running service, `SeedAsync(entity, rows)`, `QueryAsync(entity)`) in a test project that compiles `generated/contracts/api-tests/**/*.cs` and references `JunitXml.TestLogger`. Integration verify runs `dotnet test --filter FullyQualifiedName~Contracts.ApiScenarios` (stage `api-scenarios`); a failure names the scenario, example and row, and blames the tasks of the serving element. No results is `could_not_run`. The generated test passes `request.path` and `request.query` (JSON scalars, bound by parameter name) and `request.body` to the client method. An example without a request (every /2 example) is not generated and is listed as skipped (`needs designc scenarios/3`). The real-NSwag proof is the opt-in `ApiScenarioDockerTests` (`FACTORY_TEST_DOCKER=1`; the runner image must contain NSwag).
+
 ### Target repo setup
 
 The target repo needs `.factory/` in its `.gitignore`, and build/test outputs such as
@@ -161,6 +167,8 @@ task's writes and revert them. Other settings (`FACTORY_MAX_TURNS`, `FACTORY_COM
 **Tests named per task.** When the handover carries designc's `tests.json`, each task's brief gets a "Tests for this task" section: the tests that must pass at integration (fail-to-pass), the ones already passing (pass-to-pass) with their commands, and elements with no test. After a task is green, the factory runs its pass-to-pass commands plus the tests its change affects, as one shell line on the worktree (exit codes only, so it works without a JUnit suite), and logs a `verify` row, stage `p2p` (`passed | failed | baseline_red | timed_out | none`, with `TaskId`). Each command is first run once on the integration branch (`p2p_baseline` row, reused on resume); a command that is red there is `baseline_red` and never blocks. `failed` goes back to the agent like a regression. Affected tests: C# via `dotnet-affected` (`--assume-changes` on the projects that own the changed files; installed in the runner image, so rebuild it once with `docker/runner/build.sh`) and TS via `vitest related --run` from the repo's own Vitest. A missing tool or error logs `affected: null` with a `reason` and the run continues on the named set. `FACTORY_P2P_AFFECTED=on|off` (default `on`) turns the affected part off. On `FACTORY_SANDBOX=local` the baseline checkout has no `node_modules`, so Vitest commands read `baseline_red` there. Docker case: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter AffectedDocker`.
 
 The `ui:` check runs `FACTORY_UI_CMD` (default `npx vitest run --project ui-page --reporter=default --reporter=json --reporter=html`: failure text and diff pictures reach the repair brief, the HTML report is kept under `evidence/ui/` only when the check fails) in the runner image after seeding the handover's `ui-contract/` on the integration branch; see `docs/ui-contract-verify.md` §2. Docker cases: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter UiPageCheck`. The page tests also log each request to `.factory/requests/`, and the check fails a page that calls an endpoint the spec does not list (`kind: request`; the app's Vitest config needs `api: { allowWrite: true }`). Docker case: `--filter UiRequestsDocker`.
+
+Scenario tests (F1): when the handover carries designc's `scenarios.json` (`scenario_tests` in `handover.yaml`), each frozen `ui-contract/tests/<screen>.scenarios.page.test.tsx` is hash-checked on read, seeded verbatim beside the page test (so an agent edit is drift, and the path is read-only to agents like the rest of `ui-contract/tests/**`) and run by the same `ui:` vitest command. Each screen with scenario tests gets one `stage_verdict` row, stage `scenario`, whose failures are `{criterion: "<id> example <n>", kind: body | not_sent | other}`; a failure blocks like a ui-code failure and a scenario escape is classified `spec_gap`. Docker case: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter ScenarioDocker`.
 
 The holdout runs after the `ui:` check, only when everything visible passed, and before QA: `FACTORY_UI_HOLDOUT_CMD` (default `npx vitest run --project ui-holdout --reporter=json`) runs the registry's hidden sample in a scratch copy of the integration branch. Acceptance cases marked `holdout: true` need `FACTORY_DESIGNC_DIR` (designc's app folder; its `holdout-spec` generates them) and are `could_not_run` without it. `FACTORY_HOLDOUT_RETRIES` (default 2) is the number of failing runs of the same holdout (per work item) the build is asked to repair; the next one raises a `needs_decision` instead. Docker case: `FACTORY_TEST_DOCKER=1 FACTORY_CONTAINER_ENGINE=docker dotnet test --filter UiHoldoutDocker`. See `docs/ui-contract-verify.md` §2.
 
@@ -363,7 +371,7 @@ Ledger to Jira, never the other way. Each work item's state is compared with its
 
 ## Status
 
-Tests: Core 347/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 853/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
+Tests: Core 509/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 1524/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|
@@ -376,10 +384,11 @@ Tests: Core 347/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration
 | Freeze-time UX review and `item_judge` (gradient, never decides Done) | `Core/UxReview.fs`, `UxReviewRunner`, `ItemJudgeReport` | Built; paid, opt-in |
 | Jira mirror (one-way, drift flagged not overwritten; REST and snapshot) | `Core/JiraMirror.fs`, `JiraMirrorReport`, `JiraRestClient` | Built; stub-tested only. `--comment` (with `--apply`) posts gate evidence as a Cloud v3 comment; Jira Cloud only, no Data Center variant |
 | Router task spec: risk and data class from the handover requirement (`requirement_risk`, `requirement_data_class`), else element max and config | `Core/Router.fs`, `Json.parseHandover`, `DesigncHandoverReader` | Built; designc writes the keys, and a handover without them falls back to the old behaviour |
+| C# contract codegen (R5a): NSwag DTOs, server interface and client from the pinned OpenAPI, before the planner | `Core/Codegen.fs`, `S2/Codegen/`, `CodegenPolicyFile` | Built, tested with a fake generator; the real NSwag runs in the opt-in `CodegenDocker` case (needs the runner image rebuilt) |
 | Factory evals | `docs/evals/` | Reference copies only; the suite lives on the work VM |
 
 S2 conforms to Designc's published
-contracts (`ledger_schema.json`, `elements.json` /1 and /2, the work-file format) and never edits them; the copies
+contracts (`ledger_schema.json`, `elements.json` /1, /2 and /3, the work-file format) and never edits them; the copies
 under `tests/Factory.Integration.Tests/Fixtures/designc/` are contract-tested.
 
 ## Layout
@@ -417,8 +426,20 @@ sql/ledger.sql           Postgres ledger + System 3 starter views
 examples/fares-v3/     Booking lost-update handover and a valid plan
 ```
 
+**`quality.allowList`** (in the quality policy file) sets the mode of the design allow-list check
+(an added project reference, cross-assembly type use or TS import between two design elements the
+model does not allow). It is `report` or `block`, applying to every repo, or a map of repo name to
+mode (`{Api: block, Ui: report}`); repos not named, and an unset key, inherit `quality.mode`.
+Hand-written `forbid`/`forbidNamespaces` rules are unaffected. A repo name no element uses
+rejects the run at start. A violation logs an `allow_list` verify row (`reported` or `blocked`)
+and the message names the missing relationship `From → To`.
+
 ## Interfaces with designc
 
+- **`dependencies.json`** (`designc.handover.dependencies/1`, pinned at designc `9867f4f` in
+  `contracts.lock.json`): optional; `{elements:[{element, code, repo?, allows}]}` is the allow list
+  the check above judges against, validated against `elements.json` on load. Without it the allow
+  list comes from the model's relationships.
 - **`handover.json`** (`schemas/handover.schema.json`):
   - each element needs `codeAreas` and `risk`, which means `d.code` and `d.risk` on the elements
     in the model;
