@@ -70,6 +70,6 @@ public class AcceptanceVerifyTests
         Assert.Equal("pipeline.jsonl", row.Stream);
         Assert.Empty(DesigncSchema.Validate(row.Line));
         Assert.Contains("\"task\":\"W-1\"", row.Line);
-        Assert.Empty(RegistryLedgerProjector.Project(run, new HandoverRef("20261013-aa", []), new Factory.Core.Limits(8, 3)).Where(r => !r.Line.Contains("stage_verdict")));
+        Assert.DoesNotContain(RegistryLedgerProjector.Project(run, new HandoverRef("20261013-aa", []), new Factory.Core.Limits(8, 3)), r => !r.Line.Contains("stage_verdict"));
     }
 }

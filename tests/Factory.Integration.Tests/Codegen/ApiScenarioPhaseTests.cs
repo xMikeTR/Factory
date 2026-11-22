@@ -46,7 +46,7 @@ public sealed class ApiScenarioPhaseTests
         Assert.Equal(Factory.Core.ApiScenarios.runtimeText, File.ReadAllText(Path.Combine(work, "out", repo, Runtime)));
         using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(work, CodegenPhase.ManifestFile)));
         var rows = doc.RootElement.GetProperty("files").EnumerateArray().Where(f => f.GetProperty("path").GetString()!.StartsWith(Tests)).ToList();
-        Assert.Equal([Class, Runtime], rows.Select(f => f.GetProperty("path").GetString()).ToArray());
+        Assert.Equal<IEnumerable<string?>>([Class, Runtime], rows.Select(f => f.GetProperty("path").GetString()));
         Assert.All(rows, f => Assert.Equal("factory", f.GetProperty("tool").GetString()));
         Assert.Equal("test-scenarios/ORD-1-ts-01.yaml", rows[0].GetProperty("source").GetString());
         Assert.Equal("0801fb767b1f662d9a80e2b2ab9e77cb1fe37333f1abcc1b360ea0f3a92e2f29", rows[0].GetProperty("source_sha256").GetString());

@@ -21,7 +21,7 @@ public class StageVerdictTests
 
     private static LedgerEvent Holdout(int s, string task, string screen, string state, string? criterion = null) =>
         At(s, new(RunId, "S2", "integration_verify", LedgerKinds.HoldoutFailed, TaskId: task, Element: "App/Portal", Outcome: "failed",
-            Payload: JsonSerializer.Serialize(criterion is null ? new { screen, state, criterion = (string?)null } : new { screen, state, criterion })));
+            Payload: JsonSerializer.Serialize(new { screen, state, criterion })));
 
     internal static List<JsonElement> Verdicts(IEnumerable<LedgerEvent> run) =>
         RegistryLedgerProjector.Project(run.ToList(), Handover, new(5, 3))
@@ -196,7 +196,7 @@ public class StageVerdictAcceptanceReviewQaTests
     {
         var v = Assert.Single(Verdicts(AcVerify(1, "failed")));
         Assert.Equal(("acceptance", "fail"), (S(v, "stage"), S(v, "outcome")));
-        Assert.Empty(Verdicts(AcVerify(1, "failed"), AcFail(2, "T-1", "AC-1")).Where(x => !x.TryGetProperty("task", out _)));
+        Assert.DoesNotContain(Verdicts(AcVerify(1, "failed"), AcFail(2, "T-1", "AC-1")), x => !x.TryGetProperty("task", out _));
     }
 
     private static LedgerEvent Review(int s, string task, string outcome, int round) =>
