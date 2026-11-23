@@ -64,7 +64,7 @@ public class JsonlLedgerTests
             await ledger.AppendAsync(new LedgerEvent("a", "S2", "run", LedgerKinds.RunAborted));
             Assert.False(File.Exists(path), "nothing goes in the shared file any more");
             Assert.Equal(2, File.ReadAllLines(ledger.RunFile("a")).Length);
-            Assert.Equal(1, File.ReadAllLines(ledger.RunFile("b")).Length);
+            Assert.Single(File.ReadAllLines(ledger.RunFile("b")));
 
             var all = new List<string>();
             await foreach (var e in ledger.ReadAllAsync()) all.Add(e.RunId);

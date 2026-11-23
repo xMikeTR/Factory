@@ -39,7 +39,7 @@ public sealed class CodegenPhaseTests
         var tool = Assert.Single(doc.RootElement.GetProperty("tools").EnumerateArray());
         Assert.Equal("nswag", tool.GetProperty("name").GetString());
         Assert.Equal(Codegen_Version, tool.GetProperty("version").GetString());
-        Assert.Equal([$"{Stem}.Dtos.g.cs", $"{Stem}.Server.g.cs"], doc.RootElement.GetProperty("files").EnumerateArray().Select(f => f.GetProperty("path").GetString()).ToArray());
+        Assert.Equal<IEnumerable<string?>>([$"{Stem}.Dtos.g.cs", $"{Stem}.Server.g.cs"], doc.RootElement.GetProperty("files").EnumerateArray().Select(f => f.GetProperty("path").GetString()));
     }
 
     private static string Codegen_Version => Factory.Core.Codegen.nswagVersion;
@@ -76,7 +76,7 @@ public sealed class CodegenPhaseTests
         await CodegenPhase.GenerateAsync(h.Services, TeamHarness.RunId, h.Handover, default);
         await CodegenPhase.GenerateAsync(h.Services, TeamHarness.RunId, h.Handover, default);
         Assert.Equal(1, gen.Calls);
-        Assert.Equal(["generated", "reused"], h.Rows(LedgerKinds.Codegen).Select(e => e.Outcome).ToArray());
+        Assert.Equal<IEnumerable<string?>>(["generated", "reused"], h.Rows(LedgerKinds.Codegen).Select(e => e.Outcome));
     }
 
     [Fact]
@@ -196,13 +196,13 @@ public sealed class CodegenPhaseTests
         Assert.Contains(files.Keys, k => k.EndsWith($"{TsStem}.schema.ts"));
         Assert.Contains("createFareQuotesClient", files.Single(f => f.Key.EndsWith(".client.ts")).Value);
         using var doc = JsonDocument.Parse(manifest);
-        Assert.Equal(["nswag", "openapi-typescript"], doc.RootElement.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToArray());
+        Assert.Equal<IEnumerable<string?>>(["nswag", "openapi-typescript"], doc.RootElement.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()));
         Assert.Equal(Codegen.openapiTypescriptVersion, doc.RootElement.GetProperty("tools")[1].GetProperty("version").GetString());
         var src = Assert.Single(doc.RootElement.GetProperty("sources").EnumerateArray());
         Assert.Equal(Path1, src.GetProperty("path").GetString());
-        Assert.Equal(["/quotes", "/quotes/{id}"], src.GetProperty("operations").EnumerateArray().Select(o => o.GetProperty("path").GetString()).ToArray());
-        Assert.Equal(["listQuotes", "getQuote"], src.GetProperty("operations").EnumerateArray().Select(o => o.GetProperty("id").GetString()).ToArray());
-        Assert.Equal(["Aaa", "Quote"], src.GetProperty("schemas").EnumerateArray().Select(o => o.GetString()).ToArray());
+        Assert.Equal<IEnumerable<string?>>(["/quotes", "/quotes/{id}"], src.GetProperty("operations").EnumerateArray().Select(o => o.GetProperty("path").GetString()));
+        Assert.Equal<IEnumerable<string?>>(["listQuotes", "getQuote"], src.GetProperty("operations").EnumerateArray().Select(o => o.GetProperty("id").GetString()));
+        Assert.Equal<IEnumerable<string?>>(["Aaa", "Quote"], src.GetProperty("schemas").EnumerateArray().Select(o => o.GetString()));
         Assert.Equal(5, doc.RootElement.GetProperty("files").GetArrayLength());
         Assert.Equal("generated", Assert.Single(h.Rows(LedgerKinds.Codegen)).Outcome);
     }
@@ -237,7 +237,7 @@ public sealed class CodegenPhaseTests
         using var h = await TsHarnessAsync(settings: s => s with { CodegenTypescript = ["."], CodegenCsharp = [] });
         var (manifest, files) = await GenerateAsync(h);
         using var doc = JsonDocument.Parse(manifest);
-        Assert.Equal(["openapi-typescript"], doc.RootElement.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToArray());
+        Assert.Equal<IEnumerable<string?>>(["openapi-typescript"], doc.RootElement.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()));
         Assert.Equal(2, files.Count);
     }
 

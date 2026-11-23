@@ -38,6 +38,7 @@ public class DesigncParityShapeContractTests
         for (var i = 0; i < har.Count; i++)
         {
             var text = har[i].GetProperty("response").GetProperty("content").GetProperty("text").GetString();
+            Assert.NotNull(text);
             var got = JsonShapes.toJson(JsonShapes.ofBody(FSharpOption<string>.Some(text)).Value);
             var want = JsonShapes.toJson(JsonShapes.ofShapeElement(rows[i].GetProperty("response")));
             Assert.Equal(want, got);

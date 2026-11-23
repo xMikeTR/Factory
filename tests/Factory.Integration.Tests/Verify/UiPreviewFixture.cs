@@ -28,8 +28,10 @@ public sealed record UiPreviewFixture(string Repo, string Registry)
         Copy(Path.Combine(FixtureRoot, "app"), repo);
         Copy(Path.Combine(FixtureRoot, "registry"), registry);
         await Git(repo, "init", "-q", "-b", "main");
+        await Git(repo, "config", "user.name", "factory-test");
+        await Git(repo, "config", "user.email", "factory-test@localhost");
         await Git(repo, "add", "-A");
-        await Git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "app");
+        await Git(repo, "commit", "-qm", "app");
         return new(repo, registry);
     }
 
