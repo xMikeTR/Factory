@@ -67,6 +67,7 @@
     "run_ended",
     "parity_result",
     "ui_result",
+    "feature_result",
     "stage_verdict",
     "trace",
     "outcome"
@@ -74,6 +75,7 @@
   "rules": [
     "fail_needs_evidence",
     "failures_shape",
+    "journeys_shape",
     "budget_shape",
     "usage_shape",
     "by_role_shape",
@@ -405,6 +407,35 @@
       "types": {},
       "rules": []
     },
+    "feature_result": {
+      "stream": "pipeline.jsonl",
+      "required": [
+        "feature",
+        "commit",
+        "outcome",
+        "journeys"
+      ],
+      "optional": [
+        "item"
+      ],
+      "enums": {
+        "outcome": [
+          "pass",
+          "fail",
+          "could_not_run"
+        ]
+      },
+      "types": {
+        "feature": "string",
+        "commit": "string|null",
+        "outcome": "string",
+        "journeys": "array",
+        "item": "string"
+      },
+      "rules": [
+        "journeys_shape"
+      ]
+    },
     "fitness": {
       "stream": "checks.jsonl",
       "required": [
@@ -703,6 +734,32 @@
         "handover": "string",
         "stale": "boolean",
         "reasons": "array"
+      },
+      "rules": []
+    },
+    "landing_approved": {
+      "stream": "designc.jsonl",
+      "required": [
+        "requirement",
+        "hash",
+        "author",
+        "corrected"
+      ],
+      "optional": [
+        "correction"
+      ],
+      "enums": {
+        "author": [
+          "agent",
+          "human"
+        ]
+      },
+      "types": {
+        "requirement": "string",
+        "hash": "string",
+        "author": "string",
+        "corrected": "boolean",
+        "correction": "object"
       },
       "rules": []
     },
