@@ -170,6 +170,111 @@ public class WorkRegistryReaderTests
         Assert.Equal(("booking-list", "abc1234", Factory.Core.ParityOutcome.ParityCouldNotRun), (row.scenario, row.commit, row.outcome));
     }
 
+    private const string FeatureYaml = """
+        id: a
+        title: Submit
+        entry_points:
+          - id: menu
+          - id: deep-link
+        journeys:
+          - id: submit-it
+            steps:
+              - entry
+              - click: Save
+              - see: Saved
+            proves:
+              effect:
+                api: {method: POST, path: /api/save}
+                expect:
+                  status: 201
+                  shape: {id: string}
+        """;
+
+    private static string FeatureWork(string v) => Work.Replace("- gate: dotnet test", $"- gate: dotnet test\n  - feature: {v}");
+
+    [Fact]
+    public async Task Feature_files_are_read_for_what_the_runner_needs()
+    {
+        var root = Registry(new()
+        {
+            ["requirements/REQ-1.yaml"] = Requirement,
+            ["work/W-1.yaml"] = FeatureWork("a"),
+            ["features/a.yaml"] = FeatureYaml,
+            ["features/b.yml"] = "id: b\njourneys:\n  - id: j\n    steps: [entry]\n",
+        });
+
+        var reg = await WorkRegistryReader.ReadAsync(root, CancellationToken.None);
+
+        Assert.Empty(reg.Problems);
+        Assert.Equal(["a", "b"], reg.Features.Select(f => f.Id));
+        var a = reg.Features[0];
+        Assert.Equal(["menu", "deep-link"], a.EntryPoints);
+        var j = Assert.Single(a.Journeys);
+        Assert.Equal("submit-it", j.Id);
+        Assert.Equal(3, j.StepCount);
+        Assert.True(j.HasEntryMarker);
+        Assert.Equal(("POST", "/api/save", 201), (j.Effect!.Method, j.Effect.Path, j.Effect.Status));
+        Assert.Equal("""{"id":"string"}""", j.Effect.Shape!.Value.GetRawText());
+        var b = reg.Features[1];
+        Assert.Empty(b.EntryPoints);
+        Assert.Null(Assert.Single(b.Journeys).Effect);
+        Assert.Equal(1, b.Journeys[0].StepCount);
+        Assert.Single(reg.Items);
+    }
+
+    [Fact]
+    public async Task A_broken_feature_file_and_a_mismatched_id_are_problems_not_crashes()
+    {
+        var root = Registry(new()
+        {
+            ["features/broken.yaml"] = "id: [unclosed\n",
+            ["features/list.yaml"] = "- not\n- a mapping\n",
+            ["features/other.yaml"] = "id: different\njourneys: []\n",
+        });
+
+        var reg = await WorkRegistryReader.ReadAsync(root, CancellationToken.None);
+
+        Assert.Contains(reg.Problems, p => p.StartsWith("features/broken.yaml: not readable (") && p.EndsWith("); done_when: feature and the runner leave it out."));
+        Assert.Contains(reg.Problems, p => p.StartsWith("features/list.yaml: not readable ("));
+        Assert.Contains("features/other.yaml: id different is not the file name; done_when and the runner use the file name.", reg.Problems);
+        Assert.Equal(["other"], reg.Features.Select(f => f.Id));
+    }
+
+    [Fact]
+    public async Task A_feature_done_when_must_name_a_file_in_features()
+    {
+        var req = new Dictionary<string, string> { ["requirements/REQ-1.yaml"] = Requirement, ["features/a.yaml"] = FeatureYaml };
+
+        var ok = await WorkRegistryReader.ReadAsync(Registry(new(req) { ["work/W-1.yaml"] = FeatureWork("a") }), CancellationToken.None);
+        Assert.Contains(Factory.Core.Check.NewFeature("a"), Assert.Single(ok.Items).DoneWhen.ToList);
+
+        var missing = await WorkRegistryReader.ReadAsync(Registry(new(req) { ["work/W-1.yaml"] = FeatureWork("missing") }), CancellationToken.None);
+        Assert.Empty(missing.Items);
+        Assert.Equal(["W-1: done_when entry 2 names feature missing, which is not in features/."], missing.Problems);
+
+        var none = await WorkRegistryReader.ReadAsync(
+            Registry(new() { ["requirements/REQ-1.yaml"] = Requirement, ["work/W-1.yaml"] = FeatureWork("a") }), CancellationToken.None);
+        Assert.Empty(none.Items);
+        Assert.Equal(["W-1: done_when entry 2 names feature a, which is not in features/."], none.Problems);
+    }
+
+    [Fact]
+    public async Task Feature_result_rows_are_facts_unless_the_commit_or_outcome_is_unusable()
+    {
+        var root = Registry(new()
+        {
+            ["ledger/pipeline.jsonl"] =
+                """{"kind":"feature_result","feature":"a","commit":"abc1234","outcome":"could_not_run","journeys":[],"ts":2,"by":"factory"}""" + "\n"
+                + """{"kind":"feature_result","feature":"a","commit":"abc1234","outcome":"maybe","journeys":[],"ts":3,"by":"factory"}""" + "\n"
+                + """{"kind":"feature_result","feature":"a","commit":null,"outcome":"pass","journeys":[],"ts":4,"by":"factory"}""" + "\n",
+        });
+
+        var reg = await WorkRegistryReader.ReadAsync(root, CancellationToken.None);
+
+        var row = Assert.IsType<Factory.Core.LedgerFact.FeatureResult>(Assert.Single(reg.Facts).Fact);
+        Assert.Equal(("a", "abc1234", Factory.Core.ParityOutcome.ParityCouldNotRun), (row.feature, row.commit, row.outcome));
+    }
+
     [Fact]
     public async Task Recheck_and_escape_rows_reach_the_metrics()
     {

@@ -24,6 +24,8 @@ type LedgerFact =
     | EscapeRecorded of id: string * origin: string option
     /// A parity scenario replayed on the new app at the commit the recorder ran against (`parity_result`).
     | ParityResult of scenario: string * commit: string * outcome: ParityOutcome
+    /// A feature's journeys run at the commit the Factory's features runner ran against (`feature_result`, one row per feature at a commit).
+    | FeatureResult of feature: string * commit: string * outcome: ParityOutcome
 
 type DigestState =
     | InBacklog

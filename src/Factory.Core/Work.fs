@@ -28,12 +28,15 @@ type Target =
 /// How one entry of done_when is satisfied. A Judge is a gradient: never required, never alone.
 /// Parity names a scenario id under the registry's parity/scenarios, or "all"; it is met only by a recorded
 /// parity_result, so it is not a gate and a repo item still needs one.
+/// Feature names a feature id (a `features/<id>.yaml` base name); it is met only by a recorded `feature_result` at the
+/// done commit, so it is not a gate either.
 type Check =
     | Gate of string
     | Checklist of string
     | Review of string
     | Judge of string
     | Parity of string
+    | Feature of string
 
 [<RequireQualifiedAccess>]
 module Check =
@@ -45,6 +48,7 @@ module Check =
         | Review v -> $"review:{v}"
         | Judge v -> $"judge:{v}"
         | Parity v -> $"parity:{v}"
+        | Feature v -> $"feature:{v}"
 
 type WorkItem =
     { Id: WorkItemId
@@ -64,7 +68,7 @@ type WorkDraft =
       Target: (string * string) option
       DependsOn: string list
       Writes: string list
-      /// ("gate" | "checklist" | "review" | "judge" | "parity", value)
+      /// ("gate" | "checklist" | "review" | "judge" | "parity" | "feature", value)
       DoneWhen: (string * string) list }
 
 type WorkError =
@@ -80,6 +84,7 @@ type WorkError =
     | JudgeOnly
     | RepoWithoutGate
     | ParityWithoutRepo
+    | FeatureWithoutRepo of entry: int
 
 [<RequireQualifiedAccess>]
 module WorkError =
@@ -92,11 +97,12 @@ module WorkError =
         | RepoWithoutElements -> $"{id}: a repo item needs elements, the design elements it changes."
         | WriteNotAPathPattern(w, r) -> $"{id}: writes entry '{w}' is not a path pattern: {r}"
         | EmptyDoneWhen -> $"{id}: done_when is empty; say what done means with at least one gate, checklist or review entry."
-        | UnknownCheckKind(i, k) -> $"{id}: done_when entry {i} has unknown kind {k}; use gate, checklist, review, judge or parity."
+        | UnknownCheckKind(i, k) -> $"{id}: done_when entry {i} has unknown kind {k}; use gate, checklist, review, judge, parity or feature."
         | BlankCheck(i, k) -> $"{id}: done_when entry {i} ({k}) is empty."
         | JudgeOnly -> $"{id}: a judge cannot be the only done_when entry; add a gate, checklist or review (a judge is a gradient, not a decision)."
         | RepoWithoutGate -> $"{id}: a repo item needs a gate in done_when (a command that passes at the commit)."
         | ParityWithoutRepo -> $"{id}: parity compares a commit of the new app with legacy, so only a repo item can name it in done_when."
+        | FeatureWithoutRepo n -> $"{id}: done_when entry {n} (feature) is allowed only on a repo item: feature is judged at the commit that finished it."
 
 [<RequireQualifiedAccess>]
 module WorkItem =
@@ -138,12 +144,13 @@ module WorkItem =
             |> List.mapi (fun i (kind, v) ->
                 let n = i + 1
                 match kind with
-                | _ when not (List.contains kind [ "gate"; "checklist"; "review"; "judge"; "parity" ]) -> Error(UnknownCheckKind(n, kind))
+                | _ when not (List.contains kind [ "gate"; "checklist"; "review"; "judge"; "parity"; "feature" ]) -> Error(UnknownCheckKind(n, kind))
                 | _ when blank v -> Error(BlankCheck(n, kind))
                 | "gate" -> Ok(Gate(v.Trim()))
                 | "checklist" -> Ok(Checklist(v.Trim()))
                 | "review" -> Ok(Review(v.Trim()))
                 | "parity" -> Ok(Parity(v.Trim()))
+                | "feature" -> Ok(Feature(v.Trim()))
                 | _ -> Ok(Judge(v.Trim())))
             |> List.fold
                 (fun (ok, bad) r -> match r with Ok c -> ok @ [ c ], bad | Error e -> ok, bad @ [ e ])
@@ -158,8 +165,11 @@ module WorkItem =
             elif checkErr.IsEmpty && hasReq && not (List.exists isGate checks) then [ RepoWithoutGate ]
             else []
         let parityErr = if not hasReq && List.exists isParity checks then [ ParityWithoutRepo ] else []
+        let featureErr =
+            if hasReq || not checkErr.IsEmpty then []
+            else checks |> List.mapi (fun i c -> match c with Feature _ -> Some(FeatureWithoutRepo(i + 1)) | _ -> None) |> List.choose id
 
-        match idErr @ targetErr @ writeErr @ checkErr @ doneErr @ parityErr, target, checks with
+        match idErr @ targetErr @ writeErr @ checkErr @ doneErr @ parityErr @ featureErr, target, checks with
         | [], Some t, c :: rest ->
             Ok { Id = WorkItemId(d.Id.Trim())
                  Target = t
@@ -180,6 +190,7 @@ type GateRun =
       Passed: bool
       Dirty: bool }
 
+/// Also the vocabulary of `feature_result.outcome`.
 type ParityOutcome =
     | ParityPass
     | ParityFail
@@ -204,6 +215,12 @@ module ParityOutcome =
 /// One recorded parity_result: a scenario replayed on the new app at the commit the recorder ran against.
 type ParityRun =
     { Scenario: string
+      Commit: string
+      Outcome: ParityOutcome }
+
+/// One recorded feature_result: a feature's journeys run at the commit the runner ran against.
+type FeatureRun =
+    { Feature: string
       Commit: string
       Outcome: ParityOutcome }
 
@@ -246,7 +263,9 @@ type EvidenceFacts =
       /// In ledger order, oldest first, for any item: a result is about a scenario at a commit.
       ParityRuns: ParityRun list
       /// The registry's scenario ids (parity/scenarios), what "parity: all" means.
-      ParityScenarios: string list }
+      ParityScenarios: string list
+      /// In ledger order, oldest first, for any item: a result is about a feature at a commit.
+      FeatureRuns: FeatureRun list }
 
 /// Proof that every check of a work item is met. Only `Evidence.create` makes one, so a Done state
 /// that exists is a Done that was judged from recorded evidence, never from a claim.
@@ -260,7 +279,7 @@ type Evidence =
 [<RequireQualifiedAccess>]
 module Evidence =
     /// Ok when every Gate has a clean passing last run (at `Commit`, for a repo item), every
-    /// Checklist and Review is ticked, every Parity scenario's last result at `Commit` is a pass, and
+    /// Checklist and Review is ticked, every Parity scenario's and Feature's last result at `Commit` is a pass, and
     /// (repo items) the commit is on main. A Judge needs nothing.
     let create (item: WorkItem) (f: EvidenceFacts) : Result<Evidence, string list> =
         let repo = WorkItem.isRepo item
@@ -296,6 +315,13 @@ module Evidence =
                         | Some r, Some c -> [ $"parity {s} did not pass at {short c} ({ParityOutcome.toLedger r.Outcome})." ]
                         | _, Some c -> [ $"parity {s} has no result at {short c}." ]
                         | _, None -> [ $"parity {s} has no result." ])
+                | Feature ft ->
+                    let last = f.FeatureRuns |> List.filter (fun r -> r.Feature = ft && Some r.Commit = f.Commit) |> List.tryLast
+                    match last, f.Commit with
+                    | Some r, _ when r.Outcome = ParityPass -> []
+                    | Some r, Some c -> [ $"feature {ft} did not pass at {short c} ({ParityOutcome.toLedger r.Outcome})." ]
+                    | _, Some c -> [ $"feature {ft} has no result at {short c}." ]
+                    | _, None -> [ $"feature {ft} has no result." ]
                 | Judge _ -> [])
         match commitProblems @ problems with
         | [] -> Ok(Evidence(f.Commit, item.DoneWhen.ToList |> List.filter (function Judge _ -> false | _ -> true) |> List.map Check.key))
