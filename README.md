@@ -349,6 +349,7 @@ Per-command flags are the header comment of `src/Factory.S2/Program.cs`.
 | `budget` `--repo . [--registry r] [--no-report]` | Item budget; exit 2 when exceeded, then `run` exits 4 |
 | `budget-import`, `router-stats` | Prices and spend in; what the router learned out |
 | `parity` `--registry r --item W-1 [--repo .] [--base-url u]` | Designc recorder at HEAD (work VM); see `docs/parity-runbook.md` |
+| `features` `--registry r --repo . --designc d --start "cmd" --base-url u [--feature id] [--journey id] [--item W-1] [--param n=v]` | Starts the app itself (refuses a URL already served), runs each feature journey through designc, reads back its effect, records one `feature_result` per feature at HEAD via `designc record`; exit 0 / 1 / 3 / 2 as parity; see `docs/parity-runbook.md` |
 | `preview` `--registry r --screen s --repo app [--designc d]` | Renders a screen's spec with the app's library in the runner image (scratch worktree at HEAD; `FACTORY_UI_PREVIEW_CMD`) into `ui/previews/<screen>/` and appends `ui_preview_rendered`; exit 0 / 3 could not run / 2; see `docs/ui-contract-verify.md` §1 |
 | `replay` `--registry r --scenario id [--repo app]` | Renders the scenario's screen in the runner image against `parity/har/<id>-legacy.har` served as MSW handlers (scratch worktree at HEAD, `FACTORY_UI_CMD`, no ledger row); exit 0 served from the HAR / 1 the page asked for a request the HAR lacks / 3 could not run / 2 error; see `docs/ui-contract-verify.md` §7 |
 | `parity-decisions` `--registry r` | A needs_decision per failed parity scenario; exit 2 when raised |
@@ -372,7 +373,7 @@ Ledger to Jira, never the other way. Each work item's state is compared with its
 
 ## Status
 
-Tests: Core 515/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 1530/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
+Tests: Core 515/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 1572/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|

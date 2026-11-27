@@ -63,3 +63,25 @@ because Done needs a pass at the done commit.
 
 A dry run without a browser: `--adapter fixture:<designc>/fixtures/parity-registry/apps/next.json` against a copy of
 that fixture registry.
+
+## Features (journeys)
+
+`factory-s2 features` proves a feature's journeys (designc's `features/*.yaml`) the way `parity` proves a scenario, and
+records one `feature_result` per feature at the repo's HEAD, which `done_when: feature: <id>` reads.
+
+```
+factory-s2 features --registry <registry> --repo <app repo> --designc <designc app dir> \
+    --start "<command that starts the app>" --base-url <url the app will answer on> [--param name=value]...
+```
+
+- **Only an app it started.** `--start` (repeatable) runs with the repo as working directory; if anything already answers
+  at `--base-url` the Factory refuses (exit 3, no row). The app is stopped afterwards, also on error and Ctrl+C.
+- **`--registry`, not `--handover`.** Handovers do not carry features yet, so the features are read from the registry.
+- **Ready is designc's.** "Up" only means the port answers; designc runs `verify.ready` before each journey run. A failed
+  ready check is `could_not_run`, never `fail`.
+- **Effect read-back.** After a passed run, `proves.effect` is read once with a GET/HEAD (never a body, never a write);
+  `:name` path segments come from `--param`. The shape check is structural (keys, kinds, first array element); formats
+  are not compared and the row never holds a value. The response is kept in `<out>/effects/` (it may hold data).
+- **`proves.ui.state` is not judged** (it has no visible signature yet; same in designc).
+- **Exit.** 0 every recorded feature passed, 1 any failed, 3 could not run (or the app did not come up), 2 an error with
+  nothing recorded (a dirty repo, an unknown feature, designc refusing the rows). `--out` must be outside the repo and registry.
