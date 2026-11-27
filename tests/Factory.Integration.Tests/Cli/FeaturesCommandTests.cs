@@ -185,7 +185,7 @@ public class FeaturesCommandTests(ITestOutputHelper output) : IDisposable
         var r = await RunAsync(designc, FreePort(), "exit 1");
 
         Assert.Equal(3, r.Exit);
-        Assert.Contains("the app did not come up", r.Err);
+        Assert.Contains("the app exited (code 1) before it answered", r.Err);
         Assert.Empty(Rows());
     }
 
