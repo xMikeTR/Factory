@@ -24,6 +24,7 @@ using static Factory.S2.ServiceWiring;
 // factory-s2 budget-import --repo . [--prices <file>] [--spend <file>]   vendor-neutral import (CSV or JSON, schemas/budget-import.schema.json): effective-dated prices replace catalog placeholders, spend feeds budget.userMonthlyCost
 // factory-s2 router-stats --repo . [--role implementer] [--json]   what the run ledgers have taught the model router: successes, failures, mean tokens and cost per success (catalog prices) per model, role and size
 // factory-s2 parity --registry ../registry --item W-1 [--repo .] [--designc <dir>|FACTORY_DESIGNC_DIR] [--base-url <new app>] [--adapter web|fixture:<file>]   designc's recorder on the next side at the clean HEAD (appends parity_result), then parity-decisions; exit 0 pass, 1 fail, 3 could not run, 2 error
+// factory-s2 features --registry <dir> --repo <dir> --designc <dir>|FACTORY_DESIGNC_DIR --start "<command>" [--start ...] --base-url <url> [--start-timeout 60] [--feature <id>|all] [--journey <id>] [--item W-1] [--adapter web|fixture:<file>] [--param name=value]... [--out <dir>]   starts the app itself (refuses a URL already served), runs each feature journey through designc's feature-run, reads back its effect and records one feature_result per feature at the clean HEAD via designc record; --registry, not --handover: handovers do not carry features yet; exit 0 pass, 1 fail, 3 could not run, 2 error (nothing recorded)
 // factory-s2 preview --registry <dir> --screen <screen> --repo <app> [--designc <dir>|FACTORY_DESIGNC_DIR]   renders the screen's spec with the app's library in the runner image (scratch worktree at HEAD, FACTORY_UI_PREVIEW_CMD) into <registry>/ui/previews/<screen>/ and appends ui_preview_rendered; exit 0 rendered, 3 could not run, 2 error
 // factory-s2 parity-decisions --registry ../registry   one open needs_decision (A build like legacy / B ask the PO) per scenario whose latest parity_result failed; exit 2 when any was raised
 // factory-s2 gate-shadow --cases cases.json [--repo .]   the QA gate's jira.transition policy against recorded kit decisions: logs what it would allow or deny (nothing enforced) and lists where it disagrees with the kit
@@ -389,6 +390,10 @@ try
             Console.WriteLine($"parity {recorded} at {check.Commit[..Math.Min(8, check.Commit.Length)]}; {raised} needs_decision raised");
             return recorded switch { Factory.Harness.Registry.ParityRecording.Pass => 0, Factory.Harness.Registry.ParityRecording.Fail => 1, _ => 3 };
         }
+
+        case "features":
+            return await FeaturesCommand.RunAsync(FeaturesCommand.Parse(args.Skip(1).ToArray(), Environment.GetEnvironmentVariable("FACTORY_DESIGNC_DIR")),
+                Console.Out, Console.Error, CancellationToken.None);
 
         case "preview":
         {
