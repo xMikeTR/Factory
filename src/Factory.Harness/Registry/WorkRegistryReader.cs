@@ -12,7 +12,8 @@ public sealed record WorkRegistry(
     IReadOnlyList<WorkItem> Items,
     IReadOnlyList<string> Problems,
     IReadOnlyList<(long Ts, LedgerFact Fact)> Facts,
-    IReadOnlyList<string> ParityScenarios);
+    IReadOnlyList<string> ParityScenarios,
+    IReadOnlyList<FeatureFile> Features);
 
 /// Reads designc's `work/<id>.yaml` (format owned by Designc, not forked here) through
 /// `WorkItem.create`, and the `ledger/*.jsonl` rows the work digest cares about.
@@ -40,18 +41,20 @@ public static class WorkRegistryReader
                 }
             }
 
+        var features = await FeaturesAsync(registryPath, problems, ct);
+        var featureIds = features.Select(f => f.Id).ToHashSet();
         var ids = drafts.Select(d => d.Id).ToHashSet();
         var items = new List<WorkItem>();
         foreach (var d in drafts)
         {
-            var (item, own) = Check(d, requirements, ids);
+            var (item, own) = Check(d, requirements, ids, featureIds);
             if (item is null) problems.AddRange(own); else items.Add(item);
         }
-        return new WorkRegistry(items, problems, await FactsAsync(registryPath, ct), await ParityScenariosAsync(registryPath, problems, ct));
+        return new WorkRegistry(items, problems, await FactsAsync(registryPath, ct), await ParityScenariosAsync(registryPath, problems, ct), features);
     }
 
     /// The item when nothing is wrong with it, else the problems (requirement, elements, dependencies, then WorkItem.create's own).
-    private static (WorkItem? Item, List<string> Problems) Check(WorkDraft d, Dictionary<string, HashSet<string>> requirements, HashSet<string> ids)
+    private static (WorkItem? Item, List<string> Problems) Check(WorkDraft d, Dictionary<string, HashSet<string>> requirements, HashSet<string> ids, HashSet<string> featureIds)
     {
         var own = new List<string>();
         if (d.Requirement is { } rq && !string.IsNullOrWhiteSpace(rq.Value))
@@ -60,6 +63,9 @@ public static class WorkRegistryReader
             else own.AddRange(d.Elements.Where(e => !elements.Contains(e)).Select(e =>
                 $"{d.Id}: {e} is not an element of requirement {rq.Value}. Add it to the requirement, or take it out of this item."));
         }
+        if (d.Requirement is { } rf && !string.IsNullOrWhiteSpace(rf.Value))
+            own.AddRange(d.DoneWhen.Select((e, i) => (e, n: i + 1)).Where(x => x.e.Item1 == "feature" && !string.IsNullOrWhiteSpace(x.e.Item2) && !featureIds.Contains(x.e.Item2.Trim()))
+                .Select(x => $"{d.Id}: done_when entry {x.n} names feature {x.e.Item2.Trim()}, which is not in features/."));
         own.AddRange(d.DependsOn.Where(x => !ids.Contains(x)).Select(x => $"{d.Id}: depends_on {x} is not a work item."));
         var made = WorkItemModule.create(d);
         if (made.IsError) own.AddRange(made.ErrorValue.Select(e => WorkErrorModule.describe(d.Id, e)));
@@ -87,6 +93,68 @@ public static class WorkRegistryReader
         }
         return ids;
     }
+
+    /// `features/*.yaml` and `*.yml` (designc's feature map): only what the runner needs. A file that cannot be read is a problem, not a crash;
+    /// designc owns the rules about what a feature file must say.
+    private static async Task<IReadOnlyList<FeatureFile>> FeaturesAsync(string registryPath, List<string> problems, CancellationToken ct)
+    {
+        var found = new List<FeatureFile>();
+        var dir = Path.Combine(registryPath, "features");
+        if (!Directory.Exists(dir)) return found;
+        var files = Directory.GetFiles(dir, "*.yaml").Concat(Directory.GetFiles(dir, "*.yml")).OrderBy(f => f, StringComparer.Ordinal);
+        foreach (var file in files)
+        {
+            var name = Path.GetFileName(file);
+            var id = Path.GetFileNameWithoutExtension(file);
+            try
+            {
+                var m = Yaml.Deserialize<Dictionary<string, object?>>(await File.ReadAllTextAsync(file, ct)) ?? [];
+                if (m.GetValueOrDefault("id")?.ToString() is { Length: > 0 } own && own != id)
+                    problems.Add($"features/{name}: id {own} is not the file name; done_when and the runner use the file name.");
+                var journeys = Items(m.GetValueOrDefault("journeys")).Select(j => Journey(j)).ToList();
+                var entries = Items(m.GetValueOrDefault("entry_points")).Select(e => e.GetValueOrDefault("id")?.ToString() ?? "").Where(x => x.Length > 0).ToList();
+                found.Add(new FeatureFile(id, $"features/{name}", journeys, entries));
+            }
+            catch (Exception e) when (e is YamlDotNet.Core.YamlException or InvalidCastException or ArgumentException)
+            {
+                problems.Add($"features/{name}: not readable ({e.Message}); done_when: feature and the runner leave it out.");
+            }
+        }
+        return found;
+    }
+
+    private static IEnumerable<Dictionary<object, object?>> Items(object? v) =>
+        v is IEnumerable<object> xs ? xs.OfType<IDictionary<object, object>>().Select(d => d.ToDictionary(kv => kv.Key, kv => (object?)kv.Value)) : [];
+
+    private static object? Get(IDictionary<object, object?> m, string key) => m.TryGetValue(key, out var v) ? v : null;
+
+    private static FeatureJourney Journey(Dictionary<object, object?> j)
+    {
+        var steps = Get(j, "steps") is IEnumerable<object> xs ? xs.ToList() : [];
+        var marker = steps.Any(s => s is string t && t == "entry" || s is IDictionary<object, object> d && d.Keys.Any(k => k?.ToString() == "entry"));
+        FeatureEffect? effect = null;
+        if (Get(j, "proves") is IDictionary<object, object?> proves && Get(proves, "effect") is IDictionary<object, object?> eff
+            && Get(eff, "api") is IDictionary<object, object?> api)
+        {
+            int? status = null;
+            JsonElement? shape = null;
+            if (Get(eff, "expect") is IDictionary<object, object?> expect)
+            {
+                if (int.TryParse(Get(expect, "status")?.ToString(), out var st)) status = st;
+                if (Get(expect, "shape") is { } sh) shape = JsonSerializer.SerializeToElement(Plain(sh));
+            }
+            effect = new FeatureEffect(Get(api, "method")?.ToString() ?? "", Get(api, "path")?.ToString() ?? "", status, shape);
+        }
+        return new FeatureJourney(Get(j, "id")?.ToString() ?? "", steps.Count, marker, effect);
+    }
+
+    /// YAML's untyped maps and lists as something System.Text.Json can write (keys become strings).
+    private static object? Plain(object? v) => v switch
+    {
+        IDictionary<object, object?> d => d.ToDictionary(kv => kv.Key.ToString() ?? "", kv => Plain(kv.Value)),
+        IEnumerable<object> xs when v is not string => xs.Select(Plain).ToList(),
+        _ => v,
+    };
 
     private static async Task<Dictionary<string, HashSet<string>>> RequirementsAsync(string registryPath, List<string> problems, CancellationToken ct)
     {
@@ -197,6 +265,8 @@ public static class WorkRegistryReader
                 "escape" when S("id") is { } e => LedgerFact.NewEscapeRecorded(e, O("origin")),
                 "parity_result" when S("scenario") is { } sc && S("commit") is { } pc && ParityOutcomeModule.parse(S("outcome") ?? "") is { } po =>
                     LedgerFact.NewParityResult(sc, pc, po.Value),
+                "feature_result" when S("feature") is { } ft && S("commit") is { } fc && ParityOutcomeModule.parse(S("outcome") ?? "") is { } fo =>
+                    LedgerFact.NewFeatureResult(ft, fc, fo.Value),
                 "wip_limit_changed" when r.TryGetProperty("limit", out var l) && l.TryGetInt32(out var n) => LedgerFact.NewWipLimitChanged(n),
                 _ => null,
             };

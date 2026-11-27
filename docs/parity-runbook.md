@@ -4,6 +4,8 @@ The recorder runs on the work VM only, never in CI. Legacy is always live **dev*
 designc owns the comparison and the rules ([designc `docs/parity-contract.md`](../../../Designc/app/docs/parity-contract.md)).
 S2 only runs designc's recorder for a work item and turns failures into decisions.
 
+The same holds for `done_when: - feature: <id>`: it is met only by a recorded `feature_result` for that feature at the done commit (`pass`; `could_not_run` leaves it unmet), judged exactly like parity. The runner that records those rows comes later.
+
 ```mermaid
 flowchart LR
   B["designc: --side legacy<br/>(once per scenario)"] -->|parity/baselines| N

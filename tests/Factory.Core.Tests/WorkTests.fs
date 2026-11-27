@@ -26,9 +26,15 @@ let allDoneWhen =
               yield [ a; b ]
               for c in allChecks do yield [ a; b; c ] ]
 
-let facts = { Commit = Some "abc1234"; OnMain = Some true; GateRuns = [ { Gate = "dotnet test"; Commit = Some "abc1234"; Passed = true; Dirty = false } ]; Ticks = []; ParityRuns = []; ParityScenarios = [] }
+let facts = { Commit = Some "abc1234"; OnMain = Some true; GateRuns = [ { Gate = "dotnet test"; Commit = Some "abc1234"; Passed = true; Dirty = false } ]; Ticks = []; ParityRuns = []; ParityScenarios = []; FeatureRuns = [] }
 let parityItem v = created { draft with DoneWhen = [ "gate", "dotnet test"; "parity", v ] }
 let parityRun s outcome = { Scenario = s; Commit = "abc1234"; Outcome = outcome }
+let featureItem v = created { draft with DoneWhen = [ "gate", "dotnet test"; "feature", v ] }
+let featureRun f outcome : FeatureRun = { Feature = f; Commit = "abc1234"; Outcome = outcome }
+let featureMsg item runs =
+    match Evidence.create item { facts with FeatureRuns = runs } with
+    | Error es -> es
+    | Ok _ -> []
 
 let tests: (string * (unit -> unit)) list =
     [ "work: a repo item and a non-repo item are valid", fun () ->
@@ -108,6 +114,37 @@ let tests: (string * (unit -> unit)) list =
           | Error es -> check (es |> List.exists (fun e -> e.Contains "b")) $"names the missing scenario: %A{es}"
           | Ok _ -> failwith "b never ran"
           check (Result.isError (Evidence.create item { facts with ParityRuns = [ parityRun "a" ParityPass ] })) "no scenarios in the registry"
+      // ---------- feature: a recorded feature_result at the done commit, judged like parity ----------
+      "work: a feature entry is a known kind on a repo item, never a gate", fun () ->
+          check (match (featureItem "x").DoneWhen.ToList with [ Gate _; Feature "x" ] -> true | _ -> false) "feature"
+          equal "feature:x" (Check.key (Feature "x")) "key"
+          check (match (created { draft with DoneWhen = [ "gate", "g"; "feature", " x " ] }).DoneWhen.ToList with [ _; Feature "x" ] -> true | _ -> false) "trimmed"
+          check (List.contains (BlankCheck(2, "feature")) (errorsOf { draft with DoneWhen = [ "gate", "g"; "feature", " " ] })) "blank"
+          check (List.contains RepoWithoutGate (errorsOf { draft with DoneWhen = [ "feature", "x"; "checklist", "c" ] })) "feature is not a gate"
+          check (not (List.contains JudgeOnly (errorsOf { docDraft with DoneWhen = [ "feature", "x" ] }))) "feature alone is not judge only"
+      "work: feature on a document item is named by position, one error per entry", fun () ->
+          let es = errorsOf { docDraft with DoneWhen = [ "checklist", "c"; "feature", "a"; "feature", "b" ] }
+          equal [ FeatureWithoutRepo 2; FeatureWithoutRepo 3 ] es "errors"
+          equal "W-1: done_when entry 2 (feature) is allowed only on a repo item: feature is judged at the commit that finished it." (WorkError.describe "W-1" (FeatureWithoutRepo 2)) "sentence"
+      "work: the unknown kind message lists feature", fun () ->
+          equal "W-1: done_when entry 1 has unknown kind magic; use gate, checklist, review, judge, parity or feature." (WorkError.describe "W-1" (UnknownCheckKind(1, "magic"))) "message"
+      "evidence: feature needs a passing result for the feature at the done commit", fun () ->
+          let item = featureItem "x"
+          check (Result.isOk (Evidence.create item { facts with FeatureRuns = [ featureRun "x" ParityPass ] })) "pass"
+          equal [ "feature x has no result at abc1234." ] (featureMsg item []) "never recorded"
+          equal [ "feature x did not pass at abc1234 (fail)." ] (featureMsg item [ featureRun "x" ParityFail ]) "fail"
+          equal [ "feature x did not pass at abc1234 (could_not_run)." ] (featureMsg item [ featureRun "x" ParityCouldNotRun ]) "could not run is not a pass"
+          equal [ "feature x has no result at abc1234." ] (featureMsg item [ { featureRun "x" ParityPass with Commit = "other" } ]) "other commit"
+          equal [ "feature x has no result at abc1234." ] (featureMsg item [ featureRun "y" ParityPass ]) "other feature"
+          check (Result.isOk (Evidence.create item { facts with FeatureRuns = [ featureRun "x" ParityFail; featureRun "x" ParityPass ] })) "pass last"
+          equal [ "feature x did not pass at abc1234 (fail)." ] (featureMsg item [ featureRun "x" ParityPass; featureRun "x" ParityFail ]) "fail last"
+          match Evidence.create item { facts with Commit = None; FeatureRuns = [ featureRun "x" ParityPass ] } with
+          | Error es -> check (List.contains "feature x has no result." es) $"no commit: %A{es}"
+          | Ok _ -> failwith "no commit is not done"
+      "evidence: a passed feature is covered by its key", fun () ->
+          match Evidence.create (featureItem "x") { facts with FeatureRuns = [ featureRun "x" ParityPass ] } with
+          | Ok e -> check (List.contains "feature:x" e.Covered) $"%A{e.Covered}"
+          | Error es -> failwithf "%A" es
       "parity: an uncovered difference asks to build it like legacy or ask the PO, naming the first failures", fun () ->
           let f n = { Step = n; Key = $"button:Save#{n}"; Kind = "missing"; Msg = $"step {n}: button Save is missing" }
           let nd = ParityDecision.raise "booking-list" "abc1234def" (Some "W-1") [ f 1; f 2; f 3; f 4 ]

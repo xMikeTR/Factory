@@ -73,6 +73,25 @@ let tests: (string * (unit -> unit)) list =
           check (not (isDone (state []))) "never recorded"
           check (not (isDone (state [ 4L, ParityResult("booking-list", "abc1234", ParityCouldNotRun) ]))) "could not run"
           check (not (isDone (state [ 6L, ParityResult("booking-list", "abc1234", ParityPass) ]))) "recorded after the done row"
+      "board: a feature item is Done only with a passing feature_result at the done commit, recorded before item_done", fun () ->
+          let f =
+              match
+                  WorkItem.create
+                      { Id = "W-F"; Requirement = Some "REQ-1"; Elements = [ "W-F" ]; Repo = None; Target = None
+                        DependsOn = []; Writes = []; DoneWhen = [ "gate", "dotnet test"; "feature", "submit" ] }
+              with
+              | Ok i -> i
+              | Error es -> failwithf "%A" es
+          let state results =
+              let facts =
+                  [ 1L, ItemFrozen("W-F", "h-F", "r1"); 2L, ItemPulled "W-F"; 3L, ItemGate("W-F", "dotnet test", true, Some "abc1234", false) ]
+                  @ results @ [ 5L, ItemDone("W-F", Some "abc1234", []) ]
+              (Board.candidates [ f ] [] (List.sortBy fst facts) onMain |> List.exactlyOne).State
+          let isDone = function WorkState.Done _ -> true | _ -> false
+          check (isDone (state [ 4L, FeatureResult("submit", "abc1234", ParityPass) ])) "passed"
+          check (not (isDone (state []))) "never recorded"
+          check (not (isDone (state [ 4L, FeatureResult("submit", "abc1234", ParityCouldNotRun) ]))) "could not run"
+          check (not (isDone (state [ 6L, FeatureResult("submit", "abc1234", ParityPass) ]))) "recorded after the done row"
       "board: a stale re-check defers the item with its reasons until it is frozen again", fun () ->
           let facts = [ frozen "W-C" 1L; 2L, ItemRecheck("W-C", true, [ "Fares moved" ]) ]
           match (plan facts).Deferred with
