@@ -81,8 +81,36 @@ public class AppLauncherTests : IDisposable
         var r = await launcher.StartAsync(CancellationToken.None);
 
         Assert.False(r.Up);
-        Assert.Equal($"the app did not come up at http://127.0.0.1:{port} within 20s (see {Path.Combine(_logs, "app-1.log")})", r.Reason);
+        Assert.Equal($"the app exited (code 3) before it answered at http://127.0.0.1:{port} (see {Path.Combine(_logs, "app-1.log")})", r.Reason);
         Assert.False(r.Refused);
+    }
+
+    [Fact]
+    public async Task An_exit_code_is_named()
+    {
+        var port = FreePort();
+        await using var launcher = Launcher(["exit 7"], port);
+
+        var r = await launcher.StartAsync(CancellationToken.None);
+
+        Assert.False(r.Up);
+        Assert.Contains("exited (code 7)", r.Reason);
+        Assert.Contains(Path.Combine(_logs, "app-1.log"), r.Reason);
+    }
+
+    [Fact]
+    public async Task The_log_named_is_the_one_of_the_process_that_exited()
+    {
+        var port = FreePort();
+        var launcher = Launcher(["sleep 30", "exit 5"], port);
+        try
+        {
+            var r = await launcher.StartAsync(CancellationToken.None);
+            Assert.False(r.Up);
+            Assert.Contains("exited (code 5)", r.Reason);
+            Assert.Contains(Path.Combine(_logs, "app-2.log"), r.Reason);
+        }
+        finally { await launcher.StopAsync(); }
     }
 
     [Fact]

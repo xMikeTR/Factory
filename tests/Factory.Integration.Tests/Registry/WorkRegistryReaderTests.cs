@@ -193,6 +193,23 @@ public class WorkRegistryReaderTests
     private static string FeatureWork(string v) => Work.Replace("- gate: dotnet test", $"- gate: dotnet test\n  - feature: {v}");
 
     [Fact]
+    public async Task Only_the_bare_entry_string_is_the_marker()
+    {
+        var root = Registry(new()
+        {
+            ["requirements/REQ-1.yaml"] = Requirement,
+            ["work/W-1.yaml"] = FeatureWork("c"),
+            ["features/c.yaml"] = "id: c\njourneys:\n  - id: j\n    steps:\n      - entry: x\n      - click: Save\n",
+        });
+
+        var reg = await WorkRegistryReader.ReadAsync(root, CancellationToken.None);
+
+        var j = Assert.Single(Assert.Single(reg.Features).Journeys);
+        Assert.False(j.HasEntryMarker);
+        Assert.Equal(2, j.StepCount);
+    }
+
+    [Fact]
     public async Task Feature_files_are_read_for_what_the_runner_needs()
     {
         var root = Registry(new()

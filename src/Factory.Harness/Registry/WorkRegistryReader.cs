@@ -131,7 +131,7 @@ public static class WorkRegistryReader
     private static FeatureJourney Journey(Dictionary<object, object?> j)
     {
         var steps = Get(j, "steps") is IEnumerable<object> xs ? xs.ToList() : [];
-        var marker = steps.Any(s => s is string t && t == "entry" || s is IDictionary<object, object> d && d.Keys.Any(k => k?.ToString() == "entry"));
+        var marker = steps.Any(s => s is string t && t == "entry");
         FeatureEffect? effect = null;
         if (Get(j, "proves") is IDictionary<object, object?> proves && Get(proves, "effect") is IDictionary<object, object?> eff
             && Get(eff, "api") is IDictionary<object, object?> api)

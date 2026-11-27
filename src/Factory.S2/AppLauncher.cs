@@ -46,7 +46,9 @@ public sealed class AppLauncher(IReadOnlyList<string> commands, string workDir, 
         {
             ct.ThrowIfCancellationRequested();
             if (await AnswersAsync(http, url, ct)) return new(true, null);
-            if (_started.Any(p => p.HasExited) || DateTime.UtcNow >= deadline) return new(false, notUp);
+            var exited = _started.FindIndex(p => p.HasExited);
+            if (exited >= 0) return new(false, $"the app exited (code {_started[exited].ExitCode}) before it answered at {baseUrl} (see {LogPath(exited)})");
+            if (DateTime.UtcNow >= deadline) return new(false, notUp);
             await Task.Delay(250, ct);
         }
     }

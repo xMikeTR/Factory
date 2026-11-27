@@ -60,6 +60,7 @@ public static class DesigncSchema
             else if (rule == "origin_member" && MemberError(ev, "origin", "origins") is { } og) errors.Add($"{kind}.{og}");
             else if (rule == "bucket_member" && MemberError(ev, "bucket", "escape_buckets") is { } bk) errors.Add($"{kind}.{bk}");
             else if (rule == "verdict_shape" && VerdictError(ev) is { } vd) errors.Add($"{kind}.{vd}");
+            else if (rule == "journeys_shape" && JourneysError(ev) is { } js) errors.Add($"{kind}.{js}");
         return errors;
     }
 
@@ -157,6 +158,51 @@ public static class DesigncSchema
             }
         }
         return null;
+    }
+
+    /// ledger.py / ledger.js journeys_shape: journeys is a non-empty list of {journey, entry (string or null), outcome, failures?};
+    /// at most 50 failures of {step, kind, msg}; a failing journey names one; the row's outcome is fail if any journey failed,
+    /// else could_not_run if any could not run, else pass.
+    private static string? JourneysError(JsonElement ev)
+    {
+        if (!ev.TryGetProperty("journeys", out var js) || js.ValueKind != JsonValueKind.Array) return null;
+        if (js.GetArrayLength() == 0) return "journeys: name at least one journey";
+        string[] outs = ["pass", "fail", "could_not_run"], kinds = ["step", "state", "effect", "ready"];
+        var outcomes = new List<string?>();
+        var i = 0;
+        foreach (var j in js.EnumerateArray())
+        {
+            if (j.ValueKind != JsonValueKind.Object || !(j.TryGetProperty("journey", out var jn) && jn.ValueKind == JsonValueKind.String)
+                || !(j.TryGetProperty("entry", out var en) && en.ValueKind is JsonValueKind.String or JsonValueKind.Null))
+                return $"journeys[{i}]: must be {{journey, entry, outcome}}";
+            var outcome = j.TryGetProperty("outcome", out var oc) && oc.ValueKind == JsonValueKind.String ? oc.GetString() : null;
+            if (outcome is null || !outs.Contains(outcome)) return $"journeys[{i}].outcome: must be pass, fail or could_not_run";
+            var named = false;
+            if (j.TryGetProperty("failures", out var fl))
+            {
+                if (fl.ValueKind != JsonValueKind.Array) return $"journeys[{i}].failures: must be a list";
+                if (fl.GetArrayLength() > 50) return $"journeys[{i}].failures: at most 50 (the report holds the rest)";
+                var k = 0;
+                foreach (var f in fl.EnumerateArray())
+                {
+                    if (f.ValueKind != JsonValueKind.Object
+                        || !(f.TryGetProperty("step", out var st) && st.ValueKind == JsonValueKind.Number && st.TryGetDouble(out var sd) && Math.Floor(sd) == sd && sd >= 0)
+                        || !(f.TryGetProperty("kind", out var fk) && fk.ValueKind == JsonValueKind.String && kinds.Contains(fk.GetString()))
+                        || !(f.TryGetProperty("msg", out var m) && m.ValueKind == JsonValueKind.String))
+                        return $"journeys[{i}].failures[{k}]: must be {{step, kind, msg}}";
+                    k++;
+                }
+                named = k > 0;
+            }
+            if (outcome == "fail" && !named) return $"journeys[{i}].failures: name at least one when the journey outcome is 'fail'";
+            outcomes.Add(outcome);
+            i++;
+        }
+        var want = outcomes.Contains("fail") ? "fail" : outcomes.Contains("could_not_run") ? "could_not_run" : "pass";
+        var rowOutcome = ev.TryGetProperty("outcome", out var ro) && ro.ValueKind == JsonValueKind.String ? ro.GetString() : null;
+        if (rowOutcome == want) return null;
+        var because = want switch { "fail" => "a journey failed", "pass" => "every journey passed", _ => "a journey could not run and none failed" };
+        return $"outcome: must be '{want}' when {because}";
     }
 
     private static bool RefOk(string kind, JsonElement r)
