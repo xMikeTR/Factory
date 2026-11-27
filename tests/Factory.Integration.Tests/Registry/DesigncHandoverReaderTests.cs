@@ -45,6 +45,26 @@ public class DesigncHandoverReaderTests
         await Assert.ThrowsAnyAsync<Exception>(() => Load(dir));
     }
 
+    /// Designc writes a derived landing.json (designc.handover.landing/1) when a requirement has an approved landing: a manifest key `landing:`
+    /// plus a files: entry. The reader hashes it like any frozen file and ignores the key.
+    [Fact]
+    public async Task A_handover_with_a_landing_loads_and_a_changed_landing_is_rejected()
+    {
+        var dir = FixtureCopy();
+        const string landing = "{\n  \"schema\": \"designc.handover.landing/1\",\n  \"landings\": [\n    {\n      \"requirement\": \"RE-1\",\n      \"hash\": \"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0\",\n      \"author\": \"agent\",\n      \"corrected\": true,\n      \"entry\": { \"kind\": \"screen\", \"node\": \"Shop.Ui\" },\n      \"path\": [\n        { \"stage\": \"ui\", \"node\": \"Shop.Ui\" },\n        { \"stage\": \"api\", \"node\": \"Shop.Api/GET /customers\" },\n        { \"stage\": \"handler\", \"node\": \"Shop.Api/CustomersController\" }\n      ],\n      \"changes\": [\n        { \"node\": \"Shop.Api/CustomersController\", \"what\": \"accept the discount code filter\" }\n      ],\n      \"principle\": { \"prop\": \"d.api\", \"element\": \"Shop.Api\" },\n      \"effects\": { \"callers\": 2, \"readers\": 1, \"consumers\": 0, \"unknown\": 0 }\n    }\n  ]\n}\n";
+        await File.WriteAllTextAsync(Path.Combine(dir, "landing.json"), landing);
+        var manifest = Path.Combine(dir, "handover.yaml");
+        var text = await File.ReadAllTextAsync(manifest);
+        text = text.Replace("evals: {}\n", "landing: \"landing.json\"\nevals: {}\n")
+            + $"  - {{ path: \"landing.json\", hash: {DesigncHandoverReader.Hash16(landing)} }}\n";
+        await File.WriteAllTextAsync(manifest, text);
+
+        Assert.Equal("20261007-c4d072ba", (await Load(dir)).Id);
+
+        await File.WriteAllTextAsync(Path.Combine(dir, "landing.json"), landing.Replace("\"corrected\": true", "\"corrected\": false"));
+        await Assert.ThrowsAnyAsync<Exception>(() => Load(dir));
+    }
+
     /// Split repos: elements.json may carry `repo` per element and handover.yaml lists `contracts_api` (OpenAPI files, hash-pinned).
     /// Both are optional, and the key is not `contracts` (compiled agent policies).
     private static async Task<string> TwoRepoCopy(bool withContract)

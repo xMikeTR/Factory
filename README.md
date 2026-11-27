@@ -372,7 +372,7 @@ Ledger to Jira, never the other way. Each work item's state is compared with its
 
 ## Status
 
-Tests: Core 515/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 1530/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
+Tests: Core 515/0 (`dotnet run --project tests/Factory.Core.Tests`), Integration 1531/0 (`dotnet test tests/Factory.Integration.Tests`). Opt-in suites (live model, Langfuse, GitHub, Docker, PObserve) are off unless their `FACTORY_LIVE_*` / `FACTORY_TEST_DOCKER` variable is set. Nothing paid runs without you asking; no live Jira, UX-judge, diagnosis, repro or Playwright-CLI-with-a-model run has been made yet.
 
 | Area | Where | State |
 |---|---|---|
